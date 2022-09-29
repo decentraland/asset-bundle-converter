@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using AssetBundleConverter.Wrappers.Implementations.Default;
 using GLTFast;
 using GLTFast.Editor;
@@ -65,7 +66,7 @@ namespace DCL.ABConverter
             log.verboseEnabled = true;
         }
 
-        public async void Convert(ContentServerUtils.MappingPair[] rawContents)
+        public async Task<State> Convert(ContentServerUtils.MappingPair[] rawContents)
         {
             log.Info("Starting a new conversion");
 
@@ -75,7 +76,7 @@ namespace DCL.ABConverter
             if (!DownloadAssets(rawContents))
             {
                 log.Info("All assets are already converted");
-                return;
+                return CurrentState;
             }
 
             var totalGltfToLoad = gltfToWait.Count;
@@ -98,7 +99,7 @@ namespace DCL.ABConverter
                 {
                     log.Error("Conversion Failed");
                     EditorUtility.ClearProgressBar();
-                    return;
+                    return CurrentState;
                 }
                 
                 //File.WriteAllText($"{gltfFilePath.Directory.FullName}/metrics.json", JsonUtility.ToJson(metrics, true));
@@ -136,6 +137,8 @@ namespace DCL.ABConverter
             }
 
             EditorUtility.ClearProgressBar();
+
+            return CurrentState;
         }
         
         /// <summary>

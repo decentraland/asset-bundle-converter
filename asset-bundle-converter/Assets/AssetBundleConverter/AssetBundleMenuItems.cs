@@ -40,7 +40,7 @@ namespace DCL
         [MenuItem("Decentraland/Asset Bundle Builder/Dump XMas Empty Parcels")]
         public static void DumpEmptyParcels_XMas() { DumpEmptyParcels("xmas"); }
 
-        public static void DumpEmptyParcels(string folderName = "common")
+        public async static void DumpEmptyParcels(string folderName = "common")
         {
             string mappingsJsonPath = Application.dataPath;
 
@@ -81,22 +81,9 @@ namespace DCL
             settings.baseUrl = customBaseUrl + "/contents/";
 
             var core = new ABConverter.AssetBundleConverter(Environment.CreateWithDefaultImplementations(), settings);
-            core.Convert(mappings.ToArray());
+            await core.Convert(mappings.ToArray());
         }
 
-
-        [MenuItem("Decentraland/Asset Bundle Builder/TestAsyncFunc")]
-        public static void RunTask()
-        {
-            TheTask();
-        }
-
-        public static async void TheTask()
-        {
-            Debug.Log("Task about to be run");
-            await Task.Delay((int)(5 * 1000f));
-            Debug.Log("Task COMPLETED!");
-        }
 
         /*[MenuItem("Decentraland/Asset Bundle Builder/Dump All Body-Wearables")]
         public static void DumpAllBodiesWearables() { ABConverter.WearablesCollectionClient.DumpAllBodyshapeWearables(); }

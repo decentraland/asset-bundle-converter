@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace DCL.ABConverter
@@ -115,7 +116,7 @@ namespace DCL.ABConverter
         /// <param name="sceneCidsList">The cid list for the scenes to gather from the catalyst's content server</param>
         /// <param name="settings">Any conversion settings object, if its null, a new one will be created</param>
         /// <returns>A state context object useful for tracking the conversion progress</returns>
-        public static AssetBundleConverter.State ConvertScenesToAssetBundles(List<string> sceneCidsList, ClientSettings settings = null)
+        public async static Task<AssetBundleConverter.State> ConvertScenesToAssetBundles(List<string> sceneCidsList, ClientSettings settings = null)
         {
             if (sceneCidsList == null || sceneCidsList.Count == 0)
             {
@@ -139,7 +140,7 @@ namespace DCL.ABConverter
             }
 
             var core = new AssetBundleConverter(env, settings);
-            core.Convert(rawContents.ToArray());
+            await core.Convert(rawContents.ToArray());
 
             return core.CurrentState;
         }
@@ -205,7 +206,7 @@ namespace DCL.ABConverter
         /// <param name="size">Size as radius</param>
         /// <param name="settings">Conversion settings</param>
         /// <returns>A state context object useful for tracking the conversion progress</returns>
-        public static AssetBundleConverter.State DumpArea(Vector2Int coords, Vector2Int size, ClientSettings settings = null)
+        public static async Task<AssetBundleConverter.State> DumpArea(Vector2Int coords, Vector2Int size, ClientSettings settings = null)
         {
             EnsureEnvironment();
 
@@ -214,7 +215,7 @@ namespace DCL.ABConverter
 
             HashSet<string> sceneCids = Utils.GetSceneCids(env.webRequest, settings.tld, coords, size);
             List<string> sceneCidsList = sceneCids.ToList();
-            return ConvertScenesToAssetBundles(sceneCidsList, settings);
+            return await ConvertScenesToAssetBundles(sceneCidsList, settings);
         }
 
         /// <summary>
@@ -223,7 +224,7 @@ namespace DCL.ABConverter
         /// <param name="coords">A list with the parcels coordinates wanted to be converted</param>
         /// <param name="settings">Conversion settings</param>
         /// <returns>A state context object useful for tracking the conversion progress</returns>
-        public static AssetBundleConverter.State DumpArea(List<Vector2Int> coords, ClientSettings settings = null)
+        public static async Task<AssetBundleConverter.State> DumpArea(List<Vector2Int> coords, ClientSettings settings = null)
         {
             EnsureEnvironment();
 
@@ -233,7 +234,7 @@ namespace DCL.ABConverter
             HashSet<string> sceneCids = Utils.GetScenesCids(env.webRequest, settings.tld, coords);
 
             List<string> sceneCidsList = sceneCids.ToList();
-            return ConvertScenesToAssetBundles(sceneCidsList, settings);
+            return await ConvertScenesToAssetBundles(sceneCidsList, settings);
         }
 
         /// <summary>
@@ -242,14 +243,14 @@ namespace DCL.ABConverter
         /// <param name="cid">The scene cid in the multi-hash format (i.e. Qm...etc)</param>
         /// <param name="settings">Conversion settings</param>
         /// <returns>A state context object useful for tracking the conversion progress</returns>
-        public static AssetBundleConverter.State DumpScene(string cid, ClientSettings settings = null)
+        public static async Task<AssetBundleConverter.State> DumpScene(string cid, ClientSettings settings = null)
         {
             EnsureEnvironment();
 
             if (settings == null)
                 settings = new ClientSettings();
 
-            return ConvertScenesToAssetBundles(new List<string> { cid }, settings);
+            return await ConvertScenesToAssetBundles(new List<string> { cid }, settings);
         }
 
         /// <summary>
