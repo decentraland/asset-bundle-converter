@@ -6,6 +6,8 @@ using System.Net.Http;
 using System.Text.RegularExpressions;
 using AssetBundleConverter.Wrappers.Implementations.Default;
 using GLTFast;
+using GLTFast.Editor;
+using GLTFast.Logging;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -101,14 +103,17 @@ namespace DCL.ABConverter
                 
                 //File.WriteAllText($"{gltfFilePath.Directory.FullName}/metrics.json", JsonUtility.ToJson(metrics, true));
                 var go = new GameObject(keyValuePair.Key);
-                gltfImport.InstantiateScene(go.transform);
-                //GLTFImporter.PreloadedGLTFObjects.Add(GetRelativePath(key), go);
-                
+                await gltfImport.InstantiateScene(go.transform);
+                GltfImporter.SetupExternalDependencies(TransformRelativePaths);
                 env.assetDatabase.ImportAsset(keyValuePair.Key, ImportAssetOptions.ImportRecursive | ImportAssetOptions.ForceUpdate);
+                
+                //gltfImport.Dispose();
             }
             EditorUtility.ClearProgressBar();
 
             log.Info("Assets Loaded successfully");
+
+            MarkAllAssetBundles(assetsToMark);
             
             env.assetDatabase.Refresh();
             env.assetDatabase.SaveAssets();
@@ -130,8 +135,37 @@ namespace DCL.ABConverter
                 CurrentState.step = State.Step.FINISHED;
             }
 
+            EditorUtility.ClearProgressBar();
         }
         
+        /// <summary>
+        /// Mark all the given assetPaths to be built as asset bundles by Unity's BuildPipeline.
+        /// </summary>
+        /// <param name="assetPaths">The paths to be built.</param>
+        private void MarkAllAssetBundles(List<AssetPath> assetPaths)
+        {
+            foreach (var assetPath in assetPaths)
+            {
+                Utils.MarkFolderForAssetBundleBuild(assetPath.finalPath, assetPath.hash);
+            }
+        }
+
+        private Uri TransformRelativePaths(Uri url)
+        {
+            try
+            {
+                var normalizedString = url.OriginalString.Replace('\\', '/');
+                string fileName = normalizedString.Substring(normalizedString.LastIndexOf('/') + 1);
+                return !contentTable.ContainsKey(fileName) ? url : new Uri(contentTable[fileName], UriKind.Relative);
+            }
+            catch (Exception _)
+            {
+                Debug.LogError("Failed to transform path: {url.OriginalString}");
+                return url;
+            }
+            
+        }
+
         /// <summary>
         /// Build all marked paths as asset bundles using Unity's BuildPipeline and generate their metadata file (dependencies, version, timestamp)
         /// </summary>
@@ -453,15 +487,10 @@ namespace DCL.ABConverter
         private GltfImport CreateGltfImport(string filePath)
         {
             return new GltfImport(
-                new GltFastFileProvider(FileToUrl),
+                new GltFastFileProvider(TransformRelativePaths),
                 new UninterruptedDeferAgent(),
                 null, //new GLTFastDCLMaterialGenerator("DCL/Universal Render Pipeline/Lit"), //TODO: we have to check if having no material conversion is OK
                 new ConsoleLogger());
-        }
-        
-        string FileToUrl(string fileName)
-        {
-            return contentTable[fileName];
         }
         
         private void ReduceTextureSizeIfNeeded(string texturePath, float maxSize)
@@ -499,7 +528,8 @@ namespace DCL.ABConverter
 
             File.WriteAllBytes(finalTexturePath, endTex);
 
-            AssetDatabase.ImportAsset(finalDownloadedAssetDbPath + texturePath, ImportAssetOptions.ForceUpdate);
+            var finalPath = GetRelativePath(finalDownloadedAssetDbPath + texturePath);
+            AssetDatabase.ImportAsset(finalPath, ImportAssetOptions.ForceUpdate);
             AssetDatabase.SaveAssets();
         }
         
@@ -547,6 +577,18 @@ namespace DCL.ABConverter
         {
             string path = DownloadAsset(gltfPath, true);
             return path != null ? gltfPath : null;
+        }
+        
+        private static string GetRelativePath(string key)
+        {
+            var path = key;
+            string dataPath = Application.dataPath.Replace('\\', '/');
+            path = path.Replace('\\', '/');
+
+            if (path.StartsWith(dataPath))
+                path =  "Assets" + path.Substring(dataPath.Length);
+
+            return path;
         }
     }
     

@@ -10,17 +10,16 @@
       "url": "https://package.openupm.com"
     },
     "com.atteneder.gltfast": {
-      "version": "4.8.4",
+      "version": "https://github.com/Kinerius/glTFast.git#feat/importer-dependencies",
       "depth": 0,
-      "source": "registry",
+      "source": "git",
       "dependencies": {
         "com.unity.modules.jsonserialize": "1.0.0",
         "com.unity.modules.unitywebrequest": "1.0.0",
-        "com.unity.modules.unitywebrequesttexture": "1.0.0",
         "com.unity.mathematics": "1.2.6",
         "com.unity.burst": "1.6.6"
       },
-      "url": "https://package.openupm.com"
+      "hash": "a25ef3f5cb502acf2af4a3ef65c4d7bb3313325c"
     },
     "com.unity.burst": {
       "version": "1.6.6",
