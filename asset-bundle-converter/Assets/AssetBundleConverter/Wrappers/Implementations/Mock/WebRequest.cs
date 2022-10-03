@@ -46,6 +46,11 @@ namespace DCL
 
                 OnFail?.Invoke("Url not found!");
             }
+
+            public UnityEngine.Networking.DownloadHandler Post(string url, string jsonContents)
+            {
+                throw new NotImplementedException();
+            }
         }
     }
 }

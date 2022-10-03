@@ -53,7 +53,7 @@ namespace DCL.ABConverter
             public ClientSettings(ContentServerUtils.ApiTLD tld = ContentServerUtils.ApiTLD.ORG)
             {
                 this.tld = tld;
-                baseUrl = ContentServerUtils.GetContentAPIUrlBase(tld);
+                baseUrl = ContentServerUtils.GetContentsUrl(tld);
             }
         }
 }

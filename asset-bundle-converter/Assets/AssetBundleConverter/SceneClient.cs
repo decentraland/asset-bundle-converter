@@ -69,7 +69,7 @@ namespace DCL.ABConverter
                         throw new ArgumentException("Invalid sceneCid argument! Please use -sceneCid <id> to establish the desired id to process.");
                     }
 
-                    await DumpScene(sceneCid[0], settings);
+                    await ConvertEntityById(sceneCid[0], settings);
                     return;
                 }
 
@@ -98,7 +98,8 @@ namespace DCL.ABConverter
                         throw new ArgumentException("Invalid parcelsXYWH argument! Please don't use negative width/height values, and ensure any given width/height doesn't exceed 10.");
                     }
 
-                    await DumpArea(new Vector2Int(x, y), new Vector2Int(w, h), settings);
+                    // TODO: 
+                    //await DumpArea(new Vector2Int(x, y), new Vector2Int(w, h), settings);
                     return;
                 }
 
@@ -111,156 +112,72 @@ namespace DCL.ABConverter
         }
 
         /// <summary>
+        /// Dump a single decentraland entity given an id.
+        /// </summary>
+        /// <param name="entityId">The scene cid in the multi-hash format (i.e. Qm...etc)</param>
+        /// <param name="settings">Conversion settings</param>
+        /// <returns>A state context object useful for tracking the conversion progress</returns>
+        public static async Task<AssetBundleConverter.State> ConvertEntityById(string entityId, ClientSettings settings = null)
+        {
+            EnsureEnvironment();
+
+            if (settings == null)
+                settings = new ClientSettings();
+            
+            var apiResponse = Utils.GetEntityMappings(entityId, settings.tld, env.webRequest);
+            var mappings = apiResponse.SelectMany(m => m.content);
+            return await ConvertEntitiesToAssetBundles(mappings.ToArray(), settings);
+
+        }
+
+        /// <summary>
+        /// Dump a single decentraland entity given a pointer
+        /// </summary>
+        /// <param name="pointer">The entity position in world</param>
+        /// <param name="settings">Conversion settings</param>
+        /// <returns>A state context object useful for tracking the conversion progress</returns>
+        public static async Task<AssetBundleConverter.State> ConvertEntityByPointer(Vector2Int pointer, ClientSettings settings = null)
+        {
+            EnsureEnvironment();
+
+            if (settings == null)
+                settings = new ClientSettings();
+            
+            var apiResponse = Utils.GetEntityMappings(pointer, settings.tld, env.webRequest);
+            var mappings = apiResponse.SelectMany(m => m.content);
+            return await ConvertEntitiesToAssetBundles(mappings.ToArray(), settings);
+        }
+
+        /// <summary>
         /// This will start the asset bundle conversion for a given scene list, given a scene cids list.
         /// </summary>
-        /// <param name="sceneCidsList">The cid list for the scenes to gather from the catalyst's content server</param>
+        /// <param name="entitiesId">The cid list for the scenes to gather from the catalyst's content server</param>
         /// <param name="settings">Any conversion settings object, if its null, a new one will be created</param>
         /// <returns>A state context object useful for tracking the conversion progress</returns>
-        public async static Task<AssetBundleConverter.State> ConvertScenesToAssetBundles(List<string> sceneCidsList, ClientSettings settings = null)
+        private static async Task<AssetBundleConverter.State> ConvertEntitiesToAssetBundles(ContentServerUtils.MappingPair[] mappingPairs, ClientSettings settings = null)
         {
-            if (sceneCidsList == null || sceneCidsList.Count == 0)
+            if (mappingPairs == null || mappingPairs.Length == 0)
             {
-                log.Error("Scene list is null or count == 0! Maybe this sector lacks scenes or content requests failed?");
+                log.Error("Entity list is null or count == 0! Maybe this sector lacks scenes or content requests failed?");
                 return new AssetBundleConverter.State { lastErrorCode = AssetBundleConverter.ErrorCodes.SCENE_LIST_NULL };
             }
 
-            log.Info($"Building {sceneCidsList.Count} scenes...");
-
-            List<ContentServerUtils.MappingPair> rawContents = new List<ContentServerUtils.MappingPair>();
+            log.Info($"Converting {mappingPairs.Length} entities...");
 
             EnsureEnvironment();
 
             if (settings == null)
                 settings = new ClientSettings();
 
-            foreach (var sceneCid in sceneCidsList)
+            /*foreach (var entityID in entitiesId)
             {
-                ContentServerUtils.MappingsAPIData parcelInfoApiData = Utils.GetSceneMappingsData(env.webRequest, settings.tld, sceneCid);
-                rawContents.AddRange(parcelInfoApiData.data[0].content.contents);
-            }
+                ContentServerUtils.MappingsAPIData parcelInfoApiData = Utils.GetSceneMappingsData(env.webRequest, settings.tld, entityID);
+                rawContents.AddRange(parcelInfoApiData.content);
+            }*/
 
             var core = new AssetBundleConverter(env, settings);
-            await core.Convert(rawContents.ToArray());
-
+            await core.Convert(mappingPairs);
             return core.CurrentState;
-        }
-
-        /// <summary>
-        /// This will start the asset bundle conversion for a single asset
-        /// </summary>
-        /// <param name="assetHash">The asset's content server hash</param>
-        /// <param name="assetFilename">The asset's content server file name</param>
-        /// <param name="sceneCid"></param>
-        /// <param name="settings">Any conversion settings object, if its null, a new one will be created</param>
-        /// <returns>A state context object useful for tracking the conversion progress</returns>
-        public static async Task<AssetBundleConverter.State> ConvertAssetToAssetBundle(string assetHash, string sceneCid, ClientSettings settings = null)
-        {
-            if (string.IsNullOrEmpty(assetHash))
-            {
-                log.Error("Missing asset hash!");
-                return new AssetBundleConverter.State { lastErrorCode = AssetBundleConverter.ErrorCodes.UNDEFINED };
-            }
-
-            if (string.IsNullOrEmpty(sceneCid))
-            {
-                log.Error("Missing scene hash, this is required to get the asset dependencies");
-                return new AssetBundleConverter.State { lastErrorCode = AssetBundleConverter.ErrorCodes.UNDEFINED };
-            }
-
-            log.Info($"Building {assetHash} asset...");
-
-            EnsureEnvironment();
-
-            settings ??= new ClientSettings
-            {
-                skipAlreadyBuiltBundles = false
-            };
-
-            var core = new AssetBundleConverter(env, settings);
-
-            var mappings = Utils.GetSceneMappingsData(env.webRequest, settings.tld, sceneCid);
-
-            List<ContentServerUtils.MappingPair> rawContents = new List<ContentServerUtils.MappingPair>();
-            ContentServerUtils.MappingPair[] contentContents = mappings.data[0].content.contents;
-            var result = contentContents.First(d => d.hash == assetHash);
-            rawContents.Add(result);
-            core.AddPotentialDependencyMappings(contentContents);
-            
-            await core.Convert(rawContents.ToArray());
-
-            return core.CurrentState;
-        }
-
-        /// <summary>
-        /// Dump a world area given coords and size. The zone is a rectangle with a center pivot.
-        /// </summary>
-        /// <param name="coords">Coords as parcel coordinates</param>
-        /// <param name="size">Size as radius</param>
-        /// <param name="settings">Conversion settings</param>
-        /// <returns>A state context object useful for tracking the conversion progress</returns>
-        public static async Task<AssetBundleConverter.State> DumpArea(Vector2Int coords, Vector2Int size, ClientSettings settings = null)
-        {
-            EnsureEnvironment();
-
-            if (settings == null)
-                settings = new ClientSettings();
-
-            HashSet<string> sceneCids = Utils.GetSceneCids(env.webRequest, settings.tld, coords, size);
-            List<string> sceneCidsList = sceneCids.ToList();
-            return await ConvertScenesToAssetBundles(sceneCidsList, settings);
-        }
-
-        /// <summary>
-        /// Dump a world area given a parcel coords array.
-        /// </summary>
-        /// <param name="coords">A list with the parcels coordinates wanted to be converted</param>
-        /// <param name="settings">Conversion settings</param>
-        /// <returns>A state context object useful for tracking the conversion progress</returns>
-        public static async Task<AssetBundleConverter.State> DumpArea(List<Vector2Int> coords, ClientSettings settings = null)
-        {
-            EnsureEnvironment();
-
-            if (settings == null)
-                settings = new ClientSettings();
-
-            HashSet<string> sceneCids = Utils.GetScenesCids(env.webRequest, settings.tld, coords);
-
-            List<string> sceneCidsList = sceneCids.ToList();
-            return await ConvertScenesToAssetBundles(sceneCidsList, settings);
-        }
-
-        /// <summary>
-        /// Dump a single world scene given a scene cid.
-        /// </summary>
-        /// <param name="cid">The scene cid in the multi-hash format (i.e. Qm...etc)</param>
-        /// <param name="settings">Conversion settings</param>
-        /// <returns>A state context object useful for tracking the conversion progress</returns>
-        public static async Task<AssetBundleConverter.State> DumpScene(string cid, ClientSettings settings = null)
-        {
-            EnsureEnvironment();
-
-            if (settings == null)
-                settings = new ClientSettings();
-
-            return await ConvertScenesToAssetBundles(new List<string> { cid }, settings);
-        }
-
-        /// <summary>
-        /// Dump a single asset (and its dependencies) given an asset hash and scene Cid
-        /// </summary>
-        /// <param name="assetHash">The asset's content server hash</param>
-        /// <param name="assetFilename">The asset's content server file name</param>
-        /// <param name="sceneCid">The asset scene ID</param>
-        /// <param name="settings">Conversion settings</param>
-        /// <returns>A state context object useful for tracking the conversion progress</returns>
-        public static async Task<AssetBundleConverter.State> DumpAsset(string assetHash, string sceneCid, ClientSettings settings = null)
-        {
-            EnsureEnvironment();
-
-            if (settings == null)
-                settings = new ClientSettings();
-
-            return await ConvertAssetToAssetBundle(assetHash, sceneCid, settings);
         }
     }
 }

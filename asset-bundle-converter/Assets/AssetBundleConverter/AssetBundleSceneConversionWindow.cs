@@ -10,17 +10,14 @@ namespace AssetBundleConverter
     {
         private static AssetBundleSceneConversionWindow thisWindow;
 
-        private const string TAB_SCENE = "Single Scene";
-        private const string TAB_PARCELS = "Parcels";
-        private const string TAB_ASSET = "Asset";
-        private const string TAB_WEARABLE = "Wearable";
-        private const string TAB_COLLECTION = "Collection";
+        private const string TAB_SCENE = "Entity by ID";
+        private const string TAB_PARCELS = "Entity by Pointer";
         
-        private readonly string[] tabs = { TAB_SCENE, TAB_PARCELS, TAB_ASSET, TAB_WEARABLE, TAB_COLLECTION };
+        private readonly string[] tabs = { TAB_SCENE, TAB_PARCELS };
 
-        private string sceneHash = "QmXMzPLZNx5EHiYi3tK9MT5g9HqjAqgyAoZUu2LfAXJcSM";
-        private string assetHash = "QmS9eDwvcEpyYXChz6pFpyWyfyajiXbt6KA4CxQa3JKPGC";
-        private bool runVisualTests = false;
+        private string entityId = "QmYy2TMDEfag99yZV4ZdpjievYUfdQgBVfFHKCDAge3zQi";
+        private string endPoint = "/content/contents/";
+        private bool runVisualTests = true;
         private int currentTab = 0;
         private int xCoord = -110;
         private int yCoord = -110;
@@ -43,15 +40,17 @@ namespace AssetBundleConverter
         async void OnGUI()
         {
             GUILayout.Space(5);
-
             runVisualTests = EditorGUILayout.Toggle("Run visual tests", runVisualTests);
+            endPoint = EditorGUILayout.TextField("Content endpoint", endPoint);
             tld = (ContentServerUtils.ApiTLD)EditorGUILayout.EnumPopup("Top level domain", tld);
-
             GUILayout.Space(5);
 
             currentTab = GUILayout.Toolbar(currentTab, tabs);
             
             GUILayout.Space(5);
+
+            // todo: de-static-ize this
+            ContentServerUtils.customEndpoint = endPoint;
             
             clientSettings = new ClientSettings
             {
@@ -63,61 +62,40 @@ namespace AssetBundleConverter
             switch (currentTab)
             {
                 case 0:
-                    await RenderScene();
+                    await RenderEntityById();
                     break;
                 case 1:
-                    await RenderParcel();
-                    break;
-                case 2:
-                    await RenderAsset();
+                    await RenderEntityByPointer();
                     break;
             }
         }
 
-        private async Task RenderScene()
+        private async Task RenderEntityById()
         {
-            sceneHash = EditorGUILayout.TextField("Scene Hash", sceneHash);
+            entityId = EditorGUILayout.TextField("ID", entityId);
 
             GUILayout.FlexibleSpace();
 
             if (GUILayout.Button("Start"))
             {
-                await SceneClient.DumpScene(sceneHash, clientSettings);
+                await SceneClient.ConvertEntityById(entityId, clientSettings);
                 EditorUtility.RevealInFinder(Config.ASSET_BUNDLES_PATH_ROOT);
             }
         }
 
-        private async Task RenderParcel()
+        private async Task RenderEntityByPointer()
         {
             xCoord = EditorGUILayout.IntField("X", xCoord);
             yCoord = EditorGUILayout.IntField("Y", yCoord);
-            radius = EditorGUILayout.IntField("Radius", radius);
 
             GUILayout.FlexibleSpace();
 
             if (GUILayout.Button("Start"))
             {
                 var targetPosition = new Vector2Int(xCoord, yCoord);
-                var targetRadius = new Vector2Int(radius, radius);
-                await SceneClient.DumpArea(targetPosition, targetRadius, clientSettings);
+                await SceneClient.ConvertEntityByPointer(targetPosition, clientSettings);
                 EditorUtility.RevealInFinder(Config.ASSET_BUNDLES_PATH_ROOT);
             }
-        }
-
-        private async Task RenderAsset()
-        {
-            assetHash = EditorGUILayout.TextField("Asset Hash", assetHash);
-            sceneHash = EditorGUILayout.TextField("Scene Hash", sceneHash);
-
-            GUILayout.FlexibleSpace();
-            
-            if (GUILayout.Button("Start"))
-            {
-                await SceneClient.DumpAsset(assetHash, sceneHash, clientSettings);
-
-                EditorUtility.RevealInFinder(Config.ASSET_BUNDLES_PATH_ROOT);
-            }
-            
         }
     }
 }

@@ -1,4 +1,4 @@
-using System;
+/*using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
@@ -94,16 +94,16 @@ namespace DCL
         public static void DumpAllNonBodiesWearables() { ABConverter.WearablesCollectionClient.DumpAllNonBodyshapeWearables(); }
         
         [MenuItem("Decentraland/Asset Bundle Builder/Dump Single Wearables Collection")]
-        public static void DumpSingleWearablesCollection() { ABConverter.WearablesCollectionClient.DumpSingleWearablesCollection("urn:decentraland:ethereum:collections-v1:atari_launch"); }*/
+        public static void DumpSingleWearablesCollection() { ABConverter.WearablesCollectionClient.DumpSingleWearablesCollection("urn:decentraland:ethereum:collections-v1:atari_launch"); }#1#
 
         [MenuItem("Decentraland/Start Visual Tests")]
-        public static void StartVisualTests() { /*EditorCoroutineUtility.StartCoroutineOwnerless(VisualTests.TestConvertedAssets()); */}
+        public static void StartVisualTests() { /*EditorCoroutineUtility.StartCoroutineOwnerless(VisualTests.TestConvertedAssets()); #1#}
 
         [MenuItem("Decentraland/Asset Bundle Builder/Dump Org -110,-110")]
         public static void DumpArea() { SceneClient.DumpArea(new Vector2Int(-110, -110), new Vector2Int(1, 1)); }
 
         [MenuItem("Decentraland/Asset Bundle Builder/Dump scene QmXMzPLZNx5EHiYi3tK9MT5g9HqjAqgyAoZUu2LfAXJcSM")]
-        public static void DumpSceneId() { SceneClient.DumpScene("QmXMzPLZNx5EHiYi3tK9MT5g9HqjAqgyAoZUu2LfAXJcSM"); }
+        public static void DumpSceneId() { SceneClient.ConvertEntity("QmXMzPLZNx5EHiYi3tK9MT5g9HqjAqgyAoZUu2LfAXJcSM"); }
 
         [MenuItem("Decentraland/Asset Bundle Builder/Dump Single Asset")]
         public static void DumpSingleAsset()
@@ -141,4 +141,4 @@ namespace DCL
             return coords;
         }
     }
-}
+}*/
