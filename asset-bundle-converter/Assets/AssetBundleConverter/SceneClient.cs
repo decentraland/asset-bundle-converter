@@ -40,7 +40,7 @@ namespace DCL.ABConverter
         /// </summary>
         /// <param name="commandLineArgs">An array with the command line arguments.</param>
         /// <exception cref="ArgumentException">When an invalid argument is passed</exception>
-        public static void ExportSceneToAssetBundles(string[] commandLineArgs)
+        public async static void ExportSceneToAssetBundles(string[] commandLineArgs)
         {
             ClientSettings settings = new ClientSettings();
             try
@@ -69,7 +69,7 @@ namespace DCL.ABConverter
                         throw new ArgumentException("Invalid sceneCid argument! Please use -sceneCid <id> to establish the desired id to process.");
                     }
 
-                    DumpScene(sceneCid[0], settings);
+                    await DumpScene(sceneCid[0], settings);
                     return;
                 }
 
@@ -98,7 +98,7 @@ namespace DCL.ABConverter
                         throw new ArgumentException("Invalid parcelsXYWH argument! Please don't use negative width/height values, and ensure any given width/height doesn't exceed 10.");
                     }
 
-                    DumpArea(new Vector2Int(x, y), new Vector2Int(w, h), settings);
+                    await DumpArea(new Vector2Int(x, y), new Vector2Int(w, h), settings);
                     return;
                 }
 
@@ -150,20 +150,20 @@ namespace DCL.ABConverter
         /// </summary>
         /// <param name="assetHash">The asset's content server hash</param>
         /// <param name="assetFilename">The asset's content server file name</param>
-        /// <param name="sceneCid">The asset scene ID</param>
+        /// <param name="sceneCid"></param>
         /// <param name="settings">Any conversion settings object, if its null, a new one will be created</param>
         /// <returns>A state context object useful for tracking the conversion progress</returns>
-        public static AssetBundleConverter.State ConvertAssetToAssetBundle(string assetHash, string assetFilename, string sceneCid, ClientSettings settings = null)
+        public static async Task<AssetBundleConverter.State> ConvertAssetToAssetBundle(string assetHash, string sceneCid, ClientSettings settings = null)
         {
             if (string.IsNullOrEmpty(assetHash))
             {
-                log.Error("Missing asset hash for ConvertAssetToAssetBundle()");
+                log.Error("Missing asset hash!");
                 return new AssetBundleConverter.State { lastErrorCode = AssetBundleConverter.ErrorCodes.UNDEFINED };
             }
 
-            if (string.IsNullOrEmpty(assetFilename))
+            if (string.IsNullOrEmpty(sceneCid))
             {
-                log.Error("Missing asset file name for ConvertAssetToAssetBundle()");
+                log.Error("Missing scene hash, this is required to get the asset dependencies");
                 return new AssetBundleConverter.State { lastErrorCode = AssetBundleConverter.ErrorCodes.UNDEFINED };
             }
 
@@ -171,30 +171,22 @@ namespace DCL.ABConverter
 
             EnsureEnvironment();
 
-            if (settings == null)
+            settings ??= new ClientSettings
             {
-                settings = new ClientSettings
-                {
-                    skipAlreadyBuiltBundles = false
-                };
-            }
+                skipAlreadyBuiltBundles = false
+            };
 
             var core = new AssetBundleConverter(env, settings);
 
+            var mappings = Utils.GetSceneMappingsData(env.webRequest, settings.tld, sceneCid);
+
             List<ContentServerUtils.MappingPair> rawContents = new List<ContentServerUtils.MappingPair>();
-            rawContents.Add(new ContentServerUtils.MappingPair
-            {
-                file = assetFilename,
-                hash = assetHash
-            });
-
-            // If the asset is a GLTF we add the dependencies to the rawContents to be downloaded
-            if (assetFilename.ToLower().EndsWith(".glb") || assetFilename.ToLower().EndsWith(".gltf"))
-            {
-                core.GetAssetDependenciesMappingPairs(assetHash, assetFilename, sceneCid, ref rawContents);
-            }
-
-            core.Convert(rawContents.ToArray());
+            ContentServerUtils.MappingPair[] contentContents = mappings.data[0].content.contents;
+            var result = contentContents.First(d => d.hash == assetHash);
+            rawContents.Add(result);
+            core.AddPotentialDependencyMappings(contentContents);
+            
+            await core.Convert(rawContents.ToArray());
 
             return core.CurrentState;
         }
@@ -261,14 +253,14 @@ namespace DCL.ABConverter
         /// <param name="sceneCid">The asset scene ID</param>
         /// <param name="settings">Conversion settings</param>
         /// <returns>A state context object useful for tracking the conversion progress</returns>
-        public static AssetBundleConverter.State DumpAsset(string assetHash, string assetFilename, string sceneCid, ClientSettings settings = null)
+        public static async Task<AssetBundleConverter.State> DumpAsset(string assetHash, string sceneCid, ClientSettings settings = null)
         {
             EnsureEnvironment();
 
             if (settings == null)
                 settings = new ClientSettings();
 
-            return ConvertAssetToAssetBundle(assetHash, assetFilename, sceneCid, settings);
+            return await ConvertAssetToAssetBundle(assetHash, sceneCid, settings);
         }
     }
 }

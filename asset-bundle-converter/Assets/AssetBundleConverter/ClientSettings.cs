@@ -45,6 +45,9 @@ namespace DCL.ABConverter
             /// </summary>
             public string baseUrl;
 
+            public bool cleanAndExitOnFinish = true;
+            public bool runVisualTests = true;
+
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 
             public ClientSettings(ContentServerUtils.ApiTLD tld = ContentServerUtils.ApiTLD.ORG)

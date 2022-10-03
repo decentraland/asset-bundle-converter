@@ -76,17 +76,18 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
     
     public class GltFastFileProvider : IDownloadProvider, IDisposable
     {
-        public delegate Uri FileNameToUrl(Uri fileName);
+        public delegate Task<Uri> FileNameToUrl(Uri fileName);
 
-        private FileNameToUrl fileToUrl;
+        private readonly FileNameToUrl fileToUrl;
         public GltFastFileProvider(FileNameToUrl fileToUrl) { this.fileToUrl = fileToUrl; }
         public async Task<IDownload> Request(Uri url)
         {
-            return new SyncFileLoader(url);
+            Uri newUrl = await fileToUrl(url);
+            return new SyncFileLoader(newUrl);
         }
         public async Task<ITextureDownload> RequestTexture(Uri url, bool nonReadable)
         {
-            Uri newUrl = fileToUrl(url);
+            Uri newUrl = await fileToUrl(url);
             return new SyncTextureLoader(newUrl, nonReadable);
         }
         

@@ -10,8 +10,10 @@ using Environment = DCL.ABConverter.Environment;
 
 namespace DCL
 {
+    //TODO: DELETE THIS FILE ONCE THE AssetBundleSceneConversionWindow IS COMPLETE!
     public static class AssetBundleMenuItems
     {
+#pragma warning disable CS4014
         [Serializable]
         public class EmptyParcels
         {
@@ -108,7 +110,6 @@ namespace DCL
         {
             // TODO: Make an editor window to setup these values from editor (for other dump-modes as well)
             SceneClient.DumpAsset("QmS9eDwvcEpyYXChz6pFpyWyfyajiXbt6KA4CxQa3JKPGC",
-                "models/FloorBaseGrass_01/FloorBaseGrass_01.glb",
                 "QmXMzPLZNx5EHiYi3tK9MT5g9HqjAqgyAoZUu2LfAXJcSM");
         }
 
