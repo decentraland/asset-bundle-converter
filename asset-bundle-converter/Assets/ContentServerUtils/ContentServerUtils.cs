@@ -1,39 +1,15 @@
-using UnityEngine;
-
 namespace DCL
 {
     public static class ContentServerUtils
     {
-        [System.Serializable]
-        public class ScenesAPIData
-        {
-            [System.Serializable]
-            public class Data
-            {
-                public string parcel_id;
-                public string root_cid;
-                public string scene_cid;
-            }
-
-            public Data[] data;
-        }
+        private const string DEFAULT_ENDPOINT_CONTENTS = "/content/contents/";
+        private const string DEFAULT_ENDPOINT_ENTITIES = "/content/entities/active";
 
         [System.Serializable]
-        public class MappingsAPIData
+        public class PointerData
         {
-            [System.Serializable]
-            public class Data
-            {
-                [System.Serializable]
-                public class Content
-                {
-                    public MappingPair[] contents;
-                }
-
-                public Content content;
-            }
-
-            public Data[] data;
+            public int x;
+            public int y;
         }
 
         [System.Serializable]
@@ -41,6 +17,16 @@ namespace DCL
         {
             public string file;
             public string hash;
+        }
+
+        [System.Serializable]
+        public class EntityMappingsDTO
+        {
+            public string type;
+            public string[] pointers;
+            public long timestamp;
+            public MappingPair[] content;
+            public object metadata;
         }
 
         public enum ApiTLD
@@ -69,38 +55,32 @@ namespace DCL
         }
 
         public static string customBaseUrl = "";
+        public static string customEndpoint = "";
 
-        public static string GetBaseUrl(ApiTLD tld)
+        private static string GetBaseUrl(ApiTLD tld)
         {
             if (tld != ApiTLD.NONE)
-                return $"https://peer.decentraland.{GetTldString(tld)}/lambdas/contentv2";
+                return $"https://peer.decentraland.{GetTldString(tld)}";
 
             return customBaseUrl;
         }
 
-        public static string GetScenesAPIUrl(ApiTLD env, int x1, int y1, int width, int height)
-        {
-            width = Mathf.Max(0, width - 1);
-            height = Mathf.Max(0, height - 1);
+        private static string GetPointersEndpoint() => DEFAULT_ENDPOINT_ENTITIES;
 
+        public static string GetContentsUrl(ApiTLD env)
+        {
             string baseUrl = GetBaseUrl(env);
-            string result = $"{baseUrl}/scenes?x1={x1}&x2={x1 + width}&y1={y1}&y2={y1 + height}";
-            Debug.Log($"Using scenes API url {result}");
-            return result;
+            var endpoint = !string.IsNullOrEmpty(customEndpoint) ? customEndpoint : DEFAULT_ENDPOINT_CONTENTS;
+
+            return $"{baseUrl}{endpoint}";
         }
 
-        public static string GetMappingsAPIUrl(ApiTLD env, string cid)
+        public static string GetEntitiesUrl(ApiTLD env)
         {
             string baseUrl = GetBaseUrl(env);
-            string result = $"{baseUrl}/parcel_info?cids={cid}";
-            Debug.Log($"Using mappings url {result}");
-            return result;
-        }
+            var endpoint = GetPointersEndpoint();
 
-        public static string GetContentAPIUrlBase(ApiTLD env)
-        {
-            string baseUrl = GetBaseUrl(env);
-            return $"{baseUrl}/contents/";
+            return $"{baseUrl}{endpoint}";
         }
     }
 }

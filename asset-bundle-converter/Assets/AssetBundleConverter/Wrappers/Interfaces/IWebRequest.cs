@@ -7,5 +7,6 @@ namespace DCL
     {
         DownloadHandler Get(string url);
         void GetAsync(string url, Action<DownloadHandler> OnCompleted, Action<string> OnFail);
+        DownloadHandler Post(string url, string jsonContents);
     }
 }
