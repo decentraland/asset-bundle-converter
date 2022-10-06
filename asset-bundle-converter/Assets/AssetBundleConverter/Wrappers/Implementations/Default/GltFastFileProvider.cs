@@ -68,6 +68,9 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
         public SyncTextureLoader(Uri url, bool nonReadable)
             : base(url) {
             texture = AssetDatabase.LoadAssetAtPath<Texture2D>(url.OriginalString);
+            
+            Debug.Log($"TextureData: {texture.width}x{texture.height} {texture.format} {texture.filterMode}");
+            
             if (texture == null) {
                 error = $"Couldn't load texture at {url.OriginalString}";
             }
@@ -76,18 +79,18 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
     
     public class GltFastFileProvider : IDownloadProvider, IDisposable
     {
-        public delegate Task<Uri> FileNameToUrl(Uri fileName);
+        public delegate Uri FileNameToUrl(Uri fileName);
 
         private readonly FileNameToUrl fileToUrl;
         public GltFastFileProvider(FileNameToUrl fileToUrl) { this.fileToUrl = fileToUrl; }
         public async Task<IDownload> Request(Uri url)
         {
-            Uri newUrl = await fileToUrl(url);
+            Uri newUrl = fileToUrl(url);
             return new SyncFileLoader(newUrl);
         }
         public async Task<ITextureDownload> RequestTexture(Uri url, bool nonReadable)
         {
-            Uri newUrl = await fileToUrl(url);
+            Uri newUrl = fileToUrl(url);
             return new SyncTextureLoader(newUrl, nonReadable);
         }
         

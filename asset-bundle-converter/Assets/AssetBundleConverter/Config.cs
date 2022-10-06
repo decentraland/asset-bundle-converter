@@ -27,6 +27,6 @@ namespace DCL.ABConverter
 
         internal static string[] bufferExtensions = { ".bin" };
         internal static string[] gltfExtensions = { ".glb", ".gltf" };
-        internal static string[] textureExtensions = { ".jpg", ".png", ".jpeg", ".tga", ".gif", ".bmp", ".psd", ".tiff", ".iff" };
+        internal static string[] textureExtensions = { ".jpg", ".png", ".jpeg", ".tga", ".gif", ".bmp", ".psd", ".tiff", ".iff", ".ktx" };
     }
 }

@@ -25,7 +25,7 @@ namespace DCL.ABConverter
             ASSET_BUNDLE_BUILD_FAIL,
             SOME_ASSET_BUNDLES_SKIPPED
         }
-    
+
         public class State
         {
             public enum Step
@@ -39,10 +39,10 @@ namespace DCL.ABConverter
             public Step step { get; internal set; }
             public ErrorCodes lastErrorCode { get; internal set; }
         }
+
         private const float MAX_TEXTURE_SIZE = 512f;
         private const string VERSION = "3.0";
         private const string MAIN_SHADER_AB_NAME = "MainShader_Delete_Me";
-
 
         private static Logger log = new Logger("[AssetBundleConverter]");
         private readonly Dictionary<string, string> lowerCaseHashes = new Dictionary<string, string>();
@@ -54,32 +54,23 @@ namespace DCL.ABConverter
         private List<AssetPath> assetsToMark = new List<AssetPath>();
         private Dictionary<string, GltfImport> gltfToWait = new Dictionary<string, GltfImport>();
         private Dictionary<string, string> contentTable = new Dictionary<string, string>();
+        private Dictionary<string, string> gltfOriginalNames = new Dictionary<string, string>();
         private string logBuffer;
         private int totalAssets;
         private float startTime;
         private int skippedAssets;
-        private ContentServerUtils.MappingPair[] potentialDependencyMap;
 
         public AssetBundleConverter(Environment env, ClientSettings settings)
         {
             this.settings = settings;
             this.env = env;
-            
+
             finalDownloadedPath = PathUtils.FixDirectorySeparator(Config.DOWNLOADED_PATH_ROOT + Config.DASH);
             finalDownloadedAssetDbPath = PathUtils.FixDirectorySeparator(Config.ASSET_BUNDLES_PATH_ROOT + Config.DASH);
 
             log.verboseEnabled = true;
         }
 
-        /// <summary>
-        /// If we are importing a single asset, we inject additional data from its scene so we can download it on demand without parsing the gltf's json
-        /// Without this, the asset will fail to be imported
-        /// </summary>
-        public void AddPotentialDependencyMappings(ContentServerUtils.MappingPair[] contents)
-        {
-            potentialDependencyMap = contents;
-        }
-        
         /// <summary>
         /// Entry point of the AssetBundleConverter
         /// </summary>
@@ -93,15 +84,17 @@ namespace DCL.ABConverter
             // First step: initialize directories to download the original assets and to store the results
             InitializeDirectoryPaths(settings.clearDirectoriesOnStart, settings.clearDirectoriesOnStart);
             env.assetDatabase.Refresh();
-            
+
             await Task.Delay(TimeSpan.FromSeconds(1));
-            
+
             // Second step: we download all assets
             PopulateLowercaseMappings(rawContents);
+
             if (!DownloadAssets(rawContents))
             {
                 log.Info("All assets are already converted");
                 OnFinish();
+
                 return CurrentState;
             }
 
@@ -109,16 +102,25 @@ namespace DCL.ABConverter
             if (await ImportGltf())
             {
                 OnFinish();
+
                 return CurrentState;
-            };
+            }
+
+            EditorUtility.ClearProgressBar();
 
             // Fourth step: we mark all assets for bundling
             MarkAllAssetBundles(assetsToMark);
-            
+
             // Fifth step: we build the Asset Bundles
             env.assetDatabase.Refresh();
             env.assetDatabase.SaveAssets();
             CurrentState.step = State.Step.BUILDING_ASSET_BUNDLES;
+
+            if (settings.justImport)
+            {
+                CurrentState.step = State.Step.FINISHED;
+                return CurrentState;
+            }
 
             if (BuildAssetBundles(out var manifest))
             {
@@ -133,18 +135,16 @@ namespace DCL.ABConverter
                 CurrentState.step = State.Step.FINISHED;
             }
 
-            EditorUtility.ClearProgressBar();
-            
             if (settings.runVisualTests)
             {
                 /*VisualTests.TestConvertedAssets(
-                    env: env,
-                    OnFinish: (skippedAssetsCount) =>
-                    {
-                        ProcessSkippedAssets(skippedAssetsCount);
-
-                        OnFinish();
-                    }));*/
+                        env: env,
+                        OnFinish: (skippedAssetsCount) =>
+                        {
+                            ProcessSkippedAssets(skippedAssetsCount);
+    
+                            OnFinish();
+                        }));*/
             }
             else
             {
@@ -165,42 +165,68 @@ namespace DCL.ABConverter
 
             foreach (KeyValuePair<string, GltfImport> keyValuePair in gltfToWait)
             {
-                EditorUtility.DisplayProgressBar("Asset Bundle Converter", $"Loading GLTF {keyValuePair.Key}",
+                var gltfUrl = keyValuePair.Key;
+                var gltfImport = keyValuePair.Value;
+
+                EditorUtility.DisplayProgressBar("Asset Bundle Converter", $"Loading GLTF {gltfUrl}",
                     loadedGltf / (float)totalGltfToLoad);
 
                 loadedGltf++;
-                log.Verbose($"Starting to import gltf {keyValuePair.Key}");
-
-                var gltfImport = keyValuePair.Value;
+                log.Verbose($"Starting to import gltf {gltfUrl}");
 
                 try
                 {
-                    await gltfImport.Load(keyValuePair.Key);
+                    await gltfImport.Load(gltfUrl);
                 }
                 catch (Exception)
                 {
                     EditorUtility.ClearProgressBar();
+
                     throw;
                 }
 
                 var loadingSuccess = gltfImport.LoadingDone && !gltfImport.LoadingError;
                 var color = loadingSuccess ? "green" : "red";
 
-                log.Verbose($"<color={color}>Ended loading gltf {keyValuePair.Key} with result <b>{loadingSuccess}</b></color>");
+                log.Verbose($"<color={color}>Ended loading gltf {gltfUrl} with result <b>{loadingSuccess}</b></color>");
 
                 if (!loadingSuccess)
                 {
+                    if (settings.justImport)
+                    {
+                        continue;
+                    }
+                    
                     log.Error("Conversion Failed");
                     EditorUtility.ClearProgressBar();
+
                     return true;
                 }
 
                 //File.WriteAllText($"{gltfFilePath.Directory.FullName}/metrics.json", JsonUtility.ToJson(metrics, true));
 
-                if (settings.runVisualTests)
+                if (settings.runVisualTests || settings.justImport)
                 {
-                    var go = new GameObject(keyValuePair.Key);
-                    await gltfImport.InstantiateScene(go.transform);
+                    var name = gltfOriginalNames[gltfUrl];
+                    var go = new GameObject(gltfUrl);
+
+                    try
+                    {
+                        await gltfImport.InstantiateScene(go.transform);
+                    }
+                    catch (Exception e)
+                    {
+                        EditorUtility.ClearProgressBar();
+
+                        if (settings.justImport)
+                        {
+                            Debug.LogException(e);
+
+                            continue;
+                        }
+
+                        throw;
+                    }
 
                     var renderers = go.GetComponentsInChildren<Renderer>(true);
 
@@ -217,9 +243,8 @@ namespace DCL.ABConverter
                 // (SingleAssetImport) if dependencies where not downloaded when loading the gltf, this is going to fail
                 GltfImporter.SetupExternalDependencies(GetDependenciesPaths);
 
-                env.assetDatabase.ImportAsset(keyValuePair.Key,
+                env.assetDatabase.ImportAsset(gltfUrl,
                     ImportAssetOptions.ImportRecursive | ImportAssetOptions.ForceUpdate);
-
             }
 
             EditorUtility.ClearProgressBar();
@@ -236,7 +261,7 @@ namespace DCL.ABConverter
                 CleanAndExit(CurrentState.lastErrorCode);
             }
         }
-        
+
         /// <summary>
         /// Mark all the given assetPaths to be built as asset bundles by Unity's BuildPipeline.
         /// </summary>
@@ -255,11 +280,11 @@ namespace DCL.ABConverter
         /// <param name="errorCode">final errorCode of the conversion process</param>
         public void CleanAndExit(ErrorCodes errorCode)
         {
-            foreach (KeyValuePair<string,GltfImport> keyValuePair in gltfToWait)
+            foreach (KeyValuePair<string, GltfImport> keyValuePair in gltfToWait)
             {
                 keyValuePair.Value.Dispose();
             }
-            
+
             float conversionTime = Time.realtimeSinceStartup - startTime;
             logBuffer = $"Conversion finished!. last error code = {errorCode}";
 
@@ -278,8 +303,8 @@ namespace DCL.ABConverter
             log.Info(logBuffer);
 
             CleanupWorkingFolders();
-            
-            Utils.Exit((int) errorCode);
+
+            Utils.Exit((int)errorCode);
         }
 
         internal void CleanupWorkingFolders()
@@ -301,7 +326,7 @@ namespace DCL.ABConverter
         /// </summary>
         /// <param name="url">Relative path to the asset</param>
         /// <returns></returns>
-        private Task<Uri> GetOrDownloadDependenciesPaths(Uri url)
+        /*private Task<Uri> GetOrDownloadDependenciesPaths(Uri url)
         {
             try
             {
@@ -312,13 +337,15 @@ namespace DCL.ABConverter
                 {
                     if (potentialDependencyMap != null)
                     {
-                        var result = potentialDependencyMap.FirstOrDefault(mp => mp.file.ToLower().EndsWith(fileName.ToLower()));
+                        var result =
+                            potentialDependencyMap.FirstOrDefault(mp => mp.file.ToLower().EndsWith(fileName.ToLower()));
 
                         if (result == null) return Task.FromResult(url);
 
                         if (DownloadAssets(new[] { result }))
                         {
                             log.Verbose($"Dependency downloaded: {result.file}");
+
                             if (contentTable.ContainsKey(fileName))
                             {
                                 return Task.FromResult(new Uri(contentTable[fileName], UriKind.Relative));
@@ -329,6 +356,7 @@ namespace DCL.ABConverter
                             log.Error($"Failed to download dependency: {fileName}");
                         }
                     }
+
                     return Task.FromResult(url);
                 }
                 else
@@ -339,11 +367,11 @@ namespace DCL.ABConverter
             catch (Exception)
             {
                 log.Exception($"Failed to transform path: {url.OriginalString}");
+
                 return Task.FromResult(url);
             }
-        }
-        
-        
+        }*/
+
         /// <summary>
         /// Sync version of the GetOrDownloadDependenciesPaths method
         /// </summary>
@@ -355,11 +383,13 @@ namespace DCL.ABConverter
             {
                 var normalizedString = url.OriginalString.Replace('\\', '/');
                 string fileName = normalizedString.Substring(normalizedString.LastIndexOf('/') + 1);
+
                 return !contentTable.ContainsKey(fileName) ? url : new Uri(contentTable[fileName], UriKind.Relative);
             }
             catch (Exception)
             {
                 log.Exception($"Failed to transform path: {url.OriginalString}");
+
                 return url;
             }
         }
@@ -372,13 +402,18 @@ namespace DCL.ABConverter
         public virtual bool BuildAssetBundles(out AssetBundleManifest manifest)
         {
             logBuffer = "";
-            env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate | ImportAssetOptions.ImportRecursive);
+
+            env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate |
+                                      ImportAssetOptions.ImportRecursive);
+
             env.assetDatabase.SaveAssets();
 
             env.assetDatabase.MoveAsset(finalDownloadedPath, Config.DOWNLOADED_PATH_ROOT);
 
             // 1. Convert flagged folders to asset bundles only to automatically get dependencies for the metadata
-            manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath, BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle, BuildTarget.WebGL);
+            manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
+                BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle,
+                BuildTarget.WebGL);
 
             if (manifest == null)
             {
@@ -388,13 +423,18 @@ namespace DCL.ABConverter
             }
 
             // 2. Create metadata (dependencies, version, timestamp) and store in the target folders to be converted again later with the metadata inside
-            AssetBundleMetadataBuilder.Generate(env.file, finalDownloadedPath, lowerCaseHashes, manifest, VERSION, MAIN_SHADER_AB_NAME);
+            AssetBundleMetadataBuilder.Generate(env.file, finalDownloadedPath, lowerCaseHashes, manifest, VERSION,
+                MAIN_SHADER_AB_NAME);
 
-            env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate | ImportAssetOptions.ImportRecursive);
+            env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate |
+                                      ImportAssetOptions.ImportRecursive);
+
             env.assetDatabase.SaveAssets();
 
             // 3. Convert flagged folders to asset bundles again but this time they have the metadata file inside
-            manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath, BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle, BuildTarget.WebGL);
+            manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
+                BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle,
+                BuildTarget.WebGL);
 
             logBuffer += $"Generating asset bundles at path: {settings.finalAssetBundlePath}\n";
 
@@ -413,12 +453,15 @@ namespace DCL.ABConverter
             logBuffer += $"\nFree disk space after conv: {PathUtils.GetFreeSpace()}";
 
             log.Verbose(logBuffer);
-            
+
             return true;
         }
 
-        private void CleanAssetBundleFolder(string[] assetBundles) { Utils.CleanAssetBundleFolder(env.file, settings.finalAssetBundlePath, assetBundles, lowerCaseHashes); }
-        
+        private void CleanAssetBundleFolder(string[] assetBundles)
+        {
+            Utils.CleanAssetBundleFolder(env.file, settings.finalAssetBundlePath, assetBundles, lowerCaseHashes);
+        }
+
         void InitializeDirectoryPaths(bool deleteDownloadDirIfExists, bool deleteABsDireIfExists)
         {
             log.Info("Initializing directory -- " + finalDownloadedPath);
@@ -426,7 +469,7 @@ namespace DCL.ABConverter
             log.Info("Initializing directory -- " + settings.finalAssetBundlePath);
             env.directory.InitializeDirectory(settings.finalAssetBundlePath, deleteABsDireIfExists);
         }
-        
+
         void PopulateLowercaseMappings(ContentServerUtils.MappingPair[] pairs)
         {
             foreach (var content in pairs)
@@ -437,7 +480,6 @@ namespace DCL.ABConverter
                     lowerCaseHashes.Add(hashLower, content.hash);
             }
         }
-        
 
         /// <summary>
         /// Download all assets and tag them for asset bundle building.
@@ -446,24 +488,25 @@ namespace DCL.ABConverter
         /// <returns>true if succeeded</returns>
         private bool DownloadAssets(ContentServerUtils.MappingPair[] rawContents)
         {
-            List<AssetPath> gltfPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.gltfExtensions);
-            List<AssetPath> bufferPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.bufferExtensions);
-            List<AssetPath> texturePaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
+            List<AssetPath> gltfPaths =
+                Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.gltfExtensions);
+
+            List<AssetPath> bufferPaths =
+                Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.bufferExtensions);
+
+            List<AssetPath> texturePaths =
+                Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
 
             if (!FilterDumpList(ref gltfPaths))
                 return false;
 
             //NOTE(Brian): Prepare textures and buffers. We should prepare all the dependencies in this phase.
             assetsToMark.AddRange(DownloadImportableAssets(texturePaths));
-            DownloadRawAssets(bufferPaths);
+            assetsToMark.AddRange(DownloadRawAssets(bufferPaths));
 
-            foreach (AssetPath assetPath in texturePaths)
-            {
-                string fileName = assetPath.file.Substring(assetPath.file.LastIndexOf('/') + 1);
-                var relativeFinalPath = "Assets" + assetPath.finalPath.Substring(Application.dataPath.Length);
-                contentTable[fileName] = relativeFinalPath;
-            }
-
+            AddAssetPathsToContentTable(texturePaths);
+            AddAssetPathsToContentTable(bufferPaths);
+            
             foreach (var gltfPath in gltfPaths)
             {
                 assetsToMark.Add(DownloadGltf(gltfPath));
@@ -471,7 +514,17 @@ namespace DCL.ABConverter
 
             return true;
         }
-        
+
+        private void AddAssetPathsToContentTable(List<AssetPath> assetPaths)
+        {
+            foreach (AssetPath assetPath in assetPaths)
+            {
+                string fileName = assetPath.file.Substring(assetPath.file.LastIndexOf('/') + 1);
+                var relativeFinalPath = "Assets" + assetPath.finalPath.Substring(Application.dataPath.Length);
+                contentTable[fileName] = relativeFinalPath;
+            }
+        }
+
         /// <summary>
         /// Trims off existing asset bundles from the given AssetPath array,
         /// if none exists and shouldAbortBecauseAllBundlesExist is true, it will return false.
@@ -511,7 +564,7 @@ namespace DCL.ABConverter
 
             return true;
         }
-        
+
         /// <summary>
         /// This will download all assets contained in the AssetPath list using the baseUrl + hash.
         ///
@@ -528,10 +581,10 @@ namespace DCL.ABConverter
         {
             List<AssetPath> result = new List<AssetPath>(assetPaths);
 
-
             for (var i = 0; i < assetPaths.Count; i++)
             {
-                EditorUtility.DisplayProgressBar("Asset Bundle Converter", "Downloading Importable Assets", i/(float)assetPaths.Count);
+                EditorUtility.DisplayProgressBar("Asset Bundle Converter", "Downloading Importable Assets",
+                    i / (float)assetPaths.Count);
 
                 var assetPath = assetPaths[i];
 
@@ -571,9 +624,10 @@ namespace DCL.ABConverter
             }
 
             EditorUtility.ClearProgressBar();
+
             return result;
         }
-        
+
         /// <summary>
         /// in asset bundles, all dependencies are resolved by their guid (and not the AB hash nor CRC)
         /// So to ensure dependencies are being kept in subsequent editor runs we normalize the asset guid using
@@ -668,24 +722,26 @@ namespace DCL.ABConverter
             if (isGltf)
             {
                 gltfToWait.Add(outputPath, CreateGltfImport(outputPath));
+                gltfOriginalNames.Add(outputPath, assetPath.file);
             }
             else
             {
-                env.assetDatabase.ImportAsset(outputPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ImportRecursive);
+                env.assetDatabase.ImportAsset(outputPath,
+                    ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ImportRecursive);
             }
 
             return outputPath;
         }
-        
+
         private GltfImport CreateGltfImport(string filePath)
         {
             return new GltfImport(
-                new GltFastFileProvider(GetOrDownloadDependenciesPaths),
+                new GltFastFileProvider(GetDependenciesPaths),
                 new UninterruptedDeferAgent(),
                 null, //new GLTFastDCLMaterialGenerator("DCL/Universal Render Pipeline/Lit"), //TODO: we have to check if having no material conversion is OK
                 new ConsoleLogger());
         }
-        
+
         private void ReduceTextureSizeIfNeeded(string texturePath, float maxSize)
         {
             string finalTexturePath = finalDownloadedPath + texturePath;
@@ -725,7 +781,7 @@ namespace DCL.ABConverter
             AssetDatabase.ImportAsset(finalPath, ImportAssetOptions.ForceUpdate);
             AssetDatabase.SaveAssets();
         }
-        
+
         /// <summary>
         /// Download assets and put them in the working folder.
         /// </summary>
@@ -738,10 +794,10 @@ namespace DCL.ABConverter
             if (bufferPaths.Count == 0 || bufferPaths == null)
                 return result;
 
-
             for (var i = 0; i < bufferPaths.Count; i++)
             {
-                EditorUtility.DisplayProgressBar("Asset Bundle Converter", "Downloading Raw Assets", i/(float)bufferPaths.Count);
+                EditorUtility.DisplayProgressBar("Asset Bundle Converter", "Downloading Raw Assets",
+                    i / (float)bufferPaths.Count);
 
                 var assetPath = bufferPaths[i];
 
@@ -756,6 +812,7 @@ namespace DCL.ABConverter
                     log.Error("Failed to get buffer dependencies! failing asset: " + assetPath.hash);
                 }
             }
+
             EditorUtility.ClearProgressBar();
 
             return result;
@@ -769,9 +826,10 @@ namespace DCL.ABConverter
         internal AssetPath DownloadGltf(AssetPath gltfPath)
         {
             string path = DownloadAsset(gltfPath, true);
+
             return path != null ? gltfPath : null;
         }
-        
+
         private static string GetRelativePath(string key)
         {
             var path = key;
@@ -779,7 +837,7 @@ namespace DCL.ABConverter
             path = path.Replace('\\', '/');
 
             if (path.StartsWith(dataPath))
-                path =  "Assets" + path.Substring(dataPath.Length);
+                path = "Assets" + path.Substring(dataPath.Length);
 
             return path;
         }

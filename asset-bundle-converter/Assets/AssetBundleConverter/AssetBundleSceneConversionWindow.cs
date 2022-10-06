@@ -18,6 +18,7 @@ namespace AssetBundleConverter
         private string entityId = "QmYy2TMDEfag99yZV4ZdpjievYUfdQgBVfFHKCDAge3zQi";
         private string endPoint = "/content/contents/";
         private bool runVisualTests = true;
+        private bool justImport = false;
         private int currentTab = 0;
         private int xCoord = -110;
         private int yCoord = -110;
@@ -41,6 +42,7 @@ namespace AssetBundleConverter
         {
             GUILayout.Space(5);
             runVisualTests = EditorGUILayout.Toggle("Run visual tests", runVisualTests);
+            justImport = EditorGUILayout.Toggle("Just Import", justImport);
             endPoint = EditorGUILayout.TextField("Content endpoint", endPoint);
             tld = (ContentServerUtils.ApiTLD)EditorGUILayout.EnumPopup("Top level domain", tld);
             GUILayout.Space(5);
@@ -57,6 +59,7 @@ namespace AssetBundleConverter
                 runVisualTests = runVisualTests,
                 cleanAndExitOnFinish = false,
                 tld = tld,
+                justImport = justImport
             };
 
             switch (currentTab)
@@ -79,7 +82,7 @@ namespace AssetBundleConverter
             if (GUILayout.Button("Start"))
             {
                 await SceneClient.ConvertEntityById(entityId, clientSettings);
-                EditorUtility.RevealInFinder(Config.ASSET_BUNDLES_PATH_ROOT);
+                OnConversionEnd();
             }
         }
 
@@ -94,6 +97,15 @@ namespace AssetBundleConverter
             {
                 var targetPosition = new Vector2Int(xCoord, yCoord);
                 await SceneClient.ConvertEntityByPointer(targetPosition, clientSettings);
+                OnConversionEnd();
+
+            }
+        }
+
+        private void OnConversionEnd()
+        {
+            if (!justImport)
+            {
                 EditorUtility.RevealInFinder(Config.ASSET_BUNDLES_PATH_ROOT);
             }
         }

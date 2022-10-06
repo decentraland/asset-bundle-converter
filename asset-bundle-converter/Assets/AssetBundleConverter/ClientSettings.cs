@@ -47,6 +47,7 @@ namespace DCL.ABConverter
 
             public bool cleanAndExitOnFinish = true;
             public bool runVisualTests = true;
+            public bool justImport;
 
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 
