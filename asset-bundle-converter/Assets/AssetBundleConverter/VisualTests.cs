@@ -1,8 +1,9 @@
-/*using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using DCL.Helpers;
 using System;
+using System.Threading.Tasks;
+using DCL.Helpers;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -15,7 +16,7 @@ namespace DCL.ABConverter
     {
         static readonly string BASELINE_IMAGES_PATH = AssetBundlesVisualTestUtils.baselineImagesPath;
         static readonly string TEST_IMAGES_PATH = AssetBundlesVisualTestUtils.testImagesPath;
-        static readonly string SCENE_NAME = "Assets/ABConverter/VisualTestScene.unity";
+        static readonly string SCENE_NAME = "Assets/AssetBundleConverter/VisualTestScene.unity";
 
         static string abPath = Application.dataPath + "/../AssetBundles/";
         static int skippedAssets = 0;
@@ -24,7 +25,7 @@ namespace DCL.ABConverter
         /// Instantiate all locally-converted GLTFs in both formats (GLTF and Asset Bundle) and
         /// compare them visually. If a visual test fails, the AB is deleted to avoid uploading it
         /// </summary>
-        public static IEnumerator TestConvertedAssets(Environment env = null, Action<int> OnFinish = null)
+        public static async Task<bool> TestConvertedAssets(Environment env = null, Action<int> OnFinish = null)
         {
             if (Utils.ParseOption(Config.CLI_SET_CUSTOM_OUTPUT_ROOT_PATH, 1, out string[] outputPath))
             {
@@ -42,13 +43,14 @@ namespace DCL.ABConverter
                 Debug.Log($"Visual Test Detection: ABs path '{abPath}' doesn't exist...");
                 SkipAllAssets();
                 OnFinish?.Invoke(skippedAssets);
-                yield break;
+
+                return false;
             }
 
             Debug.Log("Visual Test Detection: Starting converted assets testing...");
 
             var scene = EditorSceneManager.OpenScene(SCENE_NAME, OpenSceneMode.Single);
-            yield return new WaitUntil(() => scene.isLoaded);
+            await WaitUntil(() => scene.isLoaded);
 
             // Update visual tests path that will be used internally for the snapshots
             AssetBundlesVisualTestUtils.baselineImagesPath += "ABConverter/";
@@ -62,11 +64,12 @@ namespace DCL.ABConverter
                 Debug.Log("Visual Test Detection: no instantiated GLTFs...");
                 SkipAllAssets();
                 OnFinish?.Invoke(skippedAssets);
-                yield break;
+                
+                return false;
             }
 
             // Take prewarm snapshot to make sure the scene is correctly loaded
-            yield return TakeObjectSnapshot(new GameObject(), $"ABConverter_Warmup.png");
+            await TakeObjectSnapshot(new GameObject(), $"ABConverter_Warmup.png");
 
             AssetBundlesVisualTestUtils.generateBaseline = true;
 
@@ -79,7 +82,7 @@ namespace DCL.ABConverter
             {
                 go.SetActive(true);
 
-                yield return TakeObjectSnapshot(go, $"ABConverter_{go.name}.png");
+                await TakeObjectSnapshot(go, $"ABConverter_{go.name}.png");
 
                 go.SetActive(false);
             }
@@ -87,17 +90,27 @@ namespace DCL.ABConverter
             AssetBundlesVisualTestUtils.generateBaseline = false;
 
             var abs = LoadAndInstantiateAllAssetBundles();
-
+            
             if (abs.Length == 0)
             {
                 Debug.Log("Visual Test Detection: no instantiated ABs...");
                 SkipAllAssets();
                 OnFinish?.Invoke(skippedAssets);
-                yield break;
+                return false;
             }
 
             foreach (GameObject go in abs)
             {
+                var renderers = go.GetComponentsInChildren<Renderer>(true);
+
+                foreach (Renderer renderer in renderers)
+                {
+                    if (renderer.name.ToLower().Contains("_collider"))
+                    {
+                        renderer.enabled = false;
+                    }
+                }
+                
                 go.SetActive(false);
             }
 
@@ -107,7 +120,7 @@ namespace DCL.ABConverter
 
                 go.SetActive(true);
 
-                yield return TakeObjectSnapshot(go, testName);
+                await TakeObjectSnapshot(go, testName);
 
                 bool result = AssetBundlesVisualTestUtils.TestSnapshot(
                     AssetBundlesVisualTestUtils.baselineImagesPath + testName,
@@ -140,8 +153,18 @@ namespace DCL.ABConverter
 
             Debug.Log("Visual Test Detection: Finished converted assets testing...skipped assets: " + skippedAssets);
             OnFinish?.Invoke(skippedAssets);
+
+            return skippedAssets <= 0;
         }
 
+        public static async Task WaitUntil(Func<bool> predicate, int sleep = 50)
+        {
+            while (!predicate())
+            {
+                await Task.Delay(sleep);
+            }
+        }
+        
         /// <summary>
         /// Set skippedAssets to the amount of target assets
         /// </summary>
@@ -150,7 +173,7 @@ namespace DCL.ABConverter
         /// <summary>
         /// Position camera based on renderer bounds and take snapshot
         /// </summary>
-        private static IEnumerator TakeObjectSnapshot(GameObject targetGO, string testName)
+        private static async Task TakeObjectSnapshot(GameObject targetGO, string testName)
         {
             Vector3 originalScale = targetGO.transform.localScale;
             var renderers = targetGO.GetComponentsInChildren<Renderer>();
@@ -172,7 +195,7 @@ namespace DCL.ABConverter
 
             Vector3 cameraPosition = new Vector3(mergedBounds.min.x - offset.x, mergedBounds.max.y + offset.y, mergedBounds.min.z - offset.z);
 
-            yield return AssetBundlesVisualTestUtils.TakeSnapshot(testName, Camera.main, cameraPosition, mergedBounds.center);
+            await AssetBundlesVisualTestUtils.TakeSnapshot(testName, Camera.main, cameraPosition, mergedBounds.center);
 
             targetGO.transform.localScale = originalScale;
         }
@@ -193,6 +216,16 @@ namespace DCL.ABConverter
                 importedGLTF.name = importedGLTF.name.Replace("(Clone)", "");
 
                 PatchSkeletonlessSkinnedMeshRenderer(importedGLTF.gameObject.GetComponentInChildren<SkinnedMeshRenderer>());
+
+                var renderers = importedGLTF.GetComponentsInChildren<Renderer>(true);
+
+                foreach (Renderer renderer in renderers)
+                {
+                    if (renderer.name.ToLower().Contains("_collider"))
+                    {
+                        renderer.enabled = false;
+                    }
+                }
 
                 importedGLTFs.Add(importedGLTF);
             }
@@ -333,4 +366,4 @@ namespace DCL.ABConverter
             Object.DestroyImmediate(skinnedMeshRenderer);
         }
     }
-}*/
+}

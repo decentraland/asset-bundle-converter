@@ -206,11 +206,18 @@ namespace DCL.ABConverter
             importer.SetAssetBundleNameAndVariant(abName, "");
         }
 
-        internal static void MarkAssetForAssetBundleBuild(IAssetDatabase assetDb, Object asset, string abName)
+        internal static bool MarkAssetForAssetBundleBuild(IAssetDatabase assetDb, Object asset, string abName)
         {
             string assetPath = PathUtils.GetRelativePathTo(Application.dataPath, assetDb.GetAssetPath(asset));
             var importer = AssetImporter.GetAtPath(assetPath);
-            importer.SetAssetBundleNameAndVariant(abName, "");
+
+            if (importer)
+            {
+                importer.SetAssetBundleNameAndVariant(abName, "");
+                return true;
+            }
+
+            return false;
         }
 
         public static MD5 md5 = new MD5CryptoServiceProvider();

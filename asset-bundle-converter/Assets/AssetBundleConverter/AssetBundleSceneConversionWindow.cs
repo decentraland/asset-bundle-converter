@@ -17,8 +17,8 @@ namespace AssetBundleConverter
 
         private string entityId = "QmYy2TMDEfag99yZV4ZdpjievYUfdQgBVfFHKCDAge3zQi";
         private string endPoint = "/content/contents/";
-        private bool runVisualTests = true;
-        private bool justImport = false;
+        private bool visualTest = false;
+        private bool createAssetBundle = true;
         private int currentTab = 0;
         private int xCoord = -110;
         private int yCoord = -110;
@@ -41,8 +41,8 @@ namespace AssetBundleConverter
         async void OnGUI()
         {
             GUILayout.Space(5);
-            runVisualTests = EditorGUILayout.Toggle("Run visual tests", runVisualTests);
-            justImport = EditorGUILayout.Toggle("Just Import", justImport);
+            visualTest = EditorGUILayout.Toggle("Visual Test", visualTest);
+            createAssetBundle = EditorGUILayout.Toggle("Create Asset Bundle", createAssetBundle);
             endPoint = EditorGUILayout.TextField("Content endpoint", endPoint);
             tld = (ContentServerUtils.ApiTLD)EditorGUILayout.EnumPopup("Top level domain", tld);
             GUILayout.Space(5);
@@ -56,10 +56,10 @@ namespace AssetBundleConverter
             
             clientSettings = new ClientSettings
             {
-                runVisualTests = runVisualTests,
+                visualTest = visualTest,
                 cleanAndExitOnFinish = false,
                 tld = tld,
-                justImport = justImport
+                createAssetBundle = createAssetBundle
             };
 
             switch (currentTab)
@@ -81,8 +81,8 @@ namespace AssetBundleConverter
 
             if (GUILayout.Button("Start"))
             {
-                await SceneClient.ConvertEntityById(entityId, clientSettings);
-                OnConversionEnd();
+                var state = await SceneClient.ConvertEntityById(entityId, clientSettings);
+                OnConversionEnd(state);
             }
         }
 
@@ -96,15 +96,15 @@ namespace AssetBundleConverter
             if (GUILayout.Button("Start"))
             {
                 var targetPosition = new Vector2Int(xCoord, yCoord);
-                await SceneClient.ConvertEntityByPointer(targetPosition, clientSettings);
-                OnConversionEnd();
+                var state = await SceneClient.ConvertEntityByPointer(targetPosition, clientSettings);
+                OnConversionEnd(state);
 
             }
         }
 
-        private void OnConversionEnd()
+        private void OnConversionEnd(DCL.ABConverter.AssetBundleConverter.State state)
         {
-            if (!justImport)
+            if (!createAssetBundle && state.lastErrorCode == DCL.ABConverter.AssetBundleConverter.ErrorCodes.SUCCESS)
             {
                 EditorUtility.RevealInFinder(Config.ASSET_BUNDLES_PATH_ROOT);
             }
