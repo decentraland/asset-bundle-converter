@@ -12,7 +12,7 @@ namespace AssetBundleConverter
 
         private const string TAB_SCENE = "Entity by ID";
         private const string TAB_PARCELS = "Entity by Pointer";
-        
+
         private readonly string[] tabs = { TAB_SCENE, TAB_PARCELS };
 
         private string entityId = "QmYy2TMDEfag99yZV4ZdpjievYUfdQgBVfFHKCDAge3zQi";
@@ -25,11 +25,11 @@ namespace AssetBundleConverter
         private int yCoord = -110;
         private int radius = 1;
         private ContentServerUtils.ApiTLD tld = ContentServerUtils.ApiTLD.ORG;
-        
+
         private ClientSettings clientSettings;
 
         [MenuItem("Decentraland/Asset Bundle Converter")]
-        static void Init()
+        private static void Init()
         {
             AssetBundleSceneConversionWindow window =
                 (AssetBundleSceneConversionWindow)GetWindow(typeof(AssetBundleSceneConversionWindow));
@@ -39,7 +39,7 @@ namespace AssetBundleConverter
             thisWindow.Show();
         }
 
-        async void OnGUI()
+        private async void OnGUI()
         {
             GUILayout.Space(5);
             visualTest = EditorGUILayout.Toggle("Visual Test", visualTest);
@@ -50,12 +50,12 @@ namespace AssetBundleConverter
             GUILayout.Space(5);
 
             currentTab = GUILayout.Toolbar(currentTab, tabs);
-            
+
             GUILayout.Space(5);
 
             // todo: de-static-ize this
             ContentServerUtils.customEndpoint = endPoint;
-            
+
             clientSettings = new ClientSettings
             {
                 visualTest = visualTest,
@@ -68,15 +68,15 @@ namespace AssetBundleConverter
             switch (currentTab)
             {
                 case 0:
-                    await RenderEntityById();
+                    await RenderEntityByIdAsync();
                     break;
                 case 1:
-                    await RenderEntityByPointer();
+                    await RenderEntityByPointerAsync();
                     break;
             }
         }
 
-        private async Task RenderEntityById()
+        private async Task RenderEntityByIdAsync()
         {
             entityId = EditorGUILayout.TextField("ID", entityId);
 
@@ -89,7 +89,7 @@ namespace AssetBundleConverter
             }
         }
 
-        private async Task RenderEntityByPointer()
+        private async Task RenderEntityByPointerAsync()
         {
             xCoord = EditorGUILayout.IntField("X", xCoord);
             yCoord = EditorGUILayout.IntField("Y", yCoord);
@@ -101,16 +101,13 @@ namespace AssetBundleConverter
                 var targetPosition = new Vector2Int(xCoord, yCoord);
                 var state = await SceneClient.ConvertEntityByPointer(targetPosition, clientSettings);
                 OnConversionEnd(state);
-
             }
         }
 
         private void OnConversionEnd(DCL.ABConverter.AssetBundleConverter.State state)
         {
-            if (!createAssetBundle && state.lastErrorCode == DCL.ABConverter.AssetBundleConverter.ErrorCodes.SUCCESS)
-            {
+            if (createAssetBundle && state.lastErrorCode == DCL.ABConverter.AssetBundleConverter.ErrorCodes.SUCCESS)
                 EditorUtility.RevealInFinder(Config.ASSET_BUNDLES_PATH_ROOT);
-            }
         }
     }
 }
