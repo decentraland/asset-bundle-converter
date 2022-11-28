@@ -68,9 +68,7 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
         public SyncTextureLoader(Uri url, bool nonReadable)
             : base(url) {
             texture = AssetDatabase.LoadAssetAtPath<Texture2D>(url.OriginalString);
-            
-            Debug.Log($"TextureData: {texture.width}x{texture.height} {texture.format} {texture.filterMode}");
-            
+
             if (texture == null) {
                 error = $"Couldn't load texture at {url.OriginalString}";
             }

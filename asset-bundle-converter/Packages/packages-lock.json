@@ -10,7 +10,7 @@
       "url": "https://package.openupm.com"
     },
     "com.atteneder.gltfast": {
-      "version": "https://github.com/Kinerius/glTFast.git#feat/importer-dependencies",
+      "version": "https://github.com/Kinerius/glTFast.git#main",
       "depth": 0,
       "source": "git",
       "dependencies": {
@@ -19,7 +19,7 @@
         "com.unity.mathematics": "1.2.6",
         "com.unity.burst": "1.6.6"
       },
-      "hash": "a25ef3f5cb502acf2af4a3ef65c4d7bb3313325c"
+      "hash": "27da54722ee81b8a219deb6fbb8e9fe5fae070f9"
     },
     "com.atteneder.ktx": {
       "version": "1.3.1",
@@ -29,6 +29,13 @@
         "com.unity.modules.unitywebrequest": "1.0.0"
       },
       "url": "https://package.openupm.com"
+    },
+    "com.decentraland.unity-shared-dependencies": {
+      "version": "https://github.com/decentraland/unity-shared-dependencies.git",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {},
+      "hash": "96a670b5bfaab12dce3aa8a794cd8bec03d8714b"
     },
     "com.unity.burst": {
       "version": "1.6.6",
@@ -97,12 +104,51 @@
       },
       "url": "https://packages.unity.com"
     },
+    "com.unity.render-pipelines.core": {
+      "version": "10.9.0",
+      "depth": 1,
+      "source": "registry",
+      "dependencies": {
+        "com.unity.ugui": "1.0.0",
+        "com.unity.modules.physics": "1.0.0",
+        "com.unity.modules.jsonserialize": "1.0.0"
+      },
+      "url": "https://packages.unity.com"
+    },
+    "com.unity.render-pipelines.universal": {
+      "version": "10.9.0",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {
+        "com.unity.mathematics": "1.1.0",
+        "com.unity.render-pipelines.core": "10.9.0",
+        "com.unity.shadergraph": "10.9.0"
+      },
+      "url": "https://packages.unity.com"
+    },
+    "com.unity.searcher": {
+      "version": "4.3.2",
+      "depth": 2,
+      "source": "registry",
+      "dependencies": {},
+      "url": "https://packages.unity.com"
+    },
     "com.unity.services.core": {
       "version": "1.0.1",
       "depth": 1,
       "source": "registry",
       "dependencies": {
         "com.unity.modules.unitywebrequest": "1.0.0"
+      },
+      "url": "https://packages.unity.com"
+    },
+    "com.unity.shadergraph": {
+      "version": "10.9.0",
+      "depth": 1,
+      "source": "registry",
+      "dependencies": {
+        "com.unity.render-pipelines.core": "10.9.0",
+        "com.unity.searcher": "4.3.2"
       },
       "url": "https://packages.unity.com"
     },

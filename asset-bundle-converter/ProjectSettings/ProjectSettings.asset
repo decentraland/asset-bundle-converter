@@ -592,7 +592,9 @@ PlayerSettings:
   webGLLinkerTarget: 1
   webGLThreadsSupport: 0
   webGLDecompressionFallback: 0
-  scriptingDefineSymbols: {}
+  scriptingDefineSymbols:
+    1: GLTFAST_SAFE
+    13: GLTFAST_SAFE
   additionalCompilerArguments: {}
   platformArchitecture: {}
   scriptingBackend: {}
