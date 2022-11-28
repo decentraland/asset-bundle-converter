@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using AssetBundleConverter.Editor;
 using AssetBundleConverter.Wrappers.Implementations.Default;
 using DCL.GLTFast.Wrappers;
 using GLTFast;
@@ -176,69 +177,66 @@ namespace DCL.ABConverter
 
                 loadedGltf++;
                 log.Verbose($"Starting to import gltf {gltfUrl}");
+                
+                try
+                {
+                    await gltfImport.Load(gltfUrl);
+                }
+                catch (Exception)
+                {
+                    EditorUtility.ClearProgressBar();
 
-                if (!settings.visualTest && !settings.createAssetBundle)
+                    throw;
+                }
+
+                var loadingSuccess = gltfImport.LoadingDone && !gltfImport.LoadingError;
+                var color = loadingSuccess ? "green" : "red";
+                
+                if (!loadingSuccess)
+                {
+                    log.Error("Importing gltf Failed");
+                    EditorUtility.ClearProgressBar();
+
+                    return true;
+                }
+                
+                //var name = gltfOriginalNames[gltfUrl];
+                var go = new GameObject(gltfUrl);
+
+                if (settings.visualTest || !settings.createAssetBundle)
                 {
                     try
                     {
-                        await gltfImport.Load(gltfUrl);
-                    }
-                    catch (Exception)
-                    {
-                        EditorUtility.ClearProgressBar();
-
-                        throw;
-                    }
-
-                    var loadingSuccess = gltfImport.LoadingDone && !gltfImport.LoadingError;
-                    var color = loadingSuccess ? "green" : "red";
-
-                    log.Verbose(
-                        $"<color={color}>Ended loading gltf {gltfUrl} with result <b>{loadingSuccess}</b></color>");
-
-                    if (!loadingSuccess)
-                    {
-                        log.Error("Importing gltf Failed");
-                        EditorUtility.ClearProgressBar();
-
-                        return true;
-                    }
-                    
-                    //var name = gltfOriginalNames[gltfUrl];
-                    var go = new GameObject(gltfUrl);
-
-                    try
-                    {
-                        await gltfImport.InstantiateScene(go.transform);
+                        await gltfImport.InstantiateSceneAsync(go.transform);
                     }
                     catch (Exception)
                     {
                         EditorUtility.ClearProgressBar();
                         throw;
-                    }
-
-                    var renderers = go.GetComponentsInChildren<Renderer>(true);
-
-                    foreach (Renderer renderer in renderers)
-                    {
-                        if (renderer.name.ToLower().Contains("_collider"))
-                        {
-                            renderer.enabled = false;
-                        }
                     }
                 }
+
+                var renderers = go.GetComponentsInChildren<Renderer>(true);
+
+                foreach (Renderer renderer in renderers)
+                {
+                    if (renderer.name.ToLower().Contains("_collider"))
+                    {
+                        renderer.enabled = false;
+                    }
+                }
+                
                 
                 //File.WriteAllText($"{gltfFilePath.Directory.FullName}/metrics.json", JsonUtility.ToJson(metrics, true));
 
                 var relativePath = PathUtils.FullPathToAssetPath(gltfUrl);
-                var gltfImporter = AssetImporter.GetAtPath(relativePath) as GltfImporter;
+                var gltfImporter = AssetImporter.GetAtPath(relativePath) as CustomGltfImporter;
 
                 if (gltfImporter != null)
                 {
                     gltfImporter.importSettings.animationMethod = ImportSettings.AnimationMethod.Legacy;
                     gltfImporter.importSettings.generateMipMaps = false;
-                    gltfImporter.SetupExternalDependencies(GetDependenciesPaths);
-                    gltfImporter.SetupCustomMaterialGenerator(GetNewMaterialGenerator());
+                    gltfImporter.contentMaps = contentTable.Select(kvp => new ContentMap(kvp.Key, kvp.Value)).ToArray();
 
                     EditorUtility.SetDirty(gltfImporter);
                     gltfImporter.SaveAndReimport();
@@ -250,6 +248,8 @@ namespace DCL.ABConverter
 
                     return true;
                 }
+                
+                log.Verbose($"<color={color}>Ended loading gltf {gltfUrl} with result <b>{loadingSuccess}</b></color>");
             }
 
             EditorUtility.ClearProgressBar();
@@ -259,9 +259,9 @@ namespace DCL.ABConverter
             return false;
         }
 
-        private static DecentralandMaterialGenerator GetNewMaterialGenerator()
+        private AssetBundleConverterMaterialGenerator GetNewMaterialGenerator()
         {
-            return new DecentralandMaterialGenerator("DCL/Universal Render Pipeline/Lit");
+            return new AssetBundleConverterMaterialGenerator();
         }
 
         private void OnFinish()
@@ -451,8 +451,7 @@ namespace DCL.ABConverter
             List<AssetPath> bufferPaths =
                 Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.bufferExtensions);
 
-            List<AssetPath> texturePaths =
-                Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
+            List<AssetPath> texturePaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
 
             if (!FilterDumpList(ref gltfPaths))
                 return false;
@@ -565,6 +564,7 @@ namespace DCL.ABConverter
                 {
                     texImporter.crunchedCompression = true;
                     texImporter.textureCompression = TextureImporterCompression.CompressedHQ;
+                    texImporter.isReadable = true;
 
                     ReduceTextureSizeIfNeeded(assetPath.hash + "/" + assetPath.hash + Path.GetExtension(assetPath.file),
                         MAX_TEXTURE_SIZE);
@@ -640,9 +640,24 @@ namespace DCL.ABConverter
             string outputPathDir = Path.GetDirectoryName(outputPath);
             string finalUrl = settings.baseUrl + assetPath.hash;
 
+            void FinallyImportAsset()
+            {
+                if (isGltf)
+                {
+                    Debug.Log(outputPath);
+                    gltfToWait[outputPath] = CreateGltfImport(outputPath);
+                    gltfOriginalNames[outputPath] = assetPath.file;
+                }
+                else
+                {
+                    env.assetDatabase.ImportAsset(outputPath,
+                        ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ImportRecursive);
+                }
+            }
+
             if (env.file.Exists(outputPath))
             {
-                log.Verbose("Skipping already generated asset: " + outputPath);
+                FinallyImportAsset();
 
                 return outputPath;
             }
@@ -677,16 +692,7 @@ namespace DCL.ABConverter
 
             env.file.WriteAllBytes(outputPath, assetData);
 
-            if (isGltf)
-            {
-                gltfToWait.Add(outputPath, CreateGltfImport(outputPath));
-                gltfOriginalNames.Add(outputPath, assetPath.file);
-            }
-            else
-            {
-                env.assetDatabase.ImportAsset(outputPath,
-                    ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ImportRecursive);
-            }
+            FinallyImportAsset();
 
             return outputPath;
         }

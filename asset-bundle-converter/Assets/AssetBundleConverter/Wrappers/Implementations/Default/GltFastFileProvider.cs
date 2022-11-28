@@ -39,6 +39,10 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
                 return null;
             }
         }
+
+        public void Dispose()
+        {
+        }
     }
     
     static class GltfGlobals {
