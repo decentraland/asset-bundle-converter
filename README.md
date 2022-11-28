@@ -21,7 +21,7 @@ So this tool loads every scene asset, loads and re-imports all gltf's to turn th
 
 ## How do I manually run this tool?
 
-- Open this project using `Unity 2020.3.34f1`
+- Open this project using `Unity 2021.3.14f1`
 - Go to `Decentraland > Convert Scene` menu.
 - Fill in the scene info and press `Start`
 - Once the conversion is done, you will see the assets loaded in the current scene
