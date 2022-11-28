@@ -18,6 +18,7 @@ namespace AssetBundleConverter
         private string entityId = "QmYy2TMDEfag99yZV4ZdpjievYUfdQgBVfFHKCDAge3zQi";
         private string endPoint = "/content/contents/";
         private bool visualTest = false;
+        private bool clearDownloads = true;
         private bool createAssetBundle = true;
         private int currentTab = 0;
         private int xCoord = -110;
@@ -43,6 +44,7 @@ namespace AssetBundleConverter
             GUILayout.Space(5);
             visualTest = EditorGUILayout.Toggle("Visual Test", visualTest);
             createAssetBundle = EditorGUILayout.Toggle("Create Asset Bundle", createAssetBundle);
+            clearDownloads = EditorGUILayout.Toggle("Clear Downloads", clearDownloads);
             endPoint = EditorGUILayout.TextField("Content endpoint", endPoint);
             tld = (ContentServerUtils.ApiTLD)EditorGUILayout.EnumPopup("Top level domain", tld);
             GUILayout.Space(5);
@@ -59,7 +61,8 @@ namespace AssetBundleConverter
                 visualTest = visualTest,
                 cleanAndExitOnFinish = false,
                 tld = tld,
-                createAssetBundle = createAssetBundle
+                createAssetBundle = createAssetBundle,
+                clearDirectoriesOnStart = clearDownloads
             };
 
             switch (currentTab)
