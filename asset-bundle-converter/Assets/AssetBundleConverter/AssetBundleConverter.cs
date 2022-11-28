@@ -134,7 +134,7 @@ namespace DCL.ABConverter
                     CurrentState.lastErrorCode = ErrorCodes.ASSET_BUNDLE_BUILD_FAIL;
                     CurrentState.step = State.Step.FINISHED;
                 }
-                
+
                 if (settings.visualTest)
                 {
                     bool result = await VisualTests.TestConvertedAssets(env: env);
@@ -146,7 +146,7 @@ namespace DCL.ABConverter
                     }
                 }
             }
-            
+
             OnFinish();
 
             return CurrentState;
@@ -177,11 +177,8 @@ namespace DCL.ABConverter
 
                 loadedGltf++;
                 log.Verbose($"Starting to import gltf {gltfUrl}");
-                
-                try
-                {
-                    await gltfImport.Load(gltfUrl);
-                }
+
+                try { await gltfImport.Load(gltfUrl); }
                 catch (Exception)
                 {
                     EditorUtility.ClearProgressBar();
@@ -191,7 +188,7 @@ namespace DCL.ABConverter
 
                 var loadingSuccess = gltfImport.LoadingDone && !gltfImport.LoadingError;
                 var color = loadingSuccess ? "green" : "red";
-                
+
                 if (!loadingSuccess)
                 {
                     log.Error("Importing gltf Failed");
@@ -199,19 +196,17 @@ namespace DCL.ABConverter
 
                     return true;
                 }
-                
+
                 //var name = gltfOriginalNames[gltfUrl];
                 var go = new GameObject(gltfUrl);
 
                 if (settings.visualTest || !settings.createAssetBundle)
                 {
-                    try
-                    {
-                        await gltfImport.InstantiateSceneAsync(go.transform);
-                    }
+                    try { await gltfImport.InstantiateSceneAsync(go.transform); }
                     catch (Exception)
                     {
                         EditorUtility.ClearProgressBar();
+
                         throw;
                     }
                 }
@@ -220,16 +215,29 @@ namespace DCL.ABConverter
 
                 foreach (Renderer renderer in renderers)
                 {
-                    if (renderer.name.ToLower().Contains("_collider"))
-                    {
-                        renderer.enabled = false;
-                    }
+                    if (renderer.name.ToLower().Contains("_collider")) { renderer.enabled = false; }
                 }
-                
-                
+
                 //File.WriteAllText($"{gltfFilePath.Directory.FullName}/metrics.json", JsonUtility.ToJson(metrics, true));
 
                 var relativePath = PathUtils.FullPathToAssetPath(gltfUrl);
+
+                // create dummy textures
+
+                var textures = new List<Texture2D>();
+
+                for (int i = 0; i < gltfImport.textureCount; i++)
+                {
+                    textures.Add(gltfImport.GetTexture(i));
+                }
+
+                var directory = Path.GetDirectoryName(relativePath);
+                CreateTextureAssets(textures, directory);
+
+                await Task.Delay(TimeSpan.FromSeconds(1));
+
+                // end create dummy textures
+
                 var gltfImporter = AssetImporter.GetAtPath(relativePath) as CustomGltfImporter;
 
                 if (gltfImporter != null)
@@ -248,7 +256,7 @@ namespace DCL.ABConverter
 
                     return true;
                 }
-                
+
                 log.Verbose($"<color={color}>Ended loading gltf {gltfUrl} with result <b>{loadingSuccess}</b></color>");
             }
 
@@ -259,6 +267,57 @@ namespace DCL.ABConverter
             return false;
         }
 
+        private void CreateTextureAssets(List<Texture2D> textures, string folderName)
+        {
+            if (textures.Count > 0)
+            {
+                var texturesRoot = $"{folderName}/Textures/";
+
+                for (int i = 0; i < textures.Count; i++)
+                {
+                    var tex = textures[i];
+                    var ext = ".png";
+                    var texPath = string.Concat(texturesRoot, tex.name, ext);
+                    var absolutePath = $"{Application.dataPath}/../{texPath}";
+                    var texturePath = AssetDatabase.GetAssetPath(tex);
+
+                    if (File.Exists(absolutePath) || !string.IsNullOrEmpty(texturePath))
+                        continue;
+
+                    if (!Directory.Exists(texturesRoot))
+                        Directory.CreateDirectory(texturesRoot);
+
+                    if (tex.isReadable)
+                    {
+                        File.WriteAllBytes(texPath, tex.EncodeToPNG());
+                    }
+                    else
+                    {
+                        RenderTexture tmp = RenderTexture.GetTemporary(
+                            tex.width,
+                            tex.height,
+                            0,
+                            RenderTextureFormat.Default,
+                            RenderTextureReadWrite.Linear);
+
+                        Graphics.Blit(tex, tmp);
+                        RenderTexture previous = RenderTexture.active;
+                        RenderTexture.active = tmp;
+                        Texture2D readableTexture = new Texture2D(tex.width, tex.height);
+                        readableTexture.ReadPixels(new Rect(0, 0, tmp.width, tmp.height), 0, 0);
+                        readableTexture.Apply();
+                        RenderTexture.active = previous;
+                        RenderTexture.ReleaseTemporary(tmp);
+
+                        File.WriteAllBytes(texPath, readableTexture.EncodeToPNG());
+                    }
+                    texPath = texPath.Replace('\\', '/');
+                    AssetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+                    Debug.Log($"[AB Converter]created texture at {texPath}");
+                }
+            }
+        }
+
         private AssetBundleConverterMaterialGenerator GetNewMaterialGenerator()
         {
             return new AssetBundleConverterMaterialGenerator();
@@ -266,10 +325,7 @@ namespace DCL.ABConverter
 
         private void OnFinish()
         {
-            if (settings.cleanAndExitOnFinish)
-            {
-                CleanAndExit(CurrentState.lastErrorCode);
-            }
+            if (settings.cleanAndExitOnFinish) { CleanAndExit(CurrentState.lastErrorCode); }
         }
 
         /// <summary>
@@ -278,10 +334,7 @@ namespace DCL.ABConverter
         /// <param name="assetPaths">The paths to be built.</param>
         private void MarkAllAssetBundles(List<AssetPath> assetPaths)
         {
-            foreach (var assetPath in assetPaths)
-            {
-                Utils.MarkFolderForAssetBundleBuild(assetPath.finalPath, assetPath.hash);
-            }
+            foreach (var assetPath in assetPaths) { Utils.MarkFolderForAssetBundleBuild(assetPath.finalPath, assetPath.hash); }
         }
 
         /// <summary>
@@ -290,10 +343,7 @@ namespace DCL.ABConverter
         /// <param name="errorCode">final errorCode of the conversion process</param>
         public void CleanAndExit(ErrorCodes errorCode)
         {
-            foreach (KeyValuePair<string, GltfImport> keyValuePair in gltfToWait)
-            {
-                keyValuePair.Value.Dispose();
-            }
+            foreach (KeyValuePair<string, GltfImport> keyValuePair in gltfToWait) { keyValuePair.Value.Dispose(); }
 
             float conversionTime = Time.realtimeSinceStartup - startTime;
             logBuffer = $"Conversion finished!. last error code = {errorCode}";
@@ -302,17 +352,14 @@ namespace DCL.ABConverter
             logBuffer += $"Converted {totalAssets - skippedAssets} of {totalAssets}. (Skipped {skippedAssets})\n";
             logBuffer += $"Total time: {conversionTime}";
 
-            if (totalAssets > 0)
-            {
-                logBuffer += $"... Time per asset: {conversionTime / totalAssets}\n";
-            }
+            if (totalAssets > 0) { logBuffer += $"... Time per asset: {conversionTime / totalAssets}\n"; }
 
             logBuffer += "\n";
             logBuffer += logBuffer;
 
             log.Info(logBuffer);
 
-            CleanupWorkingFolders();
+            //CleanupWorkingFolders();
 
             Utils.Exit((int)errorCode);
         }
@@ -451,7 +498,8 @@ namespace DCL.ABConverter
             List<AssetPath> bufferPaths =
                 Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.bufferExtensions);
 
-            List<AssetPath> texturePaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
+            List<AssetPath> texturePaths =
+                Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
 
             if (!FilterDumpList(ref gltfPaths))
                 return false;
@@ -463,10 +511,7 @@ namespace DCL.ABConverter
             AddAssetPathsToContentTable(texturePaths);
             AddAssetPathsToContentTable(bufferPaths);
 
-            foreach (var gltfPath in gltfPaths)
-            {
-                assetsToMark.Add(DownloadGltf(gltfPath));
-            }
+            foreach (var gltfPath in gltfPaths) { assetsToMark.Add(DownloadGltf(gltfPath)); }
 
             return true;
         }
@@ -498,18 +543,15 @@ namespace DCL.ABConverter
                 int gltfCount = gltfPaths.Count;
 
                 gltfPaths = gltfPaths.Where(
-                        assetPath =>
-                            !env.file.Exists(settings.finalAssetBundlePath + assetPath.hash))
-                    .ToList();
+                                          assetPath =>
+                                              !env.file.Exists(settings.finalAssetBundlePath + assetPath.hash))
+                                     .ToList();
 
                 int skippedCount = gltfCount - gltfPaths.Count;
                 skippedAssets = skippedCount;
                 shouldBuildAssetBundles = gltfPaths.Count == 0;
             }
-            else
-            {
-                shouldBuildAssetBundles = false;
-            }
+            else { shouldBuildAssetBundles = false; }
 
             if (shouldBuildAssetBundles)
             {
@@ -644,14 +686,12 @@ namespace DCL.ABConverter
             {
                 if (isGltf)
                 {
-                    Debug.Log(outputPath);
                     gltfToWait[outputPath] = CreateGltfImport(outputPath);
                     gltfOriginalNames[outputPath] = assetPath.file;
                 }
                 else
                 {
-                    env.assetDatabase.ImportAsset(outputPath,
-                        ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ImportRecursive);
+                    env.assetDatabase.ImportAsset(outputPath, ImportAssetOptions.ForceUpdate);
                 }
             }
 
@@ -726,14 +766,8 @@ namespace DCL.ABConverter
             if (width < maxTextureSize && height < maxTextureSize)
                 return;
 
-            if (width >= height)
-            {
-                factor = (float)maxTextureSize / width;
-            }
-            else
-            {
-                factor = (float)maxTextureSize / height;
-            }
+            if (width >= height) { factor = (float)maxTextureSize / width; }
+            else { factor = (float)maxTextureSize / height; }
 
             Texture2D dstTex = Utils.ResizeTexture(tmpTex, (int)(width * factor), (int)(height * factor));
             byte[] endTex = dstTex.EncodeToPNG();
@@ -741,7 +775,7 @@ namespace DCL.ABConverter
 
             File.WriteAllBytes(finalTexturePath, endTex);
 
-            AssetDatabase.ImportAsset(finalTexturePath, ImportAssetOptions.ForceUpdate);
+            AssetDatabase.ImportAsset(PathUtils.GetRelativePathTo(Application.dataPath, finalTexturePath), ImportAssetOptions.ForceUpdate);
             AssetDatabase.SaveAssets();
         }
 
@@ -792,7 +826,7 @@ namespace DCL.ABConverter
 
             return path != null ? gltfPath : null;
         }
-        
+
         /// <summary>
         /// This method tags the main shader, so all the asset bundles don't contain repeated shader assets.
         /// This way we save the big Shader.Parse and gpu compiling performance overhead and make
@@ -808,10 +842,11 @@ namespace DCL.ABConverter
 
             if (!result)
             {
-                log.Error($"Failed to mark {PathUtils.GetRelativePathTo(Application.dataPath, env.assetDatabase.GetAssetPath(mainShader))} as asset bundle");
+                log.Error(
+                    $"Failed to mark {PathUtils.GetRelativePathTo(Application.dataPath, env.assetDatabase.GetAssetPath(mainShader))} as asset bundle");
             }
         }
-        
+
         private void ProcessSkippedAssets(int skippedAssetsCount)
         {
             if (skippedAssetsCount <= 0)
@@ -819,7 +854,9 @@ namespace DCL.ABConverter
 
             skippedAssets = skippedAssetsCount;
 
-            CurrentState.lastErrorCode = skippedAssets >= totalAssets ? ErrorCodes.ASSET_BUNDLE_BUILD_FAIL : ErrorCodes.VISUAL_TEST_FAILED;
+            CurrentState.lastErrorCode = skippedAssets >= totalAssets
+                ? ErrorCodes.ASSET_BUNDLE_BUILD_FAIL
+                : ErrorCodes.VISUAL_TEST_FAILED;
         }
     }
 }

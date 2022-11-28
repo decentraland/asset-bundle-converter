@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using AssetBundleConverter.Wrappers.Implementations.Default;
+using DCL.ABConverter;
 using GLTFast.Editor;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEditor.AssetImporters;
 using UnityEngine;
@@ -23,7 +25,7 @@ namespace AssetBundleConverter.Editor
             this.path = path;
         }
     }
-    
+
     [ScriptedImporter(1, new[] { "gltf", "glb" })]
     public class CustomGltfImporter : GltfImporter
     {
@@ -44,8 +46,6 @@ namespace AssetBundleConverter.Editor
             var renderers = ((GameObject)ctx.mainObject).GetComponentsInChildren<Renderer>(true);
             var materials = SimplifyMaterials(renderers);
 
-            //FixMaterialNames(materials);
-            
             textureNames = new List<string>();
             textureHash = new HashSet<Texture2D>();
             texMaterialMap = new Dictionary<Texture2D, List<TexMaterialMap>>();
@@ -53,17 +53,14 @@ namespace AssetBundleConverter.Editor
             normals = new HashSet<Texture2D>();
             metallics = new HashSet<Texture2D>();
             var textures = materials.SelectMany(GetTexturesFromMaterial).ToList();
-            
-            CreateTextureAssets(textures, folderName);
 
-            List<Material> materialCopies = CreateMaterialAssets(materials, folderName, renderers);
-            
-            // fix texture references
-            FixTextureReferences(textures, folderName, materials, materialCopies);
+            FixTextureReferences(textures, folderName, materials);
+            CreateMaterialAssets(materials, folderName, renderers);
         }
 
-        private void FixTextureReferences(List<Texture2D> textures, string folderName, List<Material> materials, List<Material> materialCopies)
+        private void FixTextureReferences(List<Texture2D> textures, string folderName, List<Material> materials)
         {
+            var separator = Path.DirectorySeparatorChar;
             if (textures.Count > 0)
             {
                 for (var i = 0; i < textures.Count; ++i)
@@ -74,24 +71,25 @@ namespace AssetBundleConverter.Editor
 
                     if (string.IsNullOrEmpty(texPath))
                     {
-                        texPath = $"{folderName}/Textures/{tex.name}.png";
+                        texPath = $"{folderName}{separator}Textures{separator}{tex.name}.png";
                     }
 
-                    var importedTex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
-                    var importer = (TextureImporter)GetAtPath(texPath);
+                    texPath = texPath.Replace(separator, '/');
 
-                    if (importer != null)
+                    texPath = Regex.Replace(texPath, @"\s+", "");
+                    var importedTex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
+                    var importer = GetAtPath(texPath);
+
+                    if (importer is TextureImporter tImporter)
                     {
-                        importer.isReadable = false;
+                        tImporter.isReadable = false;
                         var isNormalMap = true;
 
-                        for (var matIndex = 0; matIndex < materials.Count; matIndex++)
+                        foreach (var material in materials)
                         {
-                            var originalMaterial = materials[matIndex];
-
                             foreach (var materialMap in materialMaps)
                             {
-                                if (materialMap.Material == originalMaterial)
+                                if (materialMap.Material == material)
                                 {
                                     //NOTE(Brian): Only set as normal map if is exclusively
                                     //             used for that.
@@ -99,7 +97,8 @@ namespace AssetBundleConverter.Editor
                                     if (!materialMap.IsNormalMap)
                                         isNormalMap = false;
 
-                                    materialCopies[matIndex].SetTexture(materialMap.Property, importedTex);
+                                    material.SetTexture(materialMap.Property, importedTex);
+                                    EditorUtility.SetDirty(material);
                                 }
                             }
                         }
@@ -107,34 +106,33 @@ namespace AssetBundleConverter.Editor
                         if (isNormalMap)
                         {
                             // Try to auto-detect normal maps
-                            importer.textureType = TextureImporterType.NormalMap;
+                            tImporter.textureType = TextureImporterType.NormalMap;
                         }
-                        else if (importer.textureType == TextureImporterType.Sprite)
+                        else if (tImporter.textureType == TextureImporterType.Sprite)
                         {
                             // Force disable sprite mode, even for 2D projects
-                            importer.textureType = TextureImporterType.Default;
+                            tImporter.textureType = TextureImporterType.Default;
                         }
-                        
-                        importer.crunchedCompression = true;
-                        importer.sRGBTexture = !metallics.Contains(tex);
-                        importer.compressionQuality = 100;
-                        importer.textureCompression = TextureImporterCompression.CompressedHQ;
-                        
+
+                        tImporter.crunchedCompression = true;
+                        tImporter.sRGBTexture = !metallics.Contains(tex);
+                        tImporter.compressionQuality = 100;
+                        tImporter.textureCompression = TextureImporterCompression.CompressedHQ;
+
                         // With this we avoid re-importing this glb as it may contain invalid references to textures
-                        EditorUtility.SetDirty(importer);
+                        EditorUtility.SetDirty(tImporter);
+                        tImporter.SaveAndReimport();
                     }
                     else
                     {
-                        Debug.LogWarning(string.Format("GLTFImporter: Unable to import texture at path: {0}",
-                            texPath));
+                        Debug.LogWarning($"GLTFImporter: Unable to import texture at path: {texPath}");
                     }
                 }
             }
         }
 
-        private List<Material> CreateMaterialAssets(List<Material> materials, string folderName, Renderer[] renderers)
+        private void CreateMaterialAssets(List<Material> materials, string folderName, Renderer[] renderers)
         {
-            var materialCopies = new List<Material>(materials);
             if (materials.Count > 0)
             {
                 var materialRoot = string.Concat(folderName, "/", "Materials/");
@@ -147,8 +145,6 @@ namespace AssetBundleConverter.Editor
 
                     CopyOrNew(mat, materialPath, m =>
                     {
-                        materialCopies[i] = m;
-
                         foreach (var r in renderers)
                         {
                             var sharedMaterials = r.sharedMaterials;
@@ -170,8 +166,6 @@ namespace AssetBundleConverter.Editor
                     });
                 }
             }
-
-            return materialCopies;
         }
 
         private void FixMaterialNames(List<Material> materials)
@@ -193,56 +187,6 @@ namespace AssetBundleConverter.Editor
 
                     mat.name = matName;
                     assetNames.Add(matName);
-                }
-            }
-        }
-
-        private void CreateTextureAssets(List<Texture2D> textures, string folderName)
-        {
-            if (textures.Count > 0)
-            {
-                var texturesRoot = $"{folderName}/Textures/";
-
-                for (int i = 0; i < textures.Count; i++)
-                {
-                    var tex = textures[i];
-                    var ext = ".png";
-                    var texPath = string.Concat(texturesRoot, tex.name, ext);
-                    var absolutePath = $"{Application.dataPath}/../{texPath}";
-                    var texturePath = AssetDatabase.GetAssetPath(tex);
-
-                    if (File.Exists(absolutePath) || !string.IsNullOrEmpty(texturePath))
-                        continue;
-
-                    if (!Directory.Exists(texturesRoot))
-                        Directory.CreateDirectory(texturesRoot);
-
-                    if (tex.isReadable)
-                    {
-                        File.WriteAllBytes(texPath, tex.EncodeToPNG());
-                    }
-                    else
-                    {
-                        RenderTexture tmp = RenderTexture.GetTemporary(
-                            tex.width,
-                            tex.height,
-                            0,
-                            RenderTextureFormat.Default,
-                            RenderTextureReadWrite.Linear);
-
-                        Graphics.Blit(tex, tmp);
-                        RenderTexture previous = RenderTexture.active;
-                        RenderTexture.active = tmp;
-                        Texture2D readableTexture = new Texture2D(tex.width, tex.height);
-                        readableTexture.ReadPixels(new Rect(0, 0, tmp.width, tmp.height), 0, 0);
-                        readableTexture.Apply();
-                        RenderTexture.active = previous;
-                        RenderTexture.ReleaseTemporary(tmp);
-
-                        File.WriteAllBytes(texPath, readableTexture.EncodeToPNG());
-                    }
-
-                    AssetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
                 }
             }
         }
@@ -318,7 +262,7 @@ namespace AssetBundleConverter.Editor
             return matTextures;
         }
 
-        
+
         protected override void CreateTextureAssets(AssetImportContext ctx)
         {
             // intended nothingness
@@ -328,14 +272,16 @@ namespace AssetBundleConverter.Editor
         {
             contentTable = new Dictionary<string, string>();
 
+            if (contentMaps == null || contentMaps.Length == 0) return;
+
             foreach (ContentMap contentMap in contentMaps)
             {
                 contentTable.Add(contentMap.file, contentMap.path);
             }
-            
+
             SetupExternalDependencies(GetDependenciesPaths);
             SetupCustomMaterialGenerator(new AssetBundleConverterMaterialGenerator());
-            
+
             base.OnImportAsset(ctx);
         }
 
@@ -367,6 +313,8 @@ namespace AssetBundleConverter.Editor
             try
             {
                 AssetDatabase.CreateAsset(asset, assetPath);
+                existingAsset = AssetDatabase.LoadAssetAtPath<T>(assetPath);
+                replaceReferences(existingAsset);
             }
             catch (Exception e)
             {
@@ -398,7 +346,7 @@ namespace AssetBundleConverter.Editor
                 IsNormalMap = isNormalMap;
             }
         }
-        
+
         private Uri GetDependenciesPaths(Uri url)
         {
             try
