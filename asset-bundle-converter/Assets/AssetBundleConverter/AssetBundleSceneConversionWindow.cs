@@ -1,6 +1,7 @@
 ﻿using System.Threading.Tasks;
 using DCL;
 using DCL.ABConverter;
+using System;
 using UnityEditor;
 using UnityEngine;
 
@@ -16,6 +17,7 @@ namespace AssetBundleConverter
         private readonly string[] tabs = { TAB_SCENE, TAB_PARCELS };
 
         private string entityId = "QmYy2TMDEfag99yZV4ZdpjievYUfdQgBVfFHKCDAge3zQi";
+        private string debugEntity = "bafkreib66ufmbowp4ee2u3kdu6t52kouie7kd7tfrlv3l5kejz6yjcaq5i";
         private string endPoint = "/content/contents/";
         private bool visualTest = false;
         private bool clearDownloads = true;
@@ -27,6 +29,7 @@ namespace AssetBundleConverter
         private ContentServerUtils.ApiTLD tld = ContentServerUtils.ApiTLD.ORG;
 
         private ClientSettings clientSettings;
+        private bool showDebugOptions;
 
         [MenuItem("Decentraland/Asset Bundle Converter")]
         private static void Init()
@@ -45,25 +48,16 @@ namespace AssetBundleConverter
             visualTest = EditorGUILayout.Toggle("Visual Test", visualTest);
             createAssetBundle = EditorGUILayout.Toggle("Create Asset Bundle", createAssetBundle);
             clearDownloads = EditorGUILayout.Toggle("Clear Downloads", clearDownloads);
+            showDebugOptions = EditorGUILayout.Toggle("Show debug options", showDebugOptions);
             endPoint = EditorGUILayout.TextField("Content endpoint", endPoint);
             tld = (ContentServerUtils.ApiTLD)EditorGUILayout.EnumPopup("Top level domain", tld);
             GUILayout.Space(5);
 
             currentTab = GUILayout.Toolbar(currentTab, tabs);
 
+            RenderDebugOptions();
+
             GUILayout.Space(5);
-
-            // todo: de-static-ize this
-            ContentServerUtils.customEndpoint = endPoint;
-
-            clientSettings = new ClientSettings
-            {
-                visualTest = visualTest,
-                cleanAndExitOnFinish = false,
-                tld = tld,
-                createAssetBundle = createAssetBundle,
-                clearDirectoriesOnStart = clearDownloads
-            };
 
             switch (currentTab)
             {
@@ -76,6 +70,17 @@ namespace AssetBundleConverter
             }
         }
 
+        private void RenderDebugOptions()
+        {
+            if (!showDebugOptions) return;
+            GUILayout.Space(5);
+            Color defaultColor = GUI.color;
+            GUI.color = Color.green;
+            debugEntity = EditorGUILayout.TextField("Import only hash", debugEntity);
+            GUI.color = defaultColor;
+            GUILayout.Space(5);
+        }
+
         private async Task RenderEntityByIdAsync()
         {
             entityId = EditorGUILayout.TextField("ID", entityId);
@@ -84,9 +89,26 @@ namespace AssetBundleConverter
 
             if (GUILayout.Button("Start"))
             {
+                SetupSettings();
                 var state = await SceneClient.ConvertEntityById(entityId, clientSettings);
                 OnConversionEnd(state);
             }
+        }
+
+        private void SetupSettings()
+        {
+            // todo: de-static-ize this
+            ContentServerUtils.customEndpoint = endPoint;
+
+            clientSettings = new ClientSettings
+            {
+                visualTest = visualTest,
+                cleanAndExitOnFinish = false,
+                tld = tld,
+                createAssetBundle = createAssetBundle,
+                clearDirectoriesOnStart = clearDownloads,
+                importOnlyEntity = showDebugOptions ? debugEntity : ""
+            };
         }
 
         private async Task RenderEntityByPointerAsync()
@@ -98,6 +120,7 @@ namespace AssetBundleConverter
 
             if (GUILayout.Button("Start"))
             {
+                SetupSettings();
                 var targetPosition = new Vector2Int(xCoord, yCoord);
                 var state = await SceneClient.ConvertEntityByPointer(targetPosition, clientSettings);
                 OnConversionEnd(state);

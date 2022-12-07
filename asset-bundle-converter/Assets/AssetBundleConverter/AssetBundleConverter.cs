@@ -47,17 +47,17 @@ namespace DCL.ABConverter
         private const string VERSION = "3.0";
         private const string MAIN_SHADER_AB_NAME = "MainShader_Delete_Me";
 
-        private static Logger log = new Logger("[AssetBundleConverter]");
-        private readonly Dictionary<string, string> lowerCaseHashes = new Dictionary<string, string>();
-        public State CurrentState { get; } = new State();
+        private static Logger log = new ("[AssetBundleConverter]");
+        private readonly Dictionary<string, string> lowerCaseHashes = new ();
+        public State CurrentState { get; } = new ();
         private Environment env;
         private ClientSettings settings;
         private readonly string finalDownloadedPath;
         private readonly string finalDownloadedAssetDbPath;
-        private List<AssetPath> assetsToMark = new List<AssetPath>();
-        private Dictionary<string, GltfImport> gltfToWait = new Dictionary<string, GltfImport>();
-        private Dictionary<string, string> contentTable = new Dictionary<string, string>();
-        private Dictionary<string, string> gltfOriginalNames = new Dictionary<string, string>();
+        private List<AssetPath> assetsToMark = new ();
+        private Dictionary<string, GltfImport> gltfToWait = new ();
+        private Dictionary<string, string> contentTable = new ();
+        private Dictionary<string, string> gltfOriginalNames = new ();
         private string logBuffer;
         private int totalAssets;
         private float startTime;
@@ -137,7 +137,7 @@ namespace DCL.ABConverter
 
                 if (settings.visualTest)
                 {
-                    bool result = await VisualTests.TestConvertedAssets(env: env);
+                    bool result = await VisualTests.TestConvertedAssets(env, settings, assetsToMark);
 
                     if (!result)
                     {
@@ -178,7 +178,17 @@ namespace DCL.ABConverter
                 loadedGltf++;
                 log.Verbose($"Starting to import gltf {gltfUrl}");
 
-                try { await gltfImport.Load(gltfUrl); }
+                try
+                {
+                    var importSettings = new ImportSettings
+                    {
+                        animationMethod = ImportSettings.AnimationMethod.Legacy,
+                        anisotropicFilterLevel = 0,
+                        generateMipMaps = false,
+                    };
+
+                    await gltfImport.Load(gltfUrl, importSettings);
+                }
                 catch (Exception)
                 {
                     EditorUtility.ClearProgressBar();
@@ -226,10 +236,7 @@ namespace DCL.ABConverter
 
                 var textures = new List<Texture2D>();
 
-                for (int i = 0; i < gltfImport.textureCount; i++)
-                {
-                    textures.Add(gltfImport.GetTexture(i));
-                }
+                for (int i = 0; i < gltfImport.textureCount; i++) { textures.Add(gltfImport.GetTexture(i)); }
 
                 var directory = Path.GetDirectoryName(relativePath);
                 CreateTextureAssets(textures, directory);
@@ -242,6 +249,7 @@ namespace DCL.ABConverter
 
                 if (gltfImporter != null)
                 {
+                    gltfImporter.importWithoutContentTable = false;
                     gltfImporter.importSettings.animationMethod = ImportSettings.AnimationMethod.Legacy;
                     gltfImporter.importSettings.generateMipMaps = false;
                     gltfImporter.contentMaps = contentTable.Select(kvp => new ContentMap(kvp.Key, kvp.Value)).ToArray();
@@ -287,10 +295,7 @@ namespace DCL.ABConverter
                     if (!Directory.Exists(texturesRoot))
                         Directory.CreateDirectory(texturesRoot);
 
-                    if (tex.isReadable)
-                    {
-                        File.WriteAllBytes(texPath, tex.EncodeToPNG());
-                    }
+                    if (tex.isReadable) { File.WriteAllBytes(texPath, tex.EncodeToPNG()); }
                     else
                     {
                         RenderTexture tmp = RenderTexture.GetTemporary(
@@ -311,6 +316,7 @@ namespace DCL.ABConverter
 
                         File.WriteAllBytes(texPath, readableTexture.EncodeToPNG());
                     }
+
                     texPath = texPath.Replace('\\', '/');
                     AssetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
                     Debug.Log($"[AB Converter]created texture at {texPath}");
@@ -407,12 +413,15 @@ namespace DCL.ABConverter
         {
             logBuffer = "";
 
-            env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate |
-                                      ImportAssetOptions.ImportRecursive);
+            var startTime = EditorApplication.timeSinceStartup;
+
+            env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 
             env.assetDatabase.SaveAssets();
 
             env.assetDatabase.MoveAsset(finalDownloadedPath, Config.DOWNLOADED_PATH_ROOT);
+
+            var afterRefreshTime = EditorApplication.timeSinceStartup;
 
             // 1. Convert flagged folders to asset bundles only to automatically get dependencies for the metadata
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
@@ -426,19 +435,29 @@ namespace DCL.ABConverter
                 return false;
             }
 
+            var afterFirstBuild = EditorApplication.timeSinceStartup;
+
             // 2. Create metadata (dependencies, version, timestamp) and store in the target folders to be converted again later with the metadata inside
             AssetBundleMetadataBuilder.Generate(env.file, finalDownloadedPath, lowerCaseHashes, manifest, VERSION,
                 MAIN_SHADER_AB_NAME);
 
-            env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate |
-                                      ImportAssetOptions.ImportRecursive);
+            env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 
             env.assetDatabase.SaveAssets();
+
+            var afterSecondRefresh = EditorApplication.timeSinceStartup;
 
             // 3. Convert flagged folders to asset bundles again but this time they have the metadata file inside
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
                 BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle,
                 BuildTarget.WebGL);
+
+            var afterSecondBuild = EditorApplication.timeSinceStartup;
+
+            logBuffer += $"Step 0: {afterRefreshTime - startTime}\n";
+            logBuffer += $"Step 1: {afterFirstBuild - afterRefreshTime}\n";
+            logBuffer += $"Step 2: {afterSecondRefresh - afterFirstBuild}\n";
+            logBuffer += $"Step 3: {afterSecondBuild - afterSecondRefresh}\n";
 
             logBuffer += $"Generating asset bundles at path: {settings.finalAssetBundlePath}\n";
 
@@ -511,7 +530,16 @@ namespace DCL.ABConverter
             AddAssetPathsToContentTable(texturePaths);
             AddAssetPathsToContentTable(bufferPaths);
 
-            foreach (var gltfPath in gltfPaths) { assetsToMark.Add(DownloadGltf(gltfPath)); }
+            foreach (var gltfPath in gltfPaths)
+            {
+                if (!string.IsNullOrEmpty(settings.importOnlyEntity))
+                {
+                    if (!string.Equals(gltfPath.hash, settings.importOnlyEntity, StringComparison.CurrentCultureIgnoreCase))
+                        continue;
+                }
+
+                assetsToMark.Add(DownloadGltf(gltfPath));
+            }
 
             return true;
         }
@@ -689,10 +717,7 @@ namespace DCL.ABConverter
                     gltfToWait[outputPath] = CreateGltfImport(outputPath);
                     gltfOriginalNames[outputPath] = assetPath.file;
                 }
-                else
-                {
-                    env.assetDatabase.ImportAsset(outputPath, ImportAssetOptions.ForceUpdate);
-                }
+                else { env.assetDatabase.ImportAsset(outputPath, ImportAssetOptions.ForceUpdate); }
             }
 
             if (env.file.Exists(outputPath))

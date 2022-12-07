@@ -48,6 +48,7 @@ namespace DCL.ABConverter
             public bool cleanAndExitOnFinish = true;
             public bool visualTest = true;
             public bool createAssetBundle;
+            public string importOnlyEntity;
 
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 

@@ -29,6 +29,8 @@ namespace AssetBundleConverter.Editor
     [ScriptedImporter(1, new[] { "gltf", "glb" })]
     public class CustomGltfImporter : GltfImporter
     {
+        [SerializeField] public bool importWithoutContentTable = true;
+        [SerializeField] public bool ignoreCustomMaterial = false;
         [SerializeField] public ContentMap[] contentMaps;
         private Dictionary<string,string> contentTable;
 
@@ -39,6 +41,30 @@ namespace AssetBundleConverter.Editor
         private HashSet<Texture2D> baseColor;
         private HashSet<Texture2D> normals;
         private HashSet<Texture2D> metallics;
+
+        public override void OnImportAsset(AssetImportContext ctx)
+        {
+            if (!importWithoutContentTable)
+            {
+                contentTable = new Dictionary<string, string>();
+
+                if (contentMaps == null || contentMaps.Length == 0) return;
+
+                foreach (ContentMap contentMap in contentMaps)
+                {
+                    contentTable.Add(contentMap.file, contentMap.path);
+                }
+
+                SetupExternalDependencies(GetDependenciesPaths);
+            }
+
+            if (!ignoreCustomMaterial)
+            {
+                SetupCustomMaterialGenerator(new AssetBundleConverterMaterialGenerator());
+            }
+
+            base.OnImportAsset(ctx);
+        }
 
         protected override void CreateMaterialAssets(AssetImportContext ctx)
         {
@@ -118,6 +144,7 @@ namespace AssetBundleConverter.Editor
                         tImporter.sRGBTexture = !metallics.Contains(tex);
                         tImporter.compressionQuality = 100;
                         tImporter.textureCompression = TextureImporterCompression.CompressedHQ;
+                        tImporter.mipmapEnabled = false;
 
                         // With this we avoid re-importing this glb as it may contain invalid references to textures
                         EditorUtility.SetDirty(tImporter);
@@ -266,23 +293,6 @@ namespace AssetBundleConverter.Editor
         protected override void CreateTextureAssets(AssetImportContext ctx)
         {
             // intended nothingness
-        }
-
-        public override void OnImportAsset(AssetImportContext ctx)
-        {
-            contentTable = new Dictionary<string, string>();
-
-            if (contentMaps == null || contentMaps.Length == 0) return;
-
-            foreach (ContentMap contentMap in contentMaps)
-            {
-                contentTable.Add(contentMap.file, contentMap.path);
-            }
-
-            SetupExternalDependencies(GetDependenciesPaths);
-            SetupCustomMaterialGenerator(new AssetBundleConverterMaterialGenerator());
-
-            base.OnImportAsset(ctx);
         }
 
         private string PatchInvalidFileNameChars(string fileName)

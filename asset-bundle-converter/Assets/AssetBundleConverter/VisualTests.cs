@@ -4,6 +4,7 @@ using System.IO;
 using System;
 using System.Threading.Tasks;
 using DCL.Helpers;
+using System.Linq;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -25,7 +26,7 @@ namespace DCL.ABConverter
         /// Instantiate all locally-converted GLTFs in both formats (GLTF and Asset Bundle) and
         /// compare them visually. If a visual test fails, the AB is deleted to avoid uploading it
         /// </summary>
-        public static async Task<bool> TestConvertedAssets(Environment env = null, Action<int> OnFinish = null)
+        public static async Task<bool> TestConvertedAssets(Environment env, ClientSettings clientSettings, List<AssetPath> assetsToMark, Action<int> OnFinish = null)
         {
             if (Utils.ParseOption(Config.CLI_SET_CUSTOM_OUTPUT_ROOT_PATH, 1, out string[] outputPath))
             {
@@ -33,10 +34,7 @@ namespace DCL.ABConverter
 
                 Debug.Log($"Visual Test Detection: -output PATH param found, setting ABPath as '{abPath}'");
             }
-            else
-            {
-                Debug.Log($"Visual Test Detection: -output PATH param NOT found, setting ABPath as '{abPath}'");
-            }
+            else { Debug.Log($"Visual Test Detection: -output PATH param NOT found, setting ABPath as '{abPath}'"); }
 
             if (!System.IO.Directory.Exists(abPath))
             {
@@ -57,14 +55,14 @@ namespace DCL.ABConverter
             AssetBundlesVisualTestUtils.testImagesPath += "ABConverter/";
             skippedAssets = 0;
 
-            var gltfs = LoadAndInstantiateAllGltfAssets();
+            var gltfs = LoadAndInstantiateAllGltfAssets(clientSettings, assetsToMark);
 
             if (gltfs.Length == 0)
             {
                 Debug.Log("Visual Test Detection: no instantiated GLTFs...");
                 SkipAllAssets();
                 OnFinish?.Invoke(skippedAssets);
-                
+
                 return false;
             }
 
@@ -73,10 +71,7 @@ namespace DCL.ABConverter
 
             AssetBundlesVisualTestUtils.generateBaseline = true;
 
-            foreach (GameObject go in gltfs)
-            {
-                go.SetActive(false);
-            }
+            foreach (GameObject go in gltfs) { go.SetActive(false); }
 
             foreach (GameObject go in gltfs)
             {
@@ -90,7 +85,7 @@ namespace DCL.ABConverter
             AssetBundlesVisualTestUtils.generateBaseline = false;
 
             var abs = LoadAndInstantiateAllAssetBundles();
-            
+
             if (abs.Length == 0)
             {
                 Debug.Log("Visual Test Detection: no instantiated ABs...");
@@ -105,12 +100,9 @@ namespace DCL.ABConverter
 
                 foreach (Renderer renderer in renderers)
                 {
-                    if (renderer.name.ToLower().Contains("_collider"))
-                    {
-                        renderer.enabled = false;
-                    }
+                    if (renderer.name.ToLower().Contains("_collider")) { renderer.enabled = false; }
                 }
-                
+
                 go.SetActive(false);
             }
 
@@ -132,6 +124,7 @@ namespace DCL.ABConverter
                 if (!result && env != null)
                 {
                     string filePath = abPath + go.name;
+
                     if (env.file.Exists(filePath))
                     {
                         env.file.Delete(filePath);
@@ -159,16 +152,16 @@ namespace DCL.ABConverter
 
         public static async Task WaitUntil(Func<bool> predicate, int sleep = 50)
         {
-            while (!predicate())
-            {
-                await Task.Delay(sleep);
-            }
+            while (!predicate()) { await Task.Delay(sleep); }
         }
-        
+
         /// <summary>
         /// Set skippedAssets to the amount of target assets
         /// </summary>
-        private static void SkipAllAssets() { skippedAssets = AssetDatabase.FindAssets($"t:GameObject", new[] { "Assets/_Downloaded" }).Length; }
+        private static void SkipAllAssets()
+        {
+            skippedAssets = AssetDatabase.FindAssets($"t:GameObject", new[] { "Assets/_Downloaded" }).Length;
+        }
 
         /// <summary>
         /// Position camera based on renderer bounds and take snapshot
@@ -203,34 +196,62 @@ namespace DCL.ABConverter
         /// <summary>
         /// Instantiate all local GLTFs found in the "_Downloaded" directory
         /// </summary>
-        public static GameObject[] LoadAndInstantiateAllGltfAssets()
+        /// <param name="clientSettings"></param>
+        /// <param name="assetsToMark"></param>
+        private static GameObject[] LoadAndInstantiateAllGltfAssets(ClientSettings clientSettings, List<AssetPath> assetsToMark)
         {
-            var assets = AssetDatabase.FindAssets($"t:GameObject", new[] { "Assets/_Downloaded" });
+            List<GameObject> importedGltFs = new List<GameObject>();
 
-            List<GameObject> importedGLTFs = new List<GameObject>();
+            if (!string.IsNullOrEmpty(clientSettings.importOnlyEntity))
+                importedGltFs.Add(ImportSingleGltfFromPath(clientSettings, assetsToMark));
+            else
+                importedGltFs.AddRange(ImportGltfsFromDownloadedAssets());
 
-            foreach (var guid in assets)
+            return importedGltFs.ToArray();
+        }
+
+        private static List<GameObject> ImportGltfsFromDownloadedAssets()
+        {
+            List<GameObject> importedGltFs = new List<GameObject>();
+            string[] assets = AssetDatabase.FindAssets($"t:GameObject", new[] { "Assets/_Downloaded" });
+
+            foreach (string guid in assets)
             {
                 GameObject gltf = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(guid));
-                var importedGLTF = Object.Instantiate(gltf);
-                importedGLTF.name = importedGLTF.name.Replace("(Clone)", "");
-
-                PatchSkeletonlessSkinnedMeshRenderer(importedGLTF.gameObject.GetComponentInChildren<SkinnedMeshRenderer>());
-
-                var renderers = importedGLTF.GetComponentsInChildren<Renderer>(true);
-
-                foreach (Renderer renderer in renderers)
-                {
-                    if (renderer.name.ToLower().Contains("_collider"))
-                    {
-                        renderer.enabled = false;
-                    }
-                }
-
-                importedGLTFs.Add(importedGLTF);
+                var importedGltf = Object.Instantiate(gltf);
+                SetupGameObjectGltf(importedGltf);
+                importedGltFs.Add(importedGltf);
             }
 
-            return importedGLTFs.ToArray();
+            return importedGltFs;
+        }
+
+        private static GameObject ImportSingleGltfFromPath(ClientSettings clientSettings, List<AssetPath> AssetsToMark)
+        {
+            var assetPath = AssetsToMark.First(p =>
+                string.Equals(p.hash, clientSettings.importOnlyEntity, StringComparison.CurrentCultureIgnoreCase));
+
+            var path = assetPath.finalPath;
+            string relativePathTo = PathUtils.GetRelativePathTo(Application.dataPath, path);
+
+            GameObject gltf = AssetDatabase.LoadAssetAtPath<GameObject>(relativePathTo);
+            var importedGltf = Object.Instantiate(gltf);
+            SetupGameObjectGltf(importedGltf);
+
+            return importedGltf;
+        }
+
+        private static void SetupGameObjectGltf(GameObject importedGLTF)
+        {
+            importedGLTF.name = importedGLTF.name.Replace("(Clone)", "");
+
+            PatchSkeletonlessSkinnedMeshRenderer(importedGLTF.gameObject.GetComponentInChildren<SkinnedMeshRenderer>());
+
+            var renderers = importedGLTF.GetComponentsInChildren<Renderer>(true);
+
+            foreach (Renderer renderer in renderers)
+                if (renderer.name.ToLower().Contains("_collider"))
+                    renderer.enabled = false;
         }
 
         /// <summary>
@@ -258,10 +279,7 @@ namespace DCL.ABConverter
                 if (guids.Length == 0)
                 {
                     // We need to avoid adding dependencies that are NOT converted to ABs (like .bin files)
-                    if (AssetDatabase.FindAssets("t:Texture", new[] { path }).Length != 0)
-                    {
-                        dependencyAbs.Add(hash);
-                    }
+                    if (AssetDatabase.FindAssets("t:Texture", new[] { path }).Length != 0) { dependencyAbs.Add(hash); }
                 }
                 else
                 {
@@ -325,6 +343,7 @@ namespace DCL.ABConverter
                     if (asset is Material material)
                     {
                         material.shader = Shader.Find("DCL/Universal Render Pipeline/Lit");
+                        SRPBatchingHelper.OptimizeMaterial(material);
                     }
 
                     if (asset is GameObject assetAsGameObject)
@@ -341,10 +360,7 @@ namespace DCL.ABConverter
                 loadedAbs.Add(assetBundle);
             }
 
-            foreach (var ab in loadedAbs)
-            {
-                ab.Unload(false);
-            }
+            foreach (var ab in loadedAbs) { ab.Unload(false); }
 
             return results.ToArray();
         }

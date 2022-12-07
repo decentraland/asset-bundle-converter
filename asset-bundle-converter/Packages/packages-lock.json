@@ -19,7 +19,7 @@
         "com.unity.mathematics": "1.2.6",
         "com.unity.burst": "1.6.6"
       },
-      "hash": "bc2daacc37635357cba1e79aef6b23d6ba51319e"
+      "hash": "631992d1a2c6b24d6e6b0c1b0d00d18a3429ccf1"
     },
     "com.atteneder.ktx": {
       "version": "2.2.3",
@@ -35,9 +35,9 @@
       "depth": 0,
       "source": "git",
       "dependencies": {
-        "com.atteneder.gltfast": "https://github.com/Kinerius/glTFast.git"
+        "com.atteneder.gltfast": "5.0.0-exp.1"
       },
-      "hash": "3881c75b6fb91a6db9315c6d02797697af1edb1d"
+      "hash": "6a549b969fd6d87577b6a8c18a1d776d28194ed2"
     },
     "com.unity.burst": {
       "version": "1.7.3",
