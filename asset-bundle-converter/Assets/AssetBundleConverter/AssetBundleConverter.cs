@@ -1,4 +1,5 @@
-﻿using System;
+﻿using AssetBundleConverter;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -7,12 +8,9 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using AssetBundleConverter.Editor;
 using AssetBundleConverter.Wrappers.Implementations.Default;
-using DCL.GLTFast.Wrappers;
 using GLTFast;
-using GLTFast.Editor;
 using GLTFast.Logging;
 using UnityEditor;
-using UnityEditor.AssetImporters;
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -20,6 +18,13 @@ namespace DCL.ABConverter
 {
     public class AssetBundleConverter
     {
+        public struct GltfImportSettings
+        {
+            public string url;
+            public GltfImport import;
+            public AssetPath AssetPath;
+        }
+
         public enum ErrorCodes
         {
             SUCCESS,
@@ -55,7 +60,7 @@ namespace DCL.ABConverter
         private readonly string finalDownloadedPath;
         private readonly string finalDownloadedAssetDbPath;
         private List<AssetPath> assetsToMark = new ();
-        private Dictionary<string, GltfImport> gltfToWait = new ();
+        private List<GltfImportSettings> gltfToWait = new ();
         private Dictionary<string, string> contentTable = new ();
         private Dictionary<string, string> gltfOriginalNames = new ();
         private string logBuffer;
@@ -67,6 +72,8 @@ namespace DCL.ABConverter
         {
             this.settings = settings;
             this.env = env;
+
+            ContentServerUtils.customEndpoint = settings.endPoint;
 
             finalDownloadedPath = PathUtils.FixDirectorySeparator(Config.DOWNLOADED_PATH_ROOT + Config.DASH);
             finalDownloadedAssetDbPath = PathUtils.FixDirectorySeparator(Config.ASSET_BUNDLES_PATH_ROOT + Config.DASH);
@@ -167,10 +174,10 @@ namespace DCL.ABConverter
             AssetDatabase.Refresh();
             Debug.unityLogger.logEnabled = true;
 
-            foreach (KeyValuePair<string, GltfImport> keyValuePair in gltfToWait)
+            foreach (GltfImportSettings gltf in gltfToWait)
             {
-                var gltfUrl = keyValuePair.Key;
-                var gltfImport = keyValuePair.Value;
+                var gltfUrl = gltf.url;
+                var gltfImport = gltf.import;
 
                 EditorUtility.DisplayProgressBar("Asset Bundle Converter", $"Loading GLTF {gltfUrl}",
                     loadedGltf / (float)totalGltfToLoad);
@@ -183,8 +190,9 @@ namespace DCL.ABConverter
                     var importSettings = new ImportSettings
                     {
                         animationMethod = ImportSettings.AnimationMethod.Legacy,
+                        nodeNameMethod = ImportSettings.NameImportMethod.OriginalUnique,
                         anisotropicFilterLevel = 0,
-                        generateMipMaps = false,
+                        generateMipMaps = false
                     };
 
                     await gltfImport.Load(gltfUrl, importSettings);
@@ -232,16 +240,18 @@ namespace DCL.ABConverter
 
                 var relativePath = PathUtils.FullPathToAssetPath(gltfUrl);
 
-                // create dummy textures
+                // Note (Kinerius) Some gltf contain embed textures, we create them here so we can properly edit their properties during the gltf import process without triggering more AssetDatabase.Refresh
 
                 var textures = new List<Texture2D>();
-
                 for (int i = 0; i < gltfImport.textureCount; i++) { textures.Add(gltfImport.GetTexture(i)); }
 
-                var directory = Path.GetDirectoryName(relativePath);
-                CreateTextureAssets(textures, directory);
+                if (textures.Count > 0)
+                {
+                    var directory = Path.GetDirectoryName(relativePath);
+                    CreateTextureAssets(textures, directory);
 
-                await Task.Delay(TimeSpan.FromSeconds(1));
+                    await Task.Delay(TimeSpan.FromSeconds(0.05f));
+                }
 
                 // end create dummy textures
 
@@ -249,11 +259,14 @@ namespace DCL.ABConverter
 
                 if (gltfImporter != null)
                 {
-                    gltfImporter.importWithoutContentTable = false;
+                    ContentMap[] contentMap = contentTable.Select(kvp => new ContentMap(kvp.Key, kvp.Value)).ToArray();
+                    gltfImporter.SetupCustomFileProvider(contentMap, gltf.AssetPath.filePath);
+
+                    gltfImporter.useOriginalMaterials = settings.shaderType == ShaderType.GlTFast;
                     gltfImporter.importSettings.animationMethod = ImportSettings.AnimationMethod.Legacy;
                     gltfImporter.importSettings.generateMipMaps = false;
-                    gltfImporter.contentMaps = contentTable.Select(kvp => new ContentMap(kvp.Key, kvp.Value)).ToArray();
 
+                    log.Verbose($"Importing {relativePath}");
                     EditorUtility.SetDirty(gltfImporter);
                     gltfImporter.SaveAndReimport();
                 }
@@ -349,7 +362,7 @@ namespace DCL.ABConverter
         /// <param name="errorCode">final errorCode of the conversion process</param>
         public void CleanAndExit(ErrorCodes errorCode)
         {
-            foreach (KeyValuePair<string, GltfImport> keyValuePair in gltfToWait) { keyValuePair.Value.Dispose(); }
+            foreach (var gltf in gltfToWait) { gltf.import.Dispose(); }
 
             float conversionTime = Time.realtimeSinceStartup - startTime;
             logBuffer = $"Conversion finished!. last error code = {errorCode}";
@@ -379,28 +392,6 @@ namespace DCL.ABConverter
             {
                 env.directory.Delete(finalDownloadedPath);
                 env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
-            }
-        }
-
-        /// <summary>
-        /// Sync version of the GetOrDownloadDependenciesPaths method
-        /// </summary>
-        /// <param name="url">Relative path to the asset</param>
-        /// <returns></returns>
-        private Uri GetDependenciesPaths(Uri url)
-        {
-            try
-            {
-                var normalizedString = url.OriginalString.Replace('\\', '/');
-                string fileName = normalizedString.Substring(normalizedString.LastIndexOf('/') + 1);
-
-                return !contentTable.ContainsKey(fileName) ? url : new Uri(contentTable[fileName], UriKind.Relative);
-            }
-            catch (Exception)
-            {
-                log.Exception($"Failed to transform path: {url.OriginalString}");
-
-                return url;
             }
         }
 
@@ -529,6 +520,7 @@ namespace DCL.ABConverter
 
             AddAssetPathsToContentTable(texturePaths);
             AddAssetPathsToContentTable(bufferPaths);
+            AddAssetPathsToContentTable(gltfPaths, true);
 
             foreach (var gltfPath in gltfPaths)
             {
@@ -544,13 +536,14 @@ namespace DCL.ABConverter
             return true;
         }
 
-        private void AddAssetPathsToContentTable(List<AssetPath> assetPaths)
+        private void AddAssetPathsToContentTable(List<AssetPath> assetPaths, bool useHash = false)
         {
             foreach (AssetPath assetPath in assetPaths)
             {
-                string fileName = assetPath.file.Substring(assetPath.file.LastIndexOf('/') + 1);
                 var relativeFinalPath = "Assets" + assetPath.finalPath.Substring(Application.dataPath.Length);
-                contentTable[fileName] = relativeFinalPath;
+
+                // since GLTF's are already renamed as their hash, we have to map them using their hash so the GltFastFileProvider can get them properly
+                contentTable[useHash ? assetPath.hashPath : assetPath.filePath] = relativeFinalPath;
             }
         }
 
@@ -636,7 +629,7 @@ namespace DCL.ABConverter
                     texImporter.textureCompression = TextureImporterCompression.CompressedHQ;
                     texImporter.isReadable = true;
 
-                    ReduceTextureSizeIfNeeded(assetPath.hash + "/" + assetPath.hash + Path.GetExtension(assetPath.file),
+                    ReduceTextureSizeIfNeeded(assetPath.hash + "/" + assetPath.hash + Path.GetExtension(assetPath.filePath),
                         MAX_TEXTURE_SIZE);
                 }
                 else
@@ -647,7 +640,7 @@ namespace DCL.ABConverter
 
                 SetDeterministicAssetDatabaseGuid(assetPath);
 
-                log.Verbose($"Downloaded <b>file</b> -> {assetPath}");
+                log.Verbose($"Downloaded asset = {assetPath.filePath} to {assetPath.finalPath}");
             }
 
             EditorUtility.ClearProgressBar();
@@ -714,8 +707,14 @@ namespace DCL.ABConverter
             {
                 if (isGltf)
                 {
-                    gltfToWait[outputPath] = CreateGltfImport(outputPath);
-                    gltfOriginalNames[outputPath] = assetPath.file;
+                    GltfImport gltfImport = CreateGltfImport(assetPath);
+
+                    gltfToWait.Add(new GltfImportSettings
+                    {
+                        AssetPath = assetPath, url = outputPath, import = gltfImport
+                    });
+
+                    gltfOriginalNames[outputPath] = assetPath.filePath;
                 }
                 else { env.assetDatabase.ImportAsset(outputPath, ImportAssetOptions.ForceUpdate); }
             }
@@ -750,7 +749,7 @@ namespace DCL.ABConverter
             byte[] assetData = downloadHandler.data;
             downloadHandler.Dispose();
 
-            log.Verbose($"Downloaded asset = {finalUrl} to {outputPath}");
+            log.Verbose($"Downloaded asset = {assetPath.filePath} to {assetPath.finalPath}");
 
             if (!env.directory.Exists(outputPathDir))
                 env.directory.CreateDirectory(outputPathDir);
@@ -762,10 +761,10 @@ namespace DCL.ABConverter
             return outputPath;
         }
 
-        private GltfImport CreateGltfImport(string filePath)
+        private GltfImport CreateGltfImport(AssetPath filePath)
         {
             return new GltfImport(
-                new GltFastFileProvider(GetDependenciesPaths),
+                new GltFastFileProvider(filePath.filePath, contentTable),
                 new UninterruptedDeferAgent(),
                 GetNewMaterialGenerator(),
                 new ConsoleLogger());

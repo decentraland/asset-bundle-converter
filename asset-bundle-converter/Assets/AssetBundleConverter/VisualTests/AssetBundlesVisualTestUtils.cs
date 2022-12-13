@@ -14,7 +14,7 @@ namespace DCL.Helpers
         public static int VISUAL_TESTS_SNAPSHOT_WIDTH = 1280;
         public static int VISUAL_TESTS_SNAPSHOT_HEIGHT = 720;
     }
-    
+
     /// <summary>
     /// Visual tests helper class used to validate Asset Bundle conversions. Based on 'Scripts/Tests/VisualTests/VisualTestHelpers.cs'.
     /// </summary>
@@ -33,7 +33,7 @@ namespace DCL.Helpers
                 RepositionVisualTestsCamera(camera, shotPosition, shotTarget);
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(1));
+            await Task.Delay(TimeSpan.FromSeconds(0.05f));
 
             int snapshotsWidth = TestSettings.VISUAL_TESTS_SNAPSHOT_WIDTH;
             int snapshotsHeight = TestSettings.VISUAL_TESTS_SNAPSHOT_HEIGHT;

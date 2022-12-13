@@ -27,6 +27,7 @@ namespace AssetBundleConverter
         private int yCoord = -110;
         private int radius = 1;
         private ContentServerUtils.ApiTLD tld = ContentServerUtils.ApiTLD.ORG;
+        private ShaderType shader = ShaderType.Dcl;
 
         private ClientSettings clientSettings;
         private bool showDebugOptions;
@@ -51,6 +52,7 @@ namespace AssetBundleConverter
             showDebugOptions = EditorGUILayout.Toggle("Show debug options", showDebugOptions);
             endPoint = EditorGUILayout.TextField("Content endpoint", endPoint);
             tld = (ContentServerUtils.ApiTLD)EditorGUILayout.EnumPopup("Top level domain", tld);
+            shader = (ShaderType)EditorGUILayout.EnumPopup("Shader Type", shader);
             GUILayout.Space(5);
 
             currentTab = GUILayout.Toolbar(currentTab, tabs);
@@ -97,17 +99,16 @@ namespace AssetBundleConverter
 
         private void SetupSettings()
         {
-            // todo: de-static-ize this
-            ContentServerUtils.customEndpoint = endPoint;
-
             clientSettings = new ClientSettings
             {
+                endPoint = endPoint,
                 visualTest = visualTest,
                 cleanAndExitOnFinish = false,
                 tld = tld,
                 createAssetBundle = createAssetBundle,
                 clearDirectoriesOnStart = clearDownloads,
-                importOnlyEntity = showDebugOptions ? debugEntity : ""
+                importOnlyEntity = showDebugOptions ? debugEntity : "",
+                shaderType = shader
             };
         }
 

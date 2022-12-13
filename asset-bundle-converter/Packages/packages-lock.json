@@ -10,7 +10,7 @@
       "url": "https://package.openupm.com"
     },
     "com.atteneder.gltfast": {
-      "version": "https://github.com/Kinerius/glTFast.git",
+      "version": "https://github.com/Decentraland/glTFast.git#feat/custom-download-provider",
       "depth": 0,
       "source": "git",
       "dependencies": {
@@ -19,7 +19,7 @@
         "com.unity.mathematics": "1.2.6",
         "com.unity.burst": "1.6.6"
       },
-      "hash": "631992d1a2c6b24d6e6b0c1b0d00d18a3429ccf1"
+      "hash": "573c36dbafb322f955f63bbab5244505b060ca8a"
     },
     "com.atteneder.ktx": {
       "version": "2.2.3",
