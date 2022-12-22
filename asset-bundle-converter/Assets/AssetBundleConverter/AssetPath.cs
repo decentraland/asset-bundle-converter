@@ -25,7 +25,7 @@ namespace DCL.ABConverter
             string normalizedString = filePath.Replace('\\', '/');
             this.fileName = normalizedString.Substring(normalizedString.LastIndexOf('/') + 1);
 
-            var fileExtension = fileName.Split('.')[1];
+            var fileExtension = fileName.Split('.').Last();
             var normalizedFilePath = filePath.Replace("\\", "/");
             var split = normalizedFilePath.Split("/").ToList();
             split.RemoveAt(split.Count-1);
@@ -37,9 +37,17 @@ namespace DCL.ABConverter
         {
             get
             {
-                char dash = Path.DirectorySeparatorChar;
                 string fileExt = Path.GetExtension(pair.file);
-                return basePath + pair.hash + dash + pair.hash + fileExt;
+                return assetFolder + pair.hash + fileExt;
+            }
+        }
+
+        public string assetFolder
+        {
+            get
+            {
+                char dash = Path.DirectorySeparatorChar;
+                return basePath + pair.hash + dash;
             }
         }
 

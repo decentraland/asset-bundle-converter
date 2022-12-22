@@ -32,7 +32,7 @@ namespace AssetBundleConverter.Editor
         [SerializeField] private bool useCustomFileProvider = false;
         [SerializeField] private string originalFilePath;
         [SerializeField] public bool useOriginalMaterials;
-        [HideInInspector][SerializeField] private ContentMap[] contentMaps;
+        [HideInInspector] [SerializeField] private ContentMap[] contentMaps;
 
         private Dictionary<string, string> contentTable;
         private HashSet<string> assetNames = new ();
@@ -64,33 +64,83 @@ namespace AssetBundleConverter.Editor
 
                 SetupCustomGltfDownloadProvider(new GltFastFileProvider(originalFilePath, contentTable));
             }
-            else
-            {
-                Debug.LogWarning($"Importing without file provider, there can be errors because of relative path files");
-            }
+            else { Debug.LogWarning($"Importing without file provider, there can be errors because of relative path files"); }
 
             if (!useOriginalMaterials)
                 SetupCustomMaterialGenerator(new AssetBundleConverterMaterialGenerator());
 
-            base.OnImportAsset(ctx);
+            try { base.OnImportAsset(ctx); }
+            catch (Exception e) { Debug.LogException(e); }
         }
 
         protected override void CreateMaterialAssets(AssetImportContext ctx)
         {
-            var folderName = Path.GetDirectoryName(ctx.assetPath);
-            var renderers = ((GameObject)ctx.mainObject).GetComponentsInChildren<Renderer>(true);
-            var materials = SimplifyMaterials(renderers);
-
             textureNames = new List<string>();
             textureHash = new HashSet<Texture2D>();
             texMaterialMap = new Dictionary<Texture2D, List<TexMaterialMap>>();
             baseColor = new HashSet<Texture2D>();
             normals = new HashSet<Texture2D>();
             metallics = new HashSet<Texture2D>();
+
+            var folderName = Path.GetDirectoryName(ctx.assetPath);
+            var renderers = ((GameObject)ctx.mainObject).GetComponentsInChildren<Renderer>(true);
+
+            List<Material> materials = ReplaceMaterials(folderName, renderers);
+
             var textures = materials.SelectMany(GetTexturesFromMaterial).ToList();
 
             FixTextureReferences(textures, folderName, materials);
-            CreateMaterialAssets(materials, folderName, renderers);
+        }
+
+        private List<Material> ReplaceMaterials(string folderName, Renderer[] renderers)
+        {
+            List<Material> materials = new();
+
+            for (var i = 0; i < m_Gltf.MaterialCount; i++)
+            {
+                var invalidMaterial = m_Gltf.GetMaterial(i);
+
+                if (invalidMaterial == null)
+                    continue;
+
+                string materialName = Utils.NicifyName(invalidMaterial.name);
+                var path = $"{folderName}{Path.DirectorySeparatorChar}Materials{Path.DirectorySeparatorChar}{materialName}.mat";
+                Material validMaterial = AssetDatabase.LoadAssetAtPath<Material>(path);
+
+                if (validMaterial == null)
+                {
+                    Debug.LogError(path + " does not exist");
+
+                    continue;
+                }
+
+                materials.Add(validMaterial);
+                ReplaceReferences(renderers, validMaterial);
+            }
+
+            return materials;
+        }
+
+        private static Dictionary<string, TexMaterialMap> GetMatMapsFromMaterial(Material rendererSharedMaterial)
+        {
+            var maps = new Dictionary<string, TexMaterialMap>();
+            var shader = rendererSharedMaterial.shader;
+
+            for (var i = 0; i < ShaderUtil.GetPropertyCount(shader); ++i)
+            {
+                if (ShaderUtil.GetPropertyType(shader, i) == ShaderUtil.ShaderPropertyType.TexEnv)
+                {
+                    var propertyName = ShaderUtil.GetPropertyName(shader, i);
+                    var tex = rendererSharedMaterial.GetTexture(propertyName) as Texture2D;
+
+                    if (!tex)
+                        continue;
+
+                    maps[$"{rendererSharedMaterial.name}_{propertyName}"] = new TexMaterialMap(rendererSharedMaterial, propertyName, false);
+                }
+            }
+
+            return maps;
         }
 
         private void FixTextureReferences(List<Texture2D> textures, string folderName, List<Material> materials)
@@ -110,31 +160,14 @@ namespace AssetBundleConverter.Editor
                     texPath = texPath.Replace(separator, '/');
 
                     texPath = Regex.Replace(texPath, @"\s+", "");
-                    var importedTex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
+
+                    //var importedTex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
                     var importer = GetAtPath(texPath);
 
                     if (importer is TextureImporter tImporter)
                     {
                         tImporter.isReadable = false;
-                        var isNormalMap = true;
-
-                        foreach (var material in materials)
-                        {
-                            foreach (var materialMap in materialMaps)
-                            {
-                                if (materialMap.Material == material)
-                                {
-                                    //NOTE(Brian): Only set as normal map if is exclusively
-                                    //             used for that.
-                                    //             We don't want DXTnm in color textures.
-                                    if (!materialMap.IsNormalMap)
-                                        isNormalMap = false;
-
-                                    material.SetTexture(materialMap.Property, importedTex);
-                                    EditorUtility.SetDirty(material);
-                                }
-                            }
-                        }
+                        var isNormalMap = materialMaps.Any(m => m.IsNormalMap);
 
                         if (isNormalMap)
                         {
@@ -162,7 +195,7 @@ namespace AssetBundleConverter.Editor
             }
         }
 
-        private void CreateMaterialAssets(List<Material> materials, string folderName, Renderer[] renderers)
+        /*private void FixMaterialReferences(List<Material> materials, string folderName, Renderer[] renderers)
         {
             if (materials.Count > 0)
             {
@@ -174,30 +207,38 @@ namespace AssetBundleConverter.Editor
                     var mat = materials[i];
                     var materialPath = string.Concat(materialRoot, mat.name, ".mat");
 
-                    CopyOrNew(mat, materialPath, m =>
-                    {
-                        foreach (var r in renderers)
-                        {
-                            var sharedMaterials = r.sharedMaterials;
-
-                            for (var i = 0; i < sharedMaterials.Length; ++i)
-                            {
-                                var sharedMaterial = sharedMaterials[i];
-
-                                string sharedMaterialName = sharedMaterial ? sharedMaterial.name : "";
-
-                                if (sharedMaterialName == mat.name)
-                                {
-                                    sharedMaterials[i] = m;
-                                    EditorUtility.SetDirty(m);
-                                }
-                            }
-
-                            sharedMaterials = sharedMaterials.Where(sm => sm).ToArray();
-                            r.sharedMaterials = sharedMaterials;
-                        }
-                    });
+                    CopyOrNew(mat, materialPath, m => { ReplaceReferences(renderers, m); });
                 }
+            }
+        }*/
+
+        private static void ReplaceReferences(Renderer[] renderers, Material mat)
+        {
+            if (mat == null)
+            {
+                Debug.LogError("FATAL!");
+                return;
+            }
+            foreach (var r in renderers)
+            {
+                var sharedMaterials = r.sharedMaterials;
+
+                for (var i = 0; i < sharedMaterials.Length; ++i)
+                {
+                    var sharedMaterial = sharedMaterials[i];
+
+                    string sharedMaterialName = sharedMaterial ? sharedMaterial.name : "";
+                    sharedMaterialName = Utils.NicifyName(sharedMaterialName);
+
+                    if (sharedMaterialName != mat.name) continue;
+
+                    sharedMaterials[i] = mat;
+                    EditorUtility.SetDirty(mat);
+                }
+
+                sharedMaterials = sharedMaterials.Where(sm => sm).ToArray();
+                r.sharedMaterials = sharedMaterials;
+                EditorUtility.SetDirty(r);
             }
         }
 
@@ -265,17 +306,29 @@ namespace AssetBundleConverter.Editor
                         texMaterialMap.Add(tex, materialMaps);
                     }
 
-                    materialMaps.Add(new TexMaterialMap(mat, propertyName, propertyName == "_BumpMap"));
+                    bool isNormalMap = IsNormalMap(propertyName);
+                    materialMaps.Add(new TexMaterialMap(mat, propertyName, isNormalMap));
 
-                    if (propertyName == "_BaseMap") { baseColor.Add(tex); }
+                    bool isBaseTexture = IsBaseTexture(propertyName);
 
-                    if (propertyName == "_BumpMap") { normals.Add(tex); }
-                    else if (propertyName == "_MetallicGlossMap") { metallics.Add(tex); }
+                    if (isBaseTexture) { baseColor.Add(tex); }
+
+                    if (isNormalMap) { normals.Add(tex); }
+                    else if (IsMetallicMap(propertyName)) { metallics.Add(tex); }
                 }
             }
 
             return matTextures;
         }
+
+        private static bool IsMetallicMap(string propertyName) =>
+            propertyName is "_MetallicGlossMap" or "metallicRoughnessTexture";
+
+        private static bool IsBaseTexture(string propertyName) =>
+            propertyName is "_BaseMap" or "baseColorTexture";
+
+        private static bool IsNormalMap(string propertyName) =>
+            propertyName is "_BumpMap" or "normalTexture";
 
         protected override void CreateTextureAssets(AssetImportContext ctx)
         {
@@ -321,23 +374,9 @@ namespace AssetBundleConverter.Editor
         {
             var materials = new List<Material>();
 
-            for (int i = 0; i < m_Gltf.materialCount; i++) { materials.Add(m_Gltf.GetMaterial(i)); }
+            for (int i = 0; i < m_Gltf.MaterialCount; i++) { materials.Add(m_Gltf.GetMaterial(i)); }
 
             return materials;
-        }
-
-        private class TexMaterialMap
-        {
-            public Material Material { get; set; }
-            public string Property { get; set; }
-            public bool IsNormalMap { get; set; }
-
-            public TexMaterialMap(Material material, string property, bool isNormalMap)
-            {
-                Material = material;
-                Property = property;
-                IsNormalMap = isNormalMap;
-            }
         }
     }
 }

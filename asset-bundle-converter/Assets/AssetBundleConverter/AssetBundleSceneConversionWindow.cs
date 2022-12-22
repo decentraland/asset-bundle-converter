@@ -4,6 +4,7 @@ using DCL.ABConverter;
 using System;
 using UnityEditor;
 using UnityEngine;
+using Random = System.Random;
 
 namespace AssetBundleConverter
 {
@@ -13,8 +14,9 @@ namespace AssetBundleConverter
 
         private const string TAB_SCENE = "Entity by ID";
         private const string TAB_PARCELS = "Entity by Pointer";
+        private const string TAB_RANDOM = "Random Pointer";
 
-        private readonly string[] tabs = { TAB_SCENE, TAB_PARCELS };
+        private readonly string[] tabs = { TAB_SCENE, TAB_PARCELS, TAB_RANDOM };
 
         private string entityId = "QmYy2TMDEfag99yZV4ZdpjievYUfdQgBVfFHKCDAge3zQi";
         private string debugEntity = "bafkreib66ufmbowp4ee2u3kdu6t52kouie7kd7tfrlv3l5kejz6yjcaq5i";
@@ -25,7 +27,6 @@ namespace AssetBundleConverter
         private int currentTab = 0;
         private int xCoord = -110;
         private int yCoord = -110;
-        private int radius = 1;
         private ContentServerUtils.ApiTLD tld = ContentServerUtils.ApiTLD.ORG;
         private ShaderType shader = ShaderType.Dcl;
 
@@ -43,7 +44,7 @@ namespace AssetBundleConverter
             thisWindow.Show();
         }
 
-        private async void OnGUI()
+        private void OnGUI()
         {
             GUILayout.Space(5);
             visualTest = EditorGUILayout.Toggle("Visual Test", visualTest);
@@ -61,15 +62,26 @@ namespace AssetBundleConverter
 
             GUILayout.Space(5);
 
-            switch (currentTab)
+            try
             {
-                case 0:
-                    await RenderEntityByIdAsync();
-                    break;
-                case 1:
-                    await RenderEntityByPointerAsync();
-                    break;
+                switch (currentTab)
+                {
+                    case 0:
+                        RenderEntityByIdAsync();
+                        break;
+                    case 1:
+                        RenderEntityByPointerAsync();
+                        break;
+                    case 2:
+                        RenderRandomPointerAsync();
+                        break;
+                }
             }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+            }
+
         }
 
         private void RenderDebugOptions()
@@ -97,21 +109,6 @@ namespace AssetBundleConverter
             }
         }
 
-        private void SetupSettings()
-        {
-            clientSettings = new ClientSettings
-            {
-                endPoint = endPoint,
-                visualTest = visualTest,
-                cleanAndExitOnFinish = false,
-                tld = tld,
-                createAssetBundle = createAssetBundle,
-                clearDirectoriesOnStart = clearDownloads,
-                importOnlyEntity = showDebugOptions ? debugEntity : "",
-                shaderType = shader
-            };
-        }
-
         private async Task RenderEntityByPointerAsync()
         {
             xCoord = EditorGUILayout.IntField("X", xCoord);
@@ -125,7 +122,42 @@ namespace AssetBundleConverter
                 var targetPosition = new Vector2Int(xCoord, yCoord);
                 var state = await SceneClient.ConvertEntityByPointer(targetPosition, clientSettings);
                 OnConversionEnd(state);
+
+                Debug.Log($"Finished! with state {state}");
             }
+        }
+
+        private async Task RenderRandomPointerAsync()
+        {
+            GUILayout.FlexibleSpace();
+
+            if (GUILayout.Button("Start"))
+            {
+                SetupSettings();
+                int x = UnityEngine.Random.Range(-150,151);
+                int y = UnityEngine.Random.Range(-150,151);
+                Debug.Log($"Converting {x},{y}");
+                var targetPosition = new Vector2Int(x, y);
+                var state = await SceneClient.ConvertEntityByPointer(targetPosition, clientSettings);
+                OnConversionEnd(state);
+            }
+        }
+
+        private void SetupSettings()
+        {
+            clientSettings = new ClientSettings
+            {
+                endPoint = endPoint,
+                visualTest = visualTest,
+                cleanAndExitOnFinish = false,
+                tld = tld,
+                createAssetBundle = createAssetBundle,
+                clearDirectoriesOnStart = clearDownloads,
+                importOnlyEntity = showDebugOptions ? debugEntity : "",
+                shaderType = shader
+            };
+
+            Debug.ClearDeveloperConsole();
         }
 
         private void OnConversionEnd(DCL.ABConverter.AssetBundleConverter.State state)

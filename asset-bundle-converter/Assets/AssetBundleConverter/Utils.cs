@@ -378,5 +378,12 @@ namespace DCL.ABConverter
 
             return nTex;
         }
+
+        public static string NicifyName(string name)
+        {
+            name = name.Replace(":", ".");
+            name = ObjectNames.NicifyVariableName(name);
+            return name;
+        }
     }
 }

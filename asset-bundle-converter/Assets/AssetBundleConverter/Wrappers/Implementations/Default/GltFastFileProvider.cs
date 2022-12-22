@@ -19,31 +19,22 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
         {
             var path = url.OriginalString;
 
-            if (File.Exists(path)) { data = File.ReadAllBytes(path); }
-            else { error = $"Cannot find resource at path {path}"; }
+            if (File.Exists(path)) { Data = File.ReadAllBytes(path); }
+            else { Error = $"Cannot find resource at path {path}"; }
         }
 
-        public object Current => null;
+        public virtual bool Success => Data != null;
 
-        public bool MoveNext()
-        {
-            return false;
-        }
+        public string Error { get; protected set; }
+        public byte[] Data { get; }
 
-        public void Reset() { }
+        public string Text => System.Text.Encoding.UTF8.GetString(Data);
 
-        public virtual bool success => data != null;
-
-        public string error { get; protected set; }
-        public byte[] data { get; }
-
-        public string text => System.Text.Encoding.UTF8.GetString(data);
-
-        public bool? isBinary
+        public bool? IsBinary
         {
             get
             {
-                if (success) { return GltfGlobals.IsGltfBinary(data); }
+                if (Success) { return GltfGlobals.IsGltfBinary(Data); }
 
                 return null;
             }
@@ -74,17 +65,21 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
     class SyncTextureLoader : SyncFileLoader, ITextureDownload
     {
-        public Texture2D texture { get; }
+        public Texture2D Texture { get; }
 
-        public override bool success => texture != null;
+        public override bool Success => Texture != null;
 
-        public SyncTextureLoader(Uri url, bool nonReadable)
+        public SyncTextureLoader(Uri url)
             : base(url)
         {
-            texture = AssetDatabase.LoadAssetAtPath<Texture2D>(url.OriginalString);
+            Texture = AssetDatabase.LoadAssetAtPath<Texture2D>(url.OriginalString);
 
-            if (texture == null) { error = $"Couldn't load texture at {url.OriginalString}"; }
+            if (Texture == null)
+            {
+                Error = $"Couldn't load texture at {url.OriginalString}";
+            }
         }
+
     }
 
     public class GltFastFileProvider : IEditorDownloadProvider, IDisposable
@@ -133,7 +128,7 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
                 type = GltfAssetDependency.Type.Texture
             });
 
-            return new SyncTextureLoader(newUrl, nonReadable);
+            return new SyncTextureLoader(newUrl);
         }
 
         private Uri RebuildUrl(Uri url)
