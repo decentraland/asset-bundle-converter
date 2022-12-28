@@ -24,6 +24,7 @@ namespace AssetBundleConverter
         private bool visualTest = false;
         private bool clearDownloads = true;
         private bool createAssetBundle = true;
+        private bool verbose = true;
         private int currentTab = 0;
         private int xCoord = -110;
         private int yCoord = -110;
@@ -54,6 +55,7 @@ namespace AssetBundleConverter
             endPoint = EditorGUILayout.TextField("Content endpoint", endPoint);
             tld = (ContentServerUtils.ApiTLD)EditorGUILayout.EnumPopup("Top level domain", tld);
             shader = (ShaderType)EditorGUILayout.EnumPopup("Shader Type", shader);
+            verbose = EditorGUILayout.Toggle("Verbose", verbose);
             GUILayout.Space(5);
 
             currentTab = GUILayout.Toolbar(currentTab, tabs);
@@ -123,7 +125,7 @@ namespace AssetBundleConverter
                 var state = await SceneClient.ConvertEntityByPointer(targetPosition, clientSettings);
                 OnConversionEnd(state);
 
-                Debug.Log($"Finished! with state {state}");
+                Debug.Log($"Finished! with state {state.step} {state.lastErrorCode}");
             }
         }
 

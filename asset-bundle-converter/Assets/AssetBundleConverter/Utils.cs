@@ -202,7 +202,6 @@ namespace DCL.ABConverter
         {
             string assetPath = PathUtils.GetRelativePathTo(Application.dataPath, fullPath);
             assetPath = Path.GetDirectoryName(assetPath);
-            Debug.Log("Marking: " + assetPath);
             AssetImporter importer = AssetImporter.GetAtPath(assetPath);
             importer.SetAssetBundleNameAndVariant(abName, "");
         }
@@ -383,6 +382,10 @@ namespace DCL.ABConverter
         {
             name = name.Replace(":", ".");
             name = ObjectNames.NicifyVariableName(name);
+
+            if (string.IsNullOrEmpty(name))
+                name = "unnamed";
+
             return name;
         }
     }

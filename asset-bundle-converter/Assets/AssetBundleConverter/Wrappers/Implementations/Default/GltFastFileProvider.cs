@@ -1,4 +1,5 @@
-﻿using GLTFast;
+﻿using DCL.ABConverter;
+using GLTFast;
 using GLTFast.Editor;
 using System;
 using System.IO;
@@ -74,12 +75,8 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
         {
             Texture = AssetDatabase.LoadAssetAtPath<Texture2D>(url.OriginalString);
 
-            if (Texture == null)
-            {
-                Error = $"Couldn't load texture at {url.OriginalString}";
-            }
+            if (Texture == null) { Error = $"Couldn't load texture at {url.OriginalString}"; }
         }
-
     }
 
     public class GltFastFileProvider : IEditorDownloadProvider, IDisposable
@@ -91,16 +88,15 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
         // Note (Kinerius): Since we can get multiple dependencies with the same name ( mostly textures ) we have to use the glb original root to determine which of them to use
         // for example 'models/Genesis_TX.png' and 'models/core_building/Genesis_TX.png', the importer is going to ask for Genesis_TX.png since its path is relative
         // so we have to create a new path using the original root path that is already mapped by the asset bundle converter.
-        private readonly string originalRootPath;
+        private string fileRootPath;
+        private string hash;
         private readonly List<GltfAssetDependency> gltfAssetDependencies = new ();
 
-        public GltFastFileProvider(string originalFilePath, Dictionary<string, string> contentTable)
+        public GltFastFileProvider(string fileRootPath, string hash, Dictionary<string, string> contentTable)
         {
+            this.hash = hash;
+            this.fileRootPath = fileRootPath;
             this.contentTable = contentTable;
-            var normalized = originalFilePath.Replace("\\", "/");
-            var separated = normalized.Split("/").ToList();
-            separated.RemoveAt(separated.Count - 1);
-            originalRootPath = string.Join('/', separated);
         }
 
         public async Task<IDownload> Request(Uri url)
@@ -133,9 +129,10 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
         private Uri RebuildUrl(Uri url)
         {
-            string normalizedString = url.OriginalString.Replace('\\', '/');
-            string fileName = normalizedString.Substring(normalizedString.LastIndexOf('/') + 1);
-            return new Uri($"{originalRootPath}/{fileName}", UriKind.Relative);
+            var absolutePath = url.OriginalString;
+            string relativePath = $"{fileRootPath}{absolutePath.Substring(absolutePath.IndexOf(hash) + hash.Length + 1)}";
+            relativePath = relativePath.Replace("\\", "/");
+            return new Uri(relativePath, UriKind.Relative);
         }
 
         private Uri GetDependenciesPaths(Uri url)
@@ -148,6 +145,12 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
                 if (!isContained)
                 {
                     Debug.LogWarning(originalPath + " is not mapped!");
+
+                    var pathe = originalPath.Substring(originalPath.IndexOf('/'));
+                    var keys = contentTable.Keys.Where(k => k.ToLower().Contains(pathe.ToLower()));
+                    foreach (string key in keys)
+                        Debug.Log($" -> {key} ?");
+
                     return new Uri(originalPath, UriKind.Relative);
                 }
 

@@ -85,7 +85,7 @@ namespace DCL.ABConverter
 
             AssetBundlesVisualTestUtils.generateBaseline = false;
 
-            var abs = LoadAndInstantiateAllAssetBundles();
+            var abs = LoadAndInstantiateAllAssetBundles(clientSettings);
 
             if (abs.Length == 0)
             {
@@ -259,7 +259,8 @@ namespace DCL.ABConverter
         /// Search for local GLTFs in "_Downloaded" and use those hashes to find their corresponding
         /// Asset Bundle files, then instantiate those ABs in the Unity scene
         /// </summary>
-        public static GameObject[] LoadAndInstantiateAllAssetBundles()
+        /// <param name="ClientSettings"></param>
+        public static GameObject[] LoadAndInstantiateAllAssetBundles(ClientSettings ClientSettings)
         {
             Caching.ClearCache();
 
@@ -343,8 +344,13 @@ namespace DCL.ABConverter
                 {
                     if (asset is Material material)
                     {
-                        material.shader = Shader.Find("DCL/Universal Render Pipeline/Lit");
-                        SRPBatchingHelper.OptimizeMaterial(material);
+                        if (ClientSettings.shaderType == ShaderType.Dcl)
+                        {
+                            material.shader = Shader.Find("DCL/Universal Render Pipeline/Lit");
+                            SRPBatchingHelper.OptimizeMaterial(material);
+                        }
+
+                        Debug.Log(material.shader.name);
                     }
 
                     if (asset is GameObject assetAsGameObject)

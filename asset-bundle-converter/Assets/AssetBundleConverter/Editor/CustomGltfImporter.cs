@@ -30,9 +30,10 @@ namespace AssetBundleConverter.Editor
     public class CustomGltfImporter : GltfImporter
     {
         [SerializeField] private bool useCustomFileProvider = false;
-        [SerializeField] private string originalFilePath;
         [SerializeField] public bool useOriginalMaterials;
         [HideInInspector] [SerializeField] private ContentMap[] contentMaps;
+        [SerializeField] private string fileRootPath;
+        [SerializeField] private string hash;
 
         private Dictionary<string, string> contentTable;
         private HashSet<string> assetNames = new ();
@@ -44,10 +45,12 @@ namespace AssetBundleConverter.Editor
         private HashSet<Texture2D> metallics;
         private IEditorDownloadProvider downloadProvider;
 
-        public void SetupCustomFileProvider(ContentMap[] contentMap, string assetPathFilePath)
+
+        public void SetupCustomFileProvider(ContentMap[] contentMap, string fileRootPath, string hash)
         {
+            this.hash = hash;
+            this.fileRootPath = fileRootPath;
             contentMaps = contentMap;
-            originalFilePath = assetPathFilePath;
             useCustomFileProvider = true;
         }
 
@@ -62,9 +65,13 @@ namespace AssetBundleConverter.Editor
                 foreach (ContentMap contentMap in contentMaps)
                     contentTable.Add(contentMap.file, contentMap.path);
 
-                SetupCustomGltfDownloadProvider(new GltFastFileProvider(originalFilePath, contentTable));
+                SetupCustomGltfDownloadProvider(new GltFastFileProvider(fileRootPath, hash, contentTable));
             }
-            else { Debug.LogWarning($"Importing without file provider, there can be errors because of relative path files"); }
+            else
+            {
+                Debug.LogWarning($"Importing without file provider, there can be errors because of relative path files");
+                return;
+            }
 
             if (!useOriginalMaterials)
                 SetupCustomMaterialGenerator(new AssetBundleConverterMaterialGenerator());
@@ -75,6 +82,9 @@ namespace AssetBundleConverter.Editor
 
         protected override void CreateMaterialAssets(AssetImportContext ctx)
         {
+            var ctxMainObject = (GameObject)ctx.mainObject;
+            if (ctxMainObject == null) return;
+
             textureNames = new List<string>();
             textureHash = new HashSet<Texture2D>();
             texMaterialMap = new Dictionary<Texture2D, List<TexMaterialMap>>();
@@ -83,7 +93,7 @@ namespace AssetBundleConverter.Editor
             metallics = new HashSet<Texture2D>();
 
             var folderName = Path.GetDirectoryName(ctx.assetPath);
-            var renderers = ((GameObject)ctx.mainObject).GetComponentsInChildren<Renderer>(true);
+            var renderers = ctxMainObject.GetComponentsInChildren<Renderer>(true);
 
             List<Material> materials = ReplaceMaterials(folderName, renderers);
 
@@ -155,10 +165,12 @@ namespace AssetBundleConverter.Editor
                     var materialMaps = texMaterialMap[tex];
                     string texPath = AssetDatabase.GetAssetPath(tex);
 
-                    if (string.IsNullOrEmpty(texPath)) { texPath = $"{folderName}{separator}Textures{separator}{tex.name}.png"; }
+                    if (string.IsNullOrEmpty(texPath))
+                        texPath = $"{folderName}{separator}Textures{separator}{tex.name}.png";
 
                     texPath = texPath.Replace(separator, '/');
 
+                    //remove all whitespaces
                     texPath = Regex.Replace(texPath, @"\s+", "");
 
                     //var importedTex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
