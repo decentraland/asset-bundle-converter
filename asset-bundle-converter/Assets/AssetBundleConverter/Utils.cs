@@ -143,7 +143,7 @@ namespace DCL.ABConverter
         {
             public string[] pointers;
         }
-        
+
         internal static bool ParseOption(string[] fullCmdArgs, string optionName, int argsQty, out string[] foundArgs) { return ParseOptionExplicit(fullCmdArgs, optionName, argsQty, out foundArgs); }
 
         internal static bool ParseOption(string optionName, int argsQty, out string[] foundArgs) { return ParseOptionExplicit(System.Environment.GetCommandLineArgs(), optionName, argsQty, out foundArgs); }
@@ -235,7 +235,7 @@ namespace DCL.ABConverter
             return sBuilder.ToString();
         }
 
-        
+
         public static EntityMappingsDTO[] GetEntityMappings(Vector2Int entityPointer, ApiTLD tld,
             IWebRequest webRequest)
         {
@@ -252,8 +252,8 @@ namespace DCL.ABConverter
             {
                 throw new Exception($"Request error! mappings couldn't be fetched for scene {entityPointer}! -- {e.Message}");
             }
-            
-            List<EntityMappingsDTO> parcelInfoApiData = JsonConvert.DeserializeObject<List<EntityMappingsDTO>>(downloadHandler.text); 
+
+            List<EntityMappingsDTO> parcelInfoApiData = JsonConvert.DeserializeObject<List<EntityMappingsDTO>>(downloadHandler.text);
             downloadHandler.Dispose();
 
             if (parcelInfoApiData.Count == 0 || parcelInfoApiData == null)
@@ -263,7 +263,7 @@ namespace DCL.ABConverter
 
             return parcelInfoApiData.ToArray();
         }
-        
+
         public static EntityMappingsDTO[] GetEntityMappings(String entityId, ApiTLD tld, IWebRequest webRequest)
         {
             string url = $"{GetContentsUrl(tld)}{entityId}";
@@ -342,12 +342,12 @@ namespace DCL.ABConverter
                 }
             }
         }
-        
+
         public static Texture2D ResizeTexture(Texture2D source, int newWidth, int newHeight, bool linear = false, bool useGPUCopy = true)
         {
             newWidth = Mathf.Max(1, newWidth);
             newHeight = Mathf.Max(1, newHeight);
-        
+
             // RenderTexture default format is ARGB32
             Texture2D nTex = new Texture2D(newWidth, newHeight, TextureFormat.ARGB32, 1, linear);
             nTex.filterMode = source.filterMode;
@@ -376,6 +376,17 @@ namespace DCL.ABConverter
             RenderTexture.active = null;
 
             return nTex;
+        }
+
+        public static string NicifyName(string name)
+        {
+            name = name.Replace(":", ".");
+            name = ObjectNames.NicifyVariableName(name);
+
+            if (string.IsNullOrEmpty(name))
+                name = "unnamed";
+
+            return name;
         }
     }
 }

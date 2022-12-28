@@ -1,7 +1,15 @@
+using DCL;
+using DCL.ABConverter;
 using System.IO;
 
-namespace DCL.ABConverter
+namespace AssetBundleConverter
 {
+    public enum ShaderType
+    {
+        Dcl,
+        GlTFast
+    }
+
     public class ClientSettings
         {
             /// <summary>
@@ -48,6 +56,9 @@ namespace DCL.ABConverter
             public bool cleanAndExitOnFinish = true;
             public bool visualTest = true;
             public bool createAssetBundle;
+            public string importOnlyEntity;
+            public ShaderType shaderType;
+            public string endPoint;
 
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 

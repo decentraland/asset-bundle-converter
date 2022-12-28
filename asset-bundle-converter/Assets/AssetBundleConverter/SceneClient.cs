@@ -1,3 +1,4 @@
+using AssetBundleConverter;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -30,7 +31,7 @@ namespace DCL.ABConverter
             Application.SetStackTraceLogType(LogType.Error, StackTraceLogType.Full);
             Application.SetStackTraceLogType(LogType.Exception, StackTraceLogType.Full);
             Application.SetStackTraceLogType(LogType.Assert, StackTraceLogType.Full);
-            
+
             EnsureEnvironment();
             ExportSceneToAssetBundles(System.Environment.GetCommandLineArgs());
         }
@@ -98,7 +99,7 @@ namespace DCL.ABConverter
                         throw new ArgumentException("Invalid parcelsXYWH argument! Please don't use negative width/height values, and ensure any given width/height doesn't exceed 10.");
                     }
 
-                    // TODO: 
+                    // TODO:
                     //await DumpArea(new Vector2Int(x, y), new Vector2Int(w, h), settings);
                     return;
                 }
@@ -123,7 +124,7 @@ namespace DCL.ABConverter
 
             if (settings == null)
                 settings = new ClientSettings();
-            
+
             var apiResponse = Utils.GetEntityMappings(entityId, settings.tld, env.webRequest);
             var mappings = apiResponse.SelectMany(m => m.content);
             return await ConvertEntitiesToAssetBundles(mappings.ToArray(), settings);
@@ -142,7 +143,7 @@ namespace DCL.ABConverter
 
             if (settings == null)
                 settings = new ClientSettings();
-            
+
             var apiResponse = Utils.GetEntityMappings(pointer, settings.tld, env.webRequest);
             var mappings = apiResponse.SelectMany(m => m.content);
             return await ConvertEntitiesToAssetBundles(mappings.ToArray(), settings);
@@ -168,12 +169,6 @@ namespace DCL.ABConverter
 
             if (settings == null)
                 settings = new ClientSettings();
-
-            /*foreach (var entityID in entitiesId)
-            {
-                ContentServerUtils.MappingsAPIData parcelInfoApiData = Utils.GetSceneMappingsData(env.webRequest, settings.tld, entityID);
-                rawContents.AddRange(parcelInfoApiData.content);
-            }*/
 
             var core = new AssetBundleConverter(env, settings);
             await core.Convert(mappingPairs);
