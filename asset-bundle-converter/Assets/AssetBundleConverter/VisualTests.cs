@@ -347,12 +347,15 @@ namespace DCL.ABConverter
                         if (ClientSettings.shaderType == ShaderType.Dcl)
                         {
                             material.shader = Shader.Find("DCL/Universal Render Pipeline/Lit");
-                            SRPBatchingHelper.OptimizeMaterial(material);
                         }
                         else
                         {
                             material.shader = Shader.Find(material.shader.name);
                         }
+
+
+                        SRPBatchingHelper.OptimizeMaterial(material);
+
                     }
 
                     if (asset is GameObject assetAsGameObject)
