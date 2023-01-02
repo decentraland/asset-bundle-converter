@@ -42,14 +42,14 @@ namespace DCL.ABConverter
         /// </summary>
         /// <param name="renderer"></param>
         /// <returns>The bounds value if the value is correct, or a mocked bounds object with clamped values if its too far away.</returns>
-        public static Bounds GetSafeBounds( this Renderer renderer )
+        public static Bounds GetSafeBounds(this Renderer renderer)
         {
             // World extents are of 4800 world mts, so this limit far exceeds the world size.
             const float POSITION_OVERFLOW_LIMIT = 10000;
             const float POSITION_OVERFLOW_LIMIT_SQR = POSITION_OVERFLOW_LIMIT * POSITION_OVERFLOW_LIMIT;
 
-            if ( renderer.transform.position.sqrMagnitude > POSITION_OVERFLOW_LIMIT_SQR )
-                return new Bounds( Vector3.one * POSITION_OVERFLOW_LIMIT, Vector3.one * 0.1f );
+            if (renderer.transform.position.sqrMagnitude > POSITION_OVERFLOW_LIMIT_SQR)
+                return new Bounds(Vector3.one * POSITION_OVERFLOW_LIMIT, Vector3.one * 0.1f);
 
             return renderer.bounds;
         }
@@ -144,9 +144,15 @@ namespace DCL.ABConverter
             public string[] pointers;
         }
 
-        internal static bool ParseOption(string[] fullCmdArgs, string optionName, int argsQty, out string[] foundArgs) { return ParseOptionExplicit(fullCmdArgs, optionName, argsQty, out foundArgs); }
+        internal static bool ParseOption(string[] fullCmdArgs, string optionName, int argsQty, out string[] foundArgs)
+        {
+            return ParseOptionExplicit(fullCmdArgs, optionName, argsQty, out foundArgs);
+        }
 
-        internal static bool ParseOption(string optionName, int argsQty, out string[] foundArgs) { return ParseOptionExplicit(System.Environment.GetCommandLineArgs(), optionName, argsQty, out foundArgs); }
+        internal static bool ParseOption(string optionName, int argsQty, out string[] foundArgs)
+        {
+            return ParseOptionExplicit(System.Environment.GetCommandLineArgs(), optionName, argsQty, out foundArgs);
+        }
 
         internal static bool ParseOptionExplicit(string[] rawArgsList, string optionName, int expectedArgsQty, out string[] foundArgs)
         {
@@ -165,10 +171,7 @@ namespace DCL.ABConverter
                 switch (argState)
                 {
                     case 0:
-                        if (rawArgsList[i] == "-" + optionName)
-                        {
-                            argState++;
-                        }
+                        if (rawArgsList[i] == "-" + optionName) { argState++; }
 
                         break;
                     default:
@@ -227,14 +230,10 @@ namespace DCL.ABConverter
             byte[] data = md5.ComputeHash(Encoding.UTF8.GetBytes(cid));
             StringBuilder sBuilder = new StringBuilder();
 
-            for (int i = 0; i < data.Length; i++)
-            {
-                sBuilder.Append(data[i].ToString("x2"));
-            }
+            for (int i = 0; i < data.Length; i++) { sBuilder.Append(data[i].ToString("x2")); }
 
             return sBuilder.ToString();
         }
-
 
         public static EntityMappingsDTO[] GetEntityMappings(Vector2Int entityPointer, ApiTLD tld,
             IWebRequest webRequest)
@@ -244,50 +243,57 @@ namespace DCL.ABConverter
 
             try
             {
-                var pointersData = new PointersData {pointers = new []{ $"{entityPointer.x},{entityPointer.y}"}};
+                var pointersData = new PointersData { pointers = new[] { $"{entityPointer.x},{entityPointer.y}" } };
                 var json = JsonUtility.ToJson(pointersData);
                 downloadHandler = webRequest.Post(url, json);
             }
-            catch (HttpRequestException e)
-            {
-                throw new Exception($"Request error! mappings couldn't be fetched for scene {entityPointer}! -- {e.Message}");
-            }
+            catch (HttpRequestException e) { throw new Exception($"Request error! mappings couldn't be fetched for scene {entityPointer}! -- {e.Message}"); }
 
             List<EntityMappingsDTO> parcelInfoApiData = JsonConvert.DeserializeObject<List<EntityMappingsDTO>>(downloadHandler.text);
             downloadHandler.Dispose();
 
-            if (parcelInfoApiData.Count == 0 || parcelInfoApiData == null)
-            {
-                throw new Exception("No mapping received");
-            }
+            if (parcelInfoApiData.Count == 0 || parcelInfoApiData == null) { throw new Exception("No mapping received"); }
 
             return parcelInfoApiData.ToArray();
         }
 
-        public static EntityMappingsDTO[] GetEntityMappings(String entityId, ApiTLD tld, IWebRequest webRequest)
+        public static EntityMappingsDTO[] GetEntityMappings(string entityId, ApiTLD tld, IWebRequest webRequest)
         {
             string url = $"{GetContentsUrl(tld)}{entityId}";
             Debug.Log(url);
             DownloadHandler downloadHandler = null;
 
-            try
-            {
-                downloadHandler = webRequest.Get(url);
-            }
+            try { downloadHandler = webRequest.Get(url); }
             catch (HttpRequestException e)
             {
-                throw new Exception($"Request error! mappings couldn't be fetched for scene {entityId}! -- {e.Message}");
+                var exception = new Exception($"Request error! mappings couldn't be fetched for scene {entityId}! -- {e.Message}");
+                Debug.LogException(exception);
+                throw exception;
+            }
+
+            if (downloadHandler.text.StartsWith("glTF"))
+            {
+                Debug.LogWarning("This url is a GLTF!");
+
+                return new[]
+                {
+                    new EntityMappingsDTO
+                    {
+                        content = new[]
+                        {
+                            new MappingPair
+                                { file = entityId + ".glb", hash = entityId }
+                        }
+                    }
+                };
             }
 
             EntityMappingsDTO parcelInfoDto = JsonUtility.FromJson<EntityMappingsDTO>(downloadHandler.text);
             downloadHandler.Dispose();
 
-            if (parcelInfoDto == null)
-            {
-                throw new Exception("No mapping received");
-            }
+            if (parcelInfoDto == null) { throw new Exception("No mapping received"); }
 
-            return new[] {parcelInfoDto};
+            return new[] { parcelInfoDto };
         }
 
         /// <summary>
@@ -336,10 +342,7 @@ namespace DCL.ABConverter
                     string oldPathMf = pathToSearch + assetBundlesList[i] + ".manifest";
                     file.Delete(oldPathMf);
                 }
-                catch (Exception e)
-                {
-                    Debug.LogWarning("Error! " + e.Message);
-                }
+                catch (Exception e) { Debug.LogWarning("Error! " + e.Message); }
             }
         }
 
@@ -362,10 +365,8 @@ namespace DCL.ABConverter
 
             // GPU Texture copy doesn't work for the Asset Bundles Converter since Application.isPlaying is false
             bool supportsGPUTextureCopy = Application.isPlaying && SystemInfo.copyTextureSupport != CopyTextureSupport.None;
-            if (supportsGPUTextureCopy && useGPUCopy)
-            {
-                Graphics.CopyTexture(rt, nTex);
-            }
+
+            if (supportsGPUTextureCopy && useGPUCopy) { Graphics.CopyTexture(rt, nTex); }
             else
             {
                 nTex.ReadPixels(new Rect(0, 0, newWidth, newHeight), 0, 0);

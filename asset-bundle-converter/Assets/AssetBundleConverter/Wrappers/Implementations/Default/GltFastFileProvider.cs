@@ -148,6 +148,7 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
                     var pathe = originalPath.Substring(originalPath.IndexOf('/'));
                     var keys = contentTable.Keys.Where(k => k.ToLower().Contains(pathe.ToLower()));
+
                     foreach (string key in keys)
                         Debug.Log($" -> {key} ?");
 
