@@ -1,0 +1,6 @@
+[submodule "asset-bundle-converter/Assets/git-submodules/glTFast"]
+	path = asset-bundle-converter/Assets/git-submodules/glTFast
+	url = https://github.com/Decentraland/glTFast.git
+[submodule "asset-bundle-converter/Assets/git-submodules/unity-shared-dependencies"]
+	path = asset-bundle-converter/Assets/git-submodules/unity-shared-dependencies
+	url = https://github.com/decentraland/unity-shared-dependencies.git
