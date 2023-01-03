@@ -350,7 +350,7 @@ namespace DCL.ABConverter
                         }
                         else
                         {
-                            material.shader = Shader.Find(material.shader.name);
+                            material.shader = Shader.Find("Shader Graphs/glTF-pbrMetallicRoughness");
                         }
 
 

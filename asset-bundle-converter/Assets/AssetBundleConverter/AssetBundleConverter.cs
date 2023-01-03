@@ -83,6 +83,8 @@ namespace DCL.ABConverter
             finalDownloadedAssetDbPath = PathUtils.FixDirectorySeparator(Config.ASSET_BUNDLES_PATH_ROOT + Config.DASH);
 
             log.verboseEnabled = true;
+
+            ShaderGraphMaterialGenerator.k_ShaderPathPrefix = "Assets/git-submodules/glTFast/Runtime/Shader/";
         }
 
         public static async Task WaitUntilAsync(Func<bool> predicate, int sleep = 50)
@@ -113,13 +115,17 @@ namespace DCL.ABConverter
             // Second step: we download all assets
             PopulateLowercaseMappings(rawContents);
 
-            if (!DownloadAssets(rawContents))
+            if (settings.importGltf)
             {
-                log.Info("All assets are already converted");
-                OnFinish();
+                if (!DownloadAssets(rawContents))
+                {
+                    log.Info("All assets are already converted");
+                    OnFinish();
 
-                return CurrentState;
+                    return CurrentState;
+                }
             }
+
 
             // Third step: we import gltfs
             if (await ImportAllGltf())
@@ -155,16 +161,16 @@ namespace DCL.ABConverter
                     CurrentState.lastErrorCode = ErrorCodes.ASSET_BUNDLE_BUILD_FAIL;
                     CurrentState.step = State.Step.FINISHED;
                 }
+            }
 
-                if (settings.visualTest)
+            if (settings.visualTest)
+            {
+                bool result = await VisualTests.TestConvertedAssets(env, settings, assetsToMark);
+
+                if (!result)
                 {
-                    bool result = await VisualTests.TestConvertedAssets(env, settings, assetsToMark);
-
-                    if (!result)
-                    {
-                        log.Error("Visual tests failed");
-                        CurrentState.lastErrorCode = ErrorCodes.VISUAL_TEST_FAILED;
-                    }
+                    log.Error("Visual tests failed");
+                    CurrentState.lastErrorCode = ErrorCodes.VISUAL_TEST_FAILED;
                 }
             }
 
@@ -262,7 +268,7 @@ namespace DCL.ABConverter
                         continue;
                     }
 
-                    if (!settings.createAssetBundle)
+                    if (!settings.createAssetBundle || !settings.visualTest)
                     {
                         GameObject originalGltf = AssetDatabase.LoadAssetAtPath<GameObject>(relativePath);
                         var clone = (GameObject)PrefabUtility.InstantiatePrefab(originalGltf);
@@ -289,7 +295,7 @@ namespace DCL.ABConverter
             return false;
         }
 
-        private static void CreateMaterialsForThisGltf(List<Texture2D> textures, GltfImportSettings gltf, GltfImport gltfImport, string gltfUrl)
+        private void CreateMaterialsForThisGltf(List<Texture2D> textures, GltfImportSettings gltf, GltfImport gltfImport, string gltfUrl)
         {
             Dictionary<string, Texture2D> texNameMap = new Dictionary<string, Texture2D>();
 
@@ -318,6 +324,9 @@ namespace DCL.ABConverter
                 var newMaterial = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
 
                 var shader = newMaterial.shader;
+
+                if (settings.stripShaders)
+                    Utils.MarkAssetForAssetBundleBuild(env.assetDatabase, shader, shader.name + "_IGNORE");
 
                 for (var i = 0; i < ShaderUtil.GetPropertyCount(shader); ++i)
                 {

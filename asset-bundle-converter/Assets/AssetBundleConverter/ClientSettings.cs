@@ -59,6 +59,8 @@ namespace AssetBundleConverter
             public string importOnlyEntity;
             public ShaderType shaderType;
             public string endPoint;
+            public bool stripShaders;
+            public bool importGltf;
 
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 

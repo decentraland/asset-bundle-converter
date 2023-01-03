@@ -33,6 +33,8 @@ namespace AssetBundleConverter
 
         private ClientSettings clientSettings;
         private bool showDebugOptions;
+        private bool stripShaders;
+        private bool importGltf = true;
 
         [MenuItem("Decentraland/Asset Bundle Converter")]
         private static void Init()
@@ -89,6 +91,8 @@ namespace AssetBundleConverter
             Color defaultColor = GUI.color;
             GUI.color = Color.green;
             debugEntity = EditorGUILayout.TextField("Import only hash", debugEntity);
+            stripShaders = EditorGUILayout.Toggle("Strip Shaders", stripShaders);
+            importGltf = EditorGUILayout.Toggle("Import GLTFs", importGltf);
             GUI.color = defaultColor;
             GUILayout.Space(5);
         }
@@ -166,7 +170,9 @@ namespace AssetBundleConverter
                 createAssetBundle = createAssetBundle,
                 clearDirectoriesOnStart = clearDownloads,
                 importOnlyEntity = showDebugOptions ? debugEntity : "",
-                shaderType = shader
+                shaderType = shader,
+                stripShaders = stripShaders,
+                importGltf = importGltf
             };
 
             Debug.ClearDeveloperConsole();
