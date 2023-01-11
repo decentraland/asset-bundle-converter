@@ -4,6 +4,7 @@ namespace DCL
     {
         private const string DEFAULT_ENDPOINT_CONTENTS = "/content/contents/";
         private const string DEFAULT_ENDPOINT_ENTITIES = "/content/entities/active";
+        private const string DEFAULT_ENDPOINT_LAMBDAS = "/lambdas/";
 
         [System.Serializable]
         public class PointerData
@@ -82,5 +83,8 @@ namespace DCL
 
             return $"{baseUrl}{endpoint}";
         }
+
+        public static string GetLambdasUrl(this ApiTLD env) =>
+            $"{GetBaseUrl(env)}{DEFAULT_ENDPOINT_LAMBDAS}";
     }
 }
