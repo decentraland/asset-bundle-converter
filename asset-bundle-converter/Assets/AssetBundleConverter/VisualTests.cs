@@ -27,23 +27,21 @@ namespace DCL.ABConverter
         /// Instantiate all locally-converted GLTFs in both formats (GLTF and Asset Bundle) and
         /// compare them visually. If a visual test fails, the AB is deleted to avoid uploading it
         /// </summary>
-        public static async Task<bool> TestConvertedAssets(Environment env, ClientSettings clientSettings, List<AssetPath> assetsToMark, Action<int> OnFinish = null)
+        public static async Task TestConvertedAssetsAsync(Environment env, ClientSettings clientSettings, List<AssetPath> assetsToMark, ErrorReporter errorReporter)
         {
             if (Utils.ParseOption(Config.CLI_SET_CUSTOM_OUTPUT_ROOT_PATH, 1, out string[] outputPath))
             {
-                abPath = System.IO.Path.Combine(Directory.GetCurrentDirectory(), outputPath[0] + "/");
+                abPath = Path.Combine(Directory.GetCurrentDirectory(), outputPath[0] + "/");
 
                 Debug.Log($"Visual Test Detection: -output PATH param found, setting ABPath as '{abPath}'");
             }
             else { Debug.Log($"Visual Test Detection: -output PATH param NOT found, setting ABPath as '{abPath}'"); }
 
-            if (!System.IO.Directory.Exists(abPath))
+            if (!Directory.Exists(abPath))
             {
                 Debug.Log($"Visual Test Detection: ABs path '{abPath}' doesn't exist...");
                 SkipAllAssets();
-                OnFinish?.Invoke(skippedAssets);
-
-                return false;
+                return;
             }
 
             Debug.Log("Visual Test Detection: Starting converted assets testing...");
@@ -62,9 +60,7 @@ namespace DCL.ABConverter
             {
                 Debug.Log("Visual Test Detection: no instantiated GLTFs...");
                 SkipAllAssets();
-                OnFinish?.Invoke(skippedAssets);
-
-                return false;
+                return;
             }
 
             // Take prewarm snapshot to make sure the scene is correctly loaded
@@ -91,8 +87,7 @@ namespace DCL.ABConverter
             {
                 Debug.Log("Visual Test Detection: no instantiated ABs...");
                 SkipAllAssets();
-                OnFinish?.Invoke(skippedAssets);
-                return false;
+                return;
             }
 
             foreach (GameObject go in abs)
@@ -115,14 +110,14 @@ namespace DCL.ABConverter
 
                 await TakeObjectSnapshot(go, testName);
 
-                bool result = AssetBundlesVisualTestUtils.TestSnapshot(
+                var result = AssetBundlesVisualTestUtils.TestSnapshot(
                     AssetBundlesVisualTestUtils.baselineImagesPath + testName,
-                    AssetBundlesVisualTestUtils.testImagesPath + testName,
-                    95,
-                    false);
+                    AssetBundlesVisualTestUtils.testImagesPath + testName);
+
+                var isValid = result >= 95;
 
                 // Delete failed AB files to avoid uploading them
-                if (!result && env != null)
+                if (!isValid && env != null)
                 {
                     string filePath = abPath + go.name;
 
@@ -134,8 +129,9 @@ namespace DCL.ABConverter
 
                     skippedAssets++;
 
-                    // TODO: Notify some metrics API or something to let us know that this asset has conversion problems so that we take a look manually
-                    Debug.Log("Visual Test Detection: FAILED converting asset -> " + go.name);
+                    string message = "Visual test failed on " + go.name + $" with {result}% affinity";
+                    Debug.Log(message);
+                    errorReporter.ReportError(message, clientSettings);
                 }
 
                 go.SetActive(false);
@@ -146,9 +142,6 @@ namespace DCL.ABConverter
             AssetBundlesVisualTestUtils.testImagesPath = TEST_IMAGES_PATH;
 
             Debug.Log("Visual Test Detection: Finished converted assets testing...skipped assets: " + skippedAssets);
-            OnFinish?.Invoke(skippedAssets);
-
-            return skippedAssets <= 0;
         }
 
         public static async Task WaitUntil(Func<bool> predicate, int sleep = 50)

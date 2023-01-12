@@ -383,6 +383,7 @@ namespace DCL.ABConverter
         public static string NicifyName(string name)
         {
             name = name.Replace(":", ".");
+            name = name.Replace(" ", "_");
             name = ObjectNames.NicifyVariableName(name);
 
             if (string.IsNullOrEmpty(name))

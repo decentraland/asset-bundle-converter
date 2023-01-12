@@ -11,8 +11,8 @@
         "GUID:76676817d91ba4f44b4aa7df71867256",
         "GUID:310e22ba33e14a87850fc17017411f24",
         "GUID:d0e3b53faf13d4a85bf5db51fc8bfd2f",
-        "GUID:339cc51f8f5f946a99be775bcfa83f2e",
-        "GUID:08b2edf8f14cdd3408988fd7746b749c"
+        "GUID:08b2edf8f14cdd3408988fd7746b749c",
+        "GUID:9887bf5401cdc9140916d3edbea10b69"
     ],
     "includePlatforms": [
         "Editor"
@@ -21,7 +21,8 @@
     "allowUnsafeCode": false,
     "overrideReferences": true,
     "precompiledReferences": [
-        "Newtonsoft.Json.dll"
+        "Newtonsoft.Json.dll",
+        "Sentry.dll"
     ],
     "autoReferenced": true,
     "defineConstraints": [],

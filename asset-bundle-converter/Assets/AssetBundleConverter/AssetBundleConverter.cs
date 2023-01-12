@@ -71,11 +71,14 @@ namespace DCL.ABConverter
         private int totalAssets;
         private float startTime;
         private int skippedAssets;
+        private ErrorReporter errorReporter;
 
         public AssetBundleConverter(Environment env, ClientSettings settings)
         {
             this.settings = settings;
             this.env = env;
+
+            errorReporter = new ErrorReporter(settings.reportErrors);
 
             ContentServerUtils.customEndpoint = settings.endPoint;
 
@@ -126,7 +129,6 @@ namespace DCL.ABConverter
                 }
             }
 
-
             // Third step: we import gltfs
             if (await ImportAllGltf())
             {
@@ -164,15 +166,7 @@ namespace DCL.ABConverter
             }
 
             if (settings.visualTest)
-            {
-                bool result = await VisualTests.TestConvertedAssets(env, settings, assetsToMark);
-
-                if (!result)
-                {
-                    log.Error("Visual tests failed");
-                    CurrentState.lastErrorCode = ErrorCodes.VISUAL_TEST_FAILED;
-                }
-            }
+                await VisualTests.TestConvertedAssetsAsync(env, settings, assetsToMark, errorReporter);
 
             OnFinish();
 
@@ -220,7 +214,9 @@ namespace DCL.ABConverter
 
                     if (!loadingSuccess)
                     {
-                        log.Error($"<color=red>Failed to import {gltfUrl}</color>");
+                        var message = $"Failed to load gltf {gltfUrl}";
+                        log.Error(message);
+                        errorReporter.ReportError(message, settings);
                         continue;
                     }
 
@@ -263,7 +259,10 @@ namespace DCL.ABConverter
                     }
                     else
                     {
-                        log.Error($"Failed to get the gltf importer for {gltfUrl} \nPath: {relativePath}");
+                        var message = $"Failed to get the gltf importer for {gltfUrl} \nPath: {relativePath}";
+                        log.Error(message);
+                        errorReporter.ReportError(message, settings);
+
                         EditorUtility.ClearProgressBar();
                         continue;
                     }
@@ -284,13 +283,13 @@ namespace DCL.ABConverter
                 catch (Exception e)
                 {
                     Debug.LogException(e);
-                    continue;
+                    errorReporter.ReportException(new ConversionException(ConversionStep.Import, settings, e));
                 }
             }
 
             EditorUtility.ClearProgressBar();
 
-            log.Info("Assets Loaded successfully");
+            log.Info("Ended importing GLTFs");
 
             return false;
         }
@@ -454,6 +453,7 @@ namespace DCL.ABConverter
         private void OnFinish()
         {
             if (settings.cleanAndExitOnFinish) { CleanAndExit(CurrentState.lastErrorCode); }
+            errorReporter.Dispose();
         }
 
         /// <summary>
@@ -615,38 +615,41 @@ namespace DCL.ABConverter
         /// <returns>true if succeeded</returns>
         private bool DownloadAssets(IReadOnlyList<ContentServerUtils.MappingPair> rawContents)
         {
-            Debug.Log(string.Join("\n", rawContents.Select(r => $"{r.file}")));
-
-            List<AssetPath> gltfPaths =
-                Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.gltfExtensions);
-
-            List<AssetPath> bufferPaths =
-                Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.bufferExtensions);
-
-            List<AssetPath> texturePaths =
-                Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
-
-            if (!FilterDumpList(ref gltfPaths))
-                return false;
-
-            //NOTE(Brian): Prepare textures and buffers. We should prepare all the dependencies in this phase.
-            assetsToMark.AddRange(DownloadImportableAssets(texturePaths));
-            assetsToMark.AddRange(DownloadRawAssets(bufferPaths));
-
-            AddAssetPathsToContentTable(texturePaths);
-            AddAssetPathsToContentTable(bufferPaths);
-            AddAssetPathsToContentTable(gltfPaths, true);
-
-            foreach (var gltfPath in gltfPaths)
+            try
             {
-                if (!string.IsNullOrEmpty(settings.importOnlyEntity))
-                {
-                    if (!string.Equals(gltfPath.hash, settings.importOnlyEntity, StringComparison.CurrentCultureIgnoreCase))
-                        continue;
-                }
+                if (settings.verbose)
+                    Debug.Log(string.Join("\n", rawContents.Select(r => $"{r.file}")));
 
-                assetsToMark.Add(DownloadGltf(gltfPath));
+                List<AssetPath> gltfPaths =
+                    Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.gltfExtensions);
+
+                List<AssetPath> bufferPaths =
+                    Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.bufferExtensions);
+
+                List<AssetPath> texturePaths =
+                    Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
+
+                if (!FilterDumpList(ref gltfPaths))
+                    return false;
+
+                //NOTE(Brian): Prepare textures and buffers. We should prepare all the dependencies in this phase.
+                assetsToMark.AddRange(DownloadImportableAssets(texturePaths));
+                assetsToMark.AddRange(DownloadRawAssets(bufferPaths));
+
+                AddAssetPathsToContentTable(texturePaths);
+                AddAssetPathsToContentTable(bufferPaths);
+                AddAssetPathsToContentTable(gltfPaths, true);
+
+                foreach (var gltfPath in gltfPaths)
+                {
+                    if (!string.IsNullOrEmpty(settings.importOnlyEntity))
+                        if (!string.Equals(gltfPath.hash, settings.importOnlyEntity, StringComparison.CurrentCultureIgnoreCase))
+                            continue;
+
+                    assetsToMark.Add(DownloadGltf(gltfPath));
+                }
             }
+            catch (Exception e) { errorReporter.ReportException(new ConversionException(ConversionStep.Fetch, settings, e)); }
 
             return true;
         }
@@ -852,15 +855,17 @@ namespace DCL.ABConverter
 
                 if (downloadHandler == null)
                 {
-                    log.Error($"Download failed! {finalUrl} -- null DownloadHandler");
-
+                    var message = $"Download Failed {finalUrl} -- null DownloadHandler?";
+                    log.Error(message);
+                    errorReporter.ReportError(message, settings);
                     return null;
                 }
             }
             catch (HttpRequestException e)
             {
-                log.Error($"Download failed! {finalUrl} -- {e.Message}");
-
+                var message = $"Download Failed {finalUrl} -- {e.Message}";
+                log.Error(message);
+                errorReporter.ReportError(message, settings);
                 return null;
             }
 
@@ -868,7 +873,9 @@ namespace DCL.ABConverter
 
             if (assetData == null)
             {
-                log.Error($"Downloaded asset has no data = {assetPath.filePath} to {assetPath.finalPath}");
+                var message = $"Download Failed {finalUrl} -- no data?";
+                log.Error(message);
+                errorReporter.ReportError(message, settings);
                 return null;
             }
 
@@ -952,10 +959,7 @@ namespace DCL.ABConverter
                 var finalDlPath = DownloadAsset(assetPath);
 
                 if (string.IsNullOrEmpty(finalDlPath))
-                {
                     result.Remove(assetPath);
-                    log.Error("Failed to get buffer dependencies! failing asset: " + assetPath.hash);
-                }
             }
 
             EditorUtility.ClearProgressBar();
@@ -973,38 +977,6 @@ namespace DCL.ABConverter
             string path = DownloadAsset(gltfPath, true);
 
             return path != null ? gltfPath : null;
-        }
-
-        /// <summary>
-        /// This method tags the main shader, so all the asset bundles don't contain repeated shader assets.
-        /// This way we save the big Shader.Parse and gpu compiling performance overhead and make
-        /// the bundles a bit lighter.
-        /// </summary>
-        private void MarkShaderAssetBundle()
-        {
-            //NOTE(Brian): The shader asset bundle that's going to be generated doesn't need to be really used,
-            //             as we are going to use the embedded one, so we are going to just delete it after the
-            //             generation ended.
-            var mainShader = Shader.Find("DCL/Universal Render Pipeline/Lit");
-            var result = Utils.MarkAssetForAssetBundleBuild(env.assetDatabase, mainShader, MAIN_SHADER_AB_NAME);
-
-            if (!result)
-            {
-                log.Error(
-                    $"Failed to mark {PathUtils.GetRelativePathTo(Application.dataPath, env.assetDatabase.GetAssetPath(mainShader))} as asset bundle");
-            }
-        }
-
-        private void ProcessSkippedAssets(int skippedAssetsCount)
-        {
-            if (skippedAssetsCount <= 0)
-                return;
-
-            skippedAssets = skippedAssetsCount;
-
-            CurrentState.lastErrorCode = skippedAssets >= totalAssets
-                ? ErrorCodes.ASSET_BUNDLE_BUILD_FAIL
-                : ErrorCodes.VISUAL_TEST_FAILED;
         }
     }
 }
