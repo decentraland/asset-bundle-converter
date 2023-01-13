@@ -97,7 +97,7 @@ namespace DCL.ABConverter
         /// </summary>
         /// <param name="rawContents"></param>
         /// <returns></returns>
-        public async Task<State> Convert(ContentServerUtils.MappingPair[] rawContents)
+        public async Task<State> Convert(IReadOnlyList<ContentServerUtils.MappingPair> rawContents)
         {
             log.verboseEnabled = settings.verbose;
             var scene = EditorSceneManager.OpenScene(SCENE_NAME, OpenSceneMode.Single);
@@ -268,7 +268,7 @@ namespace DCL.ABConverter
                         continue;
                     }
 
-                    if (!settings.createAssetBundle || !settings.visualTest)
+                    if ((!settings.createAssetBundle || !settings.visualTest) && settings.placeOnScene)
                     {
                         GameObject originalGltf = AssetDatabase.LoadAssetAtPath<GameObject>(relativePath);
                         var clone = (GameObject)PrefabUtility.InstantiatePrefab(originalGltf);
@@ -597,7 +597,7 @@ namespace DCL.ABConverter
             env.directory.InitializeDirectory(settings.finalAssetBundlePath, deleteABsDireIfExists);
         }
 
-        void PopulateLowercaseMappings(ContentServerUtils.MappingPair[] pairs)
+        void PopulateLowercaseMappings(IReadOnlyList<ContentServerUtils.MappingPair> pairs)
         {
             foreach (var content in pairs)
             {
@@ -613,7 +613,7 @@ namespace DCL.ABConverter
         /// </summary>
         /// <param name="rawContents">An array containing all the assets to be dumped.</param>
         /// <returns>true if succeeded</returns>
-        private bool DownloadAssets(ContentServerUtils.MappingPair[] rawContents)
+        private bool DownloadAssets(IReadOnlyList<ContentServerUtils.MappingPair> rawContents)
         {
             Debug.Log(string.Join("\n", rawContents.Select(r => $"{r.file}")));
 
@@ -658,9 +658,12 @@ namespace DCL.ABConverter
                 var relativeFinalPath = "Assets" + assetPath.finalPath.Substring(Application.dataPath.Length);
 
                 // since GLTF's are already renamed as their hash, we have to map them using their hash so the GltFastFileProvider can get them properly
-                contentTable[useHash ? assetPath.hashPath : assetPath.filePath] = relativeFinalPath;
+                contentTable[useHash ? EnsureStartWithSlash(assetPath.hashPath) : EnsureStartWithSlash(assetPath.filePath)] = relativeFinalPath;
             }
         }
+
+        private static string EnsureStartWithSlash(string path) =>
+            !path.StartsWith('/') ? $"/{path}" : path;
 
         /// <summary>
         /// Trims off existing asset bundles from the given AssetPath array,

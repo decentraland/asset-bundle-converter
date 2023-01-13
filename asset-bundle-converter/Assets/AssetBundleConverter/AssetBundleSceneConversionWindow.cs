@@ -1,4 +1,5 @@
-﻿using System.Threading.Tasks;
+﻿using AssetBundleConverter.Wearables;
+using System.Threading.Tasks;
 using DCL;
 using DCL.ABConverter;
 using System;
@@ -15,12 +16,15 @@ namespace AssetBundleConverter
         private const string TAB_SCENE = "Entity by ID";
         private const string TAB_PARCELS = "Entity by Pointer";
         private const string TAB_RANDOM = "Random Pointer";
+        private const string TAB_WEARABLES_COLLECTION = "Wearables Collection";
 
-        private readonly string[] tabs = { TAB_SCENE, TAB_PARCELS, TAB_RANDOM };
+        private readonly string[] tabs = { TAB_SCENE, TAB_PARCELS, TAB_RANDOM, TAB_WEARABLES_COLLECTION };
 
         private string entityId = "QmYy2TMDEfag99yZV4ZdpjievYUfdQgBVfFHKCDAge3zQi";
+        private string wearablesCollectionId = "urn:decentraland:off-chain:base-avatars";
         private string debugEntity = "bafkreib66ufmbowp4ee2u3kdu6t52kouie7kd7tfrlv3l5kejz6yjcaq5i";
         private string endPoint = "/content/contents/";
+        private bool placeOnScene = true;
         private bool visualTest = false;
         private bool clearDownloads = true;
         private bool createAssetBundle = true;
@@ -51,6 +55,7 @@ namespace AssetBundleConverter
         {
             GUILayout.Space(5);
             visualTest = EditorGUILayout.Toggle("Visual Test", visualTest);
+            placeOnScene = EditorGUILayout.Toggle("Place on Scene", placeOnScene);
             createAssetBundle = EditorGUILayout.Toggle("Create Asset Bundle", createAssetBundle);
             clearDownloads = EditorGUILayout.Toggle("Clear Downloads", clearDownloads);
             showDebugOptions = EditorGUILayout.Toggle("Show debug options", showDebugOptions);
@@ -78,6 +83,9 @@ namespace AssetBundleConverter
                         break;
                     case 2:
                         RenderRandomPointerAsync();
+                        break;
+                    case 3:
+                        RenderWearablesCollectionAsync();
                         break;
                 }
             }
@@ -159,6 +167,25 @@ namespace AssetBundleConverter
             }
         }
 
+        private async Task RenderWearablesCollectionAsync()
+        {
+            wearablesCollectionId = EditorGUILayout.TextField("Collection ID", wearablesCollectionId);
+
+            GUILayout.FlexibleSpace();
+
+            if (GUILayout.Button("Start"))
+            {
+                SetupSettings();
+
+                try
+                {
+                    var state = await SceneClient.ConvertWearablesCollection(wearablesCollectionId, clientSettings);
+                    OnConversionEnd(state);
+                }
+                catch (Exception e) { Debug.LogException(e); }
+            }
+        }
+
         private void SetupSettings()
         {
             clientSettings = new ClientSettings
@@ -172,7 +199,8 @@ namespace AssetBundleConverter
                 importOnlyEntity = showDebugOptions ? debugEntity : "",
                 shaderType = shader,
                 stripShaders = stripShaders,
-                importGltf = importGltf
+                importGltf = importGltf,
+                placeOnScene = placeOnScene
             };
 
             Debug.ClearDeveloperConsole();

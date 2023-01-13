@@ -1,4 +1,5 @@
 using AssetBundleConverter;
+using AssetBundleConverter.Wearables;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -122,8 +123,7 @@ namespace DCL.ABConverter
         {
             EnsureEnvironment();
 
-            if (settings == null)
-                settings = new ClientSettings();
+            settings ??= new ClientSettings();
 
             var apiResponse = Utils.GetEntityMappings(entityId, settings.tld, env.webRequest);
             var mappings = apiResponse.SelectMany(m => m.content);
@@ -141,12 +141,21 @@ namespace DCL.ABConverter
         {
             EnsureEnvironment();
 
-            if (settings == null)
-                settings = new ClientSettings();
+            settings ??= new ClientSettings();
 
             var apiResponse = Utils.GetEntityMappings(pointer, settings.tld, env.webRequest);
             var mappings = apiResponse.SelectMany(m => m.content);
             return await ConvertEntitiesToAssetBundles(mappings.ToArray(), settings);
+        }
+
+        public static async Task<AssetBundleConverter.State> ConvertWearablesCollection(string collectionId, ClientSettings settings = null)
+        {
+            EnsureEnvironment();
+
+            settings ??= new ClientSettings();
+
+            var mappings = WearablesClient.GetCollectionMappings(collectionId, settings.tld, env.webRequest);
+            return await ConvertEntitiesToAssetBundles(mappings, settings);
         }
 
         /// <summary>
@@ -155,20 +164,19 @@ namespace DCL.ABConverter
         /// <param name="entitiesId">The cid list for the scenes to gather from the catalyst's content server</param>
         /// <param name="settings">Any conversion settings object, if its null, a new one will be created</param>
         /// <returns>A state context object useful for tracking the conversion progress</returns>
-        private static async Task<AssetBundleConverter.State> ConvertEntitiesToAssetBundles(ContentServerUtils.MappingPair[] mappingPairs, ClientSettings settings = null)
+        private static async Task<AssetBundleConverter.State> ConvertEntitiesToAssetBundles(IReadOnlyList<ContentServerUtils.MappingPair> mappingPairs, ClientSettings settings = null)
         {
-            if (mappingPairs == null || mappingPairs.Length == 0)
+            if (mappingPairs == null || mappingPairs.Count == 0)
             {
                 log.Error("Entity list is null or count == 0! Maybe this sector lacks scenes or content requests failed?");
                 return new AssetBundleConverter.State { lastErrorCode = AssetBundleConverter.ErrorCodes.SCENE_LIST_NULL };
             }
 
-            log.Info($"Converting {mappingPairs.Length} entities...");
+            log.Info($"Converting {mappingPairs.Count} entities...");
 
             EnsureEnvironment();
 
-            if (settings == null)
-                settings = new ClientSettings();
+            settings ??= new ClientSettings();
 
             var core = new AssetBundleConverter(env, settings);
             await core.Convert(mappingPairs);
