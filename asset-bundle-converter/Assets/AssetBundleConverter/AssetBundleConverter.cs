@@ -84,7 +84,7 @@ namespace DCL.ABConverter
 
             log.verboseEnabled = true;
 
-            // ShaderGraphMaterialGenerator.k_ShaderPathPrefix = "Assets/git-submodules/glTFast/Runtime/Shader/";
+            ShaderGraphMaterialGenerator.k_ShaderPathPrefix = "Assets/git-submodules/glTFast/Runtime/Shader/";
         }
 
         public static async Task WaitUntilAsync(Func<bool> predicate, int sleep = 50)
