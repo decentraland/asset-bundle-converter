@@ -14,6 +14,10 @@ namespace DCL.ABConverter
         internal const string CLI_BUILD_WEARABLES_COLLECTION_RANGE_END_SYNTAX = "wearablesLastCollectionIndex";
         internal const string CLI_BUILD_PARCELS_RANGE_SYNTAX = "parcelsXYWH";
         internal const string CLI_SET_CUSTOM_BASE_URL = "baseUrl";
+        internal const string CLI_SET_CUSTOM_TLD = "tld";
+        internal const string CLI_SET_POSITION_X = "x";
+        internal const string CLI_SET_POSITION_Y = "y";
+        internal const string CLI_SET_SHADER = "shader";
 
         internal const string CLI_SET_CUSTOM_OUTPUT_ROOT_PATH = "output";
 

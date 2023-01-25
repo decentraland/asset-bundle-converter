@@ -135,10 +135,11 @@ namespace AssetBundleConverter
             {
                 SetupSettings();
                 var targetPosition = new Vector2Int(xCoord, yCoord);
+                clientSettings.pointer = targetPosition;
 
                 try
                 {
-                    var state = await SceneClient.ConvertEntityByPointer(targetPosition, clientSettings);
+                    var state = await SceneClient.ConvertEntityByPointer(clientSettings);
                     OnConversionEnd(state);
                     Debug.Log($"Finished! with state {state.step} {state.lastErrorCode}");
                 }
@@ -160,7 +161,9 @@ namespace AssetBundleConverter
                     int y = UnityEngine.Random.Range(-150, 151);
                     Debug.Log($"Converting {x},{y}");
                     var targetPosition = new Vector2Int(x, y);
-                    var state = await SceneClient.ConvertEntityByPointer(targetPosition, clientSettings);
+                    clientSettings.pointer = targetPosition;
+
+                    var state = await SceneClient.ConvertEntityByPointer(clientSettings);
                     OnConversionEnd(state);
                 }
                 catch (Exception e) { Debug.LogException(e); }

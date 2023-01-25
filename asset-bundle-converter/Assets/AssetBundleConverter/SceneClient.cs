@@ -48,12 +48,34 @@ namespace DCL.ABConverter
             try
             {
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_CUSTOM_OUTPUT_ROOT_PATH, 1, out string[] outputPath))
-                {
                     settings.finalAssetBundlePath = outputPath[0] + "/";
-                }
 
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_CUSTOM_BASE_URL, 1, out string[] customBaseUrl))
                     settings.baseUrl = customBaseUrl[0];
+
+                if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_SHADER, 1, out string[] shaderParam))
+                {
+                    var shader = shaderParam[0];
+
+                    settings.shaderType = shader switch
+                                          {
+                                              "dcl" => ShaderType.Dcl,
+                                              "gltfast" => ShaderType.GlTFast,
+                                              _ => settings.shaderType
+                                          };
+                }
+
+                if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_CUSTOM_TLD, 1, out string[] customTld))
+                {
+                    string targetTld = customTld[0];
+
+                    settings.tld = targetTld switch
+                                   {
+                                       "org" => ContentServerUtils.ApiTLD.ORG,
+                                       "zone" => ContentServerUtils.ApiTLD.ZONE,
+                                       _ => settings.tld
+                                   };
+                }
 
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_VERBOSE, 0, out _))
                     settings.verbose = true;
@@ -72,6 +94,25 @@ namespace DCL.ABConverter
                     }
 
                     await ConvertEntityById(sceneCid[0], settings);
+                    return;
+                }
+
+                bool isPointerValid = true;
+                if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_POSITION_X, 1, out string[] posX))
+                {
+                    isPointerValid &= int.TryParse(posX[0], out int resultX);
+                    settings.pointer.x = resultX;
+                }
+
+                if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_POSITION_Y, 1, out string[] posY))
+                {
+                    isPointerValid &= int.TryParse(posY[0], out int resultY);
+                    settings.pointer.y = resultY;
+                }
+
+                if (isPointerValid)
+                {
+                    await ConvertEntityByPointer(settings);
                     return;
                 }
 
@@ -137,13 +178,13 @@ namespace DCL.ABConverter
         /// <param name="pointer">The entity position in world</param>
         /// <param name="settings">Conversion settings</param>
         /// <returns>A state context object useful for tracking the conversion progress</returns>
-        public static async Task<AssetBundleConverter.State> ConvertEntityByPointer(Vector2Int pointer, ClientSettings settings = null)
+        public static async Task<AssetBundleConverter.State> ConvertEntityByPointer(ClientSettings settings = null)
         {
             EnsureEnvironment();
 
             settings ??= new ClientSettings();
 
-            var apiResponse = Utils.GetEntityMappings(pointer, settings.tld, env.webRequest);
+            var apiResponse = Utils.GetEntityMappings(settings.pointer, settings.tld, env.webRequest);
             var mappings = apiResponse.SelectMany(m => m.content);
             return await ConvertEntitiesToAssetBundles(mappings.ToArray(), settings);
         }
