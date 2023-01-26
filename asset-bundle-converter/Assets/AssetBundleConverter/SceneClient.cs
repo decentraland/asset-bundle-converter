@@ -1,6 +1,7 @@
 using AssetBundleConverter;
 using AssetBundleConverter.Wearables;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -89,20 +90,22 @@ namespace DCL.ABConverter
                 }
 
                 bool isPointerValid = true;
+                var targetPoint = new Vector2Int();
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_POSITION_X, 1, out string[] posX))
                 {
                     isPointerValid &= int.TryParse(posX[0].Replace("\"", string.Empty), out int resultX);
-                    settings.targetPointer.x = resultX;
+                    targetPoint.x = resultX;
                 }
 
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_POSITION_Y, 1, out string[] posY))
                 {
                     isPointerValid &= int.TryParse(posY[0].Replace("\"", string.Empty), out int resultY);
-                    settings.targetPointer.y = resultY;
+                    targetPoint.y = resultY;
                 }
 
                 if (isPointerValid)
                 {
+                    settings.targetPointer = targetPoint;
                     await ConvertEntityByPointer(settings);
                     return;
                 }
@@ -274,7 +277,7 @@ namespace DCL.ABConverter
 
             settings ??= new ClientSettings();
 
-            var apiResponse = Utils.GetEntityMappings(settings.targetPointer, settings.tld, env.webRequest);
+            var apiResponse = Utils.GetEntityMappings(settings.targetPointer.Value, settings.tld, env.webRequest);
             var mappings = apiResponse.SelectMany(m => m.content);
             return await ConvertEntitiesToAssetBundles(mappings.ToArray(), settings);
         }
