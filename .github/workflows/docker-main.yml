@@ -9,7 +9,7 @@ jobs:
   cd-dev:
     uses: decentraland/actions/.github/workflows/build-quay-main.yml@main
     with:
-      service-name: worlds-content-server
+      service-name: asset-bundle-converter
       deployment-environment: dev
     secrets:
       QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
