@@ -658,12 +658,11 @@ namespace DCL.ABConverter
                 var relativeFinalPath = "Assets" + assetPath.finalPath.Substring(Application.dataPath.Length);
 
                 // since GLTF's are already renamed as their hash, we have to map them using their hash so the GltFastFileProvider can get them properly
-                contentTable[useHash ? EnsureStartWithSlash(assetPath.hashPath) : EnsureStartWithSlash(assetPath.filePath)] = relativeFinalPath;
+                contentTable[useHash ? Utils.EnsureStartWithSlash(assetPath.hashPath) : Utils.EnsureStartWithSlash(assetPath.filePath)] = relativeFinalPath;
             }
         }
 
-        private static string EnsureStartWithSlash(string path) =>
-            !path.StartsWith('/') ? $"/{path}" : path;
+
 
         /// <summary>
         /// Trims off existing asset bundles from the given AssetPath array,

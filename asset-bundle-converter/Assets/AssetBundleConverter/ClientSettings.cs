@@ -1,6 +1,7 @@
 using DCL;
 using DCL.ABConverter;
 using System.IO;
+using UnityEngine;
 
 namespace AssetBundleConverter
 {
@@ -56,12 +57,13 @@ namespace AssetBundleConverter
             public bool cleanAndExitOnFinish = true;
             public bool visualTest = true;
             public bool placeOnScene = true;
-            public bool createAssetBundle;
+            public bool createAssetBundle = true;
             public string importOnlyEntity;
             public ShaderType shaderType;
-            public string endPoint;
-            public bool stripShaders;
-            public bool importGltf;
+            public string endPoint = "/content/contents/";
+            public bool stripShaders = true;
+            public bool importGltf = true;
+            public Vector2Int pointer;
 
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 

@@ -17,12 +17,14 @@ namespace AssetBundleConverter
         private const string TAB_PARCELS = "Entity by Pointer";
         private const string TAB_RANDOM = "Random Pointer";
         private const string TAB_WEARABLES_COLLECTION = "Wearables Collection";
+        private const string TEST_BATCHMODE = "Test Batchmode";
 
-        private readonly string[] tabs = { TAB_SCENE, TAB_PARCELS, TAB_RANDOM, TAB_WEARABLES_COLLECTION };
+        private readonly string[] tabs = { TAB_SCENE, TAB_PARCELS, TAB_RANDOM, TAB_WEARABLES_COLLECTION, TEST_BATCHMODE };
 
         private string entityId = "QmYy2TMDEfag99yZV4ZdpjievYUfdQgBVfFHKCDAge3zQi";
         private string wearablesCollectionId = "urn:decentraland:off-chain:base-avatars";
         private string debugEntity = "bafkreib66ufmbowp4ee2u3kdu6t52kouie7kd7tfrlv3l5kejz6yjcaq5i";
+        private string batchModeParams = "";
         private string endPoint = "/content/contents/";
         private bool placeOnScene = true;
         private bool visualTest = false;
@@ -87,9 +89,28 @@ namespace AssetBundleConverter
                     case 3:
                         RenderWearablesCollectionAsync();
                         break;
+                    case 4:
+                        RenderTestBatchmode();
+                        break;
                 }
             }
             catch (Exception e) { Debug.LogException(e); }
+        }
+
+        private void RenderTestBatchmode()
+        {
+            batchModeParams = EditorGUILayout.TextField("Params", batchModeParams);
+
+            GUILayout.FlexibleSpace();
+
+            if (GUILayout.Button("Start"))
+            {
+                try
+                {
+                    SceneClient.ExportSceneToAssetBundles(batchModeParams.Split(","));
+                }
+                catch (Exception e) { Debug.LogException(e); }
+            }
         }
 
         private void RenderDebugOptions()
@@ -135,10 +156,11 @@ namespace AssetBundleConverter
             {
                 SetupSettings();
                 var targetPosition = new Vector2Int(xCoord, yCoord);
+                clientSettings.pointer = targetPosition;
 
                 try
                 {
-                    var state = await SceneClient.ConvertEntityByPointer(targetPosition, clientSettings);
+                    var state = await SceneClient.ConvertEntityByPointer(clientSettings);
                     OnConversionEnd(state);
                     Debug.Log($"Finished! with state {state.step} {state.lastErrorCode}");
                 }
@@ -160,7 +182,9 @@ namespace AssetBundleConverter
                     int y = UnityEngine.Random.Range(-150, 151);
                     Debug.Log($"Converting {x},{y}");
                     var targetPosition = new Vector2Int(x, y);
-                    var state = await SceneClient.ConvertEntityByPointer(targetPosition, clientSettings);
+                    clientSettings.pointer = targetPosition;
+
+                    var state = await SceneClient.ConvertEntityByPointer(clientSettings);
                     OnConversionEnd(state);
                 }
                 catch (Exception e) { Debug.LogException(e); }

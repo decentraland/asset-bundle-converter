@@ -296,6 +296,7 @@ namespace DCL.ABConverter
             return new[] { parcelInfoDto };
         }
 
+
         /// <summary>
         /// Given a MappingPair list, returns a AssetPath list filtered by file extensions
         /// </summary>
@@ -389,5 +390,8 @@ namespace DCL.ABConverter
 
             return name;
         }
+
+        public static string EnsureStartWithSlash(string path) =>
+            !path.StartsWith('/') ? $"/{path}" : path;
     }
 }
