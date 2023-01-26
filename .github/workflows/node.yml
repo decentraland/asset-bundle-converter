@@ -1,0 +1,24 @@
+name: node
+
+on:
+  push:
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - name: Use Node.js 16.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16.x
+          cache: npm
+      - name: install
+        run: npm ci
+        working-directory: consumer-server
+      - name: build
+        run: npm run build
+        working-directory: consumer-server
+      - name: test
+        run: npm run test
+        working-directory: consumer-server

@@ -1,0 +1,16 @@
+name: CI/CD on main branch
+
+on:
+  push:
+    branches:
+      - "main"
+
+jobs:
+  cd-dev:
+    uses: decentraland/actions/.github/workflows/build-quay-main.yml@main
+    with:
+      service-name: worlds-content-server
+      deployment-environment: dev
+    secrets:
+      QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+      QUAY_TOKEN: ${{ secrets.QUAY_TOKEN }}
