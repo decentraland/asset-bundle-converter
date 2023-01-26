@@ -139,7 +139,7 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
         {
             try
             {
-                string originalPath = url.OriginalString;
+                string originalPath = Utils.EnsureStartWithSlash(url.OriginalString);
                 bool isContained = contentTable.ContainsKey(originalPath);
 
                 if (!isContained)

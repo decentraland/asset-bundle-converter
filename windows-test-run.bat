@@ -1,0 +1,1 @@
+"C:\Program Files\Unity\Hub\Editor\2021.3.14f1\Editor\Unity.exe" -projectPath "asset-bundle-converter" -batchmode -executeMethod DCL.ABConverter.SceneClient.ExportSceneToAssetBundles -x "-110" -y "-110" -output "AssetBundles" -logFile ./tmp/log.txt

@@ -38,6 +38,22 @@ namespace DCL.ABConverter
         }
 
         /// <summary>
+        /// Wearables collection conversion batch-mode entry point
+        /// </summary>
+        public static void ExportWearablesCollectionToAssetBundles()
+        {
+            //NOTE(Brian): This should make the logs cleaner
+            Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
+            Application.SetStackTraceLogType(LogType.Warning, StackTraceLogType.None);
+            Application.SetStackTraceLogType(LogType.Error, StackTraceLogType.Full);
+            Application.SetStackTraceLogType(LogType.Exception, StackTraceLogType.Full);
+            Application.SetStackTraceLogType(LogType.Assert, StackTraceLogType.Full);
+
+            EnsureEnvironment();
+            ExportWearablesCollectionToAssetBundles(System.Environment.GetCommandLineArgs());
+        }
+
+        /// <summary>
         /// Start the scene conversion process with the given commandLineArgs.
         /// </summary>
         /// <param name="commandLineArgs">An array with the command line arguments.</param>
@@ -47,44 +63,7 @@ namespace DCL.ABConverter
             ClientSettings settings = new ClientSettings();
             try
             {
-                if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_CUSTOM_OUTPUT_ROOT_PATH, 1, out string[] outputPath))
-                    settings.finalAssetBundlePath = outputPath[0] + "/";
-
-                if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_CUSTOM_BASE_URL, 1, out string[] customBaseUrl))
-                    settings.baseUrl = customBaseUrl[0];
-
-                if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_SHADER, 1, out string[] shaderParam))
-                {
-                    var shader = shaderParam[0];
-
-                    settings.shaderType = shader switch
-                                          {
-                                              "dcl" => ShaderType.Dcl,
-                                              "gltfast" => ShaderType.GlTFast,
-                                              _ => settings.shaderType
-                                          };
-                }
-
-                if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_CUSTOM_TLD, 1, out string[] customTld))
-                {
-                    string targetTld = customTld[0];
-
-                    settings.tld = targetTld switch
-                                   {
-                                       "org" => ContentServerUtils.ApiTLD.ORG,
-                                       "zone" => ContentServerUtils.ApiTLD.ZONE,
-                                       _ => settings.tld
-                                   };
-                }
-
-                if (Utils.ParseOption(commandLineArgs, Config.CLI_VERBOSE, 0, out _))
-                    settings.verbose = true;
-
-                if (Utils.ParseOption(commandLineArgs, Config.CLI_ALWAYS_BUILD_SYNTAX, 0, out _))
-                    settings.skipAlreadyBuiltBundles = false;
-
-                if (Utils.ParseOption(commandLineArgs, Config.CLI_KEEP_BUNDLES_SYNTAX, 0, out _))
-                    settings.deleteDownloadPathAfterFinished = false;
+                ParseCommonSettings(commandLineArgs, settings);
 
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_BUILD_SCENE_SYNTAX, 1, out string[] sceneCid))
                 {
@@ -100,13 +79,13 @@ namespace DCL.ABConverter
                 bool isPointerValid = true;
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_POSITION_X, 1, out string[] posX))
                 {
-                    isPointerValid &= int.TryParse(posX[0], out int resultX);
+                    isPointerValid &= int.TryParse(posX[0].Replace("\"", string.Empty), out int resultX);
                     settings.pointer.x = resultX;
                 }
 
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_POSITION_Y, 1, out string[] posY))
                 {
-                    isPointerValid &= int.TryParse(posY[0], out int resultY);
+                    isPointerValid &= int.TryParse(posY[0].Replace("\"", string.Empty), out int resultY);
                     settings.pointer.y = resultY;
                 }
 
@@ -141,17 +120,116 @@ namespace DCL.ABConverter
                         throw new ArgumentException("Invalid parcelsXYWH argument! Please don't use negative width/height values, and ensure any given width/height doesn't exceed 10.");
                     }
 
-                    // TODO:
-                    //await DumpArea(new Vector2Int(x, y), new Vector2Int(w, h), settings);
+                    log.Error("-parcelsXYWH is deprecated!");
                     return;
                 }
 
-                throw new ArgumentException("Invalid arguments! You must pass -parcelsXYWH or -sceneCid for dump to work!");
+                throw new ArgumentException("Invalid arguments! You must pass (-x and -y) or -sceneCid for the converter to work!");
             }
             catch (Exception e)
             {
                 log.Error(e.Message);
             }
+        }
+
+        /// <summary>
+        /// Start the wearables collection conversion process with the given commandLineArgs.
+        /// </summary>
+        /// <param name="commandLineArgs">An array with the command line arguments.</param>
+        /// <exception cref="ArgumentException">When an invalid argument is passed</exception>
+        public static async void ExportWearablesCollectionToAssetBundles(string[] commandLineArgs)
+        {
+            ClientSettings settings = new ClientSettings();
+            try
+            {
+                ParseCommonSettings(commandLineArgs, settings);
+
+                if (Utils.ParseOption(commandLineArgs, Config.CLI_BUILD_WEARABLES_COLLECTION_SYNTAX, 1, out string[] collectionId))
+                {
+                    if (collectionId == null || string.IsNullOrEmpty(collectionId[0]))
+                    {
+                        throw new ArgumentException("Invalid wearablesCollectionUrnId argument! Please use -wearablesCollectionUrnId <id> to establish the desired collection id to process.");
+                    }
+
+                    log.Info("found 'wearablesCollectionUrnId' param, will try to convert collection with id: " + collectionId[0]);
+
+                    await ConvertWearablesCollection(collectionId[0], settings);
+
+                    return;
+                }
+
+                if (Utils.ParseOption(commandLineArgs, Config.CLI_BUILD_WEARABLES_COLLECTION_RANGE_START_SYNTAX, 1, out string[] firstCollectionIndex))
+                {
+                    if (firstCollectionIndex == null || string.IsNullOrEmpty(firstCollectionIndex[0]))
+                    {
+                        throw new ArgumentException("Invalid firstCollectionIndex argument! Please use -firstCollectionIndex <index> to define the first collection to convert in the batch");
+                    }
+                    int firstCollectionIndexInt = Int32.Parse(firstCollectionIndex[0]);
+
+                    if (Utils.ParseOption(commandLineArgs, Config.CLI_BUILD_WEARABLES_COLLECTION_RANGE_END_SYNTAX, 1, out string[] lastCollectionIndex))
+                    {
+                        if (lastCollectionIndex == null || string.IsNullOrEmpty(lastCollectionIndex[0]))
+                            throw new ArgumentException("Invalid wearablesLastCollectionIndex argument! Please use -wearablesLastCollectionIndex <index> to define the last collection to convert in the batch");
+
+                        int lastCollectionIndexInt = Int32.Parse(lastCollectionIndex[0]);
+
+                        if (lastCollectionIndexInt < firstCollectionIndexInt)
+                            throw new ArgumentException("Invalid wearablesLastCollectionIndex argument! Please use a wearablesLastCollectionIndex that's equal or higher than the first collection index");
+
+                        //DumpWearablesCollectionRange(firstCollectionIndexInt, lastCollectionIndexInt, settings);
+                        log.Error("Converting multiple collections is not supported!");
+                        return;
+                    }
+                }
+
+                throw new ArgumentException("Invalid arguments! You must pass -wearablesCollectionUrnId for dump to work!");
+            }
+            catch (Exception e)
+            {
+                log.Error(e.Message);
+            }
+        }
+
+        private static void ParseCommonSettings(string[] commandLineArgs, ClientSettings settings)
+        {
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_CUSTOM_OUTPUT_ROOT_PATH, 1, out string[] outputPath))
+                settings.finalAssetBundlePath = outputPath[0] + "/";
+
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_CUSTOM_BASE_URL, 1, out string[] customBaseUrl))
+                settings.baseUrl = customBaseUrl[0];
+
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_SHADER, 1, out string[] shaderParam))
+            {
+                var shader = shaderParam[0];
+
+                settings.shaderType = shader switch
+                                      {
+                                          "dcl" => ShaderType.Dcl,
+                                          "gltfast" => ShaderType.GlTFast,
+                                          _ => settings.shaderType
+                                      };
+            }
+
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_CUSTOM_TLD, 1, out string[] customTld))
+            {
+                string targetTld = customTld[0];
+
+                settings.tld = targetTld switch
+                               {
+                                   "org" => ContentServerUtils.ApiTLD.ORG,
+                                   "zone" => ContentServerUtils.ApiTLD.ZONE,
+                                   _ => settings.tld
+                               };
+            }
+
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_VERBOSE, 0, out _))
+                settings.verbose = true;
+
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_ALWAYS_BUILD_SYNTAX, 0, out _))
+                settings.skipAlreadyBuiltBundles = false;
+
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_KEEP_BUNDLES_SYNTAX, 0, out _))
+                settings.deleteDownloadPathAfterFinished = false;
         }
 
         /// <summary>
