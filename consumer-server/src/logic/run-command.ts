@@ -12,17 +12,11 @@ export function execCommand(components: Pick<AppComponents, 'logs'>, command: st
     .on('error', (error) => exitFuture.reject(error))
 
   child.stdout?.on('data', (data) => {
-    data
-      .toString()
-      .split(/\n/g)
-      .map(logger.log)
+    logger.log(data)
   })
 
   child.stderr?.on('data', (data) =>
-    data
-      .toString()
-      .split(/\n/g)
-      .map(logger.error)
+    logger.error(data)
   )
 
   return { exitPromise: exitFuture, child }

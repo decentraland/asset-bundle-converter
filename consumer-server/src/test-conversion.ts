@@ -37,9 +37,8 @@ async function main() {
 
   await fs.mkdir(OUT_DIRECTORY, {recursive: true})
   
-  const childArg0 = 'xvfb-run'
+  const childArg0 = `${$UNITY_PATH}/Editor/Unity`
   const childArguments: string[] = [
-    '--auto-servernum', "--server-args='-screen 0 640x480x24'", `${$UNITY_PATH}/Editor/Unity`,
     '-projectPath', $PROJECT_PATH,
     '-batchmode',
     '-executeMethod', 'DCL.ABConverter.SceneClient.ExportSceneToAssetBundles',

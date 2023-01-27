@@ -57,11 +57,12 @@ COPY --from=builderenv /tini /tini
 # test the integration of server + conversor
 COPY Unity_lic.ulf /root/.local/share/unity3d/Unity/Unity_lic.ulf
 
-RUN npm run --silent test-conversion -- \
-  --baseUrl https://peer.decentraland.org/content \
-  --pointer urn:decentraland:off-chain:base-avatars:brown_pants \
-  --outDir /tmp-ab \
-  --logFile /tmp-ab/log.txt || (cat /tmp-ab/log.txt && exit 1) && rm -rf /tmp-ab && exit 1
+RUN xvfb-run --auto-servernum --server-args='-screen 0 640x480x24' \
+    node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js \
+      --baseUrl https://peer.decentraland.org/content \
+      --pointer urn:decentraland:off-chain:base-avatars:brown_pants \
+      --outDir /tmp-ab \
+      --logFile /tmp-ab/log.txt && cat /tmp-ab/log.txt && rm -rf /tmp-ab
 
 # Please _DO NOT_ use a custom ENTRYPOINT because it may prevent signals
 # (i.e. SIGTERM) to reach the service
@@ -69,4 +70,4 @@ RUN npm run --silent test-conversion -- \
 #            and: https://www.ctl.io/developers/blog/post/gracefully-stopping-docker-containers/
 ENTRYPOINT ["/tini", "--"]
 # Run the program under Tini
-CMD [ "node", "--trace-warnings", "--abort-on-uncaught-exception", "--unhandled-rejections=strict", "dist/index.js" ]
+CMD [ "xvfb-run", "--auto-servernum", "--server-args='-screen 0 640x480x24'", "node", "--trace-warnings", "--abort-on-uncaught-exception", "--unhandled-rejections=strict", "dist/index.js" ]
