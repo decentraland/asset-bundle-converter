@@ -11,10 +11,10 @@ jobs:
         uses: docker/setup-qemu-action@v1
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
-      - name: Create Unity_lic.alf
-        run: echo "$UNITY_2021_ALF" > Unity_lic.alf
+      - name: Create Unity_lic.ulf
+        run: echo "$UNITY_2021_ULF" > Unity_lic.ulf
         env:
-          UNITY_2021_ALF: ${{ secrets.UNITY_2021_ALF }}
+          UNITY_2021_ULF: ${{ secrets.UNITY_2021_ULF }}
       - name: Build and push
         id: docker_build
         uses: docker/build-push-action@v2

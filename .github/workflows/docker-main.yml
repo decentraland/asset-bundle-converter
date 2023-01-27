@@ -13,10 +13,10 @@ jobs:
       registry-paths: ${{ steps.push-to-quay.outputs.registry-paths }}
     steps:
       - uses: actions/checkout@v2
-      - name: Create Unity_lic.alf
-        run: echo "$UNITY_2021_ALF" > Unity_lic.alf
+      - name: Create Unity_lic.ulf
+        run: echo "$UNITY_2021_ULF" > Unity_lic.ulf
         env:
-          UNITY_2021_ALF: ${{ secrets.UNITY_2021_ALF }}
+          UNITY_2021_ULF: ${{ secrets.UNITY_2021_ULF }}
       - name: Build Image
         id: build-image
         uses: redhat-actions/buildah-build@v2
