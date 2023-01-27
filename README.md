@@ -42,10 +42,10 @@ docker build -t ab-converter .
 And to run the server locally, the minimum command is the following:
 
 ```
-docker run -p 5000:5000 ab-converter
+docker run -p 5001:5000 ab-converter
 ```
 
-After it starts, you should be albe to hit `http://localhost:5000/metrics` to check the server is live.
+After it starts, you should be albe to hit `http://localhost:5001/metrics` to check the server is live.
 
 ---
 

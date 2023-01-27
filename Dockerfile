@@ -1,8 +1,9 @@
 ARG RUN
 
+
 FROM node:18 as builderenv
 
-WORKDIR /app
+WORKDIR /consumer-server
 
 # some packages require a build step
 RUN apt-get update
@@ -14,12 +15,12 @@ ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
 RUN chmod +x /tini
 
 # install dependencies
-COPY consumer-server/package.json /app/package.json
-COPY consumer-server/package-lock.json /app/package-lock.json
+COPY consumer-server/package.json /consumer-server/package.json
+COPY consumer-server/package-lock.json /consumer-server/package-lock.json
 RUN npm ci
 
-# build the app
-COPY consumer-server /app
+# build the consumer-server
+COPY consumer-server /consumer-server
 RUN npm run build
 RUN npm run test
 
@@ -41,10 +42,28 @@ ENV PATH $NVM_DIR/versions/node/$NODE_VERSION/bin:$PATH
 
 # NODE_ENV is used to configure some runtime options, like JSON logger
 ENV NODE_ENV production
+ENV PROJECT_PATH /asset-bundle-converter
+ENV DEBIAN_FRONTEND=noninteractive
 
-WORKDIR /app
-COPY --from=builderenv /app /app
+WORKDIR /consumer-server
+
+# Create unity cache
+RUN mkdir -p /root/.cache/unity3d && mkdir -p /root/.local/share/unity3d/Unity/
+
+COPY /asset-bundle-converter /asset-bundle-converter
+COPY --from=builderenv /consumer-server /consumer-server
 COPY --from=builderenv /tini /tini
+
+# test the integration of server + conversor
+COPY Unity_lic.ulf /root/.local/share/unity3d/Unity/Unity_lic.ulf
+COPY Unity_lic.ulf /home/username/.local/share/unity3d/Unity/Unity_lic.ulf
+
+RUN npm run --silent test-conversion -- \
+  --baseUrl https://peer.decentraland.org/content \
+  --pointer urn:decentraland:off-chain:base-avatars:brown_pants \
+  --outDir /tmp-ab \
+  --logFile /tmp-ab/log.txt || (cat /tmp-ab/log.txt && exit 1) && rm -rf /tmp-ab && exit 1
+
 # Please _DO NOT_ use a custom ENTRYPOINT because it may prevent signals
 # (i.e. SIGTERM) to reach the service
 # Read more here: https://aws.amazon.com/blogs/containers/graceful-shutdowns-with-ecs/
