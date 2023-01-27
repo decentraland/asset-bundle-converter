@@ -10,6 +10,7 @@
     "pretty": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,
+    "esModuleInterop": true,
     "noImplicitAny": true,
     "noImplicitThis": true,
     "forceConsistentCasingInFileNames": true

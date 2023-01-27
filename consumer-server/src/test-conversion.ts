@@ -2,7 +2,7 @@
 // predefined assets to "warmup" the compilation cache of unity and to verify
 // the conversion helpers work as expected
 
-import * as arg from 'arg'
+import arg from 'arg'
 import { createFetchComponent } from './adapters/fetch'
 import * as fs from 'fs/promises'
 import { getEntities } from './logic/fetch-entity-by-pointer'

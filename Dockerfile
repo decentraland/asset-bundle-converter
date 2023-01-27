@@ -56,7 +56,6 @@ COPY --from=builderenv /tini /tini
 
 # test the integration of server + conversor
 COPY Unity_lic.ulf /root/.local/share/unity3d/Unity/Unity_lic.ulf
-COPY Unity_lic.ulf /home/username/.local/share/unity3d/Unity/Unity_lic.ulf
 
 RUN npm run --silent test-conversion -- \
   --baseUrl https://peer.decentraland.org/content \
