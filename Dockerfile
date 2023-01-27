@@ -30,8 +30,14 @@ RUN npm ci --only=production
 
 FROM unityci/editor:2021.3.14f1-webgl-1
 
-RUN apt update && apt install -y unzip vim awscli curl nodejs npm gnupg2
-RUN npm cache clean -f && npm install -g n && n 18
+ENV NVM_DIR /root/.nvm
+ENV NODE_VERSION v16.18.0
+
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.2/install.sh | bash
+RUN /bin/bash -c "source $NVM_DIR/nvm.sh && nvm install $NODE_VERSION && nvm use --delete-prefix $NODE_VERSION"
+
+ENV NODE_PATH $NVM_DIR/versions/node/$NODE_VERSION/lib/node_modules
+ENV PATH $NVM_DIR/versions/node/$NODE_VERSION/bin:$PATH
 
 # NODE_ENV is used to configure some runtime options, like JSON logger
 ENV NODE_ENV production
@@ -45,4 +51,4 @@ COPY --from=builderenv /tini /tini
 #            and: https://www.ctl.io/developers/blog/post/gracefully-stopping-docker-containers/
 ENTRYPOINT ["/tini", "--"]
 # Run the program under Tini
-CMD [ "/usr/local/bin/node", "--trace-warnings", "--abort-on-uncaught-exception", "--unhandled-rejections=strict", "dist/index.js" ]
+CMD [ "node", "--trace-warnings", "--abort-on-uncaught-exception", "--unhandled-rejections=strict", "dist/index.js" ]
