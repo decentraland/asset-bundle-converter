@@ -29,6 +29,26 @@ So this tool loads every scene asset, loads and re-imports all gltf's to turn th
 
 ---
 
+# The conversion server
+
+This tool is exposed as a standalone project and as a Docker based service. The code of the service lives in the `consumer-server` folder, and runs commands locally calling the project `asset-bundle-converter` of this same repository.
+
+To build the image locally, docker must be used. The recommended command is:
+
+```
+docker build -t ab-converter .
+```
+
+And to run the server locally, the minimum command is the following:
+
+```
+docker run -p 5000:5000 ab-converter
+```
+
+After it starts, you should be albe to hit `http://localhost:5000/metrics` to check the server is live.
+
+---
+
 ## Copyright info
 
 This repository is protected with a standard Apache 2 license. See the terms and conditions in
