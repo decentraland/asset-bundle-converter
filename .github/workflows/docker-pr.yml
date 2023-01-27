@@ -12,7 +12,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
       - name: Create Unity_lic.ulf
-        run: echo "$UNITY_2021_ULF" > Unity_lic.ulf
+        run: echo "$UNITY_2021_ULF" > Unity_lic.ulf && ls .
         env:
           UNITY_2021_ULF: ${{ secrets.UNITY_2021_ULF }}
       - name: Build and push
