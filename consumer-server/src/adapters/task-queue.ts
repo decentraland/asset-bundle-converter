@@ -88,10 +88,14 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
 
   return {
     async publish(job) {
+      const snsOverSqs: SNSOverSQSMessage = {
+        Message: JSON.stringify(job)
+      }
+
       const published = await sqs.sendMessage(
         {
           QueueUrl: options.queueUrl,
-          MessageBody: JSON.stringify(job),
+          MessageBody: JSON.stringify(snsOverSqs),
         }).promise()
 
       const m: TaskQueueMessage = { id: published.MessageId! }

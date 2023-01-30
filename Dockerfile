@@ -5,10 +5,6 @@ FROM node:18 as builderenv
 
 WORKDIR /consumer-server
 
-# some packages require a build step
-RUN apt-get update
-RUN apt-get -y -qq install python-setuptools python-dev build-essential
-
 # We use Tini to handle signals and PID1 (https://github.com/krallin/tini, read why here https://github.com/krallin/tini/issues/8)
 ENV TINI_VERSION v0.19.0
 ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
@@ -56,14 +52,14 @@ COPY --from=builderenv /consumer-server /consumer-server
 COPY --from=builderenv /tini /tini
 
 # test the integration of server + conversor
-COPY Unity_lic.ulf /root/.local/share/unity3d/Unity/Unity_lic.ulf
+RUN --mount=type=secret,id=ULF,dst=/Unity_lic.ulf mkdir -p /root/.local/share/unity3d/Unity && cp /Unity_lic.ulf /root/.local/share/unity3d/Unity/Unity_lic.ulf
 
 RUN xvfb-run --auto-servernum --server-args='-screen 0 640x480x24' \
-    node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js \
-      --baseUrl https://peer.decentraland.org/content \
-      --pointer urn:decentraland:off-chain:base-avatars:brown_pants \
-      --outDir /tmp-ab \
-      --logFile /tmp-ab/log.txt && cat /tmp-ab/log.txt && rm -rf /tmp-ab
+      node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js \
+        --baseUrl https://peer.decentraland.org/content \
+        --pointer urn:decentraland:off-chain:base-avatars:brown_pants \
+        --outDir /tmp-ab \
+        --logFile /tmp-ab/log.txt && cat /tmp-ab/log.txt && rm -rf /tmp-ab
 
 # Please _DO NOT_ use a custom ENTRYPOINT because it may prevent signals
 # (i.e. SIGTERM) to reach the service

@@ -36,7 +36,7 @@ This tool is exposed as a standalone project and as a Docker based service. The 
 To build the image locally, docker must be used. The recommended command is:
 
 ```
-docker build -t ab-converter .
+docker build -t ab-converter --secret id=ULF,src=./Unity_lic.ulf .
 ```
 
 And to run the server locally, the minimum command is the following:

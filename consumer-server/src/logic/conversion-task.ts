@@ -14,7 +14,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
   const cdnBucket = await components.config.getString('CDN_BUCKET') || 'CDN_BUCKET'
 
   const logFile = `/tmp/asset_bundles_logs/export_log_${entityId}_${Date.now()}.txt`
-  const s3LogKey = `logs/${$AB_VERSION}/${entityId}/${new Date().toISOString()}`
+  const s3LogKey = `logs/${$AB_VERSION}/${entityId}/${new Date().toISOString()}.txt`
   const outDirectory = `/tmp/asset_bundles_contents/entity_${entityId}`
 
   const logger = components.logs.getLogger(`${$AB_VERSION}/${entityId}`)
@@ -35,7 +35,8 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
 
     const manifest = {
       version: $AB_VERSION,
-      files: await promises.readdir(outDirectory)
+      files: await promises.readdir(outDirectory),
+      exitCode
     }
 
     logger.debug('Manifest', manifest as any)
