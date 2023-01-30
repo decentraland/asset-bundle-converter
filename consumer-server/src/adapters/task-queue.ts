@@ -34,6 +34,11 @@ export const queueMetrics = validateMetricsDeclaration({
   },
 } as const)
 
+type SNSOverSQSMessage = {
+  Message: string
+}
+
+
 export function createMemoryQueueAdapter<T>(components: Pick<AppComponents, "logs" | 'metrics'>, options: { queueName: string }): ITaskQueue<T> & IBaseComponent {
   type InternalElement = { message: TaskQueueMessage, job: T }
   const q = new AsyncQueue<InternalElement>((action) => void 0)
@@ -112,8 +117,9 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
             const message: TaskQueueMessage = { id: it.MessageId! }
             const { end } = components.metrics.startTimer('job_queue_duration_seconds', { queue_name: options.queueUrl })
             try {
-              logger.info(`Processing job`, { ...message, ...it } as any)
-              const result = await taskRunner(JSON.parse(it.Body!), message)
+              const snsOverSqs: SNSOverSQSMessage = JSON.parse(it.Body!)
+              logger.info(`Processing job`, { ...message, ...snsOverSqs } as any)
+              const result = await taskRunner(JSON.parse(snsOverSqs.Message), message)
               logger.info(`Processed job`, message as any)
               return { result, message }
             } catch (err: any) {
