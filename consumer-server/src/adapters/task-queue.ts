@@ -112,7 +112,7 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
             const message: TaskQueueMessage = { id: it.MessageId! }
             const { end } = components.metrics.startTimer('job_queue_duration_seconds', { queue_name: options.queueUrl })
             try {
-              logger.info(`Processing job`, message as any)
+              logger.info(`Processing job`, { ...message, ...it } as any)
               const result = await taskRunner(JSON.parse(it.Body!), message)
               logger.info(`Processed job`, message as any)
               return { result, message }
