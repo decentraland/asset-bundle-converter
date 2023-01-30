@@ -1,4 +1,4 @@
-name: CI/CD on main branch
+name: Continous delivery
 
 on:
   push:

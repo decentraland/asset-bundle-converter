@@ -1,5 +1,6 @@
 import { Lifecycle } from "@well-known-components/interfaces"
 import { setupRouter } from "./controllers/routes"
+import { executeConversion } from "./logic/conversion-task"
 import { AppComponents, GlobalContext, TestComponents } from "./types"
 
 // this function wires the business logic (adapters & controllers) with the components (ports)
@@ -20,4 +21,12 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
 
   // start ports: db, listeners, synchronizations, etc
   await startComponents()
+
+  components.runner.runTask(async (opt) => {
+    while (opt.isRunning) {
+      await components.taskQueue.consumeAndProcessJob(async (job, message) => {
+        await executeConversion(components, job.entity.entityId, job.contentServerUrls![0])
+      })
+    }
+  })
 }

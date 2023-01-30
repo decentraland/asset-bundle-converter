@@ -1,7 +1,7 @@
-name: Docker (all push)
+name: Docker (CI)
 
 on:
-  push:
+  pull_request:
 
 jobs:
   main:
