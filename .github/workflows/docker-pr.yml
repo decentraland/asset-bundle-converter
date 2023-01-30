@@ -1,4 +1,4 @@
-name: Docker (all push)
+name: Docker (CI)
 
 on:
   pull_request:
