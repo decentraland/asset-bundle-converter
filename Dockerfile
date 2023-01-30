@@ -69,6 +69,7 @@ RUN xvfb-run --auto-servernum --server-args='-screen 0 640x480x24' \
 # (i.e. SIGTERM) to reach the service
 # Read more here: https://aws.amazon.com/blogs/containers/graceful-shutdowns-with-ecs/
 #            and: https://www.ctl.io/developers/blog/post/gracefully-stopping-docker-containers/
-ENTRYPOINT ["/tini", "--"]
-# Run the program under Tini
-CMD [ "xvfb-run", "--auto-servernum", "--server-args='-screen 0 640x480x24'", "node", "--trace-warnings", "--abort-on-uncaught-exception", "--unhandled-rejections=strict", "dist/index.js" ]
+ENTRYPOINT ["/tini", "-g", "--", "xvfb-run", "--auto-servernum", "--server-args='-screen 0 640x480x24'" ]
+
+# Run the program under Tini+xvfb
+CMD [ "node", "--trace-warnings", "--abort-on-uncaught-exception", "--unhandled-rejections=strict", "dist/index.js" ]

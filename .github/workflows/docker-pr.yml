@@ -18,6 +18,7 @@ jobs:
         with:
           image: asset-bundle-converter
           tags: ${{ github.sha }} ${{ inputs.docker-tag }}
+          layers: true #cache
           dockerfiles: |
             ./Dockerfile
           build-args: |

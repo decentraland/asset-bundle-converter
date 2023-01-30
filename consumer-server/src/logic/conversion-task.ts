@@ -35,7 +35,8 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
 
     const manifest = {
       version: $AB_VERSION,
-      files: await promises.readdir(outDirectory)
+      files: await promises.readdir(outDirectory),
+      exitCode
     }
 
     logger.debug('Manifest', manifest as any)
