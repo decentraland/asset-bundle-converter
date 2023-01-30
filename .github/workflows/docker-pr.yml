@@ -2,6 +2,8 @@ name: Docker (all push)
 
 on:
   push:
+    branches:
+      - "!main"
 
 jobs:
   main:

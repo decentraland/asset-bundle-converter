@@ -7,6 +7,7 @@
     "test-conversion": "node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js"
   },
   "devDependencies": {
+    "@types/mock-aws-s3": "^2.6.3",
     "@types/node": "^18.7.13",
     "@well-known-components/test-helpers": "^1.4.0",
     "typescript": "^4.8.3"
@@ -16,12 +17,17 @@
     "semi": false
   },
   "dependencies": {
+    "@dcl/cdn-uploader": "^1.4.0",
     "@dcl/schemas": "^6.4.2",
     "@well-known-components/env-config-provider": "^1.1.1",
     "@well-known-components/http-server": "^1.1.6-20220927190058.commit-2dfb235",
     "@well-known-components/interfaces": "^1.1.2",
     "@well-known-components/logger": "^3.0.0",
     "@well-known-components/metrics": "^2.0.1-20220909150423.commit-8f7e5bc",
-    "arg": "^5.0.2"
+    "@well-known-components/pushable-channel": "^1.0.3",
+    "arg": "^5.0.2",
+    "aws-sdk": "^2.1304.0",
+    "mock-aws-s3": "^4.0.2",
+    "rimraf": "^4.1.2"
   }
 }

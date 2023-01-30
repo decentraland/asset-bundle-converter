@@ -4,10 +4,10 @@
 
 import arg from 'arg'
 import { createFetchComponent } from './adapters/fetch'
-import * as fs from 'fs/promises'
+
 import { getEntities } from './logic/fetch-entity-by-pointer'
 import { createLogComponent } from '@well-known-components/logger'
-import { execCommand } from './logic/run-command'
+import { runConversion } from './logic/run-conversion'
 
 const args = arg({
   '--pointer': String,
@@ -23,10 +23,10 @@ const LOG_FILE = args['--logFile']!
 const $UNITY_PATH = process.env.UNITY_PATH!
 const $PROJECT_PATH = process.env.PROJECT_PATH!
 
-if (!LOG_FILE) throw new Error(`--logFile was not provided`)
-if (!OUT_DIRECTORY) throw new Error(`--outDir was not provided`)
 if (!$UNITY_PATH) throw new Error(`UNITY_PATH env var is not defined`)
 if (!$PROJECT_PATH) throw new Error(`PROJECT_PATH env var is not defined`)
+if (!LOG_FILE) throw new Error(`--logFile was not provided`)
+if (!OUT_DIRECTORY) throw new Error(`--outDir was not provided`)
 
 async function main() {
   const fetcher = await createFetchComponent()
@@ -35,24 +35,19 @@ async function main() {
 
   if (!entities.length) throw new Error(`Cannot find pointer ${POINTER} in server ${BASE_URL}`)
 
-  await fs.mkdir(OUT_DIRECTORY, {recursive: true})
-  
-  const childArg0 = `${$UNITY_PATH}/Editor/Unity`
-  const childArguments: string[] = [
-    '-projectPath', $PROJECT_PATH,
-    '-batchmode',
-    '-executeMethod', 'DCL.ABConverter.SceneClient.ExportSceneToAssetBundles',
-    '-sceneCid', entities[0].id,
-    '-logFile', LOG_FILE,
-    '-baseUrl', BASE_URL,
-    '-output', OUT_DIRECTORY
-  ]
+  const logger = logs.getLogger('test-logger')
 
-  const { exitPromise } = await execCommand({logs}, childArg0, childArguments, entities[0].id, process.env as any, $PROJECT_PATH)
+  const exitCode = await runConversion(logger, {
+    logFile: LOG_FILE,
+    contentServerUrl: BASE_URL,
+    entityId: entities[0].id,
+    outDirectory: OUT_DIRECTORY,
+    unityPath: $UNITY_PATH,
+    projectPath: $PROJECT_PATH
 
-  const exitCode = await exitPromise
+  })
 
-  if(exitCode) throw new Error('ExitCode=' + exitCode)
+  if (exitCode) throw new Error('ExitCode=' + exitCode)
 }
 
 main().catch(err => {
