@@ -24,6 +24,8 @@ jobs:
         with:
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: quay.io/decentraland/asset-bundle-converter:next
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           build-args: |
             COMMIT_HASH=${{ github.sha }}
 
