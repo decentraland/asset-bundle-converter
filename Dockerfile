@@ -63,13 +63,13 @@ RUN xvfb-run --auto-servernum --server-args='-screen 0 640x480x24' \
       --baseUrl https://peer.decentraland.org/content \
       --pointer urn:decentraland:off-chain:base-avatars:brown_pants \
       --outDir /tmp-ab \
-      --logFile /tmp-ab/log.txt && cat /tmp-ab/log.txt && rm -rf /tmp-ab
+      --logFile /tmp-ab/log.txt && cat /tmp-ab/log.txt && rm -rf /tmp-ab && rm -f /tmp/.X99-lock
 
 # Please _DO NOT_ use a custom ENTRYPOINT because it may prevent signals
 # (i.e. SIGTERM) to reach the service
 # Read more here: https://aws.amazon.com/blogs/containers/graceful-shutdowns-with-ecs/
 #            and: https://www.ctl.io/developers/blog/post/gracefully-stopping-docker-containers/
-ENTRYPOINT ["/tini", "-g", "--", "xvfb-run", "--auto-servernum", "--server-args='-screen 0 640x480x24'" ]
+ENTRYPOINT ["/tini", "-g", "--", "xvfb-run", "--auto-servernum", "--server-args='-screen 0 640x480x24'", "--error-file", "/dev/stdout", "--" ]
 
 # Run the program under Tini+xvfb
 CMD [ "node", "--trace-warnings", "--abort-on-uncaught-exception", "--unhandled-rejections=strict", "dist/index.js" ]
