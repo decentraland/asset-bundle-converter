@@ -49,21 +49,12 @@ namespace DCL.Helpers
             }
         }
 
-        public static bool TestSnapshot(string baselineImagePathWithFilename, string testImagePathWithFilename, float ratio, bool assert = true)
+        public static float TestSnapshot(string baselineImagePathWithFilename, string testImagePathWithFilename)
         {
             if (generateBaseline || !File.Exists(baselineImagePathWithFilename))
-                return false;
+                return -1;
 
-            float ratioResult =
-                ComputeImageAffinityPercentage(baselineImagePathWithFilename, testImagePathWithFilename);
-
-            if (assert)
-            {
-                Assert.IsTrue(ratioResult >= ratio,
-                    $"{Path.GetFileName(baselineImagePathWithFilename)} has {ratioResult}% affinity, the minimum is {ratio}%. A diff image has been generated. Check it out at {testImagesPath}");
-            }
-
-            return ratioResult > ratio;
+            return ComputeImageAffinityPercentage(baselineImagePathWithFilename, testImagePathWithFilename);
         }
 
         /// <summary>

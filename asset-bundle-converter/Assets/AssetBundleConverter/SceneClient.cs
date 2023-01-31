@@ -61,9 +61,22 @@ namespace DCL.ABConverter
         public async static void ExportSceneToAssetBundles(string[] commandLineArgs)
         {
             ClientSettings settings = new ClientSettings();
+            settings.reportErrors = true;
             try
             {
                 ParseCommonSettings(commandLineArgs, settings);
+
+                if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_SHADER_TARGET, 1, out string[] shaderTarget))
+                {
+                    string target = shaderTarget[0].ToLower();
+
+                    settings.shaderType = target switch
+                                          {
+                                              "dcl" => ShaderType.Dcl,
+                                              "gltfast" => ShaderType.GlTFast,
+                                              _ => settings.shaderType
+                                          };
+                }
 
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_BUILD_SCENE_SYNTAX, 1, out string[] sceneCid))
                 {
@@ -77,20 +90,22 @@ namespace DCL.ABConverter
                 }
 
                 bool isPointerValid = true;
+                var targetPoint = new Vector2Int();
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_POSITION_X, 1, out string[] posX))
                 {
                     isPointerValid &= int.TryParse(posX[0].Replace("\"", string.Empty), out int resultX);
-                    settings.pointer.x = resultX;
+                    targetPoint.x = resultX;
                 }
 
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_POSITION_Y, 1, out string[] posY))
                 {
                     isPointerValid &= int.TryParse(posY[0].Replace("\"", string.Empty), out int resultY);
-                    settings.pointer.y = resultY;
+                    targetPoint.y = resultY;
                 }
 
                 if (isPointerValid)
                 {
+                    settings.targetPointer = targetPoint;
                     await ConvertEntityByPointer(settings);
                     return;
                 }
@@ -262,7 +277,7 @@ namespace DCL.ABConverter
 
             settings ??= new ClientSettings();
 
-            var apiResponse = Utils.GetEntityMappings(settings.pointer, settings.tld, env.webRequest);
+            var apiResponse = Utils.GetEntityMappings(settings.targetPointer.Value, settings.tld, env.webRequest);
             var mappings = apiResponse.SelectMany(m => m.content);
             return await ConvertEntitiesToAssetBundles(mappings.ToArray(), settings);
         }

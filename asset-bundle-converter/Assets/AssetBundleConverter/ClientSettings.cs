@@ -56,14 +56,16 @@ namespace AssetBundleConverter
 
             public bool cleanAndExitOnFinish = true;
             public bool visualTest = true;
-            public bool placeOnScene = true;
             public bool createAssetBundle = true;
+            public bool placeOnScene = true;
             public string importOnlyEntity;
-            public ShaderType shaderType;
+            public ShaderType shaderType = ShaderType.Dcl;
             public string endPoint = "/content/contents/";
             public bool stripShaders = true;
             public bool importGltf = true;
-            public Vector2Int pointer;
+            public string targetHash;
+            public Vector2Int? targetPointer = null;
+            public bool reportErrors = false;
 
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 

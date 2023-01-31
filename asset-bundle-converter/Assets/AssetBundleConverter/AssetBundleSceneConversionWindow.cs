@@ -39,7 +39,7 @@ namespace AssetBundleConverter
 
         private ClientSettings clientSettings;
         private bool showDebugOptions;
-        private bool stripShaders;
+        private bool stripShaders = true;
         private bool importGltf = true;
 
         [MenuItem("Decentraland/Asset Bundle Converter")]
@@ -135,6 +135,7 @@ namespace AssetBundleConverter
             if (GUILayout.Button("Start"))
             {
                 SetupSettings();
+                clientSettings.targetHash = entityId;
 
                 try
                 {
@@ -156,7 +157,7 @@ namespace AssetBundleConverter
             {
                 SetupSettings();
                 var targetPosition = new Vector2Int(xCoord, yCoord);
-                clientSettings.pointer = targetPosition;
+                clientSettings.targetPointer = targetPosition;
 
                 try
                 {
@@ -180,9 +181,10 @@ namespace AssetBundleConverter
                 {
                     int x = UnityEngine.Random.Range(-150, 151);
                     int y = UnityEngine.Random.Range(-150, 151);
+
                     Debug.Log($"Converting {x},{y}");
                     var targetPosition = new Vector2Int(x, y);
-                    clientSettings.pointer = targetPosition;
+                    clientSettings.targetPointer = targetPosition;
 
                     var state = await SceneClient.ConvertEntityByPointer(clientSettings);
                     OnConversionEnd(state);

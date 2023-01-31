@@ -181,6 +181,13 @@
         "com.unity.modules.imgui": "1.0.0"
       }
     },
+    "io.sentry.unity": {
+      "version": "https://github.com/getsentry/unity.git",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {},
+      "hash": "b562146d739c6f99a76e2b4147a7e034e4344fa8"
+    },
     "com.unity.modules.ai": {
       "version": "1.0.0",
       "depth": 0,

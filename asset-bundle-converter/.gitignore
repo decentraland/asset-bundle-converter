@@ -62,3 +62,5 @@ _Downloaded/
 AssetBundles/
 TestResources/
 UserSettings/
+
+*.idea
