@@ -60,6 +60,9 @@ COPY /asset-bundle-converter /asset-bundle-converter
 COPY --from=builderenv /consumer-server /consumer-server
 COPY --from=builderenv /tini /tini
 
+# this one requires a native module of node
+RUN cd /consumer-server && npm i diskusage
+
 # Please _DO NOT_ use a custom ENTRYPOINT because it may prevent signals
 # (i.e. SIGTERM) to reach the service
 # Read more here: https://aws.amazon.com/blogs/containers/graceful-shutdowns-with-ecs/
