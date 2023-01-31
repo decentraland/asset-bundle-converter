@@ -38,7 +38,7 @@ jobs:
         run: |
           docker run \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
-            ${{ steps.docker_build.outputs.imageid }} \
+            quay.io/decentraland/asset-bundle-converter:next \
               node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js \
                 --baseUrl https://peer.decentraland.org/content \
                 --pointer urn:decentraland:off-chain:base-avatars:brown_pants \
