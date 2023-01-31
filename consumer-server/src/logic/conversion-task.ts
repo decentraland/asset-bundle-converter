@@ -14,7 +14,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
   const cdnBucket = await components.config.getString('CDN_BUCKET') || 'CDN_BUCKET'
 
   const logFile = `/tmp/asset_bundles_logs/export_log_${entityId}_${Date.now()}.txt`
-  const s3LogKey = `logs/${$AB_VERSION}/${entityId}/${new Date().toISOString()}`
+  const s3LogKey = `logs/${$AB_VERSION}/${entityId}/${new Date().toISOString()}.txt`
   const outDirectory = `/tmp/asset_bundles_contents/entity_${entityId}`
 
   const logger = components.logs.getLogger(`${$AB_VERSION}/${entityId}`)
@@ -57,11 +57,15 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
       ACL: 'public-read',
     }).promise()
 
+    if(exitCode !== 0) {
+      logger.debug(await promises.readFile(logFile, 'utf8'))
+    }
+
   } catch (err: any) {
     logger.error(err)
   } finally {
     if ($LOGS_BUCKET) {
-      const log = `https://${process.env.S3_BUCKET}.s3.amazonaws.com/${s3LogKey}`
+      const log = `https://${$LOGS_BUCKET}.s3.amazonaws.com/${s3LogKey}`
       logger.info(`UPLOADING LOG FILE ${log}`)
       await components.cdnS3
         .upload({
