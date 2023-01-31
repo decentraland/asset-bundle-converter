@@ -83,7 +83,7 @@ The logs for each conversion are stored in the path `logs/:AB_VERSION/:entityId/
 To schedule a manual conversion, there is an special with custom authentication at `/queue-task`. It sends a job to the queue, the job will be consumed by any available worker.
 
 ```
-curl -XPOST -d '{"entityId": "bafyadsaljsdlkas", "contentServerUrl": "https://peer.decentraland.org/content"}' https://asset-bundle-conversor.decentraland.org/queue-task -H 'Authorization: <TOKEN>'
+curl -XPOST -H 'Authorization: <TOKEN>' https://asset-bundle-conversor.decentraland.org/queue-task -d '{"entityId": "bafyadsaljsdlkas", "contentServerUrl": "https://peer.decentraland.org/content"}'  
 ```
 
 ---
