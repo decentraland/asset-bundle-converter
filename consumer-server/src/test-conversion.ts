@@ -8,6 +8,9 @@ import { createFetchComponent } from './adapters/fetch'
 import { getEntities } from './logic/fetch-entity-by-pointer'
 import { createLogComponent } from '@well-known-components/logger'
 import { runConversion } from './logic/run-conversion'
+import { spawn } from 'child_process'
+import { closeSync, openSync } from 'fs'
+import * as promises from 'fs/promises'
 
 const args = arg({
   '--pointer': String,
@@ -37,17 +40,28 @@ async function main() {
 
   const logger = logs.getLogger('test-logger')
 
-  const exitCode = await runConversion(logger, {
-    logFile: LOG_FILE,
-    contentServerUrl: BASE_URL,
-    entityId: entities[0].id,
-    outDirectory: OUT_DIRECTORY,
-    unityPath: $UNITY_PATH,
-    projectPath: $PROJECT_PATH
+  // touch
+  closeSync(openSync(LOG_FILE, 'w'))
 
-  })
+  const child = spawn('tail', ['-f', LOG_FILE]);
+  child.stdout.pipe(process.stdout)
 
-  if (exitCode) throw new Error('ExitCode=' + exitCode)
+  try {
+    const exitCode = await runConversion(logger, {
+      logFile: LOG_FILE,
+      contentServerUrl: BASE_URL,
+      entityId: entities[0].id,
+      outDirectory: OUT_DIRECTORY,
+      unityPath: $UNITY_PATH,
+      projectPath: $PROJECT_PATH
+    })
+
+    if (exitCode) throw new Error('ExitCode=' + exitCode)
+  } finally {
+    console.dir({ dir: await promises.readdir(OUT_DIRECTORY) })
+
+    child.kill()
+  }
 }
 
 main().catch(err => {
