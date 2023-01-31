@@ -12,10 +12,14 @@ export const metricDeclarations = {
     type: IMetricsComponent.CounterType,
     labelNames: ["pathname"],
   },
-  ab_conversor_exit_codes: {
+  ab_converter_exit_codes: {
     help: "Counter of exit codes of asset bundle conversions",
     type: IMetricsComponent.CounterType,
     labelNames: ["exit_code"],
+  },
+  ab_converter_free_disk_space: {
+    help: "Free bytes in disk",
+    type: IMetricsComponent.GaugeType
   },
 }
 

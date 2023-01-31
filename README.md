@@ -60,13 +60,13 @@ The structure of the bucket will look like this:
 ├──/manifest       (manifests of the converted entities)
 │  ├── entityId1.json
 │  └── entityId2.json
-├──/v4             (files of the v4 of the conversor)
+├──/v4             (files of the v4 of the converter)
 │  └── ... 
-└──/v5             (files of the v5 of the conversor)
+└──/v5             (files of the v5 of the converter)
    └── ... 
 ```
 
-- Every asset bundle conversion may be bound to a specific version of the conversor. Versions may change because materials change or as a result of upgrading versions of unity.
+- Every asset bundle conversion may be bound to a specific version of the converter. Versions may change because materials change or as a result of upgrading versions of unity.
 - This service has an embedded version, which is set via an environment variable (`ENV AB_VERSION v1` in the `Dockerfile`)
 - When each entity is converted, a manifest is generated. The manifest contains the AB_VERSION and a list of converted assets. The manifest is stored in the path `/manifest/:entity_id.json`. Manifests should have a TTL of 1 hour in the edge and CDN cache.
 - All converted assets are stored in a version-scoped path `/ab/:AB_VERSION/:CID`. Enabling using the same CDN different versions at a time. Converted assets should have a TTL of 1year in the CDN and edge servers.
@@ -83,7 +83,7 @@ The logs for each conversion are stored in the path `logs/:AB_VERSION/:entityId/
 To schedule a manual conversion, there is an special with custom authentication at `/queue-task`. It sends a job to the queue, the job will be consumed by any available worker.
 
 ```
-curl -XPOST -H 'Authorization: <TOKEN>' https://asset-bundle-conversor.decentraland.org/queue-task -d '{"entityId": "bafyadsaljsdlkas", "contentServerUrl": "https://peer.decentraland.org/content"}'  
+curl -XPOST -H 'Authorization: <TOKEN>' https://asset-bundle-converter.decentraland.org/queue-task -d '{"entityId": "bafyadsaljsdlkas", "contentServerUrl": "https://peer.decentraland.org/content"}'  
 ```
 
 ---

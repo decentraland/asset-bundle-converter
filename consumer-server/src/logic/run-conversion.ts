@@ -15,11 +15,15 @@ export async function runConversion(
     projectPath: string
   }
 ) {
+  // touch logfile and create folders
   await fs.mkdir(dirname(options.logFile), { recursive: true })
   await fs.mkdir(options.outDirectory, { recursive: true })
-
-  // touch
   closeSync(openSync(options.logFile, 'w'))
+
+  // normalize content server URL
+  let contentServerUrl = options.contentServerUrl
+  if (!contentServerUrl.endsWith('/')) contentServerUrl += '/'
+  contentServerUrl += 'contents/'
 
   const childArg0 = `${options.unityPath}/Editor/Unity`
   const childArguments: string[] = [
@@ -28,7 +32,7 @@ export async function runConversion(
     '-executeMethod', 'DCL.ABConverter.SceneClient.ExportSceneToAssetBundles',
     '-sceneCid', options.entityId,
     '-logFile', options.logFile,
-    '-baseUrl', options.contentServerUrl,
+    '-baseUrl', contentServerUrl,
     '-output', options.outDirectory
   ]
 

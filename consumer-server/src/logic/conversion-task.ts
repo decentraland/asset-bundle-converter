@@ -29,7 +29,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
       unityPath: $UNITY_PATH
     })
 
-    components.metrics.increment('ab_conversor_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })
+    components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })
 
     logger.info('Uploading files')
 
