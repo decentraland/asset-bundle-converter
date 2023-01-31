@@ -8,6 +8,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+          lfs: true
       - name: Create Unity_lic.ulf
         run: echo "$UNITY_2021_ULF" > Unity_lic.ulf
         env:
