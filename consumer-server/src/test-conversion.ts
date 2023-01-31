@@ -12,6 +12,7 @@ import { spawn } from 'child_process'
 import { closeSync, openSync } from 'fs'
 import * as promises from 'fs/promises'
 import { ensureUlf } from './logic/ensure-ulf'
+import { dirname } from 'path'
 
 const args = arg({
   '--pointer': String,
@@ -34,7 +35,10 @@ if (!OUT_DIRECTORY) throw new Error(`--outDir was not provided`)
 
 async function main() {
   ensureUlf()
-  
+
+  await promises.mkdir(dirname(LOG_FILE), { recursive: true })
+  await promises.mkdir(OUT_DIRECTORY, { recursive: true })
+
   const fetcher = await createFetchComponent()
   const logs = await createLogComponent({})
   const entities = await getEntities(fetcher, [POINTER], BASE_URL)
