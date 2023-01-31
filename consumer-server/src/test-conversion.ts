@@ -11,6 +11,7 @@ import { runConversion } from './logic/run-conversion'
 import { spawn } from 'child_process'
 import { closeSync, openSync } from 'fs'
 import * as promises from 'fs/promises'
+import { ensureUlf } from './logic/ensure-ulf'
 
 const args = arg({
   '--pointer': String,
@@ -32,6 +33,8 @@ if (!LOG_FILE) throw new Error(`--logFile was not provided`)
 if (!OUT_DIRECTORY) throw new Error(`--outDir was not provided`)
 
 async function main() {
+  ensureUlf()
+  
   const fetcher = await createFetchComponent()
   const logs = await createLogComponent({})
   const entities = await getEntities(fetcher, [POINTER], BASE_URL)
