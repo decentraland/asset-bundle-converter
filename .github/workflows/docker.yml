@@ -24,7 +24,7 @@ jobs:
 
       - name: Build and push
         id: docker_build
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v3
         with:
           context: .
           push: ${{ github.ref == 'refs/heads/main' }}
@@ -44,7 +44,7 @@ jobs:
         run: |
           docker run \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
-            quay.io/decentraland/asset-bundle-converter:next@${{ steps.docker_build.outputs.imageid }} \
+            quay.io/decentraland/asset-bundle-converter@${{ steps.docker_build.outputs.digest }} \
               node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js \
                 --baseUrl https://peer.decentraland.org/content \
                 --pointer urn:decentraland:off-chain:base-avatars:brown_pants \
