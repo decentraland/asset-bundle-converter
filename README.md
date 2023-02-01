@@ -147,6 +147,14 @@ async function resolveAssetBundle(
 
 > As an exercise for the reader, here is a URL to resolve assets manually: `https://ab-cdn.decentraland.zone/manifest/bafkreie7b36aggssaerg7nvj5s56op5zqyxcqjtkq4q4kjrfhnkljhshgy.json`
 
+# Deploying
+
+This repository has continous delivery to the goerli (decentraland.zone) network.
+
+To deploy to production, you must first select the full commit hash from the version you whish to deploy. Then check it exists as a tag in https://quay.io/repository/decentraland/asset-bundle-converter?tab=tags and lastly execute the workflow "Manual Deploy" selecting the target environment and the docker tag (commit hash).
+
+NOTICE: Please do not use `latest` as tag for the "Manual deploy", the pipeline of deployments runs on deltas, and if there was a "latest" and now we try to deploy "latest", it will detect no changes and finish without deploying. Always use the commit hash.
+
 ---
 
 ## Copyright info
