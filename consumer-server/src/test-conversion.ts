@@ -60,7 +60,8 @@ async function main() {
       entityId: entities[0].id,
       outDirectory: OUT_DIRECTORY,
       unityPath: $UNITY_PATH,
-      projectPath: $PROJECT_PATH
+      projectPath: $PROJECT_PATH,
+      timeout: 30 * 60 * 1000
     })
 
     if (exitCode) throw new Error('ExitCode=' + exitCode)

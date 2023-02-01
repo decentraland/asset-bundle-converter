@@ -26,7 +26,8 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
       logFile,
       outDirectory,
       projectPath: $PROJECT_PATH,
-      unityPath: $UNITY_PATH
+      unityPath: $UNITY_PATH,
+      timeout: 30 * 60 * 1000 // 30min
     })
 
     components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })
@@ -57,7 +58,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
       ACL: 'public-read',
     }).promise()
 
-    if(exitCode !== 0) {
+    if (exitCode !== 0) {
       logger.debug(await promises.readFile(logFile, 'utf8'))
     }
 

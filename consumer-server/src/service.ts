@@ -34,10 +34,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
       }
 
       await components.taskQueue.consumeAndProcessJob(async (job, message) => {
-        await Promise.race([
-          executeConversion(components, job.entity.entityId, job.contentServerUrls![0]),
-          timeout(30 * 60 * 1000, 'Timed out converting asset bundles') // 30min timeout
-        ])
+        await executeConversion(components, job.entity.entityId, job.contentServerUrls![0])
       })
     }
   })

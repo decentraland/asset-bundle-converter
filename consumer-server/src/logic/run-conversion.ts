@@ -12,7 +12,8 @@ export async function runConversion(
     entityId: string,
     contentServerUrl: string,
     unityPath: string,
-    projectPath: string
+    projectPath: string,
+    timeout?: number
   }
 ) {
   // touch logfile and create folders
@@ -36,7 +37,7 @@ export async function runConversion(
     '-output', options.outDirectory
   ]
 
-  const { exitPromise } = execCommand(logger, childArg0, childArguments, options.entityId, process.env as any, options.projectPath)
+  const { exitPromise } = execCommand(logger, childArg0, childArguments, process.env as any, options.projectPath, options.timeout)
 
   return await exitPromise
 }
