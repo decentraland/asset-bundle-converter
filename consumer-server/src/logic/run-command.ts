@@ -10,7 +10,7 @@ export function execCommand(logger: ILoggerComponent.ILogger, command: string, a
       if (signal === 'SIGTERM') {
         exitFuture.reject(new Error('SIGTERM sent to the process'))
       } else {
-        exitFuture.resolve(code || -1)
+        exitFuture.resolve(code ?? -1)
       }
     })
     .on('error', (error) => exitFuture.reject(error))
