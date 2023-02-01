@@ -52,6 +52,20 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
     await uploadDir(components.cdnS3, cdnBucket, outDirectory, $AB_VERSION, {
       concurrency: 10,
       immutable: true,
+      matches: [
+        {
+          match: "**/*.manifest",
+          contentType: "text/cache-manifest",
+          immutable: true,
+        },
+        {
+          // the rest of the elements will be uploaded as application/wasm
+          // to be compressed and cached by cloudflare
+          match: "**/*",
+          contentType: "application/wasm",
+          immutable: true,
+        }
+      ]
     })
 
     // and then replace the manifest
