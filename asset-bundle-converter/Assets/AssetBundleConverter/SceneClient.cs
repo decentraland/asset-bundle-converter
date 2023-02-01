@@ -85,7 +85,8 @@ namespace DCL.ABConverter
                         throw new ArgumentException("Invalid sceneCid argument! Please use -sceneCid <id> to establish the desired id to process.");
                     }
 
-                    await ConvertEntityById(sceneCid[0], settings);
+                    settings.targetHash = sceneCid[0];
+                    await ConvertEntityById(settings);
                     return;
                 }
 
@@ -168,7 +169,9 @@ namespace DCL.ABConverter
 
                     log.Info("found 'wearablesCollectionUrnId' param, will try to convert collection with id: " + collectionId[0]);
 
-                    await ConvertWearablesCollection(collectionId[0], settings);
+                    settings.targetHash = collectionId[0];
+
+                    await ConvertWearablesCollection(settings);
 
                     return;
                 }
@@ -253,16 +256,13 @@ namespace DCL.ABConverter
         /// <param name="entityId">The scene cid in the multi-hash format (i.e. Qm...etc)</param>
         /// <param name="settings">Conversion settings</param>
         /// <returns>A state context object useful for tracking the conversion progress</returns>
-        public static async Task<AssetBundleConverter.State> ConvertEntityById(string entityId, ClientSettings settings = null)
+        public static async Task<AssetBundleConverter.State> ConvertEntityById(ClientSettings settings)
         {
             EnsureEnvironment();
 
-            settings ??= new ClientSettings();
-
-            var apiResponse = Utils.GetEntityMappings(entityId, settings.tld, env.webRequest);
+            var apiResponse = Utils.GetEntityMappings(settings.targetHash, settings.tld, env.webRequest);
             var mappings = apiResponse.SelectMany(m => m.content);
             return await ConvertEntitiesToAssetBundles(mappings.ToArray(), settings);
-
         }
 
         /// <summary>
@@ -271,27 +271,22 @@ namespace DCL.ABConverter
         /// <param name="pointer">The entity position in world</param>
         /// <param name="settings">Conversion settings</param>
         /// <returns>A state context object useful for tracking the conversion progress</returns>
-        public static async Task<AssetBundleConverter.State> ConvertEntityByPointer(ClientSettings settings = null)
+        public static async Task<AssetBundleConverter.State> ConvertEntityByPointer(ClientSettings settings)
         {
             EnsureEnvironment();
-
-            settings ??= new ClientSettings();
 
             var apiResponse = Utils.GetEntityMappings(settings.targetPointer.Value, settings.tld, env.webRequest);
             var mappings = apiResponse.SelectMany(m => m.content);
             return await ConvertEntitiesToAssetBundles(mappings.ToArray(), settings);
         }
 
-        public static async Task<AssetBundleConverter.State> ConvertWearablesCollection(string collectionId, ClientSettings settings = null)
+        public static async Task<AssetBundleConverter.State> ConvertWearablesCollection(ClientSettings settings)
         {
             EnsureEnvironment();
 
-            settings ??= new ClientSettings();
-
-            settings.targetHash = collectionId;
             settings.isWearable = true;
 
-            var mappings = WearablesClient.GetCollectionMappings(collectionId, settings.tld, env.webRequest);
+            var mappings = WearablesClient.GetCollectionMappings(settings.targetHash, settings.tld, env.webRequest);
             return await ConvertEntitiesToAssetBundles(mappings, settings);
         }
 

@@ -139,7 +139,7 @@ namespace AssetBundleConverter
 
                 try
                 {
-                    var state = await SceneClient.ConvertEntityById(entityId, clientSettings);
+                    var state = await SceneClient.ConvertEntityById(clientSettings);
                     OnConversionEnd(state);
                 }
                 catch (Exception e) { Debug.LogException(e); }
@@ -202,10 +202,10 @@ namespace AssetBundleConverter
             if (GUILayout.Button("Start"))
             {
                 SetupSettings();
-
+                clientSettings.targetHash = wearablesCollectionId;
                 try
                 {
-                    var state = await SceneClient.ConvertWearablesCollection(wearablesCollectionId, clientSettings);
+                    var state = await SceneClient.ConvertWearablesCollection(clientSettings);
                     OnConversionEnd(state);
                 }
                 catch (Exception e) { Debug.LogException(e); }
