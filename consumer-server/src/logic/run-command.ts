@@ -15,6 +15,16 @@ export function execCommand(logger: ILoggerComponent.ILogger, command: string, a
     })
     .on('error', (error) => exitFuture.reject(error))
 
+  if (timeout) {
+    setTimeout(() => {
+      try {
+        if (!child.killed) {
+          child.kill('SIGKILL')
+        }
+      } catch { }
+    }, timeout + 1000)
+  }
+
   child.stdout?.on('data', (data) => {
     logger.log(data)
   })
