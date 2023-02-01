@@ -17,7 +17,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
   const s3LogKey = `logs/${$AB_VERSION}/${entityId}/${new Date().toISOString()}.txt`
   const outDirectory = `/tmp/asset_bundles_contents/entity_${entityId}`
 
-  const logger = components.logs.getLogger(`${$AB_VERSION}/${entityId}`)
+  const logger = components.logs.getLogger(`ExecuteConversion`)
 
   try {
     const exitCode = await runConversion(logger, {
