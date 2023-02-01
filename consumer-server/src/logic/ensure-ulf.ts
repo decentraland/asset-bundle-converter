@@ -1,6 +1,8 @@
 import fs from 'fs'
 import { dirname } from 'path'
 
+// this function ensures that the license file for unity exists. if not, it tries
+// to create it using environment variables. otherwise it fails
 export function ensureUlf() {
   const path = `/root/.local/share/unity3d/Unity/Unity_lic.ulf`
   const envVarValue = fromB64(process.env.UNITY_2021_ULF_B64) ?? process.env.UNITY_2021_ULF

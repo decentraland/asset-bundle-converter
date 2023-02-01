@@ -40,7 +40,7 @@ jobs:
         env:
           UNITY_2021_ULF: ${{ secrets.UNITY_2021_ULF }}
 
-      - name: Run test
+      - name: Run test conversion of urn:decentraland:off-chain:base-avatars:brown_pants
         run: |
           docker run \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \

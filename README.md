@@ -86,6 +86,67 @@ To schedule a manual conversion, there is an special with custom authentication 
 curl -XPOST -H 'Authorization: <TOKEN>' https://asset-bundle-converter.decentraland.org/queue-task -d '{"entityId": "bafyadsaljsdlkas", "contentServerUrl": "https://peer.decentraland.org/content"}'  
 ```
 
+# Using the new asset bundles
+
+This converter leverages versioning for the assets, the version is changed by the `AB_VERSION` env var in the Dockerfile.
+
+This differs from the previous asset bundles in an impactful way: not all assets are stored at root level anymore. This is due to incompatibilities across versions of the shaders/materials and unity itself.
+
+Prior to this converter, the renderer used to look for the asset bundles of all models and textures, and fallback to the original asset if a 404 was returned.
+
+Now the assets need to be resolved based on a manifest including the list of converted files. If the files are not in the list, we can fallback directly to the original asset without waiting for the 404 and thus, optimizing network roundtrips and loading times.
+
+Here is some pseudocode to illustrate the asset resolution process for an entity:
+
+```typescript
+// this is the manifest file, it is uploaded after the entire entity was uplodaded.
+type Manifest = {
+  version: string
+  files: string[] // list of converted files
+  exitCode: number // not used
+}
+
+const assetBundleCdn = 'https://ab-cdn.decentraland.zone' // .org
+
+/**
+ * This function returns the manifest of a converted scene
+ * @param entityId - EntityID used for the conversion
+ * @param assetBundleCdn - baseUrl of the asset bundle CDN. 
+ */
+async function getSceneManifest(entityId: string, assetBundleCdn: string): Manifest | null = {
+  const manifest = await fetch(`${assetBundleCdn}/manifest/${entityId}.json`)
+  if (manifest.statusCode == 404) return null
+  return manifest.json()
+}
+
+/**
+ *  This function resolves the final URL of the asset bundle or returns null if it was not converted
+ * @param manifest - Manifest of the converted entity
+ * @param cid - content identifier of the asset being converted
+ * @param assetBundleCdn - baseUrl of the asset bundle CDN.
+ */
+async function resolveAssetBundle(
+  manifest: Manifest,
+  cid: string,
+  assetBundleCdn: string
+): string | null {
+  if (manifest.files.includes(cid)) {
+    if (UNITY_WEBGL)
+      // brotli compressed asset bundles for WebGL, the browser will
+      // uncompress and cache this asset in a different thread
+      // NOTICE: if the asset bundles support range requests, they
+      //         won't work with the .br postfix!
+      return `${assetBundleCdn}/${manifest.version}/${cid}.br`
+    else
+      // raw asset bundles for the rest of the platforms
+      return `${assetBundleCdn}/${manifest.version}/${cid}`
+  }
+  return null
+}
+```
+
+> As an exercise for the reader, here is a URL to resolve assets manually: `https://ab-cdn.decentraland.zone/manifest/bafkreie7b36aggssaerg7nvj5s56op5zqyxcqjtkq4q4kjrfhnkljhshgy.json`
+
 ---
 
 ## Copyright info
