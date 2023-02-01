@@ -1,4 +1,4 @@
-import { IBaseComponent } from '@well-known-components/interfaces'
+import { IBaseComponent, IMetricsComponent } from '@well-known-components/interfaces'
 import { validateMetricsDeclaration } from '@well-known-components/metrics'
 import { AsyncQueue } from '@well-known-components/pushable-channel'
 import { SQS } from 'aws-sdk'
@@ -18,21 +18,22 @@ export interface ITaskQueue<T> {
 
 export const queueMetrics = validateMetricsDeclaration({
   job_queue_duration_seconds: {
-    type: "histogram",
+    type: IMetricsComponent.HistogramType,
     help: 'Duration of each job in seconds',
     labelNames: ["queue_name"],
+    buckets: [1, 10, 100, 200, 300, 400, 500, 600, 700, 1000, 1200, 1600, 1800]
   },
   job_queue_enqueue_total: {
-    type: "counter",
+    type: IMetricsComponent.CounterType,
     help: "Total amount of enqueued jobs",
     labelNames: ["queue_name"],
   },
   job_queue_failures_total: {
-    type: "counter",
+    type: IMetricsComponent.CounterType,
     help: "Total amount of failed tasks",
     labelNames: ["queue_name"],
   },
-} as const)
+})
 
 type SNSOverSQSMessage = {
   Message: string
