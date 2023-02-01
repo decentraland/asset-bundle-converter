@@ -3,17 +3,27 @@ import { dirname } from 'path'
 
 export function ensureUlf() {
   const path = `/root/.local/share/unity3d/Unity/Unity_lic.ulf`
-  const hasEnvVar = !!process.env.UNITY_2021_ULF
+  const envVarValue = fromB64(process.env.UNITY_2021_ULF_B64) ?? process.env.UNITY_2021_ULF
 
   if (!fs.existsSync(path) || !fs.statSync(path).size) {
-    if (!hasEnvVar) {
+    if (!envVarValue) {
       throw new Error('Neither Unity_lic.ulf or env var UNITY_2021_ULF are available')
     } else {
       console.log(`Writing file ${path}`)
       fs.mkdirSync(dirname(path), { recursive: true })
-      fs.writeFileSync(path, process.env.UNITY_2021_ULF!)
+      try {
+        fs.unlinkSync(path)
+      } catch { }
+      fs.writeFileSync(path, envVarValue)
     }
   } else {
     console.log(`License ${path} exists`)
   }
+}
+
+function fromB64(text: string | undefined): string | undefined {
+  if (text) {
+    return Buffer.from(text, 'base64').toString()
+  }
+  return undefined
 }
