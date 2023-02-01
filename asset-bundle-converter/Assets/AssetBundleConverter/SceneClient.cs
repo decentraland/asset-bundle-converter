@@ -288,6 +288,9 @@ namespace DCL.ABConverter
 
             settings ??= new ClientSettings();
 
+            settings.targetHash = collectionId;
+            settings.isWearable = true;
+
             var mappings = WearablesClient.GetCollectionMappings(collectionId, settings.tld, env.webRequest);
             return await ConvertEntitiesToAssetBundles(mappings, settings);
         }

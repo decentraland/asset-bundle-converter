@@ -66,6 +66,7 @@ namespace AssetBundleConverter
             public string targetHash;
             public Vector2Int? targetPointer = null;
             public bool reportErrors = false;
+            public bool isWearable;
 
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 

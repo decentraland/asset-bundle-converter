@@ -42,6 +42,7 @@ namespace AssetBundleConverter
             scope.SetExtra("pointer", settings.targetPointer);
             scope.SetExtra("topLevelDomain", settings.tld);
             scope.SetExtra("endpoint", settings.endPoint);
+            scope.SetExtra("isWearable", settings.isWearable);
         }
 
         public void Dispose()
