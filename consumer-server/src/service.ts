@@ -46,14 +46,9 @@ async function machineRanOutOfSpace(components: Pick<AppComponents, 'metrics'>) 
 
   components.metrics.observe('ab_converter_free_disk_space', {}, free)
 
-  if (free / 1e9 < 2 /* less than 2gb */) {
+  if (free / 1e9 < 1 /* less than 1gb */) {
     return true
   }
 
   return false
 }
-
-async function timeout(ms: number, message: string) {
-  return new Promise<never>((_, reject) => setTimeout(() => reject(new Error(message)), ms))
-}
-

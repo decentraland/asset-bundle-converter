@@ -17,6 +17,11 @@ export const metricDeclarations = {
     type: IMetricsComponent.CounterType,
     labelNames: ["exit_code"],
   },
+  ab_converter_empty_conversion: {
+    help: "Counter of conversions with empty files",
+    type: IMetricsComponent.CounterType,
+    labelNames: ["ab_version"],
+  },
   ab_converter_free_disk_space: {
     help: "Free bytes in disk",
     type: IMetricsComponent.GaugeType

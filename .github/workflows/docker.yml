@@ -58,5 +58,5 @@ jobs:
         with:
           dockerImage: quay.io/decentraland/asset-bundle-converter:${{ github.sha }}
           serviceName: asset-bundle-converter
-          env: dev
+          env: dev prd
           token: ${{ secrets.GITHUB_TOKEN }}

@@ -38,9 +38,15 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
       version: $AB_VERSION,
       files: await promises.readdir(outDirectory),
       exitCode
-    }
+    } as const
 
     logger.debug('Manifest', manifest as any)
+
+    if (manifest.files.length == 0) {
+      // this is an error, if succeeded, we should see at least a manifest file
+      components.metrics.increment('ab_converter_empty_conversion', { ab_version: $AB_VERSION })
+      logger.error('Empty conversion', manifest as any)
+    }
 
     // first upload the content
     await uploadDir(components.cdnS3, cdnBucket, outDirectory, $AB_VERSION, {
