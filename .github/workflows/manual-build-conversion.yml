@@ -1,0 +1,70 @@
+name: Run build & manual conversion
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseUrl:
+        required: true
+        default: "https://peer.decentraland.org/content"
+        type: string
+        description: "Content server baseUrl"
+      pointer:
+        required: true
+        default: "urn:decentraland:off-chain:base-avatars:brown_pants"
+        type: string
+        description: "Pointer or entity to convert"
+      build:
+        type: boolean
+        default: false
+        description: "Build image before converting"
+
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+          lfs: true
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build image
+        id: docker_build
+        if: ${{ inputs.build }}
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: false
+          tags: quay.io/decentraland/asset-bundle-converter:next,quay.io/decentraland/asset-bundle-converter:${{ github.sha }}
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            COMMIT_HASH=${{ github.sha }}
+
+      - name: Create $(pwd)/tmp/Unity/Unity_lic.ulf
+        run: mkdir -p $(pwd)/tmp/Unity && echo "$UNITY_2021_ULF" > $(pwd)/tmp/Unity/Unity_lic.ulf
+        env:
+          UNITY_2021_ULF: ${{ secrets.UNITY_2021_ULF }}
+
+      - name: Run conversion
+        run: |
+          mkdir -p /artifact &&
+          docker run \
+            -v $(pwd)/artifact:/artifact \
+            -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
+            quay.io/decentraland/asset-bundle-converter@${{ inputs.build && steps.docker_build.outputs.digest || 'next' }} \
+              node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js \
+                --baseUrl ${{ inputs.baseUrl }} \
+                --pointer ${{ inputs.pointer }} \
+                --outDir /artifact \
+                --logFile /artifact/log.txt
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: ${{ inputs.pointer }}
+          path: |
+            /artifact/**/*

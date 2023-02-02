@@ -7,6 +7,7 @@ import { createFetchComponent } from './adapters/fetch'
 
 import { getEntities } from './logic/fetch-entity-by-pointer'
 import { createLogComponent } from '@well-known-components/logger'
+import { IPFSv1, IPFSv2 } from '@dcl/schemas'
 import { runConversion } from './logic/run-conversion'
 import { spawn } from 'child_process'
 import { closeSync, openSync } from 'fs'
@@ -41,9 +42,16 @@ async function main() {
 
   const fetcher = await createFetchComponent()
   const logs = await createLogComponent({})
-  const entities = await getEntities(fetcher, [POINTER], BASE_URL)
 
-  if (!entities.length) throw new Error(`Cannot find pointer ${POINTER} in server ${BASE_URL}`)
+  let entityId = ''
+
+  if (IPFSv2.validate(POINTER) || IPFSv1.validate(POINTER)) {
+    entityId = POINTER
+  } else {
+    const entities = await getEntities(fetcher, [POINTER], BASE_URL)
+    if (!entities.length) throw new Error(`Cannot find pointer ${POINTER} in server ${BASE_URL}`)
+    entityId = entities[0].id
+  }
 
   const logger = logs.getLogger('test-logger')
 
@@ -57,7 +65,7 @@ async function main() {
     const exitCode = await runConversion(logger, {
       logFile: LOG_FILE,
       contentServerUrl: BASE_URL,
-      entityId: entities[0].id,
+      entityId,
       outDirectory: OUT_DIRECTORY,
       unityPath: $UNITY_PATH,
       projectPath: $PROJECT_PATH,
