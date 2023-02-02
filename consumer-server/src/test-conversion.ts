@@ -66,10 +66,13 @@ async function main() {
 
     if (exitCode) throw new Error('ExitCode=' + exitCode)
   } finally {
-    console.dir({ dir: await promises.readdir(OUT_DIRECTORY) })
+    child.kill('SIGKILL')
+    child.unref()
 
-    child.kill()
+    console.dir({ dir: await promises.readdir(OUT_DIRECTORY) })
   }
+
+  process.exit()
 }
 
 main().catch(err => {
