@@ -868,18 +868,12 @@ namespace DCL.ABConverter
                 return null;
             }
 
-            // TODO: check status code downloadHandler == 200, otherwise return
             //       the file bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku is a valid content
             //       file of zero bytes, which returns downloadHandler.data==null. and it should be `new Byte[] {}`
             byte[] assetData = downloadHandler.data;
 
-            if (assetData == null)
-            {
-                var message = $"Download Failed {finalUrl} -- no data?";
-                log.Error(message);
-                errorReporter.ReportError(message, settings);
-                return null;
-            }
+            if (string.IsNullOrEmpty(downloadHandler.error) && assetData == null)
+                assetData = Array.Empty<byte>();
 
             downloadHandler.Dispose();
 

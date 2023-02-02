@@ -395,6 +395,7 @@ namespace DCL.ABConverter
         {
             name = name.Replace(":", ".");
             name = name.Replace(" ", "_");
+            name = name.Replace("*", "_");
             name = ObjectNames.NicifyVariableName(name);
 
             if (string.IsNullOrEmpty(name))
