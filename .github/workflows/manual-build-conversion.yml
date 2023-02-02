@@ -52,7 +52,7 @@ jobs:
 
       - name: Run conversion
         run: |
-          mkdir -p /artifact &&
+          mkdir -p $(pwd)/artifact &&
           docker run \
             -v $(pwd)/artifact:/artifact \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
