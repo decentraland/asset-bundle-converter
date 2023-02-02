@@ -5,6 +5,8 @@ import { ILoggerComponent } from '@well-known-components/interfaces'
 export function execCommand(logger: ILoggerComponent.ILogger, command: string, args: string[], env: Record<string, string>, cwd: string, timeout: number | undefined) {
   const exitFuture = future<number | null>()
 
+  logger.debug('Running command', { command, args } as any)
+
   const child = spawn(command, args, { env, cwd, timeout })
     .on('exit', (code, signal) => {
       if (signal === 'SIGTERM' || signal == 'SIGKILL') {

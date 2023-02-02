@@ -2,7 +2,7 @@ import { IBaseComponent, IMetricsComponent } from '@well-known-components/interf
 import { validateMetricsDeclaration } from '@well-known-components/metrics'
 import { AsyncQueue } from '@well-known-components/pushable-channel'
 import { SQS } from 'aws-sdk'
-import { timeout } from '../logic/timer'
+import { sleep, timeout } from '../logic/timer'
 import { AppComponents } from '../types'
 
 export interface TaskQueueMessage {
@@ -148,8 +148,8 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
           logger.info(`No new messages in queue. Retrying for 15 seconds`)
         } catch (err: any) {
           logger.error(err)
+          await sleep(1000)
         }
-
       }
     },
   }
