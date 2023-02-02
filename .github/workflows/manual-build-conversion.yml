@@ -56,7 +56,7 @@ jobs:
           docker run \
             -v $(pwd)/artifact:/artifact \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
-            quay.io/decentraland/asset-bundle-converter${{ inputs.build && format('@{0}, steps.docker_build.outputs.digest) || ':next' }} \
+            quay.io/decentraland/asset-bundle-converter${{ inputs.build && format('@{0}', steps.docker_build.outputs.digest) || ':next' }} \
               node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js \
                 --baseUrl ${{ inputs.baseUrl }} \
                 --pointer ${{ inputs.pointer }} \
