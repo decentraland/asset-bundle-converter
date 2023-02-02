@@ -36,6 +36,7 @@ namespace DCL
             TODAY,
             ZONE,
             ORG,
+            WORLDS,
         }
 
         public static string GetTldString(ApiTLD tld)
@@ -56,32 +57,16 @@ namespace DCL
         }
 
         public static string customBaseUrl = "";
-        public static string customEndpoint = "";
 
         private static string GetBaseUrl(ApiTLD tld)
         {
+            if (tld == ApiTLD.WORLDS)
+                return "https://worlds-content-server.decentraland.org";
+
             if (tld != ApiTLD.NONE)
                 return $"https://peer.decentraland.{GetTldString(tld)}";
 
             return customBaseUrl;
-        }
-
-        private static string GetPointersEndpoint() => DEFAULT_ENDPOINT_ENTITIES;
-
-        public static string GetContentsUrl(ApiTLD env)
-        {
-            string baseUrl = GetBaseUrl(env);
-            var endpoint = !string.IsNullOrEmpty(customEndpoint) ? customEndpoint : DEFAULT_ENDPOINT_CONTENTS;
-
-            return $"{baseUrl}{endpoint}";
-        }
-
-        public static string GetEntitiesUrl(ApiTLD env)
-        {
-            string baseUrl = GetBaseUrl(env);
-            var endpoint = GetPointersEndpoint();
-
-            return $"{baseUrl}{endpoint}";
         }
 
         public static string GetLambdasUrl(this ApiTLD env) =>

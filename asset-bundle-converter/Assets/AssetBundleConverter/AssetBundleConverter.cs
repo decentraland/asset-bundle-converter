@@ -34,7 +34,8 @@ namespace DCL.ABConverter
             UNDEFINED,
             SCENE_LIST_NULL,
             ASSET_BUNDLE_BUILD_FAIL,
-            VISUAL_TEST_FAILED
+            VISUAL_TEST_FAILED,
+            UNEXPECTED_ERROR
         }
 
         public class State
@@ -79,8 +80,6 @@ namespace DCL.ABConverter
             this.env = env;
 
             errorReporter = new ErrorReporter(settings.reportErrors);
-
-            ContentServerUtils.customEndpoint = settings.endPoint;
 
             finalDownloadedPath = PathUtils.FixDirectorySeparator(Config.DOWNLOADED_PATH_ROOT + Config.DASH);
             finalDownloadedAssetDbPath = PathUtils.FixDirectorySeparator(Config.ASSET_BUNDLES_PATH_ROOT + Config.DASH);

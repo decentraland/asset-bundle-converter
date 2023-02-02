@@ -18,23 +18,30 @@ namespace AssetBundleConverter
         private const string TAB_RANDOM = "Random Pointer";
         private const string TAB_WEARABLES_COLLECTION = "Wearables Collection";
         private const string TEST_BATCHMODE = "Test Batchmode";
+        private const string URL_PEERS = "Peers";
+        private const string URL_WORLDS = "Worlds";
+        private const string CUSTOM = "Custom";
+
+        private const string PEERS_URL = "https://peer.decentraland.org/content/contents/";
+        private const string WORLDS_URL = "https://worlds-content-server.decentraland.org/contents/";
 
         private readonly string[] tabs = { TAB_SCENE, TAB_PARCELS, TAB_RANDOM, TAB_WEARABLES_COLLECTION, TEST_BATCHMODE };
+        private readonly string[] urlOptions = { URL_PEERS, URL_WORLDS, CUSTOM };
 
         private string entityId = "QmYy2TMDEfag99yZV4ZdpjievYUfdQgBVfFHKCDAge3zQi";
         private string wearablesCollectionId = "urn:decentraland:off-chain:base-avatars";
         private string debugEntity = "bafkreib66ufmbowp4ee2u3kdu6t52kouie7kd7tfrlv3l5kejz6yjcaq5i";
         private string batchModeParams = "";
-        private string endPoint = "/content/contents/";
+        private string baseUrl;
         private bool placeOnScene = true;
         private bool visualTest = false;
         private bool clearDownloads = true;
         private bool createAssetBundle = true;
         private bool verbose = true;
         private int currentTab = 0;
+        private int currentUrlOption = 0;
         private int xCoord = -110;
         private int yCoord = -110;
-        private ContentServerUtils.ApiTLD tld = ContentServerUtils.ApiTLD.ORG;
         private ShaderType shader = ShaderType.Dcl;
 
         private ClientSettings clientSettings;
@@ -61,10 +68,12 @@ namespace AssetBundleConverter
             createAssetBundle = EditorGUILayout.Toggle("Create Asset Bundle", createAssetBundle);
             clearDownloads = EditorGUILayout.Toggle("Clear Downloads", clearDownloads);
             showDebugOptions = EditorGUILayout.Toggle("Show debug options", showDebugOptions);
-            endPoint = EditorGUILayout.TextField("Content endpoint", endPoint);
-            tld = (ContentServerUtils.ApiTLD)EditorGUILayout.EnumPopup("Top level domain", tld);
+            /*endPoint = EditorGUILayout.TextField("Content endpoint", endPoint);
+            tld = (ContentServerUtils.ApiTLD)EditorGUILayout.EnumPopup("Top level domain", tld);*/
             shader = (ShaderType)EditorGUILayout.EnumPopup("Shader Type", shader);
             verbose = EditorGUILayout.Toggle("Verbose", verbose);
+            RenderUrlEditor();
+
             GUILayout.Space(5);
 
             currentTab = GUILayout.Toolbar(currentTab, tabs);
@@ -95,6 +104,31 @@ namespace AssetBundleConverter
                 }
             }
             catch (Exception e) { Debug.LogException(e); }
+        }
+
+        private void RenderUrlEditor()
+        {
+            GUILayout.Space(5);
+            GUILayout.Label("BaseUrl");
+            currentUrlOption = GUILayout.Toolbar(currentUrlOption, urlOptions);
+
+            switch (currentUrlOption)
+            {
+                case 0:
+                    baseUrl = PEERS_URL;
+                    GUILayout.Label(baseUrl);
+
+                    break;
+                case 1:
+                    baseUrl = WORLDS_URL;
+                    GUILayout.Label(baseUrl);
+
+                    break;
+                case 2:
+                    baseUrl = EditorGUILayout.TextField("", baseUrl);
+
+                    break;
+            }
         }
 
         private void RenderTestBatchmode()
@@ -216,10 +250,9 @@ namespace AssetBundleConverter
         {
             clientSettings = new ClientSettings
             {
-                endPoint = endPoint,
                 visualTest = visualTest,
+                baseUrl = baseUrl,
                 cleanAndExitOnFinish = false,
-                tld = tld,
                 createAssetBundle = createAssetBundle,
                 clearDirectoriesOnStart = clearDownloads,
                 importOnlyEntity = showDebugOptions ? debugEntity : "",

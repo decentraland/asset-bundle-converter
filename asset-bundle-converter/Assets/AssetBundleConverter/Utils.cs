@@ -1,3 +1,4 @@
+using AssetBundleConverter;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -235,10 +236,11 @@ namespace DCL.ABConverter
             return sBuilder.ToString();
         }
 
-        public static EntityMappingsDTO[] GetEntityMappings(Vector2Int entityPointer, ApiTLD tld,
+        public static EntityMappingsDTO[] GetEntityMappings(Vector2Int entityPointer, ClientSettings settings,
             IWebRequest webRequest)
         {
-            string url = $"{GetEntitiesUrl(tld)}";
+
+            string url = "https://peer.decentraland.org/content/entities/active/";
             DownloadHandler downloadHandler = null;
 
             try
@@ -247,7 +249,12 @@ namespace DCL.ABConverter
                 var json = JsonUtility.ToJson(pointersData);
                 downloadHandler = webRequest.Post(url, json);
             }
-            catch (HttpRequestException e) { throw new Exception($"Request error! mappings couldn't be fetched for scene {entityPointer}! -- {e.Message}"); }
+            catch (HttpRequestException e)
+            {
+                Debug.LogException(new Exception($"Request error! mappings couldn't be fetched for scene {entityPointer}! -- {e.Message}"));
+                Exit((int)AssetBundleConverter.ErrorCodes.UNEXPECTED_ERROR);
+                return null;
+            }
 
             List<EntityMappingsDTO> parcelInfoApiData = JsonConvert.DeserializeObject<List<EntityMappingsDTO>>(downloadHandler.text);
             downloadHandler.Dispose();
@@ -257,18 +264,22 @@ namespace DCL.ABConverter
             return parcelInfoApiData.ToArray();
         }
 
-        public static EntityMappingsDTO[] GetEntityMappings(string entityId, ApiTLD tld, IWebRequest webRequest)
+        public static EntityMappingsDTO[] GetEntityMappings(string entityId, ClientSettings settings, IWebRequest webRequest)
         {
-            string url = $"{GetContentsUrl(tld)}{entityId}";
+            var url = $"{settings.baseUrl}{entityId}";
             Debug.Log(url);
             DownloadHandler downloadHandler = null;
 
-            try { downloadHandler = webRequest.Get(url); }
+            try
+            {
+                downloadHandler = webRequest.Get(url);
+            }
             catch (HttpRequestException e)
             {
                 var exception = new Exception($"Request error! mappings couldn't be fetched for scene {entityId}! -- {e.Message}");
                 Debug.LogException(exception);
-                throw exception;
+                Exit((int)AssetBundleConverter.ErrorCodes.UNEXPECTED_ERROR);
+                return null;
             }
 
             if (downloadHandler.text.StartsWith("glTF"))

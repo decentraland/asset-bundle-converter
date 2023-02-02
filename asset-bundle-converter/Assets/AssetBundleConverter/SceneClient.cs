@@ -26,15 +26,23 @@ namespace DCL.ABConverter
         /// </summary>
         public static void ExportSceneToAssetBundles()
         {
-            //NOTE(Brian): This should make the logs cleaner
-            Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
-            Application.SetStackTraceLogType(LogType.Warning, StackTraceLogType.None);
-            Application.SetStackTraceLogType(LogType.Error, StackTraceLogType.Full);
-            Application.SetStackTraceLogType(LogType.Exception, StackTraceLogType.Full);
-            Application.SetStackTraceLogType(LogType.Assert, StackTraceLogType.Full);
+            try
+            {
+                //NOTE(Brian): This should make the logs cleaner
+                Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
+                Application.SetStackTraceLogType(LogType.Warning, StackTraceLogType.None);
+                Application.SetStackTraceLogType(LogType.Error, StackTraceLogType.Full);
+                Application.SetStackTraceLogType(LogType.Exception, StackTraceLogType.Full);
+                Application.SetStackTraceLogType(LogType.Assert, StackTraceLogType.Full);
 
-            EnsureEnvironment();
-            ExportSceneToAssetBundles(System.Environment.GetCommandLineArgs());
+                EnsureEnvironment();
+                ExportSceneToAssetBundles(System.Environment.GetCommandLineArgs());
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+                Utils.Exit((int)AssetBundleConverter.ErrorCodes.UNEXPECTED_ERROR);
+            }
         }
 
         /// <summary>
@@ -42,15 +50,23 @@ namespace DCL.ABConverter
         /// </summary>
         public static void ExportWearablesCollectionToAssetBundles()
         {
-            //NOTE(Brian): This should make the logs cleaner
-            Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
-            Application.SetStackTraceLogType(LogType.Warning, StackTraceLogType.None);
-            Application.SetStackTraceLogType(LogType.Error, StackTraceLogType.Full);
-            Application.SetStackTraceLogType(LogType.Exception, StackTraceLogType.Full);
-            Application.SetStackTraceLogType(LogType.Assert, StackTraceLogType.Full);
+            try
+            {
+                //NOTE(Brian): This should make the logs cleaner
+                Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
+                Application.SetStackTraceLogType(LogType.Warning, StackTraceLogType.None);
+                Application.SetStackTraceLogType(LogType.Error, StackTraceLogType.Full);
+                Application.SetStackTraceLogType(LogType.Exception, StackTraceLogType.Full);
+                Application.SetStackTraceLogType(LogType.Assert, StackTraceLogType.Full);
 
-            EnsureEnvironment();
-            ExportWearablesCollectionToAssetBundles(System.Environment.GetCommandLineArgs());
+                EnsureEnvironment();
+                ExportWearablesCollectionToAssetBundles(System.Environment.GetCommandLineArgs());
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+                Utils.Exit((int)AssetBundleConverter.ErrorCodes.UNEXPECTED_ERROR);
+            }
         }
 
         /// <summary>
@@ -228,18 +244,6 @@ namespace DCL.ABConverter
                                       };
             }
 
-            if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_CUSTOM_TLD, 1, out string[] customTld))
-            {
-                string targetTld = customTld[0];
-
-                settings.tld = targetTld switch
-                               {
-                                   "org" => ContentServerUtils.ApiTLD.ORG,
-                                   "zone" => ContentServerUtils.ApiTLD.ZONE,
-                                   _ => settings.tld
-                               };
-            }
-
             if (Utils.ParseOption(commandLineArgs, Config.CLI_VERBOSE, 0, out _))
                 settings.verbose = true;
 
@@ -260,7 +264,8 @@ namespace DCL.ABConverter
         {
             EnsureEnvironment();
 
-            var apiResponse = Utils.GetEntityMappings(settings.targetHash, settings.tld, env.webRequest);
+            var apiResponse = Utils.GetEntityMappings(settings.targetHash, settings, env.webRequest);
+            if (apiResponse == null) return GetUnexpectedResult();
             var mappings = apiResponse.SelectMany(m => m.content);
             return await ConvertEntitiesToAssetBundles(mappings.ToArray(), settings);
         }
@@ -275,10 +280,14 @@ namespace DCL.ABConverter
         {
             EnsureEnvironment();
 
-            var apiResponse = Utils.GetEntityMappings(settings.targetPointer.Value, settings.tld, env.webRequest);
+            var apiResponse = Utils.GetEntityMappings(settings.targetPointer.Value, settings, env.webRequest);
+            if (apiResponse == null) return GetUnexpectedResult();
             var mappings = apiResponse.SelectMany(m => m.content);
             return await ConvertEntitiesToAssetBundles(mappings.ToArray(), settings);
         }
+
+        private static AssetBundleConverter.State GetUnexpectedResult() =>
+            new (){step = AssetBundleConverter.State.Step.IDLE, lastErrorCode = AssetBundleConverter.ErrorCodes.UNEXPECTED_ERROR};
 
         public static async Task<AssetBundleConverter.State> ConvertWearablesCollection(ClientSettings settings)
         {
@@ -286,7 +295,7 @@ namespace DCL.ABConverter
 
             settings.isWearable = true;
 
-            var mappings = WearablesClient.GetCollectionMappings(settings.targetHash, settings.tld, env.webRequest);
+            var mappings = WearablesClient.GetCollectionMappings(settings.targetHash, ContentServerUtils.ApiTLD.ORG, env.webRequest);
             return await ConvertEntitiesToAssetBundles(mappings, settings);
         }
 

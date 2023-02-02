@@ -1,4 +1,3 @@
-using DCL;
 using DCL.ABConverter;
 using System.IO;
 using UnityEngine;
@@ -45,11 +44,6 @@ namespace AssetBundleConverter
             public string finalAssetBundlePath = Config.ASSET_BUNDLES_PATH_ROOT + Path.DirectorySeparatorChar;
 
             /// <summary>
-            /// Target top level domain. This will define the content server url used for the conversion (org, zone, etc).
-            /// </summary>
-            public ContentServerUtils.ApiTLD tld = ContentServerUtils.ApiTLD.ORG;
-
-            /// <summary>
             /// Raw baseUrl using for asset dumping.
             /// </summary>
             public string baseUrl;
@@ -60,7 +54,6 @@ namespace AssetBundleConverter
             public bool placeOnScene = true;
             public string importOnlyEntity;
             public ShaderType shaderType = ShaderType.Dcl;
-            public string endPoint = "/content/contents/";
             public bool stripShaders = true;
             public bool importGltf = true;
             public string targetHash;
@@ -70,10 +63,5 @@ namespace AssetBundleConverter
 
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 
-            public ClientSettings(ContentServerUtils.ApiTLD tld = ContentServerUtils.ApiTLD.ORG)
-            {
-                this.tld = tld;
-                baseUrl = ContentServerUtils.GetContentsUrl(tld);
-            }
         }
 }
