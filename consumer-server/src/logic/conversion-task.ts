@@ -19,6 +19,10 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
 
   const logger = components.logs.getLogger(`ExecuteConversion`)
 
+  const defaultLoggerMetadata = { entityId, contentServerUrl, version: $AB_VERSION }
+
+  logger.debug("Starting conversion", defaultLoggerMetadata)
+
   try {
     const exitCode = await runConversion(logger, {
       contentServerUrl,
@@ -32,20 +36,18 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
 
     components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })
 
-    logger.info('Uploading files')
-
     const manifest = {
       version: $AB_VERSION,
       files: await promises.readdir(outDirectory),
       exitCode
     } as const
 
-    logger.debug('Manifest', manifest as any)
+    logger.debug('Manifest', { ...defaultLoggerMetadata, manifest } as any)
 
     if (manifest.files.length == 0) {
       // this is an error, if succeeded, we should see at least a manifest file
       components.metrics.increment('ab_converter_empty_conversion', { ab_version: $AB_VERSION })
-      logger.error('Empty conversion', manifest as any)
+      logger.error('Empty conversion', { ...defaultLoggerMetadata, manifest } as any)
     }
 
     // first upload the content
@@ -68,6 +70,8 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
       ]
     })
 
+    logger.debug('Content files uploaded', defaultLoggerMetadata)
+
     // and then replace the manifest
     await components.cdnS3.upload({
       Bucket: cdnBucket,
@@ -78,16 +82,16 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
       ACL: 'public-read',
     }).promise()
 
-    if (exitCode !== 0) {
-      logger.debug(await promises.readFile(logFile, 'utf8'))
+    if (exitCode !== 0 || manifest.files.length == 0) {
+      logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
     }
-
   } catch (err: any) {
     logger.error(err)
   } finally {
     if ($LOGS_BUCKET) {
       const log = `https://${$LOGS_BUCKET}.s3.amazonaws.com/${s3LogKey}`
-      logger.info(`UPLOADING LOG FILE ${log}`)
+
+      logger.info(`LogFile=${log}`, defaultLoggerMetadata)
       await components.cdnS3
         .upload({
           Bucket: $LOGS_BUCKET,
@@ -96,12 +100,22 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
           ACL: 'public-read',
         })
         .promise()
-      await rimraf(logFile)
     } else {
-      logger.info(`!!!!!!!! Log file not deleted or uploaded ${logFile}`)
+      logger.info(`!!!!!!!! Log file not deleted or uploaded ${logFile}`, defaultLoggerMetadata)
     }
 
-    // delete output folder
-    await rimraf(outDirectory)
+    // delete output files
+    try {
+      await rimraf(logFile, { maxRetries: 3 })
+    } catch (err: any) {
+      logger.error(err, defaultLoggerMetadata)
+    }
+    try {
+      await rimraf(outDirectory, { maxRetries: 3 })
+    } catch (err: any) {
+      logger.error(err, defaultLoggerMetadata)
+    }
   }
+
+  logger.debug("Conversion finished", defaultLoggerMetadata)
 }

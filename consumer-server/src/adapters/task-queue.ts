@@ -2,6 +2,7 @@ import { IBaseComponent, IMetricsComponent } from '@well-known-components/interf
 import { validateMetricsDeclaration } from '@well-known-components/metrics'
 import { AsyncQueue } from '@well-known-components/pushable-channel'
 import { SQS } from 'aws-sdk'
+import { timeout } from '../logic/timer'
 import { AppComponents } from '../types'
 
 export interface TaskQueueMessage {
@@ -116,30 +117,39 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
           WaitTimeSeconds: 15,
         }
 
-        const response = await sqs.receiveMessage(params).promise()
-        if (response.Messages && response.Messages.length > 0) {
-          for (const it of response.Messages) {
-            const message: TaskQueueMessage = { id: it.MessageId! }
-            const { end } = components.metrics.startTimer('job_queue_duration_seconds', { queue_name: options.queueUrl })
-            try {
-              const snsOverSqs: SNSOverSQSMessage = JSON.parse(it.Body!)
-              logger.info(`Processing job`, { ...message, ...snsOverSqs } as any)
-              const result = await taskRunner(JSON.parse(snsOverSqs.Message), message)
-              logger.info(`Processed job`, message as any)
-              return { result, message }
-            } catch (err: any) {
-              components.metrics.increment('job_queue_failures_total', { queue_name: options.queueUrl })
-              logger.error(err)
+        try {
+          const response = await Promise.race([
+            sqs.receiveMessage(params).promise(),
+            timeout(30 * 60 * 1000, 'Timed out sqs.receiveMessage')
+          ])
 
-              return { result: undefined, message }
-            } finally {
-              await sqs.deleteMessage({ QueueUrl: options.queueUrl, ReceiptHandle: it.ReceiptHandle! }).promise()
-              end()
+          if (response.Messages && response.Messages.length > 0) {
+            for (const it of response.Messages) {
+              const message: TaskQueueMessage = { id: it.MessageId! }
+              const { end } = components.metrics.startTimer('job_queue_duration_seconds', { queue_name: options.queueUrl })
+              try {
+                const snsOverSqs: SNSOverSQSMessage = JSON.parse(it.Body!)
+                logger.info(`Processing job`, { id: message.id, message: snsOverSqs.Message })
+                const result = await taskRunner(JSON.parse(snsOverSqs.Message), message)
+                logger.info(`Processed job`, { id: message.id })
+                return { result, message }
+              } catch (err: any) {
+                logger.error(err)
+
+                components.metrics.increment('job_queue_failures_total', { queue_name: options.queueUrl })
+
+                return { result: undefined, message }
+              } finally {
+                await sqs.deleteMessage({ QueueUrl: options.queueUrl, ReceiptHandle: it.ReceiptHandle! }).promise()
+                end()
+              }
             }
           }
+          logger.info(`No new messages in queue. Retrying for 15 seconds`)
+        } catch (err: any) {
+          logger.error(err)
         }
 
-        logger.info(`No new messages in queue. Retrying for 15 seconds`)
       }
     },
   }

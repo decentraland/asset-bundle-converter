@@ -22,6 +22,10 @@ export const metricDeclarations = {
     type: IMetricsComponent.CounterType,
     labelNames: ["ab_version"],
   },
+  ab_converter_running_conversion: {
+    help: "Gauge of running conversions",
+    type: IMetricsComponent.GaugeType,
+  },
   ab_converter_free_disk_space: {
     help: "Free bytes in disk",
     type: IMetricsComponent.GaugeType

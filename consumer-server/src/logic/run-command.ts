@@ -7,18 +7,22 @@ export function execCommand(logger: ILoggerComponent.ILogger, command: string, a
 
   const child = spawn(command, args, { env, cwd, timeout })
     .on('exit', (code, signal) => {
-      if (signal === 'SIGTERM') {
+      if (signal === 'SIGTERM' || signal == 'SIGKILL') {
         exitFuture.reject(new Error('SIGTERM sent to the process'))
       } else {
         exitFuture.resolve(code ?? -1)
       }
     })
-    .on('error', (error) => exitFuture.reject(error))
+    .on('error', (error) => {
+      logger.error(error)
+      exitFuture.reject(error)
+    })
 
   if (timeout) {
     setTimeout(() => {
       try {
         if (!child.killed) {
+          logger.warn('Process did not finish, killing process', { pid: child.pid?.toString() || '?' })
           child.kill('SIGKILL')
         }
       } catch { }

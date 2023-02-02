@@ -34,7 +34,15 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
       }
 
       await components.taskQueue.consumeAndProcessJob(async (job, message) => {
-        await executeConversion(components, job.entity.entityId, job.contentServerUrls![0])
+        try {
+          components.metrics.increment('ab_converter_running_conversion')
+          await executeConversion(components, job.entity.entityId, job.contentServerUrls![0])
+        } catch (err: any) {
+          logger.error(err)
+          throw err
+        } finally {
+          components.metrics.decrement('ab_converter_running_conversion')
+        }
       })
     }
   })
