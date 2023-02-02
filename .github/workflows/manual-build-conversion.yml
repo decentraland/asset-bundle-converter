@@ -67,4 +67,4 @@ jobs:
         with:
           name: ${{ inputs.pointer }}
           path: |
-            /artifact/**/*
+            artifact/**/*
