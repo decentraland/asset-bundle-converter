@@ -29,12 +29,13 @@ namespace DCL.ABConverter
             try
             {
                 //NOTE(Brian): This should make the logs cleaner
+#if !UNITY_EDITOR
                 Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
                 Application.SetStackTraceLogType(LogType.Warning, StackTraceLogType.None);
                 Application.SetStackTraceLogType(LogType.Error, StackTraceLogType.Full);
                 Application.SetStackTraceLogType(LogType.Exception, StackTraceLogType.Full);
                 Application.SetStackTraceLogType(LogType.Assert, StackTraceLogType.Full);
-
+#endif
                 EnsureEnvironment();
                 ExportSceneToAssetBundles(System.Environment.GetCommandLineArgs());
             }
@@ -160,7 +161,9 @@ namespace DCL.ABConverter
             }
             catch (Exception e)
             {
-                log.Error(e.Message);
+                Debug.LogException(e);
+                log.Exception(e.ToString());
+                Utils.Exit((int)AssetBundleConverter.ErrorCodes.UNEXPECTED_ERROR);
             }
         }
 

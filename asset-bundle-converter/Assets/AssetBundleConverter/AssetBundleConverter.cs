@@ -463,6 +463,8 @@ namespace DCL.ABConverter
         {
             foreach (var assetPath in assetPaths)
             {
+                if (assetPath == null) continue;
+
                 if (assetPath.finalPath.EndsWith(".bin")) continue;
                 Utils.MarkFolderForAssetBundleBuild(assetPath.finalPath, assetPath.hash);
             }
@@ -864,7 +866,6 @@ namespace DCL.ABConverter
             {
                 var message = $"Download Failed {finalUrl} -- {e.Message}";
                 log.Error(message);
-                errorReporter.ReportError(message, settings);
                 return null;
             }
 
