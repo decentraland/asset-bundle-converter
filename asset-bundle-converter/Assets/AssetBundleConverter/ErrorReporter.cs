@@ -40,7 +40,7 @@ namespace AssetBundleConverter
         {
             scope.SetExtra("hash", settings.targetHash);
             scope.SetExtra("pointer", settings.targetPointer);
-            scope.SetExtra("topLevelDomain", settings.baseUrl);
+            scope.SetExtra("baseUrl", settings.baseUrl);
             scope.SetExtra("isWearable", settings.isWearable);
         }
 

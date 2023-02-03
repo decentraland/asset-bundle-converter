@@ -11,6 +11,7 @@ using AssetBundleConverter.Wrappers.Implementations.Default;
 using GLTFast;
 using GLTFast.Logging;
 using GLTFast.Materials;
+using System.Threading;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -35,7 +36,8 @@ namespace DCL.ABConverter
             SCENE_LIST_NULL,
             ASSET_BUNDLE_BUILD_FAIL,
             VISUAL_TEST_FAILED,
-            UNEXPECTED_ERROR
+            UNEXPECTED_ERROR,
+            GLTFAST_CRITICAL_ERROR,
         }
 
         public class State
@@ -254,7 +256,17 @@ namespace DCL.ABConverter
 
                         log.Verbose($"Importing {relativePath}");
                         EditorUtility.SetDirty(gltfImporter);
+
                         gltfImporter.SaveAndReimport();
+
+                        GameObject importedGameObject = AssetDatabase.LoadAssetAtPath<GameObject>(relativePath);
+                        if (importedGameObject == null)
+                        {
+                            var message = "Fatal error when importing this object, check previous error messages";
+                            errorReporter.ReportError(message, settings);
+                            Utils.Exit((int)ErrorCodes.GLTFAST_CRITICAL_ERROR);
+                            break;
+                        }
                     }
                     else
                     {
@@ -266,23 +278,32 @@ namespace DCL.ABConverter
                         continue;
                     }
 
-                    if ((!settings.createAssetBundle || !settings.visualTest) && settings.placeOnScene)
+                    GameObject originalGltf = AssetDatabase.LoadAssetAtPath<GameObject>(relativePath);
+                    if ((!settings.createAssetBundle || !settings.visualTest) && settings.placeOnScene && originalGltf != null)
                     {
-                        GameObject originalGltf = AssetDatabase.LoadAssetAtPath<GameObject>(relativePath);
-                        var clone = (GameObject)PrefabUtility.InstantiatePrefab(originalGltf);
+                        try
+                        {
+                            var clone = (GameObject)PrefabUtility.InstantiatePrefab(originalGltf);
+                            var renderers = clone.GetComponentsInChildren<Renderer>(true);
 
-                        var renderers = clone.GetComponentsInChildren<Renderer>(true);
-
-                        foreach (Renderer renderer in renderers)
-                            if (renderer.name.ToLower().Contains("_collider")) { renderer.enabled = false; }
+                            foreach (Renderer renderer in renderers)
+                                if (renderer.name.ToLower().Contains("_collider")) { renderer.enabled = false; }
+                        }
+                        catch (Exception e)
+                        {
+                            log.Exception(e.ToString());
+                            errorReporter.ReportException(new ConversionException(ConversionStep.Import, settings, e));
+                            continue;
+                        }
                     }
 
                     log.Verbose($"<color={color}>Ended loading gltf {gltfUrl} with result <b>{loadingSuccess}</b></color>");
                 }
                 catch (Exception e)
                 {
-                    Debug.LogException(e);
+                    log.Exception(e.ToString());
                     errorReporter.ReportException(new ConversionException(ConversionStep.Import, settings, e));
+                    continue;
                 }
             }
 
@@ -452,6 +473,7 @@ namespace DCL.ABConverter
         private void OnFinish()
         {
             if (settings.cleanAndExitOnFinish) { CleanAndExit(CurrentState.lastErrorCode); }
+
             errorReporter.Dispose();
         }
 
@@ -665,8 +687,6 @@ namespace DCL.ABConverter
                 contentTable[useHash ? Utils.EnsureStartWithSlash(assetPath.hashPath) : Utils.EnsureStartWithSlash(assetPath.filePath)] = relativeFinalPath;
             }
         }
-
-
 
         /// <summary>
         /// Trims off existing asset bundles from the given AssetPath array,

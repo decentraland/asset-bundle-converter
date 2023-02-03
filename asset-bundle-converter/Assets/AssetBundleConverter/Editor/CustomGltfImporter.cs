@@ -69,7 +69,7 @@ namespace AssetBundleConverter.Editor
             }
             else
             {
-                Debug.LogWarning($"Importing without file provider, there can be errors because of relative path files");
+                Debug.LogWarning($"Importing without file provider, there can be errors because of relative path files, please run the pipeline again");
                 return;
             }
 
