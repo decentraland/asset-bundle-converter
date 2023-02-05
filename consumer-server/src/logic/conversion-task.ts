@@ -86,7 +86,14 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
       logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
     }
   } catch (err: any) {
+    logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
+    components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
     logger.error(err)
+
+    setTimeout(() => {
+      // kill the process in one minute, enough time to allow prometheus to collect the metrics
+      process.exit(199)
+    }, 60_000)
   } finally {
     if ($LOGS_BUCKET) {
       const log = `https://${$LOGS_BUCKET}.s3.amazonaws.com/${s3LogKey}`

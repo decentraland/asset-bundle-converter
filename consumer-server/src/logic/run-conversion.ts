@@ -1,5 +1,5 @@
 import { ILoggerComponent } from '@well-known-components/interfaces'
-import { closeSync, openSync, readFileSync } from 'fs'
+import { closeSync, openSync } from 'fs'
 import * as fs from 'fs/promises'
 import { dirname } from 'path'
 import { AppComponents } from '../types'
@@ -42,22 +42,17 @@ export async function runConversion(
 
   const { exitPromise, child } = execCommand(logger, childArg0, childArguments, process.env as any, options.projectPath)
 
-  const failFuture = future<void>()
+  const failFuture = future<number>()
 
   if (options.timeout) {
     setTimeout(() => {
       if (!child.killed) {
         try {
           failFuture.reject(new Error('Process did not finish'))
-          logger.warn('Process did not finish, printing log', { pid: child.pid?.toString() || '?', command: childArg0, args: childArguments.join(' ') } as any)
-          logger.debug(readFileSync(options.logFile, 'utf8'))
+          logger.warn('Process did not finish', { pid: child.pid?.toString() || '?', command: childArg0, args: childArguments.join(' ') } as any)
           components.metrics.increment('ab_converter_timeout')
           if (!child.kill('SIGKILL')) {
             logger.error('Error trying to kill child process', { pid: child.pid?.toString() || '?', command: childArg0, args: childArguments.join(' ') } as any)
-            setTimeout(() => {
-              // kill the process in one minute, enough time to allow prometheus to collect the metrics
-              process.exit(1)
-            }, 60_000)
           }
         } catch (err: any) {
           failFuture.reject(err)
