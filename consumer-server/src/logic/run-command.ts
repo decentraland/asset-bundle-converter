@@ -2,12 +2,12 @@ import { future } from 'fp-future'
 import { spawn } from 'child_process'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 
-export function execCommand(logger: ILoggerComponent.ILogger, command: string, args: string[], env: Record<string, string>, cwd: string, timeout: number | undefined) {
+export function execCommand(logger: ILoggerComponent.ILogger, command: string, args: string[], env: Record<string, string>, cwd: string) {
   const exitFuture = future<number | null>()
 
   logger.debug('Running command', { command, args } as any)
 
-  const child = spawn(command, args, { env, cwd, timeout })
+  const child = spawn(command, args, { env, cwd })
     .on('exit', (code, signal) => {
       if (signal === 'SIGTERM' || signal == 'SIGKILL') {
         exitFuture.reject(new Error('SIGTERM sent to the process'))
@@ -19,17 +19,6 @@ export function execCommand(logger: ILoggerComponent.ILogger, command: string, a
       logger.error(error)
       exitFuture.reject(error)
     })
-
-  if (timeout) {
-    setTimeout(() => {
-      try {
-        if (!child.killed) {
-          logger.warn('Process did not finish, killing process', { pid: child.pid?.toString() || '?' })
-          child.kill('SIGKILL')
-        }
-      } catch { }
-    }, timeout + 1000)
-  }
 
   child.stdout?.on('data', (data) => {
     logger.log(data)

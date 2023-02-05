@@ -14,6 +14,9 @@ import { closeSync, openSync } from 'fs'
 import * as promises from 'fs/promises'
 import { ensureUlf } from './logic/ensure-ulf'
 import { dirname } from 'path'
+import { createMetricsComponent } from '@well-known-components/metrics'
+import { metricDeclarations } from './metrics'
+import { createConfigComponent } from '@well-known-components/env-config-provider'
 
 const args = arg({
   '--pointer': String,
@@ -42,6 +45,8 @@ async function main() {
 
   const fetcher = await createFetchComponent()
   const logs = await createLogComponent({})
+  const config = createConfigComponent({})
+  const metrics = await createMetricsComponent(metricDeclarations, { config })
 
   let entityId = ''
 
@@ -62,14 +67,14 @@ async function main() {
   child.stdout.pipe(process.stdout)
 
   try {
-    const exitCode = await runConversion(logger, {
+    const exitCode = await runConversion(logger, { metrics }, {
       logFile: LOG_FILE,
       contentServerUrl: BASE_URL,
       entityId,
       outDirectory: OUT_DIRECTORY,
       unityPath: $UNITY_PATH,
       projectPath: $PROJECT_PATH,
-      timeout: 30 * 60 * 1000
+      timeout: 30 * 60 * 1000 // 30min
     })
 
     if (exitCode) throw new Error('ExitCode=' + exitCode)

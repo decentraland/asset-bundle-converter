@@ -24,7 +24,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
   logger.debug("Starting conversion", defaultLoggerMetadata)
 
   try {
-    const exitCode = await runConversion(logger, {
+    const exitCode = await runConversion(logger, components, {
       contentServerUrl,
       entityId,
       logFile,

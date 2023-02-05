@@ -22,6 +22,10 @@ export const metricDeclarations = {
     type: IMetricsComponent.CounterType,
     labelNames: ["ab_version"],
   },
+  ab_converter_timeout: {
+    help: "Counter of timed out conversions",
+    type: IMetricsComponent.CounterType,
+  },
   ab_converter_running_conversion: {
     help: "Gauge of running conversions",
     type: IMetricsComponent.GaugeType,
