@@ -94,6 +94,8 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
       // kill the process in one minute, enough time to allow prometheus to collect the metrics
       process.exit(199)
     }, 60_000)
+
+    throw err
   } finally {
     if ($LOGS_BUCKET) {
       const log = `https://${$LOGS_BUCKET}.s3.amazonaws.com/${s3LogKey}`
