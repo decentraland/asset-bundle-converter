@@ -4,7 +4,6 @@ import * as fs from 'fs/promises'
 import { dirname } from 'path'
 import { AppComponents } from '../types'
 import { execCommand } from './run-command'
-import future from 'fp-future'
 
 export async function runConversion(
   logger: ILoggerComponent.ILogger,
@@ -42,25 +41,24 @@ export async function runConversion(
 
   const { exitPromise, child } = execCommand(logger, childArg0, childArguments, process.env as any, options.projectPath)
 
-  const failFuture = future<number>()
-
   if (options.timeout) {
     setTimeout(() => {
-      if (!child.killed) {
+      if (exitPromise.isPending) {
         try {
-          failFuture.reject(new Error('Process did not finish'))
-          logger.warn('Process did not finish', { pid: child.pid?.toString() || '?', command: childArg0, args: childArguments.join(' ') } as any)
-          components.metrics.increment('ab_converter_timeout')
-          if (!child.kill('SIGKILL')) {
-            logger.error('Error trying to kill child process', { pid: child.pid?.toString() || '?', command: childArg0, args: childArguments.join(' ') } as any)
+          if (!child.killed) {
+            logger.warn('Process did not finish', { pid: child.pid?.toString() || '?', command: childArg0, args: childArguments.join(' ') } as any)
+            components.metrics.increment('ab_converter_timeout')
+            exitPromise.reject(new Error('Process did not finish'))
+            if (!child.kill('SIGKILL')) {
+              logger.error('Error trying to kill child process', { pid: child.pid?.toString() || '?', command: childArg0, args: childArguments.join(' ') } as any)
+            }
           }
         } catch (err: any) {
-          failFuture.reject(err)
           logger.error(err)
         }
       }
     }, options.timeout)
   }
 
-  return await Promise.race([exitPromise, failFuture])
+  return await exitPromise
 }

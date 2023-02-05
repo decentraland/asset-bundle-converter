@@ -31,7 +31,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
       outDirectory,
       projectPath: $PROJECT_PATH,
       unityPath: $UNITY_PATH,
-      timeout: 30 * 60 * 1000 // 30min
+      timeout: 45 * 60 * 1000 // 30min
     })
 
     components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })
