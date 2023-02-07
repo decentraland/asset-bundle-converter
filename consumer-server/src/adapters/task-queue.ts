@@ -22,7 +22,7 @@ export const queueMetrics = validateMetricsDeclaration({
     type: IMetricsComponent.HistogramType,
     help: 'Duration of each job in seconds',
     labelNames: ["queue_name"],
-    buckets: [1, 10, 100, 200, 300, 400, 500, 600, 700, 1000, 1200, 1600, 1800]
+    buckets: [1, 10, 100, 200, 300, 400, 500, 600, 700, 1000, 1200, 1600, 1800, 3600]
   },
   job_queue_enqueue_total: {
     type: IMetricsComponent.CounterType,
