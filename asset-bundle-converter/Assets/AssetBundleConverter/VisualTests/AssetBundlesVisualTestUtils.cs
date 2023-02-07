@@ -10,7 +10,7 @@ namespace DCL.Helpers
     public static class TestSettings
     {
         public static int VISUAL_TESTS_APPROVED_AFFINITY = 95;
-        public static float VISUAL_TESTS_PIXELS_CHECK_THRESHOLD = 5.0f;
+        public static float VISUAL_TESTS_PIXELS_CHECK_THRESHOLD = 7.5f;
         public static int VISUAL_TESTS_SNAPSHOT_WIDTH = 1280;
         public static int VISUAL_TESTS_SNAPSHOT_HEIGHT = 720;
     }

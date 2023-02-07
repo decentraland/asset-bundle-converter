@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using DCL;
 using DCL.ABConverter;
 using System;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using Random = System.Random;
@@ -31,6 +32,8 @@ namespace AssetBundleConverter
         private string entityId = "QmYy2TMDEfag99yZV4ZdpjievYUfdQgBVfFHKCDAge3zQi";
         private string wearablesCollectionId = "urn:decentraland:off-chain:base-avatars";
         private string debugEntity = "bafkreib66ufmbowp4ee2u3kdu6t52kouie7kd7tfrlv3l5kejz6yjcaq5i";
+        private string batchBaseUrl = "";
+        private string batchSceneId = "";
         private string batchModeParams = "";
         private string baseUrl;
         private bool placeOnScene = true;
@@ -133,7 +136,9 @@ namespace AssetBundleConverter
 
         private void RenderTestBatchmode()
         {
-            batchModeParams = EditorGUILayout.TextField("Params", batchModeParams);
+            batchSceneId = EditorGUILayout.TextField("sceneId", batchSceneId);
+            batchBaseUrl = EditorGUILayout.TextField("baseUrl", batchBaseUrl);
+            batchModeParams = EditorGUILayout.TextField("additionalParams", batchModeParams);
 
             GUILayout.FlexibleSpace();
 
@@ -141,7 +146,14 @@ namespace AssetBundleConverter
             {
                 try
                 {
-                    SceneClient.ExportSceneToAssetBundles(batchModeParams.Split(","));
+                    string[] additionalArgs = batchModeParams.Split(",");
+
+                    string[] baseArgs = new[]
+                    {
+                        "-sceneCid", batchSceneId,
+                        "-baseUrl", batchBaseUrl
+                    };
+                    SceneClient.ExportSceneToAssetBundles(baseArgs.Concat(additionalArgs).ToArray());
                 }
                 catch (Exception e) { Debug.LogException(e); }
             }
