@@ -153,7 +153,7 @@ namespace AssetBundleConverter
                         "-sceneCid", batchSceneId,
                         "-baseUrl", batchBaseUrl
                     };
-                    SceneClient.ExportSceneToAssetBundles(baseArgs.Concat(additionalArgs).ToArray());
+                    SceneClient.ExportSceneToAssetBundles(baseArgs.Concat(additionalArgs).ToArray(), new ClientSettings(){ verbose = verbose });
                 }
                 catch (Exception e) { Debug.LogException(e); }
             }

@@ -75,9 +75,9 @@ namespace DCL.ABConverter
         /// </summary>
         /// <param name="commandLineArgs">An array with the command line arguments.</param>
         /// <exception cref="ArgumentException">When an invalid argument is passed</exception>
-        public async static void ExportSceneToAssetBundles(string[] commandLineArgs)
+        public async static void ExportSceneToAssetBundles(string[] commandLineArgs, ClientSettings settings = default)
         {
-            ClientSettings settings = new ClientSettings();
+            settings ??= new ClientSettings();
             settings.reportErrors = true;
             try
             {
@@ -308,7 +308,7 @@ namespace DCL.ABConverter
         /// <param name="entitiesId">The cid list for the scenes to gather from the catalyst's content server</param>
         /// <param name="settings">Any conversion settings object, if its null, a new one will be created</param>
         /// <returns>A state context object useful for tracking the conversion progress</returns>
-        private static async Task<AssetBundleConverter.State> ConvertEntitiesToAssetBundles(IReadOnlyList<ContentServerUtils.MappingPair> mappingPairs, ClientSettings settings = null)
+        private static async Task<AssetBundleConverter.State> ConvertEntitiesToAssetBundles(IReadOnlyList<ContentServerUtils.MappingPair> mappingPairs, ClientSettings settings)
         {
             if (mappingPairs == null || mappingPairs.Count == 0)
             {
@@ -318,9 +318,10 @@ namespace DCL.ABConverter
 
             log.Info($"Converting {mappingPairs.Count} entities...");
 
-            EnsureEnvironment();
+            if (settings.verbose)
+                log.Info(string.Join('\n',mappingPairs.Select(mp => mp.file)));
 
-            settings ??= new ClientSettings();
+            EnsureEnvironment();
 
             var core = new AssetBundleConverter(env, settings);
             await core.Convert(mappingPairs);
