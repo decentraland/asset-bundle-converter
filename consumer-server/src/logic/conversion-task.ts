@@ -5,24 +5,64 @@ import { rimraf } from 'rimraf'
 import { AppComponents } from '../types'
 import { runConversion } from './run-conversion'
 
+type Manifest = {
+  version: string
+  files: string[]
+  exitCode: number | null
+  contentServerUrl?: string
+}
+
+async function getCdnBucket(components: Pick<AppComponents, 'config'>) {
+  return await components.config.getString('CDN_BUCKET') || 'CDN_BUCKET'
+}
+
+function manifestKeyForEntity(entityId: string) {
+  return `manifest/${entityId}.json`
+}
+
+// returns true if the asset was converted and uploaded with the same version of the converter
+async function shouldIgnoreConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, entityId: string): Promise<boolean> {
+  const $AB_VERSION = await components.config.requireString('AB_VERSION')
+  const cdnBucket = await getCdnBucket(components)
+  const manifestFile = manifestKeyForEntity(entityId)
+
+  try {
+    const obj = await (components.cdnS3.getObject({ Bucket: cdnBucket, Key: manifestFile, }).promise())
+    if (!obj.Body) return false
+    const json: Manifest = JSON.parse(obj.Body?.toString())
+
+    // not ignored when previous run had exit code
+    if (json.exitCode) return false
+
+    // ignored only when previous version is the same as current version
+    if (json.version === $AB_VERSION) return true
+  } catch { }
+
+  return false
+}
 
 export async function executeConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, entityId: string, contentServerUrl: string) {
   const $AB_VERSION = await components.config.requireString('AB_VERSION')
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
   const $PROJECT_PATH = await components.config.requireString('PROJECT_PATH')
+  const logger = components.logs.getLogger(`ExecuteConversion`)
 
-  const cdnBucket = await components.config.getString('CDN_BUCKET') || 'CDN_BUCKET'
+  if (await shouldIgnoreConversion(components, entityId)) {
+    logger.info("Ignoring conversion", { entityId, contentServerUrl })
+    return
+  }
+
+  const cdnBucket = await getCdnBucket(components)
+  const manifestFile = manifestKeyForEntity(entityId)
 
   const logFile = `/tmp/asset_bundles_logs/export_log_${entityId}_${Date.now()}.txt`
   const s3LogKey = `logs/${$AB_VERSION}/${entityId}/${new Date().toISOString()}.txt`
   const outDirectory = `/tmp/asset_bundles_contents/entity_${entityId}`
 
-  const logger = components.logs.getLogger(`ExecuteConversion`)
+  const defaultLoggerMetadata = { entityId, contentServerUrl, version: $AB_VERSION, logFile }
 
-  const defaultLoggerMetadata = { entityId, contentServerUrl, version: $AB_VERSION }
-
-  logger.debug("Starting conversion", defaultLoggerMetadata)
+  logger.info("Starting conversion", defaultLoggerMetadata)
 
   try {
     const exitCode = await runConversion(logger, components, {
@@ -37,11 +77,12 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
 
     components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })
 
-    const manifest = {
+    const manifest: Manifest = {
       version: $AB_VERSION,
       files: await promises.readdir(outDirectory),
-      exitCode
-    } as const
+      exitCode,
+      contentServerUrl
+    }
 
     logger.debug('Manifest', { ...defaultLoggerMetadata, manifest } as any)
 
@@ -78,7 +119,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
     // and then replace the manifest
     await components.cdnS3.upload({
       Bucket: cdnBucket,
-      Key: `manifest/${entityId}.json`,
+      Key: manifestFile,
       ContentType: 'application/json',
       Body: JSON.stringify(manifest),
       CacheControl: 'max-age=3600,s-maxage=3600',
