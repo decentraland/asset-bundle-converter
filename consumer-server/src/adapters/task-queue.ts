@@ -115,6 +115,7 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
           MessageAttributeNames: ['All'],
           QueueUrl: options.queueUrl,
           WaitTimeSeconds: 15,
+          VisibilityTimeout: 3 * 3600 // 3 hours
         }
 
         try {
