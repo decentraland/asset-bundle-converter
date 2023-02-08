@@ -10,6 +10,7 @@ type Manifest = {
   files: string[]
   exitCode: number | null
   contentServerUrl?: string
+  date: string
 }
 
 async function getCdnBucket(components: Pick<AppComponents, 'config'>) {
@@ -55,6 +56,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
 
   const cdnBucket = await getCdnBucket(components)
   const manifestFile = manifestKeyForEntity(entityId)
+  const failedManifestFile = `manifest/${entityId}_failed.json`
 
   const logFile = `/tmp/asset_bundles_logs/export_log_${entityId}_${Date.now()}.txt`
   const s3LogKey = `logs/${$AB_VERSION}/${entityId}/${new Date().toISOString()}.txt`
@@ -81,7 +83,8 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
       version: $AB_VERSION,
       files: await promises.readdir(outDirectory),
       exitCode,
-      contentServerUrl
+      contentServerUrl,
+      date: new Date().toISOString()
     }
 
     logger.debug('Manifest', { ...defaultLoggerMetadata, manifest } as any)
@@ -133,6 +136,18 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
     logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
     components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
     logger.error(err)
+
+    try {
+      // and then replace the manifest
+      await components.cdnS3.upload({
+        Bucket: cdnBucket,
+        Key: failedManifestFile,
+        ContentType: 'application/json',
+        Body: JSON.stringify({ entityId, contentServerUrl, version: $AB_VERSION, log: s3LogKey, date: new Date().toISOString() }),
+        CacheControl: 'max-age=3600,s-maxage=3600',
+        ACL: 'public-read',
+      }).promise()
+    } catch { }
 
     setTimeout(() => {
       // kill the process in one minute, enough time to allow prometheus to collect the metrics
