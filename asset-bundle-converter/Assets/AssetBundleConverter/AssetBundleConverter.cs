@@ -72,9 +72,18 @@ namespace DCL.ABConverter
         private Dictionary<string, string> gltfOriginalNames = new ();
         private string logBuffer;
         private int totalAssets;
-        private float startTime;
         private int skippedAssets;
         private ErrorReporter errorReporter;
+
+        private double conversionStartupTime;
+        private double downloadStartupTime;
+        private double downloadEndTime;
+        private double importStartupTime;
+        private double importEndTime;
+        private double bundlesStartupTime;
+        private double bundlesEndTime;
+        private double visualTestStartupTime;
+        private double visualTestEndTime;
 
         public AssetBundleConverter(Environment env, ClientSettings settings)
         {
@@ -107,7 +116,7 @@ namespace DCL.ABConverter
             var scene = EditorSceneManager.OpenScene(SCENE_NAME, OpenSceneMode.Single);
             await WaitUntilAsync(() => scene.isLoaded);
 
-            startTime = Time.realtimeSinceStartup;
+            conversionStartupTime = EditorApplication.timeSinceStartup;
             log.Info("Starting a new conversion");
 
             // First step: initialize directories to download the original assets and to store the results
@@ -121,6 +130,8 @@ namespace DCL.ABConverter
 
             if (settings.importGltf)
             {
+                downloadStartupTime = EditorApplication.timeSinceStartup;
+
                 if (!DownloadAssets(rawContents))
                 {
                     log.Info("All assets are already converted");
@@ -128,9 +139,13 @@ namespace DCL.ABConverter
 
                     return CurrentState;
                 }
+
+                downloadEndTime = EditorApplication.timeSinceStartup;
             }
 
             // Third step: we import gltfs
+            importStartupTime = EditorApplication.timeSinceStartup;
+
             if (await ImportAllGltf())
             {
                 OnFinish();
@@ -138,10 +153,14 @@ namespace DCL.ABConverter
                 return CurrentState;
             }
 
+            importEndTime = EditorApplication.timeSinceStartup;
+
             EditorUtility.ClearProgressBar();
 
             if (settings.createAssetBundle)
             {
+                bundlesStartupTime = EditorApplication.timeSinceStartup;
+
                 // Fourth step: we mark all assets for bundling
                 MarkAllAssetBundles(assetsToMark);
 
@@ -164,10 +183,16 @@ namespace DCL.ABConverter
                     CurrentState.lastErrorCode = ErrorCodes.ASSET_BUNDLE_BUILD_FAIL;
                     CurrentState.step = State.Step.FINISHED;
                 }
+
+                bundlesEndTime = EditorApplication.timeSinceStartup;
             }
 
             if (settings.visualTest)
+            {
+                visualTestStartupTime = EditorApplication.timeSinceStartup;
                 await VisualTests.TestConvertedAssetsAsync(env, settings, assetsToMark, errorReporter);
+                visualTestEndTime = EditorApplication.timeSinceStartup;
+            }
 
             OnFinish();
 
@@ -260,6 +285,7 @@ namespace DCL.ABConverter
                         gltfImporter.SaveAndReimport();
 
                         GameObject importedGameObject = AssetDatabase.LoadAssetAtPath<GameObject>(relativePath);
+
                         if (importedGameObject == null)
                         {
                             var message = "Fatal error when importing this object, check previous error messages";
@@ -279,6 +305,7 @@ namespace DCL.ABConverter
                     }
 
                     GameObject originalGltf = AssetDatabase.LoadAssetAtPath<GameObject>(relativePath);
+
                     if ((!settings.createAssetBundle || !settings.visualTest) && settings.placeOnScene && originalGltf != null)
                     {
                         try
@@ -500,21 +527,27 @@ namespace DCL.ABConverter
         {
             foreach (var gltf in gltfToWait) { gltf.import.Dispose(); }
 
-            float conversionTime = Time.realtimeSinceStartup - startTime;
-            logBuffer = $"Conversion finished!. last error code = {errorCode}";
+            double conversionTime = EditorApplication.timeSinceStartup - conversionStartupTime;
+            double downloadTime = downloadEndTime - downloadStartupTime;
+            double importTime = importEndTime - importStartupTime;
+            double bundlesTime = bundlesEndTime - bundlesStartupTime;
+            double visualTestsTime = visualTestEndTime - visualTestStartupTime;
 
+            logBuffer = $"Conversion finished!. last error code = {errorCode}";
             logBuffer += "\n";
             logBuffer += $"Converted {totalAssets - skippedAssets} of {totalAssets}. (Skipped {skippedAssets})\n";
-            logBuffer += $"Total time: {conversionTime}";
-
-            if (totalAssets > 0) { logBuffer += $"... Time per asset: {conversionTime / totalAssets}\n"; }
-
+            logBuffer += $"Total download time: {downloadTime} seconds\n";
+            logBuffer += $"Total import time: {importTime} seconds\n";
+            logBuffer += $"Total bundle conversion time: {bundlesTime} seconds\n";
+            logBuffer += $"Total visual tests time: {visualTestsTime} seconds\n";
             logBuffer += "\n";
-            logBuffer += logBuffer;
+            logBuffer += $"Total: {conversionTime} seconds\n";
 
+            if (totalAssets > 0) { logBuffer += $"Estimated time per asset: {conversionTime / totalAssets}\n"; }
+
+            Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
             log.Info(logBuffer);
-
-            //CleanupWorkingFolders();
+            Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.ScriptOnly);
 
             Utils.Exit((int)errorCode);
         }
@@ -540,7 +573,7 @@ namespace DCL.ABConverter
         {
             logBuffer = "";
 
-            var startTime = EditorApplication.timeSinceStartup;
+            var abStartTime = EditorApplication.timeSinceStartup;
 
             env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 
@@ -581,7 +614,7 @@ namespace DCL.ABConverter
 
             var afterSecondBuild = EditorApplication.timeSinceStartup;
 
-            logBuffer += $"Step 0: {afterRefreshTime - startTime}\n";
+            logBuffer += $"Step 0: {afterRefreshTime - abStartTime}\n";
             logBuffer += $"Step 1: {afterFirstBuild - afterRefreshTime}\n";
             logBuffer += $"Step 2: {afterSecondRefresh - afterFirstBuild}\n";
             logBuffer += $"Step 3: {afterSecondBuild - afterSecondRefresh}\n";
