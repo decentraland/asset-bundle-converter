@@ -1,4 +1,5 @@
 import { uploadDir } from '@dcl/cdn-uploader'
+import { FileVariant } from '@dcl/cdn-uploader/dist/types'
 import * as promises from 'fs/promises'
 import { rimraf } from 'rimraf'
 import { AppComponents } from '../types'
@@ -31,7 +32,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
       outDirectory,
       projectPath: $PROJECT_PATH,
       unityPath: $UNITY_PATH,
-      timeout: 45 * 60 * 1000 // 30min
+      timeout: 60 * 60 * 1000 // 60min
     })
 
     components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })
@@ -53,12 +54,12 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
     // first upload the content
     await uploadDir(components.cdnS3, cdnBucket, outDirectory, $AB_VERSION, {
       concurrency: 10,
-      immutable: true,
       matches: [
         {
           match: "**/*.manifest",
           contentType: "text/cache-manifest",
           immutable: true,
+          variants: [FileVariant.Brotli, FileVariant.Uncompressed],
         },
         {
           // the rest of the elements will be uploaded as application/wasm
@@ -66,6 +67,8 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
           match: "**/*",
           contentType: "application/wasm",
           immutable: true,
+          variants: [FileVariant.Brotli, FileVariant.Uncompressed],
+          skipRepeated: true
         }
       ]
     })
