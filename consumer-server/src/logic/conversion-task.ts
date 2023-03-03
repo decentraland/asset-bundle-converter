@@ -130,7 +130,17 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
     }).promise()
 
     if (exitCode !== 0 || manifest.files.length == 0) {
-      logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
+      const log =
+        await promises.readFile(logFile, 'utf8')
+
+      logger.debug(log, defaultLoggerMetadata)
+
+      if (log.includes('You must have a valid X server running')) {
+        // if X server is having trouble, we will kill the service right away. without further ado
+        // this will make the job to timeout and to be re-processed by the SQS queue
+        logger.error('X server is having trouble, the service will restart')
+        process.exit(1)
+      }
     }
   } catch (err: any) {
     logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
