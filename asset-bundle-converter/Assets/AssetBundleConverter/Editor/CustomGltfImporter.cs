@@ -166,12 +166,15 @@ namespace AssetBundleConverter.Editor
                     string texPath = AssetDatabase.GetAssetPath(tex);
 
                     if (string.IsNullOrEmpty(texPath))
-                        texPath = $"{folderName}{separator}Textures{separator}{tex.name}.png";
+                        texPath = $"{folderName}{separator}Textures{separator}{tex.name}";
 
                     texPath = texPath.Replace(separator, '/');
 
                     //remove all whitespaces
                     texPath = Regex.Replace(texPath, @"\s+", "");
+
+                    if (!texPath.EndsWith(".png"))
+                        texPath += ".png";
 
                     //var importedTex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
                     var importer = GetAtPath(texPath);
@@ -202,7 +205,7 @@ namespace AssetBundleConverter.Editor
                         EditorUtility.SetDirty(tImporter);
                         tImporter.SaveAndReimport();
                     }
-                    else { Debug.LogWarning($"GLTFImporter: Unable to import texture at path: {texPath}"); }
+                    else { Debug.LogError($"GLTFImporter: Unable to import texture at path: {texPath}"); }
                 }
             }
         }

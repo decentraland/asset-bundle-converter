@@ -389,7 +389,11 @@ namespace DCL.ABConverter
                     if (!tex) continue;
 
                     // we reassign the texture reference
-                    if (texNameMap.ContainsKey(tex.name)) { newMaterial.SetTexture(propertyName, texNameMap[tex.name]); }
+                    string texName = tex.name;
+
+                    texName = texName.Replace(".png", "");
+
+                    if (texNameMap.ContainsKey(texName)) { newMaterial.SetTexture(propertyName, texNameMap[texName]); }
                     else
                     {
                         // if this happens, then the texture was already downloaded as a sepparate asset
