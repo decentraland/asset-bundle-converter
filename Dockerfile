@@ -46,7 +46,7 @@ ENV NODE_PATH $NVM_DIR/versions/node/$NODE_VERSION/lib/node_modules
 ENV PATH $NVM_DIR/versions/node/$NODE_VERSION/bin:$PATH
 
 # NODE_ENV is used to configure some runtime options, like JSON logger
-ENV AB_VERSION v1
+ENV AB_VERSION v2
 ENV NODE_ENV production
 ENV PROJECT_PATH /asset-bundle-converter
 ENV DEBIAN_FRONTEND=noninteractive
