@@ -96,8 +96,6 @@ namespace DCL.ABConverter
             finalDownloadedAssetDbPath = PathUtils.FixDirectorySeparator(Config.ASSET_BUNDLES_PATH_ROOT + Config.DASH);
 
             log.verboseEnabled = true;
-
-            ShaderGraphMaterialGenerator.k_ShaderPathPrefix = "Assets/git-submodules/glTFast/Runtime/Shader/";
         }
 
         public static async Task WaitUntilAsync(Func<bool> predicate, int sleep = 50)
@@ -389,9 +387,7 @@ namespace DCL.ABConverter
                     if (!tex) continue;
 
                     // we reassign the texture reference
-                    string texName = tex.name;
-
-                    texName = texName.Replace(".png", "");
+                    string texName = Utils.NicifyName(tex.name);
 
                     if (texNameMap.ContainsKey(texName)) { newMaterial.SetTexture(propertyName, texNameMap[texName]); }
                     else
@@ -430,7 +426,7 @@ namespace DCL.ABConverter
                     var tex = textures[i];
                     var ext = ".png";
                     string texName = tex.name;
-                    texName = Regex.Replace(texName, @"\s+", "");
+                    texName = Utils.NicifyName(texName);
 
                     var texPath = string.Concat(texturesRoot, texName);
 
@@ -678,7 +674,7 @@ namespace DCL.ABConverter
             try
             {
                 if (settings.verbose)
-                    Debug.Log(string.Join("\n", rawContents.Select(r => $"{r.file}")));
+                    Debug.Log(string.Join("\n", rawContents.Select(r => $"{r.hash} -> {r.file}")));
 
                 List<AssetPath> gltfPaths =
                     Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.gltfExtensions);
