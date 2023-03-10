@@ -388,11 +388,13 @@ namespace DCL.ABConverter
 
                     // we reassign the texture reference
                     string texName = Utils.NicifyName(tex.name);
+                    var prevTexture = newMaterial.GetTexture(propertyName);
 
                     if (texNameMap.ContainsKey(texName)) { newMaterial.SetTexture(propertyName, texNameMap[texName]); }
                     else
                     {
-                        // if this happens, then the texture was already downloaded as a sepparate asset
+                        if (prevTexture == null)
+                            log.Error($"Failed to set texture \"{texName}\" to material \"{matName}\". This will cause white materials");
                     }
                 }
 
