@@ -1,0 +1,15 @@
+image: docker:latest
+
+services:
+  - docker:dind
+
+deploy-infra:
+  stage: deploy
+  image: decentraland/ci-node:latest
+  only:
+    - master
+  script:
+    - curl ifconfig.me
+    - cd .ci
+    - npm install
+    - dcl-sync-release
