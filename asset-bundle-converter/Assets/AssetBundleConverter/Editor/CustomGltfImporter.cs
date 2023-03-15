@@ -77,7 +77,12 @@ namespace AssetBundleConverter.Editor
                 SetupCustomMaterialGenerator(new AssetBundleConverterMaterialGenerator());
 
             try { base.OnImportAsset(ctx); }
-            catch (Exception e) { Debug.LogException(e); }
+            catch (Exception e)
+            {
+                Debug.LogError("UNCAUGHT FATAL: Failed to Import GLTF " + hash);
+                Debug.LogException(e);
+                Utils.Exit((int)DCL.ABConverter.AssetBundleConverter.ErrorCodes.GLTFAST_CRITICAL_ERROR);
+            }
         }
 
         protected override void CreateMaterialAssets(AssetImportContext ctx)
@@ -166,15 +171,17 @@ namespace AssetBundleConverter.Editor
                     string texPath = AssetDatabase.GetAssetPath(tex);
 
                     if (string.IsNullOrEmpty(texPath))
+                    {
                         texPath = $"{folderName}{separator}Textures{separator}{tex.name}";
 
-                    texPath = texPath.Replace(separator, '/');
+                        texPath = texPath.Replace(separator, '/');
 
-                    //remove all whitespaces
-                    texPath = Regex.Replace(texPath, @"\s+", "");
+                        //remove all whitespaces
+                        texPath = Regex.Replace(texPath, @"\s+", "");
 
-                    if (!texPath.EndsWith(".png"))
-                        texPath += ".png";
+                        if (!Path.HasExtension(texPath))
+                            texPath += ".png";
+                    }
 
                     //var importedTex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
                     var importer = GetAtPath(texPath);
@@ -205,7 +212,10 @@ namespace AssetBundleConverter.Editor
                         EditorUtility.SetDirty(tImporter);
                         tImporter.SaveAndReimport();
                     }
-                    else { Debug.LogError($"GLTFImporter: Unable to import texture at path: {texPath}"); }
+                    else
+                    {
+                        throw new Exception($"GLTFImporter: Unable to import texture at path: {texPath}");
+                    }
                 }
             }
         }

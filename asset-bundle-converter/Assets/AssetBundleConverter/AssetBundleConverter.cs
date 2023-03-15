@@ -11,7 +11,6 @@ using AssetBundleConverter.Wrappers.Implementations.Default;
 using GLTFast;
 using GLTFast.Logging;
 using GLTFast.Materials;
-using System.Threading;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -212,11 +211,11 @@ namespace DCL.ABConverter
 
             foreach (GltfImportSettings gltf in gltfToWait)
             {
+                var gltfUrl = gltf.url;
+                var gltfImport = gltf.import;
+
                 try
                 {
-                    var gltfUrl = gltf.url;
-                    var gltfImport = gltf.import;
-
                     EditorUtility.DisplayProgressBar("Asset Bundle Converter", $"Loading GLTF {gltfUrl}",
                         loadedGltf / (float)totalGltfToLoad);
 
@@ -287,6 +286,7 @@ namespace DCL.ABConverter
                         if (importedGameObject == null)
                         {
                             var message = "Fatal error when importing this object, check previous error messages";
+                            log.Error(message);
                             errorReporter.ReportError(message, settings);
                             Utils.Exit((int)ErrorCodes.GLTFAST_CRITICAL_ERROR);
                             break;
@@ -297,7 +297,6 @@ namespace DCL.ABConverter
                         var message = $"Failed to get the gltf importer for {gltfUrl} \nPath: {relativePath}";
                         log.Error(message);
                         errorReporter.ReportError(message, settings);
-
                         EditorUtility.ClearProgressBar();
                         continue;
                     }
@@ -326,9 +325,11 @@ namespace DCL.ABConverter
                 }
                 catch (Exception e)
                 {
-                    log.Exception(e.ToString());
+                    log.Error("UNCAUGHT FATAL: Failed to load GLTF " + gltf.AssetPath.hash);
+                    Debug.LogException(e);
                     errorReporter.ReportException(new ConversionException(ConversionStep.Import, settings, e));
-                    continue;
+                    Utils.Exit((int)ErrorCodes.GLTFAST_CRITICAL_ERROR);
+                    break;
                 }
             }
 
@@ -394,7 +395,13 @@ namespace DCL.ABConverter
                     else
                     {
                         if (prevTexture == null)
-                            log.Error($"Failed to set texture \"{texName}\" to material \"{matName}\". This will cause white materials");
+                        {
+                            var message = $"Failed to set texture \"{texName}\" to material \"{matName}\". This will cause white materials";
+                            log.Error(message);
+                            errorReporter.ReportError(message, settings);
+                            Utils.Exit((int)ErrorCodes.GLTFAST_CRITICAL_ERROR);
+                            return;
+                        }
                     }
                 }
 
@@ -426,15 +433,10 @@ namespace DCL.ABConverter
                 for (int i = 0; i < textures.Count; i++)
                 {
                     var tex = textures[i];
-                    var ext = ".png";
                     string texName = tex.name;
                     texName = Utils.NicifyName(texName);
 
                     var texPath = string.Concat(texturesRoot, texName);
-
-                    // some textures might already contain the extension, adding it a second time confuses unity into an exception
-                    if (!texPath.EndsWith(".png"))
-                        texPath = string.Concat(texPath, ext);
 
                     texPath = texPath.Replace('\\', '/');
 
@@ -443,18 +445,32 @@ namespace DCL.ABConverter
 
                     if (File.Exists(absolutePath))
                     {
-                        newTextures.Add(AssetDatabase.LoadAssetAtPath<Texture2D>(PathUtils.GetRelativePathTo(Application.dataPath, absolutePath)));
-                        continue;
+                        Texture2D loadedAsset = AssetDatabase.LoadAssetAtPath<Texture2D>(PathUtils.GetRelativePathTo(Application.dataPath, absolutePath));
+
+                        if (loadedAsset != null)
+                        {
+                            newTextures.Add(loadedAsset);
+                            continue;
+                        }
                     }
 
                     if (!string.IsNullOrEmpty(texturePath))
                     {
-                        newTextures.Add(AssetDatabase.LoadAssetAtPath<Texture2D>(texPath));
-                        continue;
+                        Texture2D loadedAsset = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
+
+                        if (loadedAsset != null)
+                        {
+                            newTextures.Add(loadedAsset);
+                            continue;
+                        }
                     }
 
                     if (!Directory.Exists(texturesRoot))
                         Directory.CreateDirectory(texturesRoot);
+
+                    // We are always encoding to PNG
+                    if (!Path.HasExtension(texPath))
+                        texPath += ".png";
 
                     if (tex.isReadable) { File.WriteAllBytes(texPath, tex.EncodeToPNG()); }
                     else
