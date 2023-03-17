@@ -1,9 +1,0 @@
-{
-  "name": "unlock-build",
-  "devDependencies": {
-    "@types/node": "^14.6.2"
-  },
-  "dependencies": {
-    "dcl-ops-lib": "^4.23.0"
-  }
-}
