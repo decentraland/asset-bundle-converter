@@ -130,8 +130,8 @@ namespace DCL.ABConverter
                     skippedAssets++;
 
                     string message = "Visual test failed on " + go.name + $" with {result}% affinity";
-                    Debug.Log(message);
-                    errorReporter.ReportError(message, clientSettings);
+                    Debug.LogError(message, go);
+                    //errorReporter.ReportError(message, clientSettings);
                 }
 
                 go.SetActive(false);

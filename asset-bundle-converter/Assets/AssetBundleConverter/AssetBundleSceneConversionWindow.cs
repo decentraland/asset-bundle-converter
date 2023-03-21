@@ -271,7 +271,8 @@ namespace AssetBundleConverter
                 shaderType = shader,
                 stripShaders = stripShaders,
                 importGltf = importGltf,
-                placeOnScene = placeOnScene
+                placeOnScene = placeOnScene,
+                verbose = verbose
             };
 
             Debug.ClearDeveloperConsole();

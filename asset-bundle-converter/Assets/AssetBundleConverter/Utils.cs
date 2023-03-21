@@ -393,10 +393,11 @@ namespace DCL.ABConverter
 
         public static string NicifyName(string name)
         {
-            name = Path.GetFileNameWithoutExtension(name);
-            name = name.Replace(":", ".");
+            foreach (char c in Path.GetInvalidFileNameChars()) { name = name.Replace(c, '_'); }
+            name = name.Replace(":", "_");
             name = name.Replace(" ", "_");
             name = name.Replace("*", "_");
+            name = name.Replace("|", "_");
 
             if (string.IsNullOrEmpty(name))
                 name = "unnamed";

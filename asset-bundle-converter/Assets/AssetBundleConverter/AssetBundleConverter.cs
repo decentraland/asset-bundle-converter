@@ -21,13 +21,14 @@ namespace DCL.ABConverter
 {
     public class AssetBundleConverter
     {
-        public struct GltfImportSettings
+        private struct GltfImportSettings
         {
             public string url;
             public GltfImport import;
             public AssetPath AssetPath;
         }
 
+        // For consistency, never remove any of these enum values as it will break old error codes
         public enum ErrorCodes
         {
             SUCCESS,
@@ -37,6 +38,9 @@ namespace DCL.ABConverter
             VISUAL_TEST_FAILED,
             UNEXPECTED_ERROR,
             GLTFAST_CRITICAL_ERROR,
+            GLTF_IMPORTER_NOT_FOUND,
+            EMBED_MATERIAL_FAILURE,
+            DOWNLOAD_FAILED
         }
 
         public class State
@@ -254,12 +258,11 @@ namespace DCL.ABConverter
 
                     if (textures.Count > 0)
                     {
-                        var directory = Path.GetDirectoryName(relativePath);
-                        textures = CreateTextureAssets(textures, directory);
-                        log.Verbose($"gltf creating dummy images completed: {gltfUrl}");
+                        string directory = Path.GetDirectoryName(relativePath);
+                        textures = ExtractEmbedTexturesFromGltf(textures, directory);
                     }
 
-                    CreateMaterialsForThisGltf(textures, gltf, gltfImport, gltfUrl);
+                    ExtractEmbedMaterialsFromGltf(textures, gltf, gltfImport, gltfUrl);
 
                     log.Verbose($"gltf load success {gltfUrl}");
 
@@ -297,7 +300,7 @@ namespace DCL.ABConverter
                         var message = $"Failed to get the gltf importer for {gltfUrl} \nPath: {relativePath}";
                         log.Error(message);
                         errorReporter.ReportError(message, settings);
-                        EditorUtility.ClearProgressBar();
+                        Utils.Exit((int)ErrorCodes.GLTF_IMPORTER_NOT_FOUND);
                         continue;
                     }
 
@@ -311,13 +314,15 @@ namespace DCL.ABConverter
                             var renderers = clone.GetComponentsInChildren<Renderer>(true);
 
                             foreach (Renderer renderer in renderers)
-                                if (renderer.name.ToLower().Contains("_collider")) { renderer.enabled = false; }
+                                if (renderer.name.ToLower().Contains("_collider"))
+                                    renderer.enabled = false;
                         }
                         catch (Exception e)
                         {
                             log.Exception(e.ToString());
-                            errorReporter.ReportException(new ConversionException(ConversionStep.Import, settings, e));
                             continue;
+
+                            // we dont crash here since we dont do this on batch mode
                         }
                     }
 
@@ -340,7 +345,7 @@ namespace DCL.ABConverter
             return false;
         }
 
-        private void CreateMaterialsForThisGltf(List<Texture2D> textures, GltfImportSettings gltf, GltfImport gltfImport, string gltfUrl)
+        private void ExtractEmbedMaterialsFromGltf(List<Texture2D> textures, GltfImportSettings gltf, GltfImport gltfImport, string gltfUrl)
         {
             Dictionary<string, Texture2D> texNameMap = new Dictionary<string, Texture2D>();
 
@@ -389,9 +394,12 @@ namespace DCL.ABConverter
 
                     // we reassign the texture reference
                     string texName = Utils.NicifyName(tex.name);
+                    texName = Path.GetFileNameWithoutExtension(texName);
+
                     var prevTexture = newMaterial.GetTexture(propertyName);
 
-                    if (texNameMap.ContainsKey(texName)) { newMaterial.SetTexture(propertyName, texNameMap[texName]); }
+                    if (texNameMap.ContainsKey(texName))
+                        newMaterial.SetTexture(propertyName, texNameMap[texName]);
                     else
                     {
                         if (prevTexture == null)
@@ -399,7 +407,7 @@ namespace DCL.ABConverter
                             var message = $"Failed to set texture \"{texName}\" to material \"{matName}\". This will cause white materials";
                             log.Error(message);
                             errorReporter.ReportError(message, settings);
-                            Utils.Exit((int)ErrorCodes.GLTFAST_CRITICAL_ERROR);
+                            Utils.Exit((int)ErrorCodes.EMBED_MATERIAL_FAILURE);
                             return;
                         }
                     }
@@ -422,7 +430,7 @@ namespace DCL.ABConverter
             Debug.unityLogger.logEnabled = true;
         }
 
-        private List<Texture2D> CreateTextureAssets(List<Texture2D> textures, string folderName)
+        private List<Texture2D> ExtractEmbedTexturesFromGltf(List<Texture2D> textures, string folderName)
         {
             var newTextures = new List<Texture2D>();
 
@@ -435,6 +443,7 @@ namespace DCL.ABConverter
                     var tex = textures[i];
                     string texName = tex.name;
                     texName = Utils.NicifyName(texName);
+                    texName = Path.GetFileNameWithoutExtension(texName);
 
                     var texPath = string.Concat(texturesRoot, texName);
 
@@ -608,8 +617,10 @@ namespace DCL.ABConverter
 
             if (manifest == null)
             {
-                log.Error("Error generating asset bundle!");
-
+                var message = "Error generating asset bundle!";
+                log.Error(message);
+                errorReporter.ReportError(message, settings);
+                Utils.Exit((int)ErrorCodes.ASSET_BUNDLE_BUILD_FAIL);
                 return false;
             }
 
@@ -939,6 +950,8 @@ namespace DCL.ABConverter
             {
                 var message = $"Download Failed {finalUrl} -- {e.Message}";
                 log.Error(message);
+                errorReporter.ReportError(message, settings);
+                Utils.Exit((int)ErrorCodes.DOWNLOAD_FAILED);
                 return null;
             }
 
@@ -963,45 +976,44 @@ namespace DCL.ABConverter
             return outputPath;
         }
 
-        private GltfImport CreateGltfImport(AssetPath filePath)
-        {
-            return new GltfImport(
+        private GltfImport CreateGltfImport(AssetPath filePath) =>
+            new (
                 new GltFastFileProvider(filePath.fileRootPath, filePath.hash, contentTable),
                 new UninterruptedDeferAgent(),
                 GetNewMaterialGenerator(),
                 new ConsoleLogger());
-        }
 
-        private bool ReduceTextureSizeIfNeeded(string texturePath, float maxSize)
+        private void ReduceTextureSizeIfNeeded(string texturePath, float maxSize)
         {
             byte[] image = File.ReadAllBytes(texturePath);
 
             var tmpTex = new Texture2D(1, 1);
 
             if (!tmpTex.LoadImage(image))
-                return false;
+                return;
 
-            float factor = 1.0f;
+            float factor;
             int width = tmpTex.width;
             int height = tmpTex.height;
 
             float maxTextureSize = maxSize;
 
             if (width < maxTextureSize && height < maxTextureSize)
-                return false;
+                return;
 
-            if (width >= height) { factor = (float)maxTextureSize / width; }
-            else { factor = (float)maxTextureSize / height; }
+            if (width >= height)
+                factor = maxTextureSize / width;
+            else
+                factor = maxTextureSize / height;
 
             Texture2D dstTex = Utils.ResizeTexture(tmpTex, (int)(width * factor), (int)(height * factor));
             byte[] endTex = dstTex.EncodeToPNG();
-            UnityEngine.Object.DestroyImmediate(tmpTex);
+            Object.DestroyImmediate(tmpTex);
 
             File.WriteAllBytes(texturePath, endTex);
 
             AssetDatabase.ImportAsset(PathUtils.GetRelativePathTo(Application.dataPath, texturePath), ImportAssetOptions.ForceUpdate);
             AssetDatabase.SaveAssets();
-            return true;
         }
 
         /// <summary>
