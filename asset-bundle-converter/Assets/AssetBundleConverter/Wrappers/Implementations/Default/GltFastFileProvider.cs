@@ -70,6 +70,9 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
         public override bool Success => Texture != null;
 
+        public Texture2D GetTexture(bool forceSampleLinear) =>
+            Texture;
+
         public SyncTextureLoader(Uri url)
             : base(url)
         {
