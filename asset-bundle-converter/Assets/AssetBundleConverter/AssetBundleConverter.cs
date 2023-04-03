@@ -88,6 +88,8 @@ namespace DCL.ABConverter
         private double visualTestStartupTime;
         private double visualTestEndTime;
 
+        private bool isExitForced = false;
+
         public AssetBundleConverter(Environment env, ClientSettings settings)
         {
             this.settings = settings;
@@ -111,7 +113,7 @@ namespace DCL.ABConverter
         /// </summary>
         /// <param name="rawContents"></param>
         /// <returns></returns>
-        public async Task<State> Convert(IReadOnlyList<ContentServerUtils.MappingPair> rawContents)
+        public async Task<State> ConvertAsync(IReadOnlyList<ContentServerUtils.MappingPair> rawContents)
         {
             log.verboseEnabled = settings.verbose;
             var scene = EditorSceneManager.OpenScene(SCENE_NAME, OpenSceneMode.Single);
@@ -147,12 +149,16 @@ namespace DCL.ABConverter
             // Third step: we import gltfs
             importStartupTime = EditorApplication.timeSinceStartup;
 
+            if (isExitForced) return CurrentState;
+
             if (await ImportAllGltf())
             {
                 OnFinish();
 
                 return CurrentState;
             }
+
+            if (isExitForced) return CurrentState;
 
             importEndTime = EditorApplication.timeSinceStartup;
 
@@ -188,6 +194,8 @@ namespace DCL.ABConverter
                 bundlesEndTime = EditorApplication.timeSinceStartup;
             }
 
+            if (isExitForced) return CurrentState;
+
             if (settings.visualTest)
             {
                 visualTestStartupTime = EditorApplication.timeSinceStartup;
@@ -215,6 +223,8 @@ namespace DCL.ABConverter
 
             foreach (GltfImportSettings gltf in gltfToWait)
             {
+                if (isExitForced) break;
+
                 var gltfUrl = gltf.url;
                 var gltfImport = gltf.import;
 
@@ -291,7 +301,7 @@ namespace DCL.ABConverter
                             var message = "Fatal error when importing this object, check previous error messages";
                             log.Error(message);
                             errorReporter.ReportError(message, settings);
-                            Utils.Exit((int)ErrorCodes.GLTFAST_CRITICAL_ERROR);
+                            ForceExit((int)ErrorCodes.GLTFAST_CRITICAL_ERROR);
                             break;
                         }
                     }
@@ -300,7 +310,7 @@ namespace DCL.ABConverter
                         var message = $"Failed to get the gltf importer for {gltfUrl} \nPath: {relativePath}";
                         log.Error(message);
                         errorReporter.ReportError(message, settings);
-                        Utils.Exit((int)ErrorCodes.GLTF_IMPORTER_NOT_FOUND);
+                        ForceExit((int)ErrorCodes.GLTF_IMPORTER_NOT_FOUND);
                         continue;
                     }
 
@@ -333,7 +343,7 @@ namespace DCL.ABConverter
                     log.Error("UNCAUGHT FATAL: Failed to load GLTF " + gltf.AssetPath.hash);
                     Debug.LogException(e);
                     errorReporter.ReportException(new ConversionException(ConversionStep.Import, settings, e));
-                    Utils.Exit((int)ErrorCodes.GLTFAST_CRITICAL_ERROR);
+                    ForceExit((int)ErrorCodes.GLTFAST_CRITICAL_ERROR);
                     break;
                 }
             }
@@ -407,7 +417,7 @@ namespace DCL.ABConverter
                             var message = $"Failed to set texture \"{texName}\" to material \"{matName}\". This will cause white materials";
                             log.Error(message);
                             errorReporter.ReportError(message, settings);
-                            Utils.Exit((int)ErrorCodes.EMBED_MATERIAL_FAILURE);
+                            ForceExit((int)ErrorCodes.EMBED_MATERIAL_FAILURE);
                             return;
                         }
                     }
@@ -576,7 +586,7 @@ namespace DCL.ABConverter
             log.Info(logBuffer);
             Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.ScriptOnly);
 
-            Utils.Exit((int)errorCode);
+            ForceExit((int)errorCode);
         }
 
         internal void CleanupWorkingFolders()
@@ -620,7 +630,7 @@ namespace DCL.ABConverter
                 var message = "Error generating asset bundle!";
                 log.Error(message);
                 errorReporter.ReportError(message, settings);
-                Utils.Exit((int)ErrorCodes.ASSET_BUNDLE_BUILD_FAIL);
+                ForceExit((int)ErrorCodes.ASSET_BUNDLE_BUILD_FAIL);
                 return false;
             }
 
@@ -727,6 +737,8 @@ namespace DCL.ABConverter
 
                 foreach (var gltfPath in gltfPaths)
                 {
+                    if (isExitForced) break;
+
                     if (!string.IsNullOrEmpty(settings.importOnlyEntity))
                         if (!string.Equals(gltfPath.hash, settings.importOnlyEntity, StringComparison.CurrentCultureIgnoreCase))
                             continue;
@@ -807,6 +819,8 @@ namespace DCL.ABConverter
 
             for (var i = 0; i < assetPaths.Count; i++)
             {
+                if (isExitForced) break;
+
                 EditorUtility.DisplayProgressBar("Asset Bundle Converter", "Downloading Importable Assets",
                     i / (float)assetPaths.Count);
 
@@ -838,11 +852,9 @@ namespace DCL.ABConverter
 
                     ReduceTextureSizeIfNeeded(finalTexturePath, MAX_TEXTURE_SIZE);
                 }
-                else
-                {
-                    env.assetDatabase.ImportAsset(assetPath.finalPath, ImportAssetOptions.ForceUpdate);
-                    env.assetDatabase.SaveAssets();
-                }
+
+                env.assetDatabase.ImportAsset(assetPath.finalPath, ImportAssetOptions.ForceUpdate);
+                env.assetDatabase.SaveAssets();
 
                 SetDeterministicAssetDatabaseGuid(assetPath);
 
@@ -951,7 +963,7 @@ namespace DCL.ABConverter
                 var message = $"Download Failed {finalUrl} -- {e.Message}";
                 log.Error(message);
                 errorReporter.ReportError(message, settings);
-                Utils.Exit((int)ErrorCodes.DOWNLOAD_FAILED);
+                ForceExit((int)ErrorCodes.DOWNLOAD_FAILED);
                 return null;
             }
 
@@ -998,7 +1010,7 @@ namespace DCL.ABConverter
 
             float maxTextureSize = maxSize;
 
-            if (width < maxTextureSize && height < maxTextureSize)
+            if (width <= maxTextureSize && height <= maxTextureSize)
                 return;
 
             if (width >= height)
@@ -1011,9 +1023,6 @@ namespace DCL.ABConverter
             Object.DestroyImmediate(tmpTex);
 
             File.WriteAllBytes(texturePath, endTex);
-
-            AssetDatabase.ImportAsset(PathUtils.GetRelativePathTo(Application.dataPath, texturePath), ImportAssetOptions.ForceUpdate);
-            AssetDatabase.SaveAssets();
         }
 
         /// <summary>
@@ -1030,6 +1039,8 @@ namespace DCL.ABConverter
 
             for (var i = 0; i < bufferPaths.Count; i++)
             {
+                if (isExitForced) break;
+
                 EditorUtility.DisplayProgressBar("Asset Bundle Converter", "Downloading Raw Assets",
                     i / (float)bufferPaths.Count);
 
@@ -1059,6 +1070,12 @@ namespace DCL.ABConverter
             string path = DownloadAsset(gltfPath, true);
 
             return path != null ? gltfPath : null;
+        }
+
+        private void ForceExit(int errorCode = 0)
+        {
+            isExitForced = true;
+            Utils.Exit(errorCode);
         }
     }
 }

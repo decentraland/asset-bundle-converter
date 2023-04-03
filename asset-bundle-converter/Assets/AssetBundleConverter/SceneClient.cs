@@ -318,13 +318,12 @@ namespace DCL.ABConverter
 
             log.Info($"Converting {mappingPairs.Count} entities...");
 
-            if (settings.verbose)
-                log.Info(string.Join('\n',mappingPairs.Select(mp => mp.file)));
+            log.Info(string.Join('\n',mappingPairs.Select(mp => mp.file)));
 
             EnsureEnvironment();
 
             var core = new AssetBundleConverter(env, settings);
-            await core.Convert(mappingPairs);
+            await core.ConvertAsync(mappingPairs);
             return core.CurrentState;
         }
     }
