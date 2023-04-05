@@ -29,7 +29,7 @@ RUN npm ci --only=production
 
 ########################## END OF BUILD STAGE ##########################
 
-FROM unityci/editor:2021.3.14f1-webgl-1
+FROM unityci/editor:2021.3.20f1-webgl-1
 
 RUN    apt-get update -y \
     && apt-get -y install \

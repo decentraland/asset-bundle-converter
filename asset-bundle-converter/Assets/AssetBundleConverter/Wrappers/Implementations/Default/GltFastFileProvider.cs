@@ -70,6 +70,9 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
         public override bool Success => Texture != null;
 
+        public IDisposableTexture GetTexture(bool forceSampleLinear) =>
+            new NonReusableTexture(Texture);
+
         public SyncTextureLoader(Uri url)
             : base(url)
         {
@@ -113,7 +116,7 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
             return new SyncFileLoader(newUrl);
         }
 
-        public async Task<ITextureDownload> RequestTexture(Uri url, bool nonReadable)
+        public async Task<ITextureDownload> RequestTexture(Uri url, bool nonReadable, bool forceLinear)
         {
             Uri newUrl = GetDependenciesPaths(RebuildUrl(url));
 
