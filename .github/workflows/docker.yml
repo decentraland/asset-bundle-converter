@@ -29,7 +29,7 @@ jobs:
           context: .
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: quay.io/decentraland/asset-bundle-converter:next,quay.io/decentraland/asset-bundle-converter:${{ github.sha }}
-          load: true
+          #load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
