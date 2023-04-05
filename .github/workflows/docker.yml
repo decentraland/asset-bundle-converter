@@ -43,7 +43,7 @@ jobs:
       - name: Run test conversion of urn:decentraland:off-chain:base-avatars:brown_pants
         run: |
           docker run \
-            -v ${pwd}/tmp/Unity:/root/.local/share/unity3d/Unity \
+            -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
             quay.io/decentraland/asset-bundle-converter@${{ steps.docker_build.outputs.digest }} \
               node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js \
                 --baseUrl https://peer.decentraland.org/content \
