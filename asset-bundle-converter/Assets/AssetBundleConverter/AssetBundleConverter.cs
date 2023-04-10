@@ -58,8 +58,8 @@ namespace DCL.ABConverter
         }
 
         private const float MAX_TEXTURE_SIZE = 512f;
+
         private const string VERSION = "3.0";
-        private const string MAIN_SHADER_AB_NAME = "MainShader_Delete_Me";
         static readonly string SCENE_NAME = "Assets/AssetBundleConverter/VisualTestScene.unity";
 
         private static Logger log = new ("[AssetBundleConverter]");
@@ -337,6 +337,11 @@ namespace DCL.ABConverter
                     }
 
                     log.Verbose($"<color={color}>Ended loading gltf {gltfUrl} with result <b>{loadingSuccess}</b></color>");
+                }
+                // This case handles a missing asset, most likely creator's fault, gltf will be skipped
+                catch (AssetNotMappedException e)
+                {
+                    Debug.LogError($"<b>{gltf.AssetPath.fileName}</b> will be skipped since one of its dependencies is missing: <b>{e.Message}</b>");
                 }
                 catch (Exception e)
                 {
@@ -637,8 +642,7 @@ namespace DCL.ABConverter
             var afterFirstBuild = EditorApplication.timeSinceStartup;
 
             // 2. Create metadata (dependencies, version, timestamp) and store in the target folders to be converted again later with the metadata inside
-            AssetBundleMetadataBuilder.Generate(env.file, finalDownloadedPath, lowerCaseHashes, manifest, VERSION,
-                MAIN_SHADER_AB_NAME);
+            AssetBundleMetadataBuilder.Generate(env.file, finalDownloadedPath, lowerCaseHashes, manifest, VERSION);
 
             env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 

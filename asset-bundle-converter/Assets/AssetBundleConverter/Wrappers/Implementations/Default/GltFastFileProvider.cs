@@ -140,32 +140,14 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
         private Uri GetDependenciesPaths(Uri url)
         {
-            try
-            {
-                string originalPath = Utils.EnsureStartWithSlash(url.OriginalString).ToLower();
-                bool isContained = contentTable.ContainsKey(originalPath);
+            string originalPath = Utils.EnsureStartWithSlash(url.OriginalString).ToLower();
+            bool isContained = contentTable.ContainsKey(originalPath);
 
-                if (!isContained)
-                {
-                    Debug.LogWarning(originalPath + " is not mapped!");
+            if (!isContained)
+                throw new AssetNotMappedException(originalPath);
 
-                    var pathe = originalPath.Substring(originalPath.IndexOf('/'));
-                    var keys = contentTable.Keys.Where(k => k.ToLower().Contains(pathe.ToLower()));
-
-                    foreach (string key in keys)
-                        Debug.Log($" -> {key} ?");
-
-                    return new Uri(originalPath, UriKind.Relative);
-                }
-
-                string finalPath = contentTable[originalPath];
-                return new Uri(finalPath, UriKind.Relative);
-            }
-            catch (Exception)
-            {
-                Debug.LogError($"Failed to transform path: {url.OriginalString}");
-                return url;
-            }
+            string finalPath = contentTable[originalPath];
+            return new Uri(finalPath, UriKind.Relative);
         }
 
         public void Dispose()
@@ -178,6 +160,14 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
             get => gltfAssetDependencies;
 
             set { }
+        }
+    }
+
+    public class AssetNotMappedException : Exception
+    {
+        public AssetNotMappedException(string message) : base(message)
+        {
+
         }
     }
 }
