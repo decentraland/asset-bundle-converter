@@ -456,6 +456,8 @@ namespace DCL.ABConverter
                 for (int i = 0; i < textures.Count; i++)
                 {
                     var tex = textures[i];
+                    if (tex == null) continue;
+
                     string texName = tex.name;
                     texName = Utils.NicifyName(texName);
                     texName = Path.GetFileNameWithoutExtension(texName);

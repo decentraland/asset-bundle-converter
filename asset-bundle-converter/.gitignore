@@ -59,6 +59,7 @@ sysinfo.txt
 crashlytics-build.properties
 
 _Downloaded/
+_Downloaded.meta
 AssetBundles/
 TestResources/
 UserSettings/
