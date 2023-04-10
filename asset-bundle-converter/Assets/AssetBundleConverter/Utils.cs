@@ -398,6 +398,7 @@ namespace DCL.ABConverter
             name = name.Replace(" ", "_");
             name = name.Replace("*", "_");
             name = name.Replace("|", "_");
+            name = name.Replace(".", "_");
 
             if (string.IsNullOrEmpty(name))
                 name = "unnamed";
