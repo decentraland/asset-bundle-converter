@@ -89,6 +89,7 @@ namespace DCL.ABConverter
         private double visualTestEndTime;
 
         private bool isExitForced = false;
+        private readonly ConsoleLogger gltfLogger = new ();
 
         public AssetBundleConverter(Environment env, ClientSettings settings)
         {
@@ -251,7 +252,7 @@ namespace DCL.ABConverter
 
                     if (!loadingSuccess)
                     {
-                        var message = $"Failed to load gltf {gltfUrl}";
+                        var message = $"GLTF is invalid or contains errors: {gltfLogger.LastErrorCode}";
                         log.Error(message);
                         errorReporter.ReportError(message, settings);
                         continue;
@@ -999,7 +1000,7 @@ namespace DCL.ABConverter
                 new GltFastFileProvider(filePath.fileRootPath, filePath.hash, contentTable),
                 new UninterruptedDeferAgent(),
                 GetNewMaterialGenerator(),
-                new ConsoleLogger());
+                gltfLogger);
 
         private void ReduceTextureSizeIfNeeded(string texturePath, float maxSize)
         {
