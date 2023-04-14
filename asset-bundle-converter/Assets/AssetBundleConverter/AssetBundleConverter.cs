@@ -366,7 +366,7 @@ namespace DCL.ABConverter
             Dictionary<string, Texture2D> texNameMap = new Dictionary<string, Texture2D>();
 
             foreach (var texture in textures.Where(texture => texture != null))
-                texNameMap[texture.name] = texture;
+                texNameMap[texture.name.ToLowerInvariant()] = texture;
 
             var folder = gltf.AssetPath.assetFolder;
             var materialRoot = $"{folder}Materials{Path.DirectorySeparatorChar}";
@@ -410,7 +410,7 @@ namespace DCL.ABConverter
 
                     // we reassign the texture reference
                     string texName = Utils.NicifyName(tex.name);
-                    texName = Path.GetFileNameWithoutExtension(texName);
+                    texName = Path.GetFileNameWithoutExtension(texName).ToLowerInvariant();
 
                     var prevTexture = newMaterial.GetTexture(propertyName);
 
