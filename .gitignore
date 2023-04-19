@@ -59,3 +59,8 @@ sysinfo.txt
 crashlytics-build.properties
 Unity_lic.*
 **/.DS_Store
+
+# This gets changed all the time, we ignore it to have a cleaner checkout
+asset-bundle-converter/Assets/git-submodules/unity-shared-dependencies/Runtime/Shaders/URP/Lit.shader.meta
+
+.idea/
