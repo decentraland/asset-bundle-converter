@@ -1,4 +1,6 @@
-﻿using System;
+﻿using DCL.ABConverter;
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace DCL
@@ -42,6 +44,11 @@ namespace DCL
             }
 
             public bool Exists(string path) { return System.IO.Directory.Exists(path); }
+
+            public void CleanAssetBundleFolder(IFile envFile, string settingsFinalAssetBundlePath, string[] assetBundles, Dictionary<string, string> lowerCaseHashes)
+            {
+                Utils.CleanAssetBundleFolder(envFile, settingsFinalAssetBundlePath, assetBundles, lowerCaseHashes);
+            }
         }
     }
 }

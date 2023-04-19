@@ -8,7 +8,7 @@ namespace DCL
         //TODO(Brian): Use mocking library to replace this mock
         public class Directory : IDirectory
         {
-            public Dictionary<string, string> mockedDirs = new Dictionary<string, string>();
+            public Dictionary<string, string> mockedDirs = new ();
 
             public void CreateDirectory(string path)
             {
@@ -27,6 +27,11 @@ namespace DCL
             }
 
             public bool Exists(string path) { return mockedDirs.ContainsKey(path); }
+
+            public void CleanAssetBundleFolder(IFile envFile, string settingsFinalAssetBundlePath, string[] assetBundles, Dictionary<string, string> lowerCaseHashes)
+            {
+                
+            }
         }
     }
 }

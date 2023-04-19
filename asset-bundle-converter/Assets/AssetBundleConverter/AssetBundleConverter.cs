@@ -8,13 +8,12 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using AssetBundleConverter.Editor;
 using AssetBundleConverter.Wrappers.Implementations.Default;
+using AssetBundleConverter.Wrappers.Interfaces;
 using GLTFast;
-using GLTFast.Logging;
-using GLTFast.Materials;
 using UnityEditor;
-using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Networking;
+using Environment = AssetBundleConverter.Environment;
 using Object = UnityEngine.Object;
 
 namespace DCL.ABConverter
@@ -24,7 +23,7 @@ namespace DCL.ABConverter
         private struct GltfImportSettings
         {
             public string url;
-            public GltfImport import;
+            public IGltfImport import;
             public AssetPath AssetPath;
         }
 
@@ -60,7 +59,6 @@ namespace DCL.ABConverter
         private const float MAX_TEXTURE_SIZE = 512f;
 
         private const string VERSION = "3.0";
-        static readonly string SCENE_NAME = "Assets/AssetBundleConverter/VisualTestScene.unity";
 
         private static Logger log = new ("[AssetBundleConverter]");
         private readonly Dictionary<string, string> lowerCaseHashes = new ();
@@ -89,7 +87,6 @@ namespace DCL.ABConverter
         private double visualTestEndTime;
 
         private bool isExitForced = false;
-        private readonly ConsoleLogger gltfLogger = new ();
 
         public AssetBundleConverter(Environment env, ClientSettings settings)
         {
@@ -104,21 +101,15 @@ namespace DCL.ABConverter
             log.verboseEnabled = true;
         }
 
-        public static async Task WaitUntilAsync(Func<bool> predicate, int sleep = 50)
-        {
-            while (!predicate()) { await Task.Delay(sleep); }
-        }
-
         /// <summary>
         /// Entry point of the AssetBundleConverter
         /// </summary>
         /// <param name="rawContents"></param>
         /// <returns></returns>
-        public async Task<State> ConvertAsync(IReadOnlyList<ContentServerUtils.MappingPair> rawContents)
+        public async Task ConvertAsync(IReadOnlyList<ContentServerUtils.MappingPair> rawContents)
         {
             log.verboseEnabled = settings.verbose;
-            var scene = EditorSceneManager.OpenScene(SCENE_NAME, OpenSceneMode.Single);
-            await WaitUntilAsync(() => scene.isLoaded);
+            await env.LoadVisualTestSceneAsync();
 
             conversionStartupTime = EditorApplication.timeSinceStartup;
             log.Info("Starting a new conversion");
@@ -141,7 +132,7 @@ namespace DCL.ABConverter
                     log.Info("All assets are already converted");
                     OnFinish();
 
-                    return CurrentState;
+                    return;
                 }
 
                 downloadEndTime = EditorApplication.timeSinceStartup;
@@ -150,16 +141,18 @@ namespace DCL.ABConverter
             // Third step: we import gltfs
             importStartupTime = EditorApplication.timeSinceStartup;
 
-            if (isExitForced) return CurrentState;
+            if (isExitForced)
+                return;
 
             if (await ImportAllGltf())
             {
                 OnFinish();
 
-                return CurrentState;
+                return;
             }
 
-            if (isExitForced) return CurrentState;
+            if (isExitForced)
+                return;
 
             importEndTime = EditorApplication.timeSinceStartup;
 
@@ -195,7 +188,8 @@ namespace DCL.ABConverter
                 bundlesEndTime = EditorApplication.timeSinceStartup;
             }
 
-            if (isExitForced) return CurrentState;
+            if (isExitForced)
+                return;
 
             if (settings.visualTest)
             {
@@ -205,8 +199,6 @@ namespace DCL.ABConverter
             }
 
             OnFinish();
-
-            return CurrentState;
         }
 
         /// <summary>
@@ -231,7 +223,7 @@ namespace DCL.ABConverter
 
                 try
                 {
-                    EditorUtility.DisplayProgressBar("Asset Bundle Converter", $"Loading GLTF {gltfUrl}",
+                    env.editor.DisplayProgressBar("Asset Bundle Converter", $"Loading GLTF {gltfUrl}",
                         loadedGltf / (float)totalGltfToLoad);
 
                     loadedGltf++;
@@ -252,7 +244,7 @@ namespace DCL.ABConverter
 
                     if (!loadingSuccess)
                     {
-                        var message = $"GLTF is invalid or contains errors: {gltfLogger.LastErrorCode}";
+                        var message = $"GLTF is invalid or contains errors: {gltfImport.LastErrorCode}";
                         log.Error(message);
                         errorReporter.ReportError(message, settings);
                         continue;
@@ -361,7 +353,7 @@ namespace DCL.ABConverter
             return false;
         }
 
-        private void ExtractEmbedMaterialsFromGltf(List<Texture2D> textures, GltfImportSettings gltf, GltfImport gltfImport, string gltfUrl)
+        private void ExtractEmbedMaterialsFromGltf(List<Texture2D> textures, GltfImportSettings gltf, IGltfImport gltfImport, string gltfUrl)
         {
             Dictionary<string, Texture2D> texNameMap = new Dictionary<string, Texture2D>();
 
@@ -534,14 +526,6 @@ namespace DCL.ABConverter
             return newTextures;
         }
 
-        private IMaterialGenerator GetNewMaterialGenerator()
-        {
-            if (settings.shaderType == ShaderType.Dcl)
-                return new AssetBundleConverterMaterialGenerator();
-
-            return null;
-        }
-
         private void OnFinish()
         {
             if (settings.cleanAndExitOnFinish) { CleanAndExit(CurrentState.lastErrorCode); }
@@ -570,7 +554,8 @@ namespace DCL.ABConverter
         /// <param name="errorCode">final errorCode of the conversion process</param>
         public void CleanAndExit(ErrorCodes errorCode)
         {
-            foreach (var gltf in gltfToWait) { gltf.import.Dispose(); }
+            foreach (var gltf in gltfToWait)
+                gltf.import.Dispose();
 
             double conversionTime = EditorApplication.timeSinceStartup - conversionStartupTime;
             double downloadTime = downloadEndTime - downloadStartupTime;
@@ -688,10 +673,10 @@ namespace DCL.ABConverter
 
         private void CleanAssetBundleFolder(string[] assetBundles)
         {
-            Utils.CleanAssetBundleFolder(env.file, settings.finalAssetBundlePath, assetBundles, lowerCaseHashes);
+            env.directory.CleanAssetBundleFolder(env.file, settings.finalAssetBundlePath, assetBundles, lowerCaseHashes);
         }
 
-        void InitializeDirectoryPaths(bool deleteDownloadDirIfExists, bool deleteABsDireIfExists)
+        private void InitializeDirectoryPaths(bool deleteDownloadDirIfExists, bool deleteABsDireIfExists)
         {
             log.Info("Initializing directory -- " + finalDownloadedPath);
             env.directory.InitializeDirectory(finalDownloadedPath, deleteDownloadDirIfExists);
@@ -699,14 +684,12 @@ namespace DCL.ABConverter
             env.directory.InitializeDirectory(settings.finalAssetBundlePath, deleteABsDireIfExists);
         }
 
-        void PopulateLowercaseMappings(IReadOnlyList<ContentServerUtils.MappingPair> pairs)
+        private void PopulateLowercaseMappings(IReadOnlyList<ContentServerUtils.MappingPair> pairs)
         {
             foreach (var content in pairs)
             {
                 string hashLower = content.hash.ToLowerInvariant();
-
-                if (!lowerCaseHashes.ContainsKey(hashLower))
-                    lowerCaseHashes.Add(hashLower, content.hash);
+                lowerCaseHashes.TryAdd(hashLower, content.hash);
             }
         }
 
@@ -722,14 +705,9 @@ namespace DCL.ABConverter
                 if (settings.verbose)
                     Debug.Log(string.Join("\n", rawContents.Select(r => $"{r.hash} -> {r.file}")));
 
-                List<AssetPath> gltfPaths =
-                    Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.gltfExtensions);
-
-                List<AssetPath> bufferPaths =
-                    Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.bufferExtensions);
-
-                List<AssetPath> texturePaths =
-                    Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
+                List<AssetPath> gltfPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.gltfExtensions);
+                List<AssetPath> bufferPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.bufferExtensions);
+                List<AssetPath> texturePaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
 
                 if (!FilterDumpList(ref gltfPaths))
                     return false;
@@ -828,8 +806,7 @@ namespace DCL.ABConverter
             {
                 if (isExitForced) break;
 
-                EditorUtility.DisplayProgressBar("Asset Bundle Converter", "Downloading Importable Assets",
-                    i / (float)assetPaths.Count);
+                env.editor.DisplayProgressBar("Asset Bundle Converter", "Downloading Importable Assets", i / (float)assetPaths.Count);
 
                 var assetPath = assetPaths[i];
 
@@ -868,7 +845,7 @@ namespace DCL.ABConverter
                 log.Verbose($"Downloaded asset = {assetPath.filePath} to {assetPath.finalPath}");
             }
 
-            EditorUtility.ClearProgressBar();
+            env.editor.ClearProgressBar();
 
             return result;
         }
@@ -932,7 +909,7 @@ namespace DCL.ABConverter
             {
                 if (isGltf)
                 {
-                    GltfImport gltfImport = CreateGltfImport(assetPath);
+                    IGltfImport gltfImport = CreateGltfImport(assetPath);
 
                     gltfToWait.Add(new GltfImportSettings
                     {
@@ -995,12 +972,8 @@ namespace DCL.ABConverter
             return outputPath;
         }
 
-        private GltfImport CreateGltfImport(AssetPath filePath) =>
-            new (
-                new GltFastFileProvider(filePath.fileRootPath, filePath.hash, contentTable),
-                new UninterruptedDeferAgent(),
-                GetNewMaterialGenerator(),
-                gltfLogger);
+        private IGltfImport CreateGltfImport(AssetPath filePath) =>
+            env.gltfImporter.GetImporter(filePath, contentTable, settings.shaderType);
 
         private void ReduceTextureSizeIfNeeded(string texturePath, float maxSize)
         {
@@ -1048,7 +1021,7 @@ namespace DCL.ABConverter
             {
                 if (isExitForced) break;
 
-                EditorUtility.DisplayProgressBar("Asset Bundle Converter", "Downloading Raw Assets",
+                env.editor.DisplayProgressBar("Asset Bundle Converter", "Downloading Raw Assets",
                     i / (float)bufferPaths.Count);
 
                 var assetPath = bufferPaths[i];
@@ -1062,7 +1035,7 @@ namespace DCL.ABConverter
                     result.Remove(assetPath);
             }
 
-            EditorUtility.ClearProgressBar();
+            env.editor.ClearProgressBar();
 
             return result;
         }

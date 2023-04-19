@@ -10,6 +10,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Networking;
+using Environment = AssetBundleConverter.Environment;
 using Object = UnityEngine.Object;
 
 namespace DCL.ABConverter
