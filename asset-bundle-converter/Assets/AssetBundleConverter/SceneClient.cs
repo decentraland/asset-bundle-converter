@@ -11,7 +11,7 @@ namespace DCL.ABConverter
 {
     public static class SceneClient
     {
-        private static Logger log = new Logger("ABConverter.SceneClient");
+        private static ABLogger log = new ABLogger("ABConverter.SceneClient");
         public static Environment env;
 
         public static Environment EnsureEnvironment()

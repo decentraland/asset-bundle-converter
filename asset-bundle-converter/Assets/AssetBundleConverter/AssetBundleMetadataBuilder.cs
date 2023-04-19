@@ -1,3 +1,4 @@
+using AssetBundleConverter.Wrappers.Interfaces;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,7 +14,7 @@ namespace DCL.ABConverter
         /// <summary>
         /// Creates the asset bundle metadata file (dependencies, version, timestamp)
         /// </summary>
-        public static void Generate(IFile file, string path, Dictionary<string, string> hashLowercaseToHashProper, AssetBundleManifest manifest, string version = "1.0")
+        public static void Generate(IFile file, string path, Dictionary<string, string> hashLowercaseToHashProper, IAssetBundleManifest manifest, string version = "1.0")
         {
             string[] assetBundles = manifest.GetAllAssetBundles();
 
@@ -30,13 +31,13 @@ namespace DCL.ABConverter
                     deps = deps.Where(s => !s.EndsWith("_IGNORE")).ToArray();
 
                     metadata.dependencies = deps.Select(x =>
-                        {
-                            if (hashLowercaseToHashProper.ContainsKey(x))
-                                                      return hashLowercaseToHashProper[x];
+                                                 {
+                                                     if (hashLowercaseToHashProper.TryGetValue(x, out string expression))
+                                                         return expression;
 
-                            return x;
-                        })
-                                              .ToArray();
+                                                     return x;
+                                                 })
+                                                .ToArray();
                 }
 
                 string json = JsonUtility.ToJson(metadata);
@@ -44,10 +45,7 @@ namespace DCL.ABConverter
 
                 hashLowercaseToHashProper.TryGetValue(assetBundles[i], out assetHashName);
 
-                if (!string.IsNullOrEmpty(assetHashName))
-                {
-                    file.WriteAllText(path + $"/{assetHashName}/metadata.json", json);
-                }
+                if (!string.IsNullOrEmpty(assetHashName)) { file.WriteAllText(path + $"/{assetHashName}/metadata.json", json); }
             }
         }
     }

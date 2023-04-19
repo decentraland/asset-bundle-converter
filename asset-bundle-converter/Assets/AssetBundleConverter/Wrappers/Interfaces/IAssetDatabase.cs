@@ -1,4 +1,6 @@
-﻿using UnityEditor;
+﻿using AssetBundleConverter.Wrappers.Interfaces;
+using System.Collections.Generic;
+using UnityEditor;
 using UnityEngine;
 
 namespace DCL
@@ -16,5 +18,7 @@ namespace DCL
         string AssetPathToGUID(string path);
         string GetTextMetaFilePathFromAssetPath(string path);
         AssetImporter GetImporterAtPath(string path);
+
+        void BuildMetadata(IFile envFile, string finalDownloadedPath, Dictionary<string,string> lowerCaseHashes, IAssetBundleManifest manifest, string version);
     }
 }

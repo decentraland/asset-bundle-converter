@@ -84,7 +84,7 @@ namespace AssetBundleConverter
             RenderDebugOptions();
 
             GUILayout.Space(5);
-
+#pragma warning disable CS4014
             try
             {
                 switch (currentTab)
@@ -108,6 +108,7 @@ namespace AssetBundleConverter
             }
             catch (Exception e) { Debug.LogException(e); }
         }
+#pragma warning restore CS4014
 
         private void RenderUrlEditor()
         {

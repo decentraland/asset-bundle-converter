@@ -49,6 +49,11 @@ namespace DCL
             {
                 Utils.CleanAssetBundleFolder(envFile, settingsFinalAssetBundlePath, assetBundles, lowerCaseHashes);
             }
+
+            public void MarkFolderForAssetBundleBuild(string assetPathFinalPath, string assetPathHash)
+            {
+                Utils.MarkFolderForAssetBundleBuild(assetPathFinalPath, assetPathHash);
+            }
         }
     }
 }

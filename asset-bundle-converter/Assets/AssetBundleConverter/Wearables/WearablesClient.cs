@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net.Http;
 using UnityEngine;
 using UnityEngine.Networking;
+using DownloadHandler = UnityEngine.Networking.DownloadHandler;
 
 namespace AssetBundleConverter.Wearables
 {

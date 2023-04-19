@@ -1,11 +1,11 @@
-﻿using UnityEditor;
-using UnityEngine;
+﻿using AssetBundleConverter.Wrappers.Interfaces;
+using UnityEditor;
 
 namespace DCL
 {
     public interface IBuildPipeline
     {
-        AssetBundleManifest BuildAssetBundles(
+        IAssetBundleManifest BuildAssetBundles(
             string outputPath,
             BuildAssetBundleOptions assetBundleOptions,
             BuildTarget targetPlatform);

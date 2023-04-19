@@ -1,0 +1,27 @@
+{
+    "name": "Tests",
+    "rootNamespace": "UNITY_INCLUDE_TESTS",
+    "references": [
+        "GUID:1ca40edf330ade44da3e84060f69bd2b",
+        "GUID:6e6a87f97192ec947993f360104e75b7",
+        "GUID:442475ca22441254d94d13faf49e36ee",
+        "GUID:27619889b8ba8c24980f49ee34dbb44a",
+        "GUID:0acc523941302664db1f4e527237feb3"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll",
+        "NSubstitute.dll",
+        "Castle.Core.dll",
+        "Sentry.System.Threading.Tasks.Extensions.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

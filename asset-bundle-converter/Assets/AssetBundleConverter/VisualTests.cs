@@ -1,4 +1,6 @@
 using AssetBundleConverter;
+using AssetBundleConverter.Wrappers.Implementations.Default;
+using AssetBundleConverter.Wrappers.Interfaces;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -28,7 +30,7 @@ namespace DCL.ABConverter
         /// Instantiate all locally-converted GLTFs in both formats (GLTF and Asset Bundle) and
         /// compare them visually. If a visual test fails, the AB is deleted to avoid uploading it
         /// </summary>
-        public static async Task TestConvertedAssetsAsync(Environment env, ClientSettings clientSettings, List<AssetPath> assetsToMark, ErrorReporter errorReporter)
+        public static async Task TestConvertedAssetsAsync(Environment env, ClientSettings clientSettings, List<AssetPath> assetsToMark, IErrorReporter errorReporter)
         {
             if (Utils.ParseOption(Config.CLI_SET_CUSTOM_OUTPUT_ROOT_PATH, 1, out string[] outputPath))
             {

@@ -1,6 +1,10 @@
-﻿using DCL.ABConverter;
+﻿using AssetBundleConverter.Wrappers.Interfaces;
+using DCL.ABConverter;
+using System;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
+using Object = UnityEngine.Object;
 
 namespace DCL
 {
@@ -59,6 +63,11 @@ namespace DCL
                 string assetPath = PathUtils.FullPathToAssetPath(fullPath);
                 var importer = AssetImporter.GetAtPath(assetPath);
                 return importer;
+            }
+
+            public void BuildMetadata(IFile envFile, string finalDownloadedPath, Dictionary<string, string> lowerCaseHashes, IAssetBundleManifest manifest, string version)
+            {
+                AssetBundleMetadataBuilder.Generate(envFile, finalDownloadedPath, lowerCaseHashes, manifest, version);
             }
         }
     }

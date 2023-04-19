@@ -1,4 +1,6 @@
-﻿using UnityEditor;
+﻿using AssetBundleConverter;
+using AssetBundleConverter.Wrappers.Interfaces;
+using UnityEditor;
 using UnityEngine;
 
 namespace DCL
@@ -7,7 +9,11 @@ namespace DCL
     {
         public class BuildPipeline : IBuildPipeline
         {
-            public AssetBundleManifest BuildAssetBundles(string outputPath, BuildAssetBundleOptions assetBundleOptions, BuildTarget targetPlatform) { return UnityEditor.BuildPipeline.BuildAssetBundles(outputPath, assetBundleOptions, targetPlatform); }
+            public IAssetBundleManifest BuildAssetBundles(string outputPath, BuildAssetBundleOptions assetBundleOptions, BuildTarget targetPlatform)
+            {
+                AssetBundleManifest assetBundleManifest = UnityEditor.BuildPipeline.BuildAssetBundles(outputPath, assetBundleOptions, targetPlatform);
+                return new AssetBundleManifestWrapper(assetBundleManifest);
+            }
         }
     }
 }
