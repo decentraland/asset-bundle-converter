@@ -52,7 +52,11 @@ jobs:
                 --logFile /tmp-ab/log.txt
 
       - name: Run tests
-        run: chmod +x ./ci-editmode-test.sh && ./ci-editmode-test.sh
+        run: 
+          docker run \
+            -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
+            quay.io/decentraland/asset-bundle-converter@${{ steps.docker_build.outputs.digest }} \
+              ./ci-editmode-test.sh
 
       - name: Trigger deployment
         id: deploy
