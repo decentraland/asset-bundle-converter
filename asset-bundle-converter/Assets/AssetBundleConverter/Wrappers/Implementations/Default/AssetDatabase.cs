@@ -69,6 +69,22 @@ namespace DCL
             {
                 AssetBundleMetadataBuilder.Generate(envFile, finalDownloadedPath, lowerCaseHashes, manifest, version);
             }
+
+            public void SaveImporter(AssetImporter gltfImporter)
+            {
+                EditorUtility.SetDirty(gltfImporter);
+                gltfImporter.SaveAndReimport();
+            }
+
+            public void CreateAsset(Object obj, string path)
+            {
+                UnityEditor.AssetDatabase.CreateAsset(obj, path);
+            }
+
+            public void MarkAssetBundle(IAssetDatabase assetDb, Object asset, string abName)
+            {
+                Utils.MarkAssetForAssetBundleBuild(assetDb, asset, abName);
+            }
         }
     }
 }

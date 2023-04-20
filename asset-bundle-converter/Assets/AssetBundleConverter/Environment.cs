@@ -1,6 +1,7 @@
 ﻿using AssetBundleConverter.Wrappers.Implementations.Default;
 using AssetBundleConverter.Wrappers.Interfaces;
 using DCL;
+using SystemWrappers = AssetBundleConverter.Wrappers.Implementations.Default.SystemWrappers;
 
 namespace AssetBundleConverter
 {
@@ -29,17 +30,21 @@ namespace AssetBundleConverter
             this.errorReporter = errorReporter;
         }
 
-        public static Environment CreateWithDefaultImplementations() =>
-            new (
-                directory: new SystemWrappers.Directory(),
+        public static Environment CreateWithDefaultImplementations()
+        {
+            var database = new UnityEditorWrappers.AssetDatabase();
+
+            return new (
+                directory: new DCL.SystemWrappers.Directory(),
                 file: new SystemWrappers.File(),
-                assetDatabase: new UnityEditorWrappers.AssetDatabase(),
+                assetDatabase: database,
                 webRequest: new UnityEditorWrappers.WebRequest(),
                 buildPipeline: new UnityEditorWrappers.BuildPipeline(),
-                gltfImporter: new DefaultGltfImporter(),
+                gltfImporter: new DefaultGltfImporter(database),
                 editor: new AssetBundleEditor(),
                 logger: new ABLogger("[AssetBundleConverter]"),
                 errorReporter: new ErrorReporter()
             );
+        }
     }
 }

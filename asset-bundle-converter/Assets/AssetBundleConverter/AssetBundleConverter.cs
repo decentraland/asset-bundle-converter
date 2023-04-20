@@ -120,7 +120,7 @@ namespace DCL.ABConverter
             InitializeDirectoryPaths(settings.clearDirectoriesOnStart, settings.clearDirectoriesOnStart);
             env.assetDatabase.Refresh();
 
-            await Task.Delay(TimeSpan.FromSeconds(1));
+            await env.editor.Delay(TimeSpan.FromSeconds(1));
 
             // Second step: we download all assets
             PopulateLowercaseMappings(rawContents);
@@ -252,14 +252,11 @@ namespace DCL.ABConverter
                         continue;
                     }
 
-                    //File.WriteAllText($"{gltfFilePath.Directory.FullName}/metrics.json", JsonUtility.ToJson(metrics, true));
-
                     var relativePath = PathUtils.FullPathToAssetPath(gltfUrl);
-
-                    // Note (Kinerius) Some gltf contain embed textures, we create them here so we can properly edit their properties
                     var textures = new List<Texture2D>();
 
-                    for (int i = 0; i < gltfImport.TextureCount; i++) { textures.Add(gltfImport.GetTexture(i)); }
+                    for (int i = 0; i < gltfImport.TextureCount; i++)
+                        textures.Add(gltfImport.GetTexture(i));
 
                     if (textures.Count > 0)
                     {
@@ -269,28 +266,15 @@ namespace DCL.ABConverter
 
                     ExtractEmbedMaterialsFromGltf(textures, gltf, gltfImport, gltfUrl);
 
-                    log.Verbose($"gltf load success {gltfUrl}");
+                    await env.editor.Delay(TimeSpan.FromSeconds(0.25f));
 
-                    await Task.Delay(TimeSpan.FromSeconds(0.25f));
+                    log.Verbose($"Importing {relativePath}");
 
-                    var gltfImporter = AssetImporter.GetAtPath(relativePath) as CustomGltfImporter;
+                    bool importerSuccess = env.gltfImporter.ConfigureImporter(relativePath, contentTable, gltf.AssetPath.fileRootPath, gltf.AssetPath.hash, settings.shaderType);
 
-                    if (gltfImporter != null)
+                    if (importerSuccess)
                     {
-                        ContentMap[] contentMap = contentTable.Select(kvp => new ContentMap(kvp.Key, kvp.Value)).ToArray();
-                        gltfImporter.SetupCustomFileProvider(contentMap, gltf.AssetPath.fileRootPath, gltf.AssetPath.hash);
-
-                        gltfImporter.useOriginalMaterials = settings.shaderType == ShaderType.GlTFast;
-                        gltfImporter.importSettings.AnimationMethod = AnimationMethod.Legacy;
-                        gltfImporter.importSettings.GenerateMipMaps = false;
-
-                        log.Verbose($"Importing {relativePath}");
-                        EditorUtility.SetDirty(gltfImporter);
-
-                        gltfImporter.SaveAndReimport();
-
-                        GameObject importedGameObject = AssetDatabase.LoadAssetAtPath<GameObject>(relativePath);
-
+                        GameObject importedGameObject = env.assetDatabase.LoadAssetAtPath<GameObject>(relativePath);
                         if (importedGameObject == null)
                         {
                             var message = "Fatal error when importing this object, check previous error messages";
@@ -299,8 +283,7 @@ namespace DCL.ABConverter
                             ForceExit((int)ErrorCodes.GLTFAST_CRITICAL_ERROR);
                             break;
                         }
-                    }
-                    else
+                    } else
                     {
                         var message = $"Failed to get the gltf importer for {gltfUrl} \nPath: {relativePath}";
                         log.Error(message);
@@ -309,26 +292,27 @@ namespace DCL.ABConverter
                         continue;
                     }
 
-                    GameObject originalGltf = AssetDatabase.LoadAssetAtPath<GameObject>(relativePath);
-
-                    if ((!settings.createAssetBundle || !settings.visualTest) && settings.placeOnScene && originalGltf != null)
+                    if ((!settings.createAssetBundle || !settings.visualTest) && settings.placeOnScene)
                     {
-                        try
-                        {
-                            var clone = (GameObject)PrefabUtility.InstantiatePrefab(originalGltf);
-                            var renderers = clone.GetComponentsInChildren<Renderer>(true);
+                        GameObject originalGltf = env.assetDatabase.LoadAssetAtPath<GameObject>(relativePath);
 
-                            foreach (Renderer renderer in renderers)
-                                if (renderer.name.ToLower().Contains("_collider"))
-                                    renderer.enabled = false;
-                        }
-                        catch (Exception e)
-                        {
-                            log.Exception(e.ToString());
-                            continue;
+                        if (originalGltf != null)
+                            try
+                            {
+                                var clone = (GameObject)PrefabUtility.InstantiatePrefab(originalGltf);
+                                var renderers = clone.GetComponentsInChildren<Renderer>(true);
 
-                            // we dont crash here since we dont do this on batch mode
-                        }
+                                foreach (Renderer renderer in renderers)
+                                    if (renderer.name.ToLower().Contains("_collider"))
+                                        renderer.enabled = false;
+                            }
+                            catch (Exception e)
+                            {
+                                log.Exception(e.ToString());
+                                continue;
+
+                                // we dont crash here since we dont do this on batch mode
+                            }
                     }
 
                     log.Verbose($"<color={color}>Ended loading gltf {gltfUrl} with result <b>{loadingSuccess}</b></color>");
@@ -364,7 +348,7 @@ namespace DCL.ABConverter
 
             var folder = gltf.AssetPath.assetFolder;
             var materialRoot = $"{folder}Materials{Path.DirectorySeparatorChar}";
-            Directory.CreateDirectory(materialRoot);
+            env.directory.CreateDirectory(materialRoot);
 
             for (int t = 0; t < gltfImport.MaterialCount; t++)
             {
@@ -374,19 +358,19 @@ namespace DCL.ABConverter
                 string materialPath =
                     PathUtils.GetRelativePathTo(Application.dataPath, string.Concat(materialRoot, matName, ".mat"));
 
-                var previousMat = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
+                var previousMat = env.assetDatabase.LoadAssetAtPath<Material>(materialPath);
 
                 if (previousMat != null)
-                    AssetDatabase.DeleteAsset(materialPath);
+                    env.assetDatabase.DeleteAsset(materialPath);
 
-                AssetDatabase.CreateAsset(Object.Instantiate(originalMaterial), materialPath);
-                AssetDatabase.SaveAssets();
-                var newMaterial = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
+                env.assetDatabase.CreateAsset(Object.Instantiate(originalMaterial), materialPath);
+                env.assetDatabase.SaveAssets();
+                var newMaterial = env.assetDatabase.LoadAssetAtPath<Material>(materialPath);
 
                 var shader = newMaterial.shader;
 
                 if (settings.stripShaders)
-                    Utils.MarkAssetForAssetBundleBuild(env.assetDatabase, shader, shader.name + "_IGNORE");
+                    env.assetDatabase.MarkAssetBundle(env.assetDatabase, shader, shader.name + "_IGNORE");
 
                 for (var i = 0; i < ShaderUtil.GetPropertyCount(shader); ++i)
                 {
@@ -459,14 +443,14 @@ namespace DCL.ABConverter
 
                     var texPath = string.Concat(texturesRoot, texName);
 
-                    texPath = texPath.Replace('\\', '/');
+                    texPath = PathUtils.FixDirectorySeparator(texPath);
 
-                    var absolutePath = $"{Application.dataPath}/../{texPath}";
-                    var texturePath = AssetDatabase.GetAssetPath(tex);
+                    var absolutePath = PathUtils.FixDirectorySeparator($"{Application.dataPath}/../{texPath}");
+                    var texturePath = env.assetDatabase.GetAssetPath(tex);
 
-                    if (File.Exists(absolutePath))
+                    if (env.file.Exists(absolutePath))
                     {
-                        Texture2D loadedAsset = AssetDatabase.LoadAssetAtPath<Texture2D>(PathUtils.GetRelativePathTo(Application.dataPath, absolutePath));
+                        Texture2D loadedAsset = env.assetDatabase.LoadAssetAtPath<Texture2D>(PathUtils.GetRelativePathTo(Application.dataPath, absolutePath));
 
                         if (loadedAsset != null)
                         {
@@ -477,7 +461,7 @@ namespace DCL.ABConverter
 
                     if (!string.IsNullOrEmpty(texturePath))
                     {
-                        Texture2D loadedAsset = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
+                        Texture2D loadedAsset = env.assetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
 
                         if (loadedAsset != null)
                         {
@@ -486,14 +470,17 @@ namespace DCL.ABConverter
                         }
                     }
 
-                    if (!Directory.Exists(texturesRoot))
-                        Directory.CreateDirectory(texturesRoot);
+                    if (!env.directory.Exists(texturesRoot))
+                        env.directory.CreateDirectory(texturesRoot);
 
                     // We are always encoding to PNG
                     if (!Path.HasExtension(texPath))
                         texPath += ".png";
 
-                    if (tex.isReadable) { File.WriteAllBytes(texPath, tex.EncodeToPNG()); }
+                    if (tex.isReadable)
+                    {
+                        env.file.WriteAllBytes(texPath, tex.EncodeToPNG());
+                    }
                     else
                     {
                         RenderTexture tmp = RenderTexture.GetTemporary(
@@ -512,15 +499,15 @@ namespace DCL.ABConverter
                         RenderTexture.active = previous;
                         RenderTexture.ReleaseTemporary(tmp);
 
-                        File.WriteAllBytes(texPath, readableTexture.EncodeToPNG());
+                        env.file.WriteAllBytes(texPath, readableTexture.EncodeToPNG());
                     }
 
-                    AssetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
-                    AssetDatabase.SaveAssets();
+                    env.assetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+                    env.assetDatabase.SaveAssets();
 
                     ReduceTextureSizeIfNeeded(texPath, MAX_TEXTURE_SIZE);
 
-                    newTextures.Add(AssetDatabase.LoadAssetAtPath<Texture2D>(texPath));
+                    newTextures.Add(env.assetDatabase.LoadAssetAtPath<Texture2D>(texPath));
                     log.Verbose($"Embed GLTF Texture created texture at {texPath}");
                 }
             }
@@ -979,12 +966,15 @@ namespace DCL.ABConverter
 
         private void ReduceTextureSizeIfNeeded(string texturePath, float maxSize)
         {
-            byte[] image = File.ReadAllBytes(texturePath);
+            byte[] image = env.file.ReadAllBytes(texturePath);
 
             var tmpTex = new Texture2D(1, 1);
 
             if (!tmpTex.LoadImage(image))
+            {
+                Object.DestroyImmediate(tmpTex);
                 return;
+            }
 
             float factor;
             int width = tmpTex.width;
@@ -1004,7 +994,7 @@ namespace DCL.ABConverter
             byte[] endTex = dstTex.EncodeToPNG();
             Object.DestroyImmediate(tmpTex);
 
-            File.WriteAllBytes(texturePath, endTex);
+            env.file.WriteAllBytes(texturePath, endTex);
         }
 
         /// <summary>

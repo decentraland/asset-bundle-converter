@@ -39,6 +39,9 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
             await VisualTests.TestConvertedAssetsAsync(env,settings,assetsToMark,errorReporter);
         }
 
+        public Task Delay(TimeSpan time) =>
+            Task.Delay(time);
+
         private static async Task WaitUntilAsync(Func<bool> predicate, int sleep = 50)
         {
             while (!predicate())

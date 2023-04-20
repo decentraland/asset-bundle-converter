@@ -20,5 +20,7 @@ namespace DCL
         Task LoadVisualTestSceneAsync();
 
         Task TestConvertedAssetsAsync(Environment env, ClientSettings settings, List<AssetPath> assetsToMark, IErrorReporter errorReporter);
+
+        Task Delay(TimeSpan time);
     }
 }
