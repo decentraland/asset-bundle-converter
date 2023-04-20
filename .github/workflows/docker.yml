@@ -40,9 +40,6 @@ jobs:
         env:
           UNITY_2021_ULF: ${{ secrets.UNITY_2021_ULF }}
 
-      - name: Run tests
-        run: chmod +x ./ci-editmode-test.sh && ./ci-editmode-test.sh
-
       - name: Run test conversion of urn:decentraland:off-chain:base-avatars:brown_pants
         run: |
           docker run \
@@ -53,6 +50,9 @@ jobs:
                 --pointer urn:decentraland:off-chain:base-avatars:brown_pants \
                 --outDir /tmp-ab \
                 --logFile /tmp-ab/log.txt
+
+      - name: Run tests
+        run: chmod +x ./ci-editmode-test.sh && ./ci-editmode-test.sh
 
       - name: Trigger deployment
         id: deploy
