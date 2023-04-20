@@ -40,6 +40,9 @@ jobs:
         env:
           UNITY_2021_ULF: ${{ secrets.UNITY_2021_ULF }}
 
+      - name: Run tests
+        command: ./ci-editmode-test.sh
+
       - name: Run test conversion of urn:decentraland:off-chain:base-avatars:brown_pants
         run: |
           docker run \
