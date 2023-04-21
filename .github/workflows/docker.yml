@@ -41,7 +41,7 @@ jobs:
           UNITY_2021_ULF: ${{ secrets.UNITY_2021_ULF }}
 
       - name: Run tests
-        run: 
+        run: |
           docker run \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
             quay.io/decentraland/asset-bundle-converter@${{ steps.docker_build.outputs.digest }} \
