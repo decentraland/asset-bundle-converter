@@ -45,7 +45,7 @@ jobs:
           docker run \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
             quay.io/decentraland/asset-bundle-converter@${{ steps.docker_build.outputs.digest }} \
-              ls && cd .. && ls && ./ci-editmode-test.sh
+              pwd && ls && cd .. && pwd && ls && ./ci-editmode-test.sh
 
       - name: Run test conversion of urn:decentraland:off-chain:base-avatars:brown_pants
         run: |
