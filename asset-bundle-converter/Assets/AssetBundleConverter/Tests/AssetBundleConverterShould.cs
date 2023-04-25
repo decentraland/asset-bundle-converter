@@ -94,12 +94,6 @@ namespace AssetBundleConverter.Tests
         }
 
         [Test]
-        public void FailForCI()
-        {
-            Assert.Fail(); // DELETE THIS WHEN CI WORKS
-        }
-
-        [Test]
         public async Task TextureAssetIsProcessed()
         {
             var exampleAsset = new ContentServerUtils.MappingPair { file = "example.png", hash = "example" };
