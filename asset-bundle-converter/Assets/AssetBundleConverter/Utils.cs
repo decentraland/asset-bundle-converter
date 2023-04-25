@@ -101,7 +101,7 @@ namespace DCL.ABConverter
             if (match.Success && match.Groups["assetpath"] != null)
                 return match.Groups["assetpath"].Value;
 
-            return string.Empty;
+            return fullPath;
         }
 
         public static string FixDirectorySeparator(string path)

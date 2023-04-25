@@ -44,7 +44,8 @@ namespace DCL
                 return UnityEditor.AssetDatabase.LoadAssetAtPath<T>(assetPath);
             }
 
-            public string GetAssetPath(Object asset) { return PathUtils.AssetPathToFullPath(UnityEditor.AssetDatabase.GetAssetPath(asset)); }
+            public string GetAssetPath(Object asset) =>
+                UnityEditor.AssetDatabase.GetAssetPath(asset);
 
             public string AssetPathToGUID(string fullPath)
             {
