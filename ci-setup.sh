@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 export PROJECT_PATH
-PROJECT_PATH="$(pwd)/unity-renderer"
+PROJECT_PATH="$(pwd)/asset-bundle-converter"
 
 
 ls -lah /root/.cache/unity3d
