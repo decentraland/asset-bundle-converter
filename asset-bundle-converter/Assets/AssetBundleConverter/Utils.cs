@@ -393,12 +393,15 @@ namespace DCL.ABConverter
 
         public static string NicifyName(string name)
         {
+            // Some invalid file name chars differ between platforms so we have additional ones defined below
             foreach (char c in Path.GetInvalidFileNameChars()) { name = name.Replace(c, '_'); }
             name = name.Replace(":", "_");
             name = name.Replace(" ", "_");
             name = name.Replace("*", "_");
             name = name.Replace("|", "_");
             name = name.Replace(".", "_");
+            name = name.Replace("?", "_");
+            name = name.Replace("¿", "_");
 
             if (string.IsNullOrEmpty(name))
                 name = "unnamed";
