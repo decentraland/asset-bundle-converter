@@ -921,13 +921,14 @@ namespace DCL.ABConverter
 
                 if (importer is TextureImporter texImporter)
                 {
+                    string finalTexturePath = finalDownloadedPath + assetPath.hash + "/" + assetPath.hash + Path.GetExtension(assetPath.filePath);
+                    ReduceTextureSizeIfNeeded(finalTexturePath, MAX_TEXTURE_SIZE);
+
                     texImporter.crunchedCompression = true;
                     texImporter.textureCompression = TextureImporterCompression.CompressedHQ;
                     texImporter.isReadable = true;
-
-                    string finalTexturePath = finalDownloadedPath + assetPath.hash + "/" + assetPath.hash + Path.GetExtension(assetPath.filePath);
-
-                    ReduceTextureSizeIfNeeded(finalTexturePath, MAX_TEXTURE_SIZE);
+                    texImporter.alphaIsTransparency = true;
+                    EditorUtility.SetDirty(texImporter);
                 }
 
                 env.assetDatabase.ImportAsset(assetPath.finalPath, ImportAssetOptions.ForceUpdate);
