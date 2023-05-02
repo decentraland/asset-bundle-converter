@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Networking;
 using DownloadHandler = UnityEngine.Networking.DownloadHandler;
@@ -13,7 +14,7 @@ namespace AssetBundleConverter.Wearables
     {
         private const string COLLECTION_PATH = "collections/wearables?collectionId=";
 
-        public static IReadOnlyList<ContentServerUtils.MappingPair> GetCollectionMappings(string collectionId, ContentServerUtils.ApiTLD apiTld,
+        public static async Task<IReadOnlyList<ContentServerUtils.MappingPair>> GetCollectionMappingsAsync(string collectionId, ContentServerUtils.ApiTLD apiTld,
             IWebRequest webRequest)
         {
             var url = $"{apiTld.GetLambdasUrl()}{COLLECTION_PATH}{collectionId}";
@@ -21,7 +22,7 @@ namespace AssetBundleConverter.Wearables
 
             DownloadHandler downloadHandler;
 
-            try { downloadHandler = webRequest.Get(url); }
+            try { downloadHandler = await webRequest.Get(url); }
             catch (HttpRequestException e)
             {
                 throw new Exception($"Wearables Collection {collectionId} can't be fetched", e);

@@ -275,8 +275,6 @@ namespace AssetBundleConverter
                 placeOnScene = placeOnScene,
                 verbose = verbose
             };
-
-            Debug.ClearDeveloperConsole();
         }
 
         private void OnConversionEnd(DCL.ABConverter.AssetBundleConverter.State state)

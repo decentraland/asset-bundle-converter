@@ -15,12 +15,16 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
         public void DisplayProgressBar(string title, string body, float progress)
         {
+#if UNITY_EDITOR
             EditorUtility.DisplayProgressBar(title, body, progress);
+#endif
         }
 
         public void ClearProgressBar()
         {
+#if UNITY_EDITOR
             EditorUtility.ClearProgressBar();
+#endif
         }
 
         public void Exit(int errorCode)
@@ -41,6 +45,7 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
         public Task Delay(TimeSpan time) =>
             Task.Delay(time);
+
 
         private static async Task WaitUntilAsync(Func<bool> predicate, int sleep = 50)
         {

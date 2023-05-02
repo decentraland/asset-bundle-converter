@@ -1,4 +1,5 @@
-﻿using DCL.ABConverter;
+﻿using AssetBundleConverter.Editor;
+using DCL.ABConverter;
 using System.Collections.Generic;
 
 namespace AssetBundleConverter.Wrappers.Interfaces
@@ -7,6 +8,6 @@ namespace AssetBundleConverter.Wrappers.Interfaces
     {
         IGltfImport GetImporter(AssetPath filePath, Dictionary<string, string> contentTable, ShaderType shaderType);
 
-        bool ConfigureImporter(string relativePath, Dictionary<string, string> contentTable, string fileRootPath, string hash, ShaderType shaderType);
+        bool ConfigureImporter(string relativePath, ContentMap[] contentMap, string fileRootPath, string hash, ShaderType shaderType);
     }
 }

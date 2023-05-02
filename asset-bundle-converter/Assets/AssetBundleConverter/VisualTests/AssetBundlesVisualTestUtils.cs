@@ -33,8 +33,6 @@ namespace DCL.Helpers
                 RepositionVisualTestsCamera(camera, shotPosition, shotTarget);
             }
 
-            //await Task.Delay(TimeSpan.FromSeconds(0.01f));
-
             int snapshotsWidth = TestSettings.VISUAL_TESTS_SNAPSHOT_WIDTH;
             int snapshotsHeight = TestSettings.VISUAL_TESTS_SNAPSHOT_HEIGHT;
 
@@ -113,8 +111,6 @@ namespace DCL.Helpers
 
             RenderTexture.active = null;
             renderTexture.Release();
-
-            //await Task.Delay(TimeSpan.FromSeconds(0.2f));
 
             QualitySettings.SetQualityLevel(previousQualityLevel, true);
         }

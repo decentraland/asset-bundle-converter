@@ -1,6 +1,8 @@
-﻿using System;
+﻿using Cysharp.Threading.Tasks;
+using System;
 using System.Net.Http;
 using System.Text;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -17,26 +19,26 @@ namespace DCL
                 GetAsyncCoroutine(url, OnCompleted, OnFail);
             }
 
-            public DownloadHandler Post(string url, string json)
+            public async Task<DownloadHandler> Post(string url, string json)
             {
-                return BaseRequest(url, () =>
+                return await BaseRequest(url, () =>
                 {
                     var request = new UnityWebRequest(url, "POST");
                     byte[] bodyRaw = Encoding.UTF8.GetBytes(json);
                     request.uploadHandler = new UploadHandlerRaw(bodyRaw);
                     request.downloadHandler = new DownloadHandlerBuffer();
                     request.SetRequestHeader("Content-Type", "application/json");
-                    
+
                     return request;
                 });
             }
 
-            public DownloadHandler Get(string url)
+            public async Task<DownloadHandler> Get(string url)
             {
-                return BaseRequest(url, () => UnityWebRequest.Get(url));
+                return await BaseRequest(url, () => UnityWebRequest.Get(url));
             }
 
-            private DownloadHandler BaseRequest(string url, Func<UnityWebRequest> webRequest)
+            private async Task<DownloadHandler> BaseRequest(string url, Func<UnityWebRequest> webRequest)
             {
                 UnityWebRequest req;
 
@@ -47,8 +49,7 @@ namespace DCL
                     try
                     {
                         req = webRequest();
-                        var op = req.SendWebRequest();
-                        while (op.isDone == false) { }
+                        await req.SendWebRequest();
                     }
                     catch (HttpRequestException e)
                     {

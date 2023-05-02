@@ -268,7 +268,7 @@ namespace DCL.ABConverter
         {
             EnsureEnvironment();
 
-            var apiResponse = Utils.GetEntityMappings(settings.targetHash, settings, env.webRequest);
+            var apiResponse = await Utils.GetEntityMappingsAsync(settings.targetHash, settings, env.webRequest);
             if (apiResponse == null) return GetUnexpectedResult();
             var mappings = apiResponse.SelectMany(m => m.content);
             return await ConvertEntitiesToAssetBundles(mappings.ToArray(), settings);
@@ -284,7 +284,7 @@ namespace DCL.ABConverter
         {
             EnsureEnvironment();
 
-            var apiResponse = Utils.GetEntityMappings(settings.targetPointer.Value, settings, env.webRequest);
+            var apiResponse = await Utils.GetEntityMappings(settings.targetPointer.Value, settings, env.webRequest);
             if (apiResponse == null) return GetUnexpectedResult();
             var mappings = apiResponse.SelectMany(m => m.content);
             return await ConvertEntitiesToAssetBundles(mappings.ToArray(), settings);
@@ -299,7 +299,7 @@ namespace DCL.ABConverter
 
             settings.isWearable = true;
 
-            var mappings = WearablesClient.GetCollectionMappings(settings.targetHash, ContentServerUtils.ApiTLD.ORG, env.webRequest);
+            var mappings = await WearablesClient.GetCollectionMappingsAsync(settings.targetHash, ContentServerUtils.ApiTLD.ORG, env.webRequest);
             return await ConvertEntitiesToAssetBundles(mappings, settings);
         }
 

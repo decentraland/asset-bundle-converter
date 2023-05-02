@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using Unity.Plastic.Newtonsoft.Json;
 using UnityEditor;
 using UnityEngine;
@@ -236,7 +237,7 @@ namespace DCL.ABConverter
             return sBuilder.ToString();
         }
 
-        public static EntityMappingsDTO[] GetEntityMappings(Vector2Int entityPointer, ClientSettings settings,
+        public static async Task<EntityMappingsDTO[]> GetEntityMappings(Vector2Int entityPointer, ClientSettings settings,
             IWebRequest webRequest)
         {
 
@@ -247,7 +248,7 @@ namespace DCL.ABConverter
             {
                 var pointersData = new PointersData { pointers = new[] { $"{entityPointer.x},{entityPointer.y}" } };
                 var json = JsonUtility.ToJson(pointersData);
-                downloadHandler = webRequest.Post(url, json);
+                downloadHandler = await webRequest.Post(url, json);
             }
             catch (HttpRequestException e)
             {
@@ -264,7 +265,7 @@ namespace DCL.ABConverter
             return parcelInfoApiData.ToArray();
         }
 
-        public static EntityMappingsDTO[] GetEntityMappings(string entityId, ClientSettings settings, IWebRequest webRequest)
+        public static async Task<EntityMappingsDTO[]> GetEntityMappingsAsync(string entityId, ClientSettings settings, IWebRequest webRequest)
         {
             var url = $"{settings.baseUrl}{entityId}";
             Debug.Log(url);
@@ -272,7 +273,7 @@ namespace DCL.ABConverter
 
             try
             {
-                downloadHandler = webRequest.Get(url);
+                downloadHandler = await webRequest.Get(url);
             }
             catch (HttpRequestException e)
             {
