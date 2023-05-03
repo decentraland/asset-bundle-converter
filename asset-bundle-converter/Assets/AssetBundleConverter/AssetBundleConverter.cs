@@ -763,7 +763,8 @@ namespace DCL.ABConverter
 
                 downloadStartupTime = EditorApplication.timeSinceStartup;
 
-                await Task.WhenAll(downloadTasks.ToArray());
+                foreach (Task downloadTask in downloadTasks)
+                    await downloadTask;
 
                 downloadEndTime = EditorApplication.timeSinceStartup;
 
