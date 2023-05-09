@@ -85,6 +85,30 @@ namespace AssetBundleConverter.Editor
             }
         }
 
+        protected override void PreProcessGameObjects(GameObject sceneGo)
+        {
+            var meshFilters = sceneGo.GetComponentsInChildren<MeshFilter>();
+
+            foreach (MeshFilter filter in meshFilters)
+            {
+                if (filter.name.Contains("_collider", StringComparison.InvariantCultureIgnoreCase))
+                    ConfigureColliders(filter);
+            }
+        }
+
+        private static void ConfigureColliders(MeshFilter filter)
+        {
+            Physics.BakeMesh(filter.sharedMesh.GetInstanceID(), false);
+            filter.gameObject.AddComponent<MeshCollider>();
+            DestroyImmediate(filter.GetComponent<MeshRenderer>());
+
+            foreach (Transform child in filter.transform)
+            {
+                var f = child.gameObject.GetComponent<MeshFilter>();
+                ConfigureColliders(f);
+            }
+        }
+
         protected override void CreateMaterialAssets(AssetImportContext ctx)
         {
             var ctxMainObject = (GameObject)ctx.mainObject;
