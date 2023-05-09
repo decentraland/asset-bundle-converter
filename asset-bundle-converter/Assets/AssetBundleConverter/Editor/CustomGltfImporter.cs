@@ -92,13 +92,23 @@ namespace AssetBundleConverter.Editor
             foreach (MeshFilter filter in meshFilters)
             {
                 if (filter.name.Contains("_collider", StringComparison.InvariantCultureIgnoreCase))
-                {
-                    Physics.BakeMesh(filter.sharedMesh.GetInstanceID(), false);
-                    filter.gameObject.AddComponent<MeshCollider>();
-                    filter.GetComponent<MeshRenderer>().enabled = false;
-                }
+                    ConfigureColliders(filter);
             }
         }
+
+        private static void ConfigureColliders(MeshFilter filter)
+        {
+            Physics.BakeMesh(filter.sharedMesh.GetInstanceID(), false);
+            filter.gameObject.AddComponent<MeshCollider>();
+            DestroyImmediate(filter.GetComponent<MeshRenderer>());
+
+            foreach (Transform child in filter.transform)
+            {
+                var f = child.gameObject.GetComponent<MeshFilter>();
+                ConfigureColliders(f);
+            }
+        }
+
         protected override void CreateMaterialAssets(AssetImportContext ctx)
         {
             var ctxMainObject = (GameObject)ctx.mainObject;
