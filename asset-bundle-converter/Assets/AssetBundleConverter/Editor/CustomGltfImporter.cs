@@ -147,11 +147,7 @@ namespace AssetBundleConverter.Editor
                 Material validMaterial = AssetDatabase.LoadAssetAtPath<Material>(path);
 
                 if (validMaterial == null)
-                {
-                    Debug.LogError(path + " does not exist");
-
-                    continue;
-                }
+                    throw new Exception(path + " does not exist");
 
                 materials.Add(validMaterial);
                 ReplaceReferences(renderers, validMaterial);
