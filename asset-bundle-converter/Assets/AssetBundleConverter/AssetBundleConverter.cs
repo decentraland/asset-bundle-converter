@@ -232,8 +232,7 @@ namespace DCL.ABConverter
                 AnimationMethod = AnimationMethod.Legacy,
                 NodeNameMethod = NameImportMethod.OriginalUnique,
                 AnisotropicFilterLevel = 0,
-                GenerateMipMaps = false,
-                NormalizeMaterialNames = true
+                GenerateMipMaps = false
             };
 
             foreach (GltfImportSettings gltf in gltfToWait)

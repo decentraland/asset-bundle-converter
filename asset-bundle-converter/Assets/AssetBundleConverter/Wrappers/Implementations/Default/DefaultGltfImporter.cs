@@ -55,7 +55,6 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
                 gltfImporter.useOriginalMaterials = shaderType == ShaderType.GlTFast;
                 gltfImporter.importSettings.AnimationMethod = AnimationMethod.Legacy;
                 gltfImporter.importSettings.GenerateMipMaps = false;
-                gltfImporter.importSettings.NormalizeMaterialNames = true;
 
                 assetDatabase.SaveImporter(gltfImporter);
                 return true;
