@@ -61,7 +61,7 @@ namespace DCL.ABConverter
 
         private const float MAX_TEXTURE_SIZE = 512f;
 
-        private const string VERSION = "3.0";
+        private const string VERSION = "6.0";
 
         private readonly Dictionary<string, string> lowerCaseHashes = new ();
         public State CurrentState { get; } = new ();
