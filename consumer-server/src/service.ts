@@ -46,7 +46,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
 }
 
 async function machineRanOutOfSpace(components: Pick<AppComponents, 'metrics'>) {
-  const diskUsage = await checkDiskSpace('/mnt/mygames')
+  const diskUsage = await checkDiskSpace('/')
   const free = diskUsage.free
 
   components.metrics.observe('ab_converter_free_disk_space', {}, free)
