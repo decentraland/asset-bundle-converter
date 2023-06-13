@@ -7,7 +7,7 @@ WORKDIR /consumer-server
 
 # some packages require a build step
 RUN apt-get update
-RUN apt-get -y -qq install python-setuptools python-dev build-essential
+RUN apt-get -y -qq install python build-essential
 
 # We use Tini to handle signals and PID1 (https://github.com/krallin/tini, read why here https://github.com/krallin/tini/issues/8)
 ENV TINI_VERSION v0.19.0
@@ -29,7 +29,11 @@ RUN npm ci --only=production
 
 ########################## END OF BUILD STAGE ##########################
 
-FROM unityci/editor:2021.3.20f1-webgl-1
+# unityhub://2021.3.20f1/577897200b8b
+FROM unityci/hub:ubuntu-latest
+RUN unity-hub install --version 2021.3.20f1 --changeset 577897200b8b --module webgl
+#RUN unity-hub install --version 2021.3.20f1 --changeset 577897200b8b --module windows-mono
+RUN unity-hub install-modules --version 2021.3.20f1 --module windows-mono
 
 RUN    apt-get update -y \
     && apt-get -y install \
