@@ -125,7 +125,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
       Key: manifestFile,
       ContentType: 'application/json',
       Body: JSON.stringify(manifest),
-      CacheControl: 'max-age=3600,s-maxage=3600',
+      CacheControl: 'private, max-age=0, no-cache',
       ACL: 'public-read',
     }).promise()
 
