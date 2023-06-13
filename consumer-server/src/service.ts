@@ -1,7 +1,7 @@
 import { ILoggerComponent, Lifecycle } from "@well-known-components/interfaces"
 import { setupRouter } from "./controllers/routes"
 import { executeConversion } from "./logic/conversion-task"
-import disk from 'diskusage'
+import checkDiskSpace from 'check-disk-space'
 import { AppComponents, GlobalContext, TestComponents } from "./types"
 
 // this function wires the business logic (adapters & controllers) with the components (ports)
@@ -46,7 +46,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
 }
 
 async function machineRanOutOfSpace(components: Pick<AppComponents, 'metrics'>) {
-  const diskUsage = await disk.check('/')
+  const diskUsage = await checkDiskSpace('/mnt/mygames')
   const free = diskUsage.free
 
   components.metrics.observe('ab_converter_free_disk_space', {}, free)
