@@ -93,6 +93,8 @@ namespace DCL.ABConverter
         private bool isExitForced = false;
         private IABLogger log => env.logger;
 
+        private LODGenerator lodGenerator;
+
         public AssetBundleConverter(Environment env, ClientSettings settings)
         {
             this.settings = settings;
@@ -104,6 +106,8 @@ namespace DCL.ABConverter
 
             finalDownloadedPath = Config.GetDownloadPath();
             finalDownloadedAssetDbPath = PathUtils.FixDirectorySeparator(Config.ASSET_BUNDLES_PATH_ROOT + Config.DASH);
+            lodGenerator = new LODGenerator();
+
 
             log.verboseEnabled = true;
         }
@@ -298,6 +302,15 @@ namespace DCL.ABConverter
                             errorReporter.ReportError(message, settings);
                             ForceExit((int)ErrorCodes.GLTFAST_CRITICAL_ERROR);
                             break;
+                        }
+
+                        await lodGenerator.Generate(importedGameObject, Path.GetDirectoryName(gltfUrl));
+                        for (int i = 1; i < 3; i++)
+                        {
+                            string assetHash = $"{gltf.AssetPath.hash}_lod{i}";
+                            string pathToSave = $"{Application.dataPath}/_Downloaded/{assetHash}/{gltf.AssetPath.hash}_lod{i}.glb";
+                            env.gltfImporter.ConfigureImporter(Path.GetDirectoryName(pathToSave), contentMap, gltf.AssetPath.fileRootPath, gltf.AssetPath.hash, settings.shaderType);
+                            env.directory.MarkFolderForAssetBundleBuild(pathToSave, assetHash);
                         }
                     } else
                     {
@@ -840,6 +853,17 @@ namespace DCL.ABConverter
                 string finalKey = useHash ? Utils.EnsureStartWithSlash(assetPath.hashPath) : Utils.EnsureStartWithSlash(assetPath.filePath);
                 finalKey = finalKey.ToLower();
                 contentTable[finalKey] = relativeFinalPath;
+
+                //TODO: Leaving this as a check. Will be removed before merging
+                /*if (finalKey.Contains(".glb"))
+                {
+                    for (int i = 1; i < 3; i++)
+                    {
+                        string newKey = finalKey.Replace(".glb", $"_lod{i}.glb");
+                        contentTable[newKey] = contentTable[finalKey].Replace(".glb", $"_lod{i}.glb");
+                    }
+                }*/
+
             }
         }
 

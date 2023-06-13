@@ -56,6 +56,12 @@ namespace AssetBundleConverter.Editor
 
         public override void OnImportAsset(AssetImportContext ctx)
         {
+            if (ctx.assetPath.Contains("_lod"))
+            {
+                base.OnImportAsset(ctx);
+                return;
+            }
+
             if (useCustomFileProvider)
             {
                 contentTable = new Dictionary<string, string>();

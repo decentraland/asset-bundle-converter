@@ -24,22 +24,22 @@ namespace AssetBundleConverter
         private const string CUSTOM = "Custom";
 
         private const string PEERS_URL = "https://peer.decentraland.org/content/contents/";
-        private const string WORLDS_URL = "https://worlds-content-server.decentraland.org/contents/";
+        private const string WORLDS_URL = "https://sdk-team-cdn.decentraland.org/ipfs/";
 
         private readonly string[] tabs = { TAB_SCENE, TAB_PARCELS, TAB_RANDOM, TAB_WEARABLES_COLLECTION, TEST_BATCHMODE };
         private readonly string[] urlOptions = { URL_PEERS, URL_WORLDS, CUSTOM };
 
-        private string entityId = "QmYy2TMDEfag99yZV4ZdpjievYUfdQgBVfFHKCDAge3zQi";
+        private string entityId = "bafkreidsgvslvpggw234fg3bzgqbtchjgcn5daqsw4sn6qj7vyxyhci3ky";
         private string wearablesCollectionId = "urn:decentraland:off-chain:base-avatars";
         private string debugEntity = "bafkreib66ufmbowp4ee2u3kdu6t52kouie7kd7tfrlv3l5kejz6yjcaq5i";
         private string batchBaseUrl = "";
         private string batchSceneId = "";
         private string batchModeParams = "";
         private string baseUrl;
-        private bool placeOnScene = true;
+        private bool placeOnScene = false;
         private bool visualTest = false;
         private bool clearDownloads = true;
-        private bool createAssetBundle = true;
+        private bool createAssetBundle = false;
         private bool verbose = true;
         private int currentTab = 0;
         private int currentUrlOption = 0;

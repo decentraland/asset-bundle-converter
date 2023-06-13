@@ -1,0 +1,19 @@
+{
+    "name": "PiXYZ.DCLPlugin",
+    "rootNamespace": "",
+    "references": [
+        "GUID:59cea01c70d4cff4f97e791c14a3456f",
+        "GUID:bc927a4279b4c364cb0c9dcdbc87ebed"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
