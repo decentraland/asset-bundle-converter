@@ -33,6 +33,8 @@ FROM unityci/hub:ubuntu-latest
 RUN unity-hub install --version 2021.3.20f1 --changeset 577897200b8b --module webgl
 RUN unity-hub install-modules --version 2021.3.20f1 --module windows-mono
 
+ENV UNITY_PATH /opt/unity/editors/2021.3.20f1
+
 RUN    apt-get update -y \
     && apt-get -y install \
          xvfb \
