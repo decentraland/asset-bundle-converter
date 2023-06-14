@@ -37,7 +37,6 @@ ENV UNITY_PATH /opt/unity/editors/${UNITY_VERSION}
 
 RUN unity-hub install --version ${UNITY_VERSION} --changeset ${UNITY_CHANGESET} --module webgl
 RUN unity-hub install-modules --version ${UNITY_VERSION} --module windows-mono
-RUN unity-hub install-modules --version ${UNITY_VERSION} --module mac-mono
 
 RUN    apt-get update -y \
     && apt-get -y install \
