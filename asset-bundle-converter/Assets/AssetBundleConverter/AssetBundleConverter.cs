@@ -190,14 +190,7 @@ namespace DCL.ABConverter
         private void MarkAndBuildForTarget(BuildTarget target)
         {
             if (!env.editor.SwitchBuildTarget(target))
-            {
-                if (Application.isBatchMode)
-                {
-                    Debug.LogError($"!!!! Build target not found {target}");
-                    //ForceExit((int)ErrorCodes.ASSET_BUNDLE_BUILD_FAIL);
-                }
                 return;
-            }
 
             // Fourth step: we mark all assets for bundling
             MarkAllAssetBundles(assetsToMark, target);
