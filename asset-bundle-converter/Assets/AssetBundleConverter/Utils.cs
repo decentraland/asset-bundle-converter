@@ -339,16 +339,29 @@ namespace DCL.ABConverter
         {
             for (int i = 0; i < assetBundlesList.Length; i++)
             {
-                if (string.IsNullOrEmpty(assetBundlesList[i]))
+                string assetBundleName = assetBundlesList[i];
+
+                if (string.IsNullOrEmpty(assetBundleName))
                     continue;
 
                 try
                 {
+                    var suffix = "";
+
+                    if (assetBundleName.EndsWith("_windows"))
+                    {
+                        suffix = "_windows";
+                        assetBundleName = assetBundleName.Replace("_windows", "");
+                    } else if (assetBundleName.EndsWith("_osx"))
+                    {
+                        suffix = "_osx";
+                        assetBundleName = assetBundleName.Replace("_osx", "");
+                    }
                     //NOTE(Brian): This is done for correctness sake, rename files to preserve the hash upper-case
-                    if (lowerToUpperDictionary.TryGetValue(assetBundlesList[i], out string hashWithUppercase))
+                    if (lowerToUpperDictionary.TryGetValue(assetBundleName, out string hashWithUppercase))
                     {
                         string oldPath = pathToSearch + assetBundlesList[i];
-                        string path = pathToSearch + hashWithUppercase;
+                        string path = pathToSearch + hashWithUppercase + suffix;
                         file.Move(oldPath, path);
                     }
 

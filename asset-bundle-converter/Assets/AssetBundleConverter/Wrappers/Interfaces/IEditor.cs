@@ -5,6 +5,7 @@ using DCL.ABConverter;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using UnityEditor;
 using Environment = AssetBundleConverter.Environment;
 
 namespace DCL
@@ -22,5 +23,7 @@ namespace DCL
         Task TestConvertedAssetsAsync(Environment env, ClientSettings settings, List<AssetPath> assetsToMark, IErrorReporter errorReporter);
 
         Task Delay(TimeSpan time);
+
+        bool SwitchBuildTarget(BuildTarget targetPlatform);
     }
 }

@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.SceneManagement;
+using UnityEngine;
 
 namespace AssetBundleConverter.Wrappers.Implementations.Default
 {
@@ -46,6 +47,36 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
         public Task Delay(TimeSpan time) =>
             Task.Delay(time);
 
+        public bool SwitchBuildTarget(BuildTarget targetPlatform)
+        {
+            if (!Application.isBatchMode && !IsBuildTargetSupported(targetPlatform))
+            {
+                Debug.LogError($"Build target {targetPlatform} is not installed!");
+                return false;
+            }
+
+            Debug.Log("Switching to " + targetPlatform);
+            switch (targetPlatform)
+            {
+                case BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX:
+                    EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Standalone, targetPlatform);
+                    return true;
+                case BuildTarget.WebGL:
+                    EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.WebGL, BuildTarget.WebGL);
+                    return true;
+            }
+
+            throw new Exception($"Build target {targetPlatform} is not supported");
+        }
+
+        private bool IsBuildTargetSupported(BuildTarget target)
+        {
+            var moduleManager = System.Type.GetType("UnityEditor.Modules.ModuleManager,UnityEditor.dll");
+            var isPlatformSupportLoaded = moduleManager.GetMethod("IsPlatformSupportLoaded", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+            var getTargetStringFromBuildTarget = moduleManager.GetMethod("GetTargetStringFromBuildTarget", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+
+            return (bool)isPlatformSupportLoaded.Invoke(null,new object[] {(string)getTargetStringFromBuildTarget.Invoke(null, new object[] {target})});
+        }
 
         private static async Task WaitUntilAsync(Func<bool> predicate, int sleep = 50)
         {
