@@ -29,12 +29,14 @@ RUN npm ci --only=production
 ########################## END OF BUILD STAGE ##########################
 
 # unityhub://2021.3.20f1/577897200b8b
-FROM unityci/hub:ubuntu-latest
-RUN unity-hub install --version 2021.3.20f1 --changeset 577897200b8b --module webgl
-RUN unity-hub install-modules --version 2021.3.20f1 --module windows-mono
-RUN unity-hub install-modules --version 2021.3.20f1 --module mac-mono
+ENV UNITY_VERSION 2021.3.20f1
+ENV UNITY_CHANGESET 577897200b8b
+ENV UNITY_PATH /opt/unity/editors/${UNITY_VERSION}
 
-ENV UNITY_PATH /opt/unity/editors/2021.3.20f1
+FROM unityci/hub:ubuntu-latest
+RUN unity-hub install --version ${UNITY_VERSION} --changeset ${UNITY_CHANGESET} --module webgl
+RUN unity-hub install-modules --version ${UNITY_VERSION} --module windows-mono
+RUN unity-hub install-modules --version ${UNITY_VERSION} --module mac-mono
 
 RUN    apt-get update -y \
     && apt-get -y install \
@@ -66,8 +68,6 @@ RUN mkdir -p /root/.cache/unity3d && mkdir -p /root/.local/share/unity3d/Unity/
 COPY /asset-bundle-converter /asset-bundle-converter
 COPY --from=builderenv /consumer-server /consumer-server
 COPY --from=builderenv /tini /tini
-
-RUN cd /consumer-server
 
 # Please _DO NOT_ use a custom ENTRYPOINT because it may prevent signals
 # (i.e. SIGTERM) to reach the service
