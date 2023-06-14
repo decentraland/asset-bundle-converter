@@ -13,8 +13,9 @@ public class LODGenerator
     private DCLExportGLTF dclExportGltf;
     private GameObject og;
 
+    // I have to create a task because I cant wait for the GLTF exporter to finish in a
+    // PiXYZ postprocess rule method. Therefore, I manually control the CompletionSource.
     private TaskCompletionSource<bool> tcs;
-
 
     public Task Generate(GameObject originalGameobject)
     {
@@ -57,6 +58,8 @@ public class LODGenerator
         ruleSet.OnCompleted += () =>
         {
             ruleSet.OnCompleted = null;
+            // If the export task, from the last rule, is null; it means that it completed with never getting there.
+            // So the rule set has failed
             if (dclExportGltf.exportTask == null)
                 tcs.SetException(new Exception($"[Lod Generator] LOD RuleSet failed for {ruleSet.name}"));
             else
@@ -77,10 +80,13 @@ public class LODGenerator
 
     private IEnumerator AnalyzeResult()
     {
-        yield return Dispatcher.GoMainThread();
         currentRuleSet++;
         if (currentRuleSet < rulesSet.Length)
+        {
+            // We have to wait for the main thread to run get the unity gameobject
+            yield return Dispatcher.GoMainThread();
             SetupRuleSet(rulesSet[currentRuleSet]);
+        }
         else
             tcs.SetResult(true);
     }
