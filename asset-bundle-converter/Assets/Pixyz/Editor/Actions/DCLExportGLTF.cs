@@ -9,7 +9,6 @@ public class DCLExportGLTF : PixyzFunction {
 
 
     public int lodLevel = 1;
-    public string path;
 
     public override int id { get { return 598339869;} }
     public override string menuPathRuleEngine { get { return "DCL/Export GLTF";} }
@@ -18,24 +17,17 @@ public class DCLExportGLTF : PixyzFunction {
 
     public Task<bool> exportTask;
 
-
     protected override void postProcess()
     {
         var exportSettings = new ExportSettings {
             Format = GltfFormat.Binary,
-            FileConflictResolution = FileConflictResolution.Abort,
-            // Export everything except cameras or animation
-            ComponentMask = ~(ComponentType.Camera | ComponentType.Animation),
-            // Boost light intensities
-            LightIntensityFactor = 100f,
+            FileConflictResolution = FileConflictResolution.Overwrite,
         };
-
 
         var export = new GameObjectExport(exportSettings);
         // Add a scene
         export.AddScene(_input.ToArray());
         string pathToSave = $"{Application.dataPath}/_Downloaded/{_input[0].gameObject.name}_lod{lodLevel}/{_input[0].gameObject.name}_lod{lodLevel}.glb";
-        //string pathToSave = (path ?? Application.dataPath) + $"/_Downloaded/{_input[0].gameObject.name}_lod{lodLevel}/{_input[0].gameObject.name}_lod{lodLevel}.glb";
         // Async glTF export
         exportTask = export.SaveToFileAndDispose(pathToSave);
         DeleteAllInput();

@@ -303,22 +303,41 @@ namespace DCL.ABConverter
                             ForceExit((int)ErrorCodes.GLTFAST_CRITICAL_ERROR);
                             break;
                         }
-
-                        await lodGenerator.Generate(importedGameObject, Path.GetDirectoryName(gltfUrl));
-                        for (int i = 1; i < 3; i++)
-                        {
-                            string assetHash = $"{gltf.AssetPath.hash}_lod{i}";
-                            string pathToSave = $"{Application.dataPath}/_Downloaded/{assetHash}/{gltf.AssetPath.hash}_lod{i}.glb";
-                            env.gltfImporter.ConfigureImporter(Path.GetDirectoryName(pathToSave), contentMap, gltf.AssetPath.fileRootPath, gltf.AssetPath.hash, settings.shaderType);
-                            env.directory.MarkFolderForAssetBundleBuild(pathToSave, assetHash);
-                        }
-                    } else
+                    }
+                    else
                     {
                         var message = $"Failed to get the gltf importer for {gltfUrl} \nPath: {relativePath}";
                         log.Error(message);
                         errorReporter.ReportError(message, settings);
                         ForceExit((int)ErrorCodes.GLTF_IMPORTER_NOT_FOUND);
                         continue;
+                    }
+
+                    if (settings.createLODs)
+                    {
+                        GameObject importedGameObject = env.assetDatabase.LoadAssetAtPath<GameObject>(relativePath);
+                        if (importedGameObject.GetComponentsInChildren<SkinnedMeshRenderer>().Any())
+                            log.Exception($"[Lod Generator] Trying to make a lod for gameobject {importedGameObject.name} which contains a SkinnedMeshRenderer. This is not supported");
+                        else
+                        {
+                            log.Verbose($"[Lod Generator] Starting lod generation for {importedGameObject.name}");
+                            try
+                            {
+                                await lodGenerator.Generate(importedGameObject);
+                                for (int i = 1; i < 3; i++)
+                                {
+                                    string assetHash = $"{gltf.AssetPath.hash}_lod{i}";
+                                    string pathToSave = $"{Application.dataPath}/_Downloaded/{assetHash}/{gltf.AssetPath.hash}_lod{i}.glb";
+                                    env.gltfImporter.ConfigureImporter(Path.GetDirectoryName(pathToSave), null, "", "", ShaderType.Dcl);
+                                    env.directory.MarkFolderForAssetBundleBuild(pathToSave, assetHash);
+                                }
+                            }
+                            catch (Exception e)
+                            {
+                                log.Exception($"[Lod Generator] Lod creation failed for {importedGameObject.name} with message {e.ToString()}");
+                                continue;
+                            }
+                        }
                     }
 
                     if ((!settings.createAssetBundle || !settings.visualTest) && settings.placeOnScene)
@@ -853,17 +872,6 @@ namespace DCL.ABConverter
                 string finalKey = useHash ? Utils.EnsureStartWithSlash(assetPath.hashPath) : Utils.EnsureStartWithSlash(assetPath.filePath);
                 finalKey = finalKey.ToLower();
                 contentTable[finalKey] = relativeFinalPath;
-
-                //TODO: Leaving this as a check. Will be removed before merging
-                /*if (finalKey.Contains(".glb"))
-                {
-                    for (int i = 1; i < 3; i++)
-                    {
-                        string newKey = finalKey.Replace(".glb", $"_lod{i}.glb");
-                        contentTable[newKey] = contentTable[finalKey].Replace(".glb", $"_lod{i}.glb");
-                    }
-                }*/
-
             }
         }
 

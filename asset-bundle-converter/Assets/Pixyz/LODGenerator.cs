@@ -1,27 +1,23 @@
 using System;
 using System.Collections;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.PixyzPlugin4Unity.RuleEngine;
 using UnityEngine;
+using UnityEngine.PixyzCommons.Utilities;
 
 public class LODGenerator
 {
     private int currentRuleSet = 0;
     private RuleSet[] rulesSet;
+    private DCLExportGLTF dclExportGltf;
+    private GameObject og;
+
     private TaskCompletionSource<bool> tcs;
 
-    private string persistentPath;
-    private DCLExportGLTF dclExportGltf;
-    private DCLSetupExport dclSetupExportGltf;
-    private GameObject og;
-    private int exportComplete;
 
-
-    public Task Generate(GameObject originalGameobject, string persistingPath)
+    public Task Generate(GameObject originalGameobject)
     {
-        this.persistentPath = persistingPath;
         tcs = new TaskCompletionSource<bool>();
         this.og = originalGameobject;
         rulesSet = new RuleSet[]
@@ -31,13 +27,13 @@ public class LODGenerator
         };
 
         currentRuleSet = 0;
-        exportComplete = 0;
         if (rulesSet.Length > 1)
-            RunRuleSet(rulesSet[currentRuleSet]);
+            SetupRuleSet(rulesSet[currentRuleSet]);
+
         return tcs.Task;
     }
 
-    private void RunRuleSet(RuleSet ruleSet)
+    private void SetupRuleSet(RuleSet ruleSet)
     {
         GameObject gameobjectToLod = GameObject.Instantiate(og);
         gameobjectToLod.name = og.name;
@@ -48,33 +44,44 @@ public class LODGenerator
             {
                 getGameObjectAction.gameobject = gameobjectToLod;
             }
-            if (ruleBlock.action is DCLExportGLTF exportGLTFAction)
+            if (ruleBlock.action is DCLExportGLTF exportGltfAction)
             {
-                dclExportGltf = exportGLTFAction;
-                exportGLTFAction.lodLevel = currentRuleSet+1;
+                dclExportGltf = exportGltfAction;
+                exportGltfAction.lodLevel = currentRuleSet+1;
             }
-            if (ruleBlock.action is DCLSetupExport setupExportAction)
+            if (ruleBlock.action is DCLSetupMaterialsAndTextures setupExportAction)
             {
-                dclSetupExportGltf = setupExportAction;
                 setupExportAction.lodLevel = currentRuleSet+1;
             }
         }
-        ruleSet.run();
         ruleSet.OnCompleted += () =>
         {
-            dclExportGltf.exportTask.ContinueWith(OnExportComplete);
-            currentRuleSet++;
-
-            if (currentRuleSet < rulesSet.Length)
-                RunRuleSet(rulesSet[currentRuleSet]);
             ruleSet.OnCompleted = null;
+            if (dclExportGltf.exportTask == null)
+                tcs.SetException(new Exception($"[Lod Generator] LOD RuleSet failed for {ruleSet.name}"));
+            else
+                // We need the export task to finish, and I cant make the RuleSet async without modifying Action.cs.
+                // Therefore, we need to wait for the export task to finish.
+                dclExportGltf.exportTask.ContinueWith(OnExportComplete);
         };
+        ruleSet.run();
     }
 
-    private void OnExportComplete(Task<bool> Obj)
+    private void OnExportComplete(Task<bool> result)
     {
-        exportComplete++;
-        if(exportComplete.Equals(2))
+        if (result.Result)
+            Dispatcher.StartCoroutine(AnalyzeResult());
+        else
+            tcs.SetException(new Exception("[Lod Generator] GLTF export failed"));
+    }
+
+    private IEnumerator AnalyzeResult()
+    {
+        yield return Dispatcher.GoMainThread();
+        currentRuleSet++;
+        if (currentRuleSet < rulesSet.Length)
+            SetupRuleSet(rulesSet[currentRuleSet]);
+        else
             tcs.SetResult(true);
     }
 }
