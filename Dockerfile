@@ -31,12 +31,13 @@ RUN npm ci --only=production
 # unityhub://2021.3.20f1/577897200b8b
 ENV UNITY_VERSION 2021.3.20f1
 ENV UNITY_CHANGESET 577897200b8b
-ENV UNITY_PATH /opt/unity/editors/${UNITY_VERSION}
 
 FROM unityci/hub:ubuntu-latest
 RUN unity-hub install --version ${UNITY_VERSION} --changeset ${UNITY_CHANGESET} --module webgl
 RUN unity-hub install-modules --version ${UNITY_VERSION} --module windows-mono
 RUN unity-hub install-modules --version ${UNITY_VERSION} --module mac-mono
+
+ENV UNITY_PATH /opt/unity/editors/${UNITY_VERSION}
 
 RUN    apt-get update -y \
     && apt-get -y install \
