@@ -21,6 +21,7 @@ if [ $UNITY_EXIT_CODE -eq 0 ]; then
   echo "Run succeeded, no failures occurred";
 elif [ $UNITY_EXIT_CODE -eq 2 ]; then
   echo "Run succeeded, some tests failed";
+  cat "$PROJECT_PATH/editmode-logs.txt"
 elif [ $UNITY_EXIT_CODE -eq 3 ]; then
   echo "Run failure (other failure)";
 else
