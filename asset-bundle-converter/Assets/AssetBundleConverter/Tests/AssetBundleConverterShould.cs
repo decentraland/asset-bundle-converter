@@ -19,8 +19,9 @@ namespace AssetBundleConverter.Tests
     [Category("EditModeCI")]
     public class AssetBundleConverterShould
     {
-        private const string DOWNLOAD_FOLDER = "Assets/_Downloaded/";
-        private const string EXAMPLE_AB_PATH = "Example/AssetBundle/";
+        private static readonly char separator = Path.DirectorySeparatorChar;
+        private static readonly string DOWNLOAD_FOLDER = $"Assets{separator}_Downloaded{separator}";
+        private static readonly string EXAMPLE_AB_PATH = $"Example{separator}AssetBundle{separator}";
         private const string EXAMPLE_BASE_URL = "dlc.baseurl/contents/";
 
         private IFile file;
@@ -49,6 +50,8 @@ namespace AssetBundleConverter.Tests
             editor = Substitute.For<IEditor>();
             errorReporter = Substitute.For<IErrorReporter>();
             abLogger = Substitute.For<IABLogger>();
+
+            editor.SwitchBuildTarget(BuildTarget.WebGL).Returns(true);
 
             //Any error or exit code should make any test fail unless its explicitly required
             errorReporter.When(x => x.ReportError(Arg.Any<string>(), Arg.Any<ClientSettings>())).Do(x => throw new Exception("There was an unexpected error: " + x.Arg<string>()));
@@ -204,7 +207,7 @@ namespace AssetBundleConverter.Tests
 
             await converter.ConvertAsync(new List<ContentServerUtils.MappingPair> { exampleAsset });
 
-            var texturePath = $"{DOWNLOAD_FOLDER}{hash}/Textures/{textureName}.png";
+            var texturePath = $"{DOWNLOAD_FOLDER}{hash}{separator}Textures{separator}{textureName}.png";
 
             // Ensure that the texture was written correctly
             file.Received().WriteAllBytes(texturePath, Arg.Any<byte[]>());
