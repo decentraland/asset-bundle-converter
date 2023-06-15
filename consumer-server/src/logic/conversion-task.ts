@@ -50,7 +50,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
   const logger = components.logs.getLogger(`ExecuteConversion`)
 
   if (await shouldIgnoreConversion(components, entityId)) {
-    logger.info("Ignoring conversion", { entityId, contentServerUrl })
+    logger.info("Ignoring conversion", { entityId, contentServerUrl, $AB_VERSION })
     return
   }
 
