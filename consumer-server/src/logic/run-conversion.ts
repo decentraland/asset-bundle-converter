@@ -36,7 +36,8 @@ export async function runConversion(
     '-sceneCid', options.entityId,
     '-logFile', options.logFile,
     '-baseUrl', contentServerUrl,
-    '-output', options.outDirectory
+    '-output', options.outDirectory,
+    '-buildTarget', 'webgl'
   ]
 
   const { exitPromise, child } = execCommand(logger, childArg0, childArguments, process.env as any, options.projectPath)

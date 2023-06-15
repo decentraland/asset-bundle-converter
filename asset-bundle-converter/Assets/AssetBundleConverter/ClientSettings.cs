@@ -1,5 +1,6 @@
 using DCL.ABConverter;
 using System.IO;
+using UnityEditor;
 using UnityEngine;
 
 namespace AssetBundleConverter
@@ -60,6 +61,7 @@ namespace AssetBundleConverter
             public Vector2Int? targetPointer = null;
             public bool reportErrors = false;
             public bool isWearable;
+            public BuildTarget buildTarget;
 
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 

@@ -10,6 +10,13 @@ using Random = System.Random;
 
 namespace AssetBundleConverter
 {
+    public enum SupportedBuildTarget
+    {
+        WebGL,
+        Windows,
+        Osx,
+    }
+
     public class AssetBundleSceneConversionWindow : EditorWindow
     {
         private static AssetBundleSceneConversionWindow thisWindow;
@@ -40,12 +47,13 @@ namespace AssetBundleConverter
         private bool visualTest = false;
         private bool clearDownloads = true;
         private bool createAssetBundle = true;
-        private bool verbose = true;
+        private bool verbose = false;
         private int currentTab = 0;
         private int currentUrlOption = 0;
         private int xCoord = -110;
         private int yCoord = -110;
         private ShaderType shader = ShaderType.Dcl;
+        private SupportedBuildTarget buildTarget = SupportedBuildTarget.WebGL;
 
         private ClientSettings clientSettings;
         private bool showDebugOptions;
@@ -66,15 +74,14 @@ namespace AssetBundleConverter
         private void OnGUI()
         {
             GUILayout.Space(5);
+            buildTarget = (SupportedBuildTarget)EditorGUILayout.EnumPopup("Build Target", buildTarget);
+
             visualTest = EditorGUILayout.Toggle("Visual Test", visualTest);
             placeOnScene = EditorGUILayout.Toggle("Place on Scene", placeOnScene);
             createAssetBundle = EditorGUILayout.Toggle("Create Asset Bundle", createAssetBundle);
             clearDownloads = EditorGUILayout.Toggle("Clear Downloads", clearDownloads);
             showDebugOptions = EditorGUILayout.Toggle("Show debug options", showDebugOptions);
-            /*endPoint = EditorGUILayout.TextField("Content endpoint", endPoint);
-            tld = (ContentServerUtils.ApiTLD)EditorGUILayout.EnumPopup("Top level domain", tld);*/
-            shader = (ShaderType)EditorGUILayout.EnumPopup("Shader Type", shader);
-            verbose = EditorGUILayout.Toggle("Verbose", verbose);
+
             RenderUrlEditor();
 
             GUILayout.Space(5);
@@ -169,6 +176,8 @@ namespace AssetBundleConverter
             debugEntity = EditorGUILayout.TextField("Import only hash", debugEntity);
             stripShaders = EditorGUILayout.Toggle("Strip Shaders", stripShaders);
             importGltf = EditorGUILayout.Toggle("Import GLTFs", importGltf);
+            shader = (ShaderType)EditorGUILayout.EnumPopup("Shader Type", shader);
+            verbose = EditorGUILayout.Toggle("Verbose", verbose);
             GUI.color = defaultColor;
             GUILayout.Space(5);
         }
@@ -273,7 +282,8 @@ namespace AssetBundleConverter
                 stripShaders = stripShaders,
                 importGltf = importGltf,
                 placeOnScene = placeOnScene,
-                verbose = verbose
+                verbose = verbose,
+                buildTarget = GetBuildTarget()
             };
         }
 
@@ -281,6 +291,17 @@ namespace AssetBundleConverter
         {
             if (createAssetBundle && state.lastErrorCode == DCL.ABConverter.AssetBundleConverter.ErrorCodes.SUCCESS)
                 EditorUtility.RevealInFinder(Config.ASSET_BUNDLES_PATH_ROOT);
+        }
+
+        private BuildTarget GetBuildTarget()
+        {
+            return buildTarget switch
+                   {
+                       SupportedBuildTarget.WebGL => BuildTarget.WebGL,
+                       SupportedBuildTarget.Windows => BuildTarget.StandaloneWindows64,
+                       SupportedBuildTarget.Osx => BuildTarget.StandaloneOSX,
+                       _ => BuildTarget.WebGL
+                   };
         }
     }
 }

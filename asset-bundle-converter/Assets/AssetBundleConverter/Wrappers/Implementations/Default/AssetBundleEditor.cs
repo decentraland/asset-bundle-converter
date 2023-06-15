@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEditor;
+using UnityEditor.Compilation;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 
@@ -49,13 +50,16 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
         public bool SwitchBuildTarget(BuildTarget targetPlatform)
         {
+            if (EditorUserBuildSettings.activeBuildTarget == targetPlatform)
+                return true;
+
             if (!Application.isBatchMode && !IsBuildTargetSupported(targetPlatform))
             {
                 Debug.LogError($"Build target {targetPlatform} is not installed!");
                 return false;
             }
 
-            Debug.Log("Switching to " + targetPlatform);
+            Debug.Log("Build target is: " + targetPlatform);
             switch (targetPlatform)
             {
                 case BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX:

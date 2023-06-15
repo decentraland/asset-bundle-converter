@@ -167,9 +167,7 @@ namespace DCL.ABConverter
             {
                 bundlesStartupTime = EditorApplication.timeSinceStartup;
 
-                MarkAndBuildForTarget(BuildTarget.WebGL);
-                MarkAndBuildForTarget(BuildTarget.StandaloneWindows64);
-                //MarkAndBuildForTarget(BuildTarget.StandaloneOSX);
+                MarkAndBuildForTarget(settings.buildTarget);
 
                 bundlesEndTime = EditorApplication.timeSinceStartup;
             }
@@ -194,8 +192,6 @@ namespace DCL.ABConverter
 
             // Fourth step: we mark all assets for bundling
             MarkAllAssetBundles(assetsToMark, target);
-
-            //MarkShaderAssetBundle();
 
             // Fifth step: we build the Asset Bundles
             env.assetDatabase.Refresh();

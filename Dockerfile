@@ -28,15 +28,7 @@ RUN npm ci --only=production
 
 ########################## END OF BUILD STAGE ##########################
 
-FROM unityci/hub:ubuntu-latest
-
-# unityhub://2021.3.20f1/577897200b8b
-ENV UNITY_VERSION 2021.3.20f1
-ENV UNITY_CHANGESET 577897200b8b
-ENV UNITY_PATH /opt/unity/editors/${UNITY_VERSION}
-
-RUN unity-hub install --version ${UNITY_VERSION} --changeset ${UNITY_CHANGESET} --module webgl
-RUN unity-hub install-modules --version ${UNITY_VERSION} --module windows-mono
+FROM unityci/editor:2021.3.22f1-webgl-1
 
 RUN    apt-get update -y \
     && apt-get -y install \

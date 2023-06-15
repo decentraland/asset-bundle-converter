@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using UnityEditor;
 using UnityEngine;
 using Environment = AssetBundleConverter.Environment;
 
@@ -256,6 +257,9 @@ namespace DCL.ABConverter
 
             if (Utils.ParseOption(commandLineArgs, Config.CLI_KEEP_BUNDLES_SYNTAX, 0, out _))
                 settings.deleteDownloadPathAfterFinished = false;
+
+            // Target is setup during the commandline argument -buildTarget
+            settings.buildTarget = EditorUserBuildSettings.activeBuildTarget;
         }
 
         /// <summary>
