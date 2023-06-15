@@ -56,9 +56,11 @@ public class LODGenerator
         }
         catch (Exception e)
         {
+            GameObject.DestroyImmediate(gameobjectToLod);
             tcs.SetException(new Exception($"[Lod Generator] LOD RuleSet failed for {ruleSet.name}"));
         }
     }
+
 
     private void ExportComplete(bool exportSuccesfull)
     {
