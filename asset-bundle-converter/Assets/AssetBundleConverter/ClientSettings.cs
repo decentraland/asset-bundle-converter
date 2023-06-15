@@ -61,7 +61,7 @@ namespace AssetBundleConverter
             public Vector2Int? targetPointer = null;
             public bool reportErrors = false;
             public bool isWearable;
-            public BuildTarget buildTarget;
+            public BuildTarget buildTarget = BuildTarget.WebGL;
 
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 
