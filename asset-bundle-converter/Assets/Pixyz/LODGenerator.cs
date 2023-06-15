@@ -1,10 +1,8 @@
 using System;
-using System.Collections;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.PixyzPlugin4Unity.RuleEngine;
 using UnityEngine;
-using UnityEngine.PixyzCommons.Utilities;
 
 public class LODGenerator
 {
@@ -30,7 +28,6 @@ public class LODGenerator
         currentRuleSet = 0;
         if (rulesSet.Length > 1)
             SetupRuleSet(rulesSet[currentRuleSet]);
-
         return tcs.Task;
     }
 
@@ -42,52 +39,39 @@ public class LODGenerator
         foreach (RuleBlock ruleBlock in ruleSet.getRule(0).Blocks)
         {
             if (ruleBlock.action is GetGameObject getGameObjectAction)
-            {
                 getGameObjectAction.gameobject = gameobjectToLod;
-            }
             if (ruleBlock.action is DCLExportGLTF exportGltfAction)
             {
                 dclExportGltf = exportGltfAction;
                 exportGltfAction.lodLevel = currentRuleSet+1;
+                exportGltfAction.OnExportCompleted += ExportComplete;
             }
             if (ruleBlock.action is DCLSetupMaterialsAndTextures setupExportAction)
-            {
                 setupExportAction.lodLevel = currentRuleSet+1;
-            }
         }
-        ruleSet.OnCompleted += () =>
+
+        try
         {
-            ruleSet.OnCompleted = null;
-            // If the export task, from the last rule, is null; it means that it completed with never getting there.
-            // So the rule set has failed
-            if (dclExportGltf.exportTask == null)
-                tcs.SetException(new Exception($"[Lod Generator] LOD RuleSet failed for {ruleSet.name}"));
-            else
-                // We need the export task to finish, and I cant make the RuleSet async without modifying Action.cs.
-                // Therefore, we need to wait for the export task to finish.
-                dclExportGltf.exportTask.ContinueWith(OnExportComplete);
-        };
-        ruleSet.run();
+            ruleSet.run();
+        }
+        catch (Exception e)
+        {
+            tcs.SetException(new Exception($"[Lod Generator] LOD RuleSet failed for {ruleSet.name}"));
+        }
     }
 
-    private void OnExportComplete(Task<bool> result)
+    private void ExportComplete(bool exportSuccesfull)
     {
-        if (result.Result)
-            Dispatcher.StartCoroutine(AnalyzeResult());
-        else
+        dclExportGltf.OnExportCompleted -= ExportComplete;
+
+        if (!exportSuccesfull)
             tcs.SetException(new Exception("[Lod Generator] GLTF export failed"));
-    }
 
-    private IEnumerator AnalyzeResult()
-    {
         currentRuleSet++;
         if (currentRuleSet < rulesSet.Length)
-        {
-            // We have to wait for the main thread to run get the unity gameobject
-            yield return Dispatcher.GoMainThread();
             SetupRuleSet(rulesSet[currentRuleSet]);
-        }
         else
             tcs.SetResult(true);
     }
+
 }
