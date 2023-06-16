@@ -1,8 +1,10 @@
+using DCL;
 using System;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.PixyzPlugin4Unity.RuleEngine;
 using UnityEngine;
+using UnityEngine.PixyzPlugin4Unity.Utilities;
 
 public class LODGenerator
 {
@@ -10,15 +12,17 @@ public class LODGenerator
     private RuleSet[] rulesSet;
     private DCLExportGLTF dclExportGltf;
     private GameObject og;
+    private IABLogger logger;
 
     // I have to create a task because I cant wait for the GLTF exporter to finish in a
     // PiXYZ postprocess rule method. Therefore, I manually control the CompletionSource.
     private TaskCompletionSource<bool> tcs;
 
-    public Task Generate(GameObject originalGameobject)
+    public Task<bool> Generate(GameObject originalGameobject, IABLogger logger)
     {
         tcs = new TaskCompletionSource<bool>();
         this.og = originalGameobject;
+        this.logger = logger;
         rulesSet = new RuleSet[]
         {
             AssetDatabase.LoadAssetAtPath<RuleSet>("Assets/Pixyz/RuleSets/CombineAndDecimate_50.asset"),
@@ -50,24 +54,34 @@ public class LODGenerator
                 setupExportAction.lodLevel = currentRuleSet+1;
         }
 
-        try
-        {
-            ruleSet.run();
-        }
-        catch (Exception e)
-        {
-            GameObject.DestroyImmediate(gameobjectToLod);
-            tcs.SetException(new Exception($"[Lod Generator] LOD RuleSet failed for {ruleSet.name}"));
-        }
+        // This is a hack to capture if there was an exception thrown inside the PiXYZ plugin.
+        // Since we cant modify tha code and can not wrap it inside a try/catch (because its already catch in the plugin)
+        // this is the only way I found to catch an exception.
+        ruleSet.progressed += RuleSetProgressed();
+        ruleSet.run();
     }
 
+    private ProgressHandler RuleSetProgressed()
+    {
+        return (float progress, string message) =>
+        {
+            if (progress.Equals(1f) && message.Equals("Failure!"))
+            {
+                tcs.SetResult(false);
+                dclExportGltf.OnExportCompleted -= ExportComplete;
+            }
+        };
+    }
 
     private void ExportComplete(bool exportSuccesfull)
     {
         dclExportGltf.OnExportCompleted -= ExportComplete;
 
         if (!exportSuccesfull)
-            tcs.SetException(new Exception("[Lod Generator] GLTF export failed"));
+        {
+            logger.Exception($"[Lod Generator] GLTF export failed");
+            tcs.SetResult(false);
+        }
 
         currentRuleSet++;
         if (currentRuleSet < rulesSet.Length)

@@ -321,9 +321,9 @@ namespace DCL.ABConverter
                         else
                         {
                             log.Verbose($"[Lod Generator] Starting lod generation for {importedGameObject.name}");
-                            try
+                            bool lodGenerationResult = await lodGenerator.Generate(importedGameObject, log);
+                            if (lodGenerationResult)
                             {
-                                await lodGenerator.Generate(importedGameObject);
                                 for (int i = 1; i < 3; i++)
                                 {
                                     string assetHash = $"{gltf.AssetPath.hash}_lod{i}";
@@ -332,11 +332,8 @@ namespace DCL.ABConverter
                                     env.directory.MarkFolderForAssetBundleBuild(pathToSave, assetHash);
                                 }
                             }
-                            catch (Exception e)
-                            {
-                                log.Exception($"[Lod Generator] Lod creation failed for {importedGameObject.name} with message {e.ToString()}");
-                                continue;
-                            }
+                            else
+                                log.Exception($"[Lod Generator] Lod creation failed for {importedGameObject.name}");
                         }
                     }
 
@@ -832,7 +829,7 @@ namespace DCL.ABConverter
         public async Task CreateDownloadTask(AssetPath assetPath)
         {
             DownloadHandler downloadHandler = null;
-            string url = settings.baseUrl + assetPath.hash;
+            string url = settings.baseUrl + "content/contents/" + assetPath.unHash;
 
             try
             {
