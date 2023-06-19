@@ -241,12 +241,20 @@ namespace DCL.ABConverter
             IWebRequest webRequest)
         {
 
-            string url = "https://peer.decentraland.org/content/entities/active/";
+            string url = "https://sdk-test-scenes.decentraland.zone/content/entities/active";
             DownloadHandler downloadHandler = null;
 
             try
             {
-                var pointersData = new PointersData { pointers = new[] { $"{entityPointer.x},{entityPointer.y}" } };
+                List<string> pointersToDo = new List<string>();
+                for (int i = 70; i < 100; i++)
+                {
+                    for (int j = -20; j < 0; j++)
+                    {
+                        pointersToDo.Add($"{i},{j}");
+                    }
+                }
+                var pointersData = new PointersData { pointers = pointersToDo.ToArray() };
                 var json = JsonUtility.ToJson(pointersData);
                 downloadHandler = await webRequest.Post(url, json);
             }
