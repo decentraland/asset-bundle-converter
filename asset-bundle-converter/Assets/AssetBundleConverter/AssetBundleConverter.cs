@@ -829,8 +829,9 @@ namespace DCL.ABConverter
         public async Task CreateDownloadTask(AssetPath assetPath)
         {
             DownloadHandler downloadHandler = null;
-            string url = settings.baseUrl + "content/contents/" + assetPath.unHash;
-
+            //string url = settings.baseUrl + "content/contents/" + assetPath.hash;
+            string url = settings.baseUrl  + assetPath.hash;
+            
             try
             {
                 downloadHandler = await env.webRequest.Get(url);
