@@ -9,7 +9,9 @@ namespace DCL.ABConverter
     {
         public readonly string basePath;
         public readonly ContentServerUtils.MappingPair pair;
-        public string hash => pair.hash;
+        public string hash => pair.hash.GetHashCode().ToString();
+        public string unHash => pair.hash;
+
         public string filePath => pair.file;
         public readonly string fileName;
         public readonly string hashPath;
@@ -41,7 +43,7 @@ namespace DCL.ABConverter
             get
             {
                 string fileExt = Path.GetExtension(pair.file);
-                return assetFolder + pair.hash + fileExt;
+                return assetFolder + pair.hash.GetHashCode() + fileExt;
             }
         }
 
@@ -50,7 +52,7 @@ namespace DCL.ABConverter
             get
             {
                 char dash = Path.DirectorySeparatorChar;
-                return basePath + pair.hash + dash;
+                return basePath + pair.hash.GetHashCode() + dash;
             }
         }
 

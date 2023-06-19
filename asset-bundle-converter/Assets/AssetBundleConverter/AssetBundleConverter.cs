@@ -829,8 +829,8 @@ namespace DCL.ABConverter
         public async Task CreateDownloadTask(AssetPath assetPath)
         {
             DownloadHandler downloadHandler = null;
-            //string url = settings.baseUrl + "content/contents/" + assetPath.hash;
-            string url = settings.baseUrl  + assetPath.hash;
+            string url = "https://sdk-test-scenes.decentraland.zone/content/contents/" + assetPath.unHash;
+            //string url = settings.baseUrl  + assetPath.hash;
             
             try
             {
