@@ -15,14 +15,14 @@ namespace AssetBundleConverter
         private static AssetBundleSceneConversionWindow thisWindow;
 
         private const string TAB_SCENE = "Entity by ID";
-        private const string TAB_PARCELS = "Entity by Pointer";
+        private const string TAB_PARCELS = "Goerli plaza (Old Realm)";
         private const string TAB_RANDOM = "Random Pointer";
         private const string TAB_WEARABLES_COLLECTION = "Wearables Collection";
         private const string TEST_BATCHMODE = "Test Batchmode";
         private const string URL_PEERS = "Peers";
         private const string URL_WORLDS = "Worlds";
         private const string CUSTOM = "Custom";
-        private const string GOERLI_PLAZA = "Goerli Plaza";
+        private const string GOERLI_PLAZA = "Goerli Plaza (New Realm)";
 
 
         private const string PEERS_URL = "https://peer.decentraland.org/content/contents/";
@@ -41,7 +41,7 @@ namespace AssetBundleConverter
         private bool placeOnScene = true;
         private bool visualTest = false;
         private bool clearDownloads = true;
-        private bool createLODs = true;
+        private bool createLODs = false;
         private bool createAssetBundle = false;
         private bool verbose = true;
         private int currentTab = 0;
@@ -272,8 +272,8 @@ namespace AssetBundleConverter
 
         private async Task RenderEntityByPointerAsync()
         {
-            xCoord = EditorGUILayout.IntField("X", xCoord);
-            yCoord = EditorGUILayout.IntField("Y", yCoord);
+            //xCoord = EditorGUILayout.IntField("X", xCoord);
+            //yCoord = EditorGUILayout.IntField("Y", yCoord);
 
             GUILayout.FlexibleSpace();
 
