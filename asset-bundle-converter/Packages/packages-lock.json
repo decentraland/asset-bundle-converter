@@ -98,13 +98,13 @@
       "url": "https://packages.unity.com"
     },
     "com.unity.pixyz.api-win": {
-      "version": "file:C:/Users/juanm/Downloads/pixyz_plugin_2022.1.1.4/com.unity.pixyz.api-win-1.0.1.tgz",
+      "version": "file:../../pixyz_plugin_2022.1.1.4/com.unity.pixyz.api-win-1.0.1.tgz",
       "depth": 0,
       "source": "local-tarball",
       "dependencies": {}
     },
     "com.unity.pixyz.commons": {
-      "version": "file:C:/Users/juanm/Downloads/pixyz_plugin_2022.1.1.4/com.unity.pixyz.commons-1.0.2.tgz",
+      "version": "file:../../pixyz_plugin_2022.1.1.4/com.unity.pixyz.commons-1.0.2.tgz",
       "depth": 0,
       "source": "local-tarball",
       "dependencies": {
@@ -112,7 +112,7 @@
       }
     },
     "com.unity.pixyz.plugin4unity": {
-      "version": "file:C:/Users/juanm/Downloads/pixyz_plugin_2022.1.1.4/com.unity.pixyz.plugin4unity-1.0.1.tgz",
+      "version": "file:../../pixyz_plugin_2022.1.1.4/com.unity.pixyz.plugin4unity-1.0.1.tgz",
       "depth": 0,
       "source": "local-tarball",
       "dependencies": {
