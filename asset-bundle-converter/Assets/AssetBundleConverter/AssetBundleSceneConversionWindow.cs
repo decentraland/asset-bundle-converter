@@ -282,9 +282,11 @@ namespace AssetBundleConverter
                 SetupSettings();
                 var targetPosition = new Vector2Int(xCoord, yCoord);
                 clientSettings.targetPointer = targetPosition;
+                clientSettings.baseUrl = "https://sdk-test-scenes.decentraland.zone/content/contents/";
 
                 try
                 {
+                    
                     var state = await SceneClient.ConvertEntityByPointer(clientSettings);
                     OnConversionEnd(state);
                     Debug.Log($"Finished! with state {state.step} {state.lastErrorCode}");
