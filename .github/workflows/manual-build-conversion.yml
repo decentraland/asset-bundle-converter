@@ -20,6 +20,14 @@ on:
 
 jobs:
   main:
+    strategy:
+      matrix:
+        include:
+        - unity_docker_image: unityci/editor:2021.3.22f1-webgl-1
+          service_name: asset-bundle-converter
+        - unity_docker_image: unityci/editor:2021.3.22f1-windows-mono-1
+          service_name: asset-bundle-converter-windows
+
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -38,12 +46,13 @@ jobs:
         with:
           context: .
           push: false
-          tags: quay.io/decentraland/asset-bundle-converter:next,quay.io/decentraland/asset-bundle-converter:${{ github.sha }}
+          tags: quay.io/decentraland/${{ matrix.service_name }}:next,quay.io/decentraland/${{ matrix.service_name }}:${{ github.sha }}
           load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
             COMMIT_HASH=${{ github.sha }}
+            UNITY_DOCKER_IMAGE=${{ matrix.unity_docker_image }}
 
       - name: Create $(pwd)/tmp/Unity/Unity_lic.ulf
         run: mkdir -p $(pwd)/tmp/Unity && echo "$UNITY_2021_ULF" > $(pwd)/tmp/Unity/Unity_lic.ulf
@@ -56,7 +65,7 @@ jobs:
           docker run \
             -v $(pwd)/artifact:/artifact \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
-            quay.io/decentraland/asset-bundle-converter${{ inputs.build && format('@{0}', steps.docker_build.outputs.digest) || ':next' }} \
+            quay.io/decentraland/${{ matrix.service_name }}${{ inputs.build && format('@{0}', steps.docker_build.outputs.digest) || ':next' }} \
               node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js \
                 --baseUrl ${{ inputs.baseUrl }} \
                 --pointer ${{ inputs.pointer }} \

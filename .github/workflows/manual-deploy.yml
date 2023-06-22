@@ -19,6 +19,12 @@ on:
 
 jobs:
   deployment:
+    strategy:
+      matrix:
+        include:
+        - service_name: asset-bundle-converter
+        - service_name: asset-bundle-converter-windows
+
     if: ${{ inputs.deployment-environment }}
     name: "Deploy to: ${{ inputs.deployment-environment }}"
     runs-on: ubuntu-latest
@@ -28,7 +34,7 @@ jobs:
         id: deploy
         uses: decentraland/dcl-deploy-action@main
         with:
-          dockerImage: "quay.io/decentraland/asset-bundle-converter:${{ inputs.tag }}"
-          serviceName: "asset-bundle-converter"
+          dockerImage: "quay.io/decentraland/${{ matrix.service_name }}:${{ inputs.tag }}"
+          serviceName: "${{ matrix.service_name }}"
           env: ${{ inputs.deployment-environment }}
           token: ${{ secrets.GITHUB_TOKEN }}
