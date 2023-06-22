@@ -1,4 +1,5 @@
 ARG RUN
+ARG UNITY_DOCKER_IMAGE
 
 FROM node:18 as builderenv
 
@@ -28,7 +29,7 @@ RUN npm ci --only=production
 
 ########################## END OF BUILD STAGE ##########################
 
-FROM unityci/editor:2021.3.22f1-webgl-1
+FROM $UNITY_DOCKER_IMAGE
 
 RUN    apt-get update -y \
     && apt-get -y install \
