@@ -25,8 +25,8 @@ jobs:
         include:
         - unity_docker_image: unityci/editor:2021.3.22f1-webgl-1
           service_name: asset-bundle-converter
-        - unity_docker_image: unityci/editor:2021.3.22f1-windows-mono-1
-          service_name: asset-bundle-converter-windows
+#        - unity_docker_image: unityci/editor:2021.3.22f1-windows-mono-1
+#          service_name: asset-bundle-converter-windows
 
     runs-on: ubuntu-latest
     steps:

@@ -23,7 +23,7 @@ jobs:
       matrix:
         include:
         - service_name: asset-bundle-converter
-        - service_name: asset-bundle-converter-windows
+#        - service_name: asset-bundle-converter-windows
 
     if: ${{ inputs.deployment-environment }}
     name: "Deploy to: ${{ inputs.deployment-environment }}"
