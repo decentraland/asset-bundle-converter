@@ -37,6 +37,7 @@ export async function runConversion(
     '-logFile', options.logFile,
     '-baseUrl', contentServerUrl,
     '-output', options.outDirectory,
+    '-buildTarget', 'webgl' // todo: replace with matrix's build target
   ]
 
   const { exitPromise, child } = execCommand(logger, childArg0, childArguments, process.env as any, options.projectPath)
