@@ -15,7 +15,8 @@ export async function runConversion(
     contentServerUrl: string,
     unityPath: string,
     projectPath: string,
-    timeout: number
+    timeout: number,
+    buildTarget: string,
   }
 ) {
   // touch logfile and create folders
@@ -29,6 +30,7 @@ export async function runConversion(
   contentServerUrl += 'contents/'
 
   const childArg0 = `${options.unityPath}/Editor/Unity`
+
   const childArguments: string[] = [
     '-projectPath', options.projectPath,
     '-batchmode',
@@ -37,7 +39,7 @@ export async function runConversion(
     '-logFile', options.logFile,
     '-baseUrl', contentServerUrl,
     '-output', options.outDirectory,
-    '-buildTarget', 'webgl' // todo: replace with matrix's build target
+    '-buildTarget', options.buildTarget
   ]
 
   const { exitPromise, child } = execCommand(logger, childArg0, childArguments, process.env as any, options.projectPath)

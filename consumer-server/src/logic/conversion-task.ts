@@ -47,6 +47,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
   const $PROJECT_PATH = await components.config.requireString('PROJECT_PATH')
+  const $BUILD_TARGET = await components.config.requireString('BUILD_TARGET')
   const logger = components.logs.getLogger(`ExecuteConversion`)
 
   if (await shouldIgnoreConversion(components, entityId)) {
@@ -64,7 +65,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
 
   const defaultLoggerMetadata = { entityId, contentServerUrl, version: $AB_VERSION, logFile }
 
-  logger.info("Starting conversion", defaultLoggerMetadata)
+  logger.info("Starting conversion for " + $BUILD_TARGET, defaultLoggerMetadata)
 
   try {
     const exitCode = await runConversion(logger, components, {
@@ -74,7 +75,8 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
       outDirectory,
       projectPath: $PROJECT_PATH,
       unityPath: $UNITY_PATH,
-      timeout: 60 * 60 * 1000 // 60min
+      timeout: 60 * 60 * 1000, // 60min,
+      buildTarget: $BUILD_TARGET,
     })
 
     components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })

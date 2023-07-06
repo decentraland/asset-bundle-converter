@@ -23,7 +23,9 @@ jobs:
       matrix:
         include:
         - service_name: asset-bundle-converter
-#        - service_name: asset-bundle-converter-windows
+          build_target: webgl
+        - service_name: asset-bundle-converter-windows
+          build_target: windows
 
     if: ${{ inputs.deployment-environment }}
     name: "Deploy to: ${{ inputs.deployment-environment }}"
