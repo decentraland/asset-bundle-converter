@@ -31,6 +31,7 @@ const OUT_DIRECTORY = args['--outDir']!
 const LOG_FILE = args['--logFile']!
 const $UNITY_PATH = process.env.UNITY_PATH!
 const $PROJECT_PATH = process.env.PROJECT_PATH!
+const $BUILD_TARGET = process.env.BUILD_TARGET || 'webgl'
 
 if (!$UNITY_PATH) throw new Error(`UNITY_PATH env var is not defined`)
 if (!$PROJECT_PATH) throw new Error(`PROJECT_PATH env var is not defined`)
@@ -74,7 +75,8 @@ async function main() {
       outDirectory: OUT_DIRECTORY,
       unityPath: $UNITY_PATH,
       projectPath: $PROJECT_PATH,
-      timeout: 30 * 60 * 1000 // 30min
+      timeout: 30 * 60 * 1000, // 30min
+      buildTarget: $BUILD_TARGET
     })
 
     if (exitCode) throw new Error('ExitCode=' + exitCode)
