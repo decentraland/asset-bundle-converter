@@ -42,7 +42,8 @@ namespace DCL.ABConverter
             GLTFAST_CRITICAL_ERROR,
             GLTF_IMPORTER_NOT_FOUND,
             EMBED_MATERIAL_FAILURE,
-            DOWNLOAD_FAILED
+            DOWNLOAD_FAILED,
+            INVALID_PLATFORM,
         }
 
         public class State
@@ -115,6 +116,18 @@ namespace DCL.ABConverter
         /// <returns></returns>
         public async Task ConvertAsync(IReadOnlyList<ContentServerUtils.MappingPair> rawContents)
         {
+            if (settings.buildTarget is not (BuildTarget.WebGL or BuildTarget.StandaloneWindows64))
+            {
+                var message = $"Build target is invalid: {settings.buildTarget.ToString()}";
+                log.Error(message);
+                errorReporter.ReportError(message, settings);
+                ForceExit((int)ErrorCodes.INVALID_PLATFORM);
+                return;
+            }
+
+            if (!env.editor.SwitchBuildTarget(settings.buildTarget))
+                return;
+
             log.verboseEnabled = settings.verbose;
             await env.editor.LoadVisualTestSceneAsync();
 
@@ -187,8 +200,6 @@ namespace DCL.ABConverter
 
         private void MarkAndBuildForTarget(BuildTarget target)
         {
-            if (!env.editor.SwitchBuildTarget(target))
-                return;
 
             // Fourth step: we mark all assets for bundling
             MarkAllAssetBundles(assetsToMark, target);
