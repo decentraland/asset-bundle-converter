@@ -46,6 +46,20 @@ async function shouldIgnoreConversion(components: Pick<AppComponents, 'logs' | '
   return false
 }
 
+export function getUnityBuildTarget(target: string): string | undefined
+{
+  switch (target) {
+    case 'webgl':
+      return 'WebGL'
+    case 'windows':
+      return 'StandaloneWindows64'
+    case 'mac':
+      return 'StandaloneOSX'
+    default:
+      return undefined
+  }
+}
+
 export async function executeConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, entityId: string, contentServerUrl: string) {
   const $AB_VERSION = await components.config.requireString('AB_VERSION')
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
@@ -53,6 +67,12 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
   const $PROJECT_PATH = await components.config.requireString('PROJECT_PATH')
   const $BUILD_TARGET = await components.config.requireString('BUILD_TARGET')
   const logger = components.logs.getLogger(`ExecuteConversion`)
+
+  const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
+  if (!unityBuildTarget) {
+    logger.info("Invalid build target " + $BUILD_TARGET)
+    return    
+  }
 
   if (await shouldIgnoreConversion(components, entityId, $BUILD_TARGET)) {
     logger.info("Ignoring conversion", { entityId, contentServerUrl, $AB_VERSION })
@@ -80,7 +100,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
       projectPath: $PROJECT_PATH,
       unityPath: $UNITY_PATH,
       timeout: 60 * 60 * 1000, // 60min,
-      buildTarget: $BUILD_TARGET,
+      unityBuildTarget: unityBuildTarget,
     })
 
     components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })

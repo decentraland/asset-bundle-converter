@@ -17,6 +17,7 @@ import { dirname } from 'path'
 import { createMetricsComponent } from '@well-known-components/metrics'
 import { metricDeclarations } from './metrics'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
+import { getUnityBuildTarget } from './logic/conversion-task'
 
 const args = arg({
   '--pointer': String,
@@ -67,6 +68,12 @@ async function main() {
   const child = spawn('tail', ['-f', LOG_FILE]);
   child.stdout.pipe(process.stdout)
 
+  const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
+  if (!unityBuildTarget) {
+    logger.info("Invalid build target " + $BUILD_TARGET)
+    return    
+  }
+
   try {
     const exitCode = await runConversion(logger, { metrics }, {
       logFile: LOG_FILE,
@@ -76,7 +83,7 @@ async function main() {
       unityPath: $UNITY_PATH,
       projectPath: $PROJECT_PATH,
       timeout: 30 * 60 * 1000, // 30min
-      buildTarget: $BUILD_TARGET
+      unityBuildTarget: unityBuildTarget
     })
 
     if (exitCode) throw new Error('ExitCode=' + exitCode)

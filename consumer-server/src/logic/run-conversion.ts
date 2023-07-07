@@ -16,7 +16,7 @@ export async function runConversion(
     unityPath: string,
     projectPath: string,
     timeout: number,
-    buildTarget: string,
+    unityBuildTarget: string,
   }
 ) {
   // touch logfile and create folders
@@ -39,7 +39,7 @@ export async function runConversion(
     '-logFile', options.logFile,
     '-baseUrl', contentServerUrl,
     '-output', options.outDirectory,
-    '-buildTarget', options.buildTarget
+    '-buildTarget', options.unityBuildTarget
   ]
 
   const { exitPromise, child } = execCommand(logger, childArg0, childArguments, process.env as any, options.projectPath)
