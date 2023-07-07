@@ -32,10 +32,11 @@ const OUT_DIRECTORY = args['--outDir']!
 const LOG_FILE = args['--logFile']!
 const $UNITY_PATH = process.env.UNITY_PATH!
 const $PROJECT_PATH = process.env.PROJECT_PATH!
-const $BUILD_TARGET = process.env.BUILD_TARGET || 'webgl'
+const $BUILD_TARGET = process.env.BUILD_TARGET!
 
 if (!$UNITY_PATH) throw new Error(`UNITY_PATH env var is not defined`)
 if (!$PROJECT_PATH) throw new Error(`PROJECT_PATH env var is not defined`)
+if (!$BUILD_TARGET) throw new Error(`BUILD_TARGET env var is not defined`)
 if (!LOG_FILE) throw new Error(`--logFile was not provided`)
 if (!OUT_DIRECTORY) throw new Error(`--outDir was not provided`)
 
