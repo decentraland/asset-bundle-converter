@@ -17,15 +17,19 @@ async function getCdnBucket(components: Pick<AppComponents, 'config'>) {
   return await components.config.getString('CDN_BUCKET') || 'CDN_BUCKET'
 }
 
-function manifestKeyForEntity(entityId: string) {
-  return `manifest/${entityId}.json`
+function manifestKeyForEntity(entityId: string, target: string | undefined) {
+  if (target && target !== 'webgl') {
+    return `manifest/${entityId}_${target}.json`
+  } else {
+    return `manifest/${entityId}.json`
+  }
 }
 
 // returns true if the asset was converted and uploaded with the same version of the converter
-async function shouldIgnoreConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, entityId: string): Promise<boolean> {
+async function shouldIgnoreConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, entityId: string, target: string | undefined): Promise<boolean> {
   const $AB_VERSION = await components.config.requireString('AB_VERSION')
   const cdnBucket = await getCdnBucket(components)
-  const manifestFile = manifestKeyForEntity(entityId)
+  const manifestFile = manifestKeyForEntity(entityId, target)
 
   try {
     const obj = await (components.cdnS3.getObject({ Bucket: cdnBucket, Key: manifestFile, }).promise())
@@ -50,13 +54,13 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
   const $BUILD_TARGET = await components.config.requireString('BUILD_TARGET')
   const logger = components.logs.getLogger(`ExecuteConversion`)
 
-  if (await shouldIgnoreConversion(components, entityId)) {
+  if (await shouldIgnoreConversion(components, entityId, $BUILD_TARGET)) {
     logger.info("Ignoring conversion", { entityId, contentServerUrl, $AB_VERSION })
     return
   }
 
   const cdnBucket = await getCdnBucket(components)
-  const manifestFile = manifestKeyForEntity(entityId)
+  const manifestFile = manifestKeyForEntity(entityId, $BUILD_TARGET)
   const failedManifestFile = `manifest/${entityId}_failed.json`
 
   const logFile = `/tmp/asset_bundles_logs/export_log_${entityId}_${Date.now()}.txt`
