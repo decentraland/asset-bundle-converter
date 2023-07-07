@@ -1,5 +1,6 @@
 ARG RUN
 ARG UNITY_DOCKER_IMAGE
+ARG BUILD_TARGET
 
 FROM node:18 as builderenv
 
@@ -52,6 +53,7 @@ ENV AB_VERSION v7
 ENV NODE_ENV production
 ENV PROJECT_PATH /asset-bundle-converter
 ENV DEBIAN_FRONTEND=noninteractive
+ENV BUILD_TARGET=$BUILD_TARGET
 
 WORKDIR /consumer-server
 

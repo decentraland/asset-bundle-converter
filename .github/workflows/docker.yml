@@ -45,6 +45,7 @@ jobs:
           build-args: |
             COMMIT_HASH=${{ github.sha }}
             UNITY_DOCKER_IMAGE=${{ matrix.unity_docker_image }}
+            BUILD_TARGET=${{ matrix.build_target }}
 
 
       - name: Create $(pwd)/tmp/Unity/Unity_lic.ulf
