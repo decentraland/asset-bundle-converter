@@ -10,10 +10,10 @@ jobs:
         include:
         - unity_docker_image: unityci/editor:2021.3.22f1-webgl-1
           service_name: asset-bundle-converter
-          build_target: webgl
+          platform_target: webgl
         - unity_docker_image: unityci/editor:2021.3.22f1-windows-mono-1
           service_name: asset-bundle-converter-windows
-          build_target: windows
+          platform_target: windows
 
     runs-on: ubuntu-latest
     steps:
@@ -45,7 +45,7 @@ jobs:
           build-args: |
             COMMIT_HASH=${{ github.sha }}
             UNITY_DOCKER_IMAGE=${{ matrix.unity_docker_image }}
-            BUILD_TARGET=${{ matrix.build_target }}
+            PLATFORM_TARGET=${{ matrix.platform_target }}
 
 
       - name: Create $(pwd)/tmp/Unity/Unity_lic.ulf

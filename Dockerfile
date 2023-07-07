@@ -1,6 +1,5 @@
 ARG RUN
 ARG UNITY_DOCKER_IMAGE
-ARG BUILD_TARGET
 
 FROM node:18 as builderenv
 
@@ -52,6 +51,9 @@ ENV AB_VERSION v7
 # NODE_ENV is used to configure some runtime options, like JSON logger
 ENV NODE_ENV production
 ENV PROJECT_PATH /asset-bundle-converter
+
+ARG PLATFORM_TARGET
+ENV BUILD_TARGET=$PLATFORM_TARGET
 ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /consumer-server
