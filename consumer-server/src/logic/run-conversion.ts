@@ -27,7 +27,11 @@ export async function runConversion(
   // normalize content server URL
   let contentServerUrl = options.contentServerUrl
   if (!contentServerUrl.endsWith('/')) contentServerUrl += '/'
-  contentServerUrl += 'contents/'
+
+  // TODO: Temporal hack, we need to standardize this
+  if (contentServerUrl !== 'https://sdk-team-cdn.decentraland.org/ipfs/') {
+    contentServerUrl += 'contents/'
+  }
 
   const childArg0 = `${options.unityPath}/Editor/Unity`
 
