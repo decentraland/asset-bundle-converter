@@ -57,6 +57,36 @@ namespace DCL.ABConverter
         }
     }
 
+    public static class PlatformUtils
+    {
+
+        public static BuildTarget currentTarget;
+
+        public static string GetPlatform()
+        {
+            if (currentTarget == BuildTarget.StandaloneWindows64)
+                return "_windows";
+            if (currentTarget == BuildTarget.StandaloneOSX)
+                return "_osx";
+            if (Application.platform == RuntimePlatform.LinuxPlayer)
+                return "_linux";
+
+            return ""; //Means we are in WebGL, no extra parameters needed
+        }
+
+        //This method removes the platform from the path, since they are absolute in the downloaded project
+        public static string RemovePlatform(string pathToRemovePlatform)
+        {
+            string currentPlatform = GetPlatform();
+
+            if (string.IsNullOrEmpty(currentPlatform))
+                return pathToRemovePlatform;
+
+            string updatedPath = pathToRemovePlatform.Replace(currentPlatform, "");
+            return updatedPath;
+        }
+    }
+
     public static class PathUtils
     {
         /// <summary>

@@ -98,6 +98,7 @@ namespace DCL.ABConverter
         {
             this.settings = settings;
             this.env = env;
+            PlatformUtils.currentTarget = settings.buildTarget;
 
             errorReporter = env.errorReporter;
             if (this.settings.reportErrors)
@@ -407,7 +408,7 @@ namespace DCL.ABConverter
                 var shader = newMaterial.shader;
 
                 if (settings.stripShaders)
-                    env.assetDatabase.MarkAssetBundle(env.assetDatabase, shader, shader.name + "_IGNORE");
+                    env.assetDatabase.MarkAssetBundle(env.assetDatabase, shader, shader.name + "_IGNORE" + PlatformUtils.GetPlatform());
 
                 var textureProperties = GetTextureProperties(shader);
 
@@ -625,12 +626,7 @@ namespace DCL.ABConverter
                 if (assetPath == null) continue;
 
                 if (assetPath.finalPath.EndsWith(".bin")) continue;
-                string assetBundleName = assetPath.hash;
-
-                if (target == BuildTarget.StandaloneWindows64)
-                    assetBundleName += "_windows";
-                else if (target == BuildTarget.StandaloneOSX)
-                    assetBundleName += "_osx";
+                string assetBundleName = assetPath.hash + PlatformUtils.GetPlatform();
 
                 env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, assetBundleName);
             }
