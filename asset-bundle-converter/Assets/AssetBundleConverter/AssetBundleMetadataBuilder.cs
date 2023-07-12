@@ -28,7 +28,7 @@ namespace DCL.ABConverter
 
                 if (deps.Length > 0)
                 {
-                    deps = deps.Where(s => !s.EndsWith("_IGNORE")).ToArray();
+                    deps = deps.Where(s => !s.Contains("_IGNORE")).ToArray();
 
                     metadata.dependencies = deps.Select(x =>
                                                  {
@@ -43,7 +43,7 @@ namespace DCL.ABConverter
                 string json = JsonUtility.ToJson(metadata);
                 string assetHashName = assetBundles[i];
 
-                hashLowercaseToHashProper.TryGetValue(assetBundles[i], out assetHashName);
+                hashLowercaseToHashProper.TryGetValue(PlatformUtils.RemovePlatform(assetBundles[i]), out assetHashName);
 
                 if (!string.IsNullOrEmpty(assetHashName)) { file.WriteAllText(path + $"/{assetHashName}/metadata.json", json); }
             }
