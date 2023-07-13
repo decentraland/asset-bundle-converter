@@ -60,7 +60,7 @@ export function getUnityBuildTarget(target: string): string | undefined
   }
 }
 
-export async function executeConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, entityId: string, contentServerUrl: string) {
+export async function executeConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, entityId: string, contentServerUrl: string, force: boolean | undefined) {
   const $AB_VERSION = await components.config.requireString('AB_VERSION')
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
@@ -74,9 +74,13 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
     return    
   }
 
-  if (await shouldIgnoreConversion(components, entityId, $BUILD_TARGET)) {
-    logger.info("Ignoring conversion", { entityId, contentServerUrl, $AB_VERSION })
-    return
+  if (!force) {
+    if (await shouldIgnoreConversion(components, entityId, $BUILD_TARGET)) {
+      logger.info("Ignoring conversion", { entityId, contentServerUrl, $AB_VERSION })
+      return
+    }
+  } else {
+    logger.info("Forcing conversion", { entityId, contentServerUrl, $AB_VERSION })
   }
 
   const cdnBucket = await getCdnBucket(components)
