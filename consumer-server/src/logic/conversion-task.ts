@@ -26,8 +26,7 @@ function manifestKeyForEntity(entityId: string, target: string | undefined) {
 }
 
 // returns true if the asset was converted and uploaded with the same version of the converter
-async function shouldIgnoreConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, entityId: string, target: string | undefined): Promise<boolean> {
-  const $AB_VERSION = await components.config.requireString('AB_VERSION')
+async function shouldIgnoreConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, $AB_VERSION: string, entityId: string, target: string | undefined): Promise<boolean> {
   const cdnBucket = await getCdnBucket(components)
   const manifestFile = manifestKeyForEntity(entityId, target)
 
@@ -61,11 +60,13 @@ export function getUnityBuildTarget(target: string): string | undefined
 }
 
 export async function executeConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, entityId: string, contentServerUrl: string, force: boolean | undefined) {
-  const $AB_VERSION = await components.config.requireString('AB_VERSION')
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
   const $PROJECT_PATH = await components.config.requireString('PROJECT_PATH')
   const $BUILD_TARGET = await components.config.requireString('BUILD_TARGET')
+
+  const abVersionEnvName = $BUILD_TARGET === 'windows' ? 'AB_VERSION_WINDOWS' : 'AB_VERSION'
+  const $AB_VERSION = await components.config.requireString(abVersionEnvName)
   const logger = components.logs.getLogger(`ExecuteConversion`)
 
   const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
@@ -75,7 +76,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
   }
 
   if (!force) {
-    if (await shouldIgnoreConversion(components, entityId, $BUILD_TARGET)) {
+    if (await shouldIgnoreConversion(components, entityId, $AB_VERSION, $BUILD_TARGET)) {
       logger.info("Ignoring conversion", { entityId, contentServerUrl, $AB_VERSION })
       return
     }
