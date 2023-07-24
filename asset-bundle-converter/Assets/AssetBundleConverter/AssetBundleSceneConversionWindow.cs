@@ -26,6 +26,7 @@ namespace AssetBundleConverter
         private const string TAB_RANDOM = "Random Pointer";
         private const string TAB_WEARABLES_COLLECTION = "Wearables Collection";
         private const string TEST_BATCHMODE = "Test Batchmode";
+        private const string EMPTY_SCENES = "Empty Scenes";
         private const string URL_PEERS = "Peers";
         private const string URL_WORLDS = "Worlds";
         private const string CUSTOM = "Custom";
@@ -33,12 +34,13 @@ namespace AssetBundleConverter
         private const string PEERS_URL = "https://peer.decentraland.org/content/contents/";
         private const string WORLDS_URL = "https://worlds-content-server.decentraland.org/contents/";
 
-        private readonly string[] tabs = { TAB_SCENE, TAB_PARCELS, TAB_RANDOM, TAB_WEARABLES_COLLECTION, TEST_BATCHMODE };
+        private readonly string[] tabs = { TAB_SCENE, TAB_PARCELS, TAB_RANDOM, TAB_WEARABLES_COLLECTION, TEST_BATCHMODE, EMPTY_SCENES };
         private readonly string[] urlOptions = { URL_PEERS, URL_WORLDS, CUSTOM };
 
         private string entityId = "QmYy2TMDEfag99yZV4ZdpjievYUfdQgBVfFHKCDAge3zQi";
         private string wearablesCollectionId = "urn:decentraland:off-chain:base-avatars";
         private string debugEntity = "bafkreib66ufmbowp4ee2u3kdu6t52kouie7kd7tfrlv3l5kejz6yjcaq5i";
+        private string mappingName = "../mappings.json";
         private string batchBaseUrl = "";
         private string batchSceneId = "";
         private string batchModeParams = "";
@@ -110,6 +112,9 @@ namespace AssetBundleConverter
                         break;
                     case 4:
                         RenderTestBatchmode();
+                        break;
+                    case 5:
+                        RenderEmptyScenesAsync();
                         break;
                 }
             }
@@ -196,6 +201,26 @@ namespace AssetBundleConverter
                 try
                 {
                     var state = await SceneClient.ConvertEntityById(clientSettings);
+                    OnConversionEnd(state);
+                }
+                catch (Exception e) { Debug.LogException(e); }
+            }
+        }
+
+        private async Task RenderEmptyScenesAsync()
+        {
+            mappingName = EditorGUILayout.TextField("Mapping Name", mappingName);
+
+            GUILayout.FlexibleSpace();
+
+            if (GUILayout.Button("Start"))
+            {
+                SetupSettings();
+                clientSettings.targetHash = mappingName;
+
+                try
+                {
+                    var state = await SceneClient.ConvertEmptyScenesByMapping(clientSettings);
                     OnConversionEnd(state);
                 }
                 catch (Exception e) { Debug.LogException(e); }

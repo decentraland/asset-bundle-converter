@@ -295,6 +295,31 @@ namespace DCL.ABConverter
             return parcelInfoApiData.ToArray();
         }
 
+        public static async Task<MappingPair[]> GetEmptyScenesMappingAsync(string mappingName, ClientSettings settings, IWebRequest webRequest)
+        {
+            var url = $"{settings.baseUrl}{mappingName}";
+            Debug.Log(url);
+
+            DownloadHandler downloadHandler;
+
+            try
+            {
+                downloadHandler = await webRequest.Get(url);
+            }
+            catch (HttpRequestException e)
+            {
+                var exception = new Exception($"Request error! Empty Scenes Mapping couldn't be fetched from {url}! -- {e.Message}");
+                Debug.LogException(exception);
+                Exit((int)AssetBundleConverter.ErrorCodes.UNEXPECTED_ERROR);
+                return null;
+            }
+
+            Dictionary<string, MappingPair[]> mapping = JsonConvert.DeserializeObject<Dictionary<string, MappingPair[]>>(downloadHandler.text);
+            downloadHandler.Dispose();
+
+            return mapping.SelectMany(kvp => kvp.Value).ToArray();
+        }
+
         public static async Task<EntityMappingsDTO[]> GetEntityMappingsAsync(string entityId, ClientSettings settings, IWebRequest webRequest)
         {
             var url = $"{settings.baseUrl}{entityId}";
