@@ -278,6 +278,12 @@ namespace DCL.ABConverter
             return await ConvertEntitiesToAssetBundles(mappings.ToArray(), settings);
         }
 
+        public static async Task<AssetBundleConverter.State> ConvertEmptyScenesByMapping(ClientSettings settings)
+        {
+            EnsureEnvironment();
+            return await ConvertEntitiesToAssetBundles(await Utils.GetEmptyScenesMappingAsync(settings.targetHash, settings, env.webRequest), settings);
+        }
+
         /// <summary>
         /// Dump a single decentraland entity given a pointer
         /// </summary>
