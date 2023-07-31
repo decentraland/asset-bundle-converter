@@ -9,6 +9,7 @@
     "com.unity.ide.vscode": "1.2.5",
     "com.unity.meshopt.decompress": "0.1.0-preview.5",
     "com.unity.render-pipelines.universal": "12.1.10",
+    "com.unity.scriptablebuildpipeline": "1.20.2",
     "com.unity.test-framework": "2.0.1-pre.18",
     "io.sentry.unity": "https://github.com/getsentry/unity.git",
     "net.tnrd.nsubstitute": "https://github.com/decentraland/Unity3D-NSubstitute.git",

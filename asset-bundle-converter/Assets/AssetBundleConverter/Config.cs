@@ -21,6 +21,7 @@ namespace DCL.ABConverter
 
         internal const string CLI_SET_CUSTOM_OUTPUT_ROOT_PATH = "output";
         internal const string CLI_SET_SHADER_TARGET = "shaderTarget";
+        internal const string CLI_BUILD_PIPELINE = "pipeline";
 
         internal static string ASSET_BUNDLE_FOLDER_NAME = "AssetBundles";
         internal static string DOWNLOADED_FOLDER_NAME = "_Downloaded";
