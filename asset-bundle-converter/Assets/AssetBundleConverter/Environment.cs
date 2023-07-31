@@ -16,8 +16,10 @@ namespace AssetBundleConverter
         public readonly IGltfImporter gltfImporter;
         public readonly IABLogger logger;
         public readonly IErrorReporter errorReporter;
+        public readonly BuildPipelineType buildPipelineType;
 
-        internal Environment(IDirectory directory, IFile file, IAssetDatabase assetDatabase, IWebRequest webRequest, IBuildPipeline buildPipeline, IGltfImporter gltfImporter, IEditor editor, IABLogger logger, IErrorReporter errorReporter)
+        internal Environment(IDirectory directory, IFile file, IAssetDatabase assetDatabase, IWebRequest webRequest, IBuildPipeline buildPipeline, IGltfImporter gltfImporter, IEditor editor, IABLogger logger, IErrorReporter errorReporter,
+            BuildPipelineType buildPipelineType)
         {
             this.directory = directory;
             this.file = file;
@@ -28,6 +30,7 @@ namespace AssetBundleConverter
             this.editor = editor;
             this.logger = logger;
             this.errorReporter = errorReporter;
+            this.buildPipelineType = buildPipelineType;
         }
 
         public static Environment CreateWithDefaultImplementations(BuildPipelineType buildPipelineType)
@@ -46,7 +49,8 @@ namespace AssetBundleConverter
                 gltfImporter: new DefaultGltfImporter(database),
                 editor: new AssetBundleEditor(),
                 logger: new ABLogger("[AssetBundleConverter]"),
-                errorReporter: new ErrorReporter()
+                errorReporter: new ErrorReporter(),
+                buildPipelineType: buildPipelineType
             );
         }
     }

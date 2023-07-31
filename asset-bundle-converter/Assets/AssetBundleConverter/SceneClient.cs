@@ -16,8 +16,13 @@ namespace DCL.ABConverter
 
         public static Environment env;
 
-        public static Environment EnsureEnvironment(BuildPipelineType buildPipeline) =>
-            env ??= Environment.CreateWithDefaultImplementations(buildPipeline);
+        public static Environment EnsureEnvironment(BuildPipelineType buildPipeline)
+        {
+            if (env == null || env.buildPipelineType != buildPipeline)
+                env = Environment.CreateWithDefaultImplementations(buildPipeline);
+
+            return env;
+        }
 
         /// <summary>
         /// Scenes conversion batch-mode entry point
