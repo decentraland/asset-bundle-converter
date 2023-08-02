@@ -249,12 +249,6 @@ namespace DCL.ABConverter
                                       };
             }
 
-            if (Utils.ParseOption(commandLineArgs, Config.CLI_BUILD_PIPELINE, 1, out string[] pipelineParam)
-                && Enum.TryParse(pipelineParam[0], true, out BuildPipelineType pipeline))
-            {
-                settings.BuildPipelineType = pipeline;
-            }
-
             if (Utils.ParseOption(commandLineArgs, Config.CLI_VERBOSE, 0, out _))
                 settings.verbose = true;
 
@@ -266,6 +260,8 @@ namespace DCL.ABConverter
 
             // Target is setup during the commandline argument -buildTarget
             settings.buildTarget = EditorUserBuildSettings.activeBuildTarget;
+
+            settings.BuildPipelineType = settings.buildTarget == BuildTarget.WebGL ? BuildPipelineType.Default : BuildPipelineType.Scriptable;
         }
 
         /// <summary>
