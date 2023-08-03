@@ -14,7 +14,7 @@ namespace AssetBundleConverter
     {
         WebGL,
         Windows,
-        Osx,
+        Mac,
     }
 
     public class AssetBundleSceneConversionWindow : EditorWindow
@@ -327,7 +327,7 @@ namespace AssetBundleConverter
                    {
                        SupportedBuildTarget.WebGL => BuildTarget.WebGL,
                        SupportedBuildTarget.Windows => BuildTarget.StandaloneWindows64,
-                       SupportedBuildTarget.Osx => BuildTarget.StandaloneOSX,
+                       SupportedBuildTarget.Mac => BuildTarget.StandaloneOSX,
                        _ => BuildTarget.WebGL
                    };
         }
