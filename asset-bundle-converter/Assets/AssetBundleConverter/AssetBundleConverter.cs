@@ -117,7 +117,7 @@ namespace DCL.ABConverter
         /// <returns></returns>
         public async Task ConvertAsync(IReadOnlyList<ContentServerUtils.MappingPair> rawContents)
         {
-            if (settings.buildTarget is not (BuildTarget.WebGL or BuildTarget.StandaloneWindows64))
+            if (settings.buildTarget is not (BuildTarget.WebGL or BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX))
             {
                 var message = $"Build target is invalid: {settings.buildTarget.ToString()}";
                 log.Error(message);
@@ -779,9 +779,9 @@ namespace DCL.ABConverter
                     return false;
 
                 List<Task> downloadTasks = new List<Task>();
-                downloadTasks.AddRange( gltfPaths.Select(CreateDownloadTask) );
-                downloadTasks.AddRange( bufferPaths.Select(CreateDownloadTask) );
-                downloadTasks.AddRange( texturePaths.Select(CreateDownloadTask) );
+                downloadTasks.AddRange(gltfPaths.Select(CreateDownloadTask));
+                downloadTasks.AddRange(bufferPaths.Select(CreateDownloadTask));
+                downloadTasks.AddRange(texturePaths.Select(CreateDownloadTask));
 
                 downloadStartupTime = EditorApplication.timeSinceStartup;
 
@@ -810,9 +810,13 @@ namespace DCL.ABConverter
 
                     assetsToMark.Add(ImportGltf(gltfPath));
                 }
+
                 nonGltfImportEndTime = EditorApplication.timeSinceStartup;
             }
-            catch (Exception e) { errorReporter.ReportException(new ConversionException(ConversionStep.Fetch, settings, e)); }
+            catch (Exception e)
+            {
+                errorReporter.ReportException(new ConversionException(ConversionStep.Fetch, settings, e));
+            }
 
             downloadedData = null;
 
@@ -823,6 +827,7 @@ namespace DCL.ABConverter
         {
             DownloadHandler downloadHandler = null;
             string url = settings.baseUrl + assetPath.hash;
+
 
             try
             {
