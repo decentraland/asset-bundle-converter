@@ -67,7 +67,7 @@ namespace DCL.ABConverter
             if (currentTarget == BuildTarget.StandaloneWindows64)
                 return "_windows";
             if (currentTarget == BuildTarget.StandaloneOSX)
-                return "_osx";
+                return "_mac";
             if (Application.platform == RuntimePlatform.LinuxPlayer)
                 return "_linux";
 
