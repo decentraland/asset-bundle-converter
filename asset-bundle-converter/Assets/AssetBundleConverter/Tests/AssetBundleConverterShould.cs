@@ -59,7 +59,7 @@ namespace AssetBundleConverter.Tests
             editor.When(x => x.Exit(Arg.Any<int>())).Do(x => ThrowIfExitCodeIsNotZero(x.Arg<int>()));
             editor.Delay(Arg.Any<TimeSpan>()).Returns(Task.CompletedTask);
 
-            environment = new Environment(directory, file, assetDatabase, webRequest, buildPipeline, gltfImporter, editor, abLogger, errorReporter);
+            environment = new Environment(directory, file, assetDatabase, webRequest, buildPipeline, gltfImporter, editor, abLogger, errorReporter, BuildPipelineType.Default);
 
             var clientSettings = new ClientSettings
             {

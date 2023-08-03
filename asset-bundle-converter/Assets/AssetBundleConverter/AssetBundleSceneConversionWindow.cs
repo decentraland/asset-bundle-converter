@@ -54,6 +54,7 @@ namespace AssetBundleConverter
         private int currentUrlOption = 0;
         private int xCoord = -110;
         private int yCoord = -110;
+        private BuildPipelineType buildPipelineType = BuildPipelineType.Scriptable;
         private ShaderType shader = ShaderType.Dcl;
         private SupportedBuildTarget buildTarget = SupportedBuildTarget.WebGL;
 
@@ -76,6 +77,7 @@ namespace AssetBundleConverter
         private void OnGUI()
         {
             GUILayout.Space(5);
+            buildPipelineType = (BuildPipelineType)EditorGUILayout.EnumPopup("Build Pipeline", buildPipelineType);
             buildTarget = (SupportedBuildTarget)EditorGUILayout.EnumPopup("Build Target", buildTarget);
 
             visualTest = EditorGUILayout.Toggle("Visual Test", visualTest);
@@ -308,7 +310,8 @@ namespace AssetBundleConverter
                 importGltf = importGltf,
                 placeOnScene = placeOnScene,
                 verbose = verbose,
-                buildTarget = GetBuildTarget()
+                buildTarget = GetBuildTarget(),
+                BuildPipelineType = buildPipelineType
             };
         }
 

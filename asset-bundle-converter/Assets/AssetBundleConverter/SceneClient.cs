@@ -13,12 +13,13 @@ namespace DCL.ABConverter
     public static class SceneClient
     {
         private static ABLogger log = new ABLogger("ABConverter.SceneClient");
+
         public static Environment env;
 
-        public static Environment EnsureEnvironment()
+        public static Environment EnsureEnvironment(BuildPipelineType buildPipeline)
         {
-            if (env == null)
-                env = Environment.CreateWithDefaultImplementations();
+            if (env == null || env.buildPipelineType != buildPipeline)
+                env = Environment.CreateWithDefaultImplementations(buildPipeline);
 
             return env;
         }
@@ -38,7 +39,6 @@ namespace DCL.ABConverter
                 Application.SetStackTraceLogType(LogType.Exception, StackTraceLogType.Full);
                 Application.SetStackTraceLogType(LogType.Assert, StackTraceLogType.Full);
 #endif
-                EnsureEnvironment();
                 ExportSceneToAssetBundles(System.Environment.GetCommandLineArgs());
             }
             catch (Exception e)
@@ -62,7 +62,6 @@ namespace DCL.ABConverter
                 Application.SetStackTraceLogType(LogType.Exception, StackTraceLogType.Full);
                 Application.SetStackTraceLogType(LogType.Assert, StackTraceLogType.Full);
 
-                EnsureEnvironment();
                 ExportWearablesCollectionToAssetBundles(System.Environment.GetCommandLineArgs());
             }
             catch (Exception e)
@@ -197,6 +196,7 @@ namespace DCL.ABConverter
                     return;
                 }
 
+                // TODO This branch does nothing as DumpWearablesCollectionRange is commented
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_BUILD_WEARABLES_COLLECTION_RANGE_START_SYNTAX, 1, out string[] firstCollectionIndex))
                 {
                     if (firstCollectionIndex == null || string.IsNullOrEmpty(firstCollectionIndex[0]))
@@ -260,6 +260,8 @@ namespace DCL.ABConverter
 
             // Target is setup during the commandline argument -buildTarget
             settings.buildTarget = EditorUserBuildSettings.activeBuildTarget;
+
+            settings.BuildPipelineType = settings.buildTarget == BuildTarget.WebGL ? BuildPipelineType.Default : BuildPipelineType.Scriptable;
         }
 
         /// <summary>
@@ -270,7 +272,7 @@ namespace DCL.ABConverter
         /// <returns>A state context object useful for tracking the conversion progress</returns>
         public static async Task<AssetBundleConverter.State> ConvertEntityById(ClientSettings settings)
         {
-            EnsureEnvironment();
+            EnsureEnvironment(settings.BuildPipelineType);
 
             var apiResponse = await Utils.GetEntityMappingsAsync(settings.targetHash, settings, env.webRequest);
             if (apiResponse == null) return GetUnexpectedResult();
@@ -280,7 +282,7 @@ namespace DCL.ABConverter
 
         public static async Task<AssetBundleConverter.State> ConvertEmptyScenesByMapping(ClientSettings settings)
         {
-            EnsureEnvironment();
+            EnsureEnvironment(settings.BuildPipelineType);
             return await ConvertEntitiesToAssetBundles(await Utils.GetEmptyScenesMappingAsync(settings.targetHash, settings, env.webRequest), settings);
         }
 
@@ -292,7 +294,7 @@ namespace DCL.ABConverter
         /// <returns>A state context object useful for tracking the conversion progress</returns>
         public static async Task<AssetBundleConverter.State> ConvertEntityByPointer(ClientSettings settings)
         {
-            EnsureEnvironment();
+            EnsureEnvironment(settings.BuildPipelineType);
 
             var apiResponse = await Utils.GetEntityMappings(settings.targetPointer.Value, settings, env.webRequest);
             if (apiResponse == null) return GetUnexpectedResult();
@@ -305,7 +307,7 @@ namespace DCL.ABConverter
 
         public static async Task<AssetBundleConverter.State> ConvertWearablesCollection(ClientSettings settings)
         {
-            EnsureEnvironment();
+            EnsureEnvironment(settings.BuildPipelineType);
 
             settings.isWearable = true;
 
@@ -331,7 +333,7 @@ namespace DCL.ABConverter
 
             log.Info(string.Join('\n',mappingPairs.Select(mp => mp.file)));
 
-            EnsureEnvironment();
+            EnsureEnvironment(settings.BuildPipelineType);
 
             var core = new AssetBundleConverter(env, settings);
             await core.ConvertAsync(mappingPairs);

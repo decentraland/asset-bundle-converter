@@ -11,6 +11,12 @@ namespace AssetBundleConverter
         GlTFast
     }
 
+    public enum BuildPipelineType
+    {
+        Default,
+        Scriptable
+    }
+
     public class ClientSettings
         {
             /// <summary>
@@ -62,6 +68,7 @@ namespace AssetBundleConverter
             public bool reportErrors = false;
             public bool isWearable;
             public BuildTarget buildTarget = BuildTarget.WebGL;
+            public BuildPipelineType BuildPipelineType = BuildPipelineType.Default;
 
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 
