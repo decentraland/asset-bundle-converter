@@ -42,7 +42,7 @@ jobs:
           context: .
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: quay.io/decentraland/${{ matrix.service_name }}:next,quay.io/decentraland/${{ matrix.service_name }}:${{ github.sha }}
-          #load: true
+          load: ${{ github.ref != 'refs/heads/main' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
