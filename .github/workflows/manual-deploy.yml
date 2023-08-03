@@ -26,6 +26,8 @@ jobs:
           build_target: webgl
         - service_name: asset-bundle-converter-windows
           build_target: windows
+        - service_name: asset-bundle-converter-mac
+          platform_target: mac
 
     if: ${{ inputs.deployment-environment }}
     name: "Deploy to: ${{ inputs.deployment-environment }}"

@@ -59,13 +59,27 @@ export function getUnityBuildTarget(target: string): string | undefined
   }
 }
 
+function getAbVersionEnvName(buildTarget: string)
+{
+  switch (buildTarget) {
+    case 'webgl':
+      return 'AB_VERSION'
+    case 'windows':
+      return 'AB_VERSION_WINDOWS'
+    case 'mac':
+      return 'AB_VERSION_MAC'
+    default:
+      throw "Invalid buildTarget"
+  }
+}
+
 export async function executeConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, entityId: string, contentServerUrl: string, force: boolean | undefined) {
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
   const $PROJECT_PATH = await components.config.requireString('PROJECT_PATH')
   const $BUILD_TARGET = await components.config.requireString('BUILD_TARGET')
 
-  const abVersionEnvName = $BUILD_TARGET === 'windows' ? 'AB_VERSION_WINDOWS' : 'AB_VERSION'
+  const abVersionEnvName = getAbVersionEnvName($BUILD_TARGET)
   const $AB_VERSION = await components.config.requireString(abVersionEnvName)
   const logger = components.logs.getLogger(`ExecuteConversion`)
 
