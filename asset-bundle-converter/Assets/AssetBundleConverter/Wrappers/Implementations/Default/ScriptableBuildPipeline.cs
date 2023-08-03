@@ -61,6 +61,8 @@ namespace DCL
             else
                 parameters.BundleCompression = BuildCompression.LZMA;
 
+            parameters.DisableVisibleSubAssetRepresentations = true;
+
             IBundleBuildResults results;
             ReturnCode exitCode = ContentPipeline.BuildAssetBundles(parameters, new BundleBuildContent(buildInput), out results);
 
