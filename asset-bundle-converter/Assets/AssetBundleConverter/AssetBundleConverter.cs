@@ -828,7 +828,6 @@ namespace DCL.ABConverter
             DownloadHandler downloadHandler = null;
             string url = settings.baseUrl + assetPath.hash;
 
-            Debug.Log("aaaa " + url);
 
             try
             {
