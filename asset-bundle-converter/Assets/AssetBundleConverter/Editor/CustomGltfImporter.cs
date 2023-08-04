@@ -45,7 +45,6 @@ namespace AssetBundleConverter.Editor
         private HashSet<Texture2D> metallics;
         private IEditorDownloadProvider downloadProvider;
 
-
         public void SetupCustomFileProvider(ContentMap[] contentMap, string fileRootPath, string hash)
         {
             this.hash = hash;
@@ -133,7 +132,7 @@ namespace AssetBundleConverter.Editor
 
         private List<Material> ReplaceMaterials(string folderName, Renderer[] renderers)
         {
-            List<Material> materials = new();
+            List<Material> materials = new ();
 
             for (var i = 0; i < m_Gltf.MaterialCount; i++)
             {
@@ -209,18 +208,16 @@ namespace AssetBundleConverter.Editor
                     if (importer is TextureImporter tImporter)
                     {
                         tImporter.isReadable = false;
-                        var isNormalMap = materialMaps.Any(m => m.IsNormalMap);
+                        bool isNormalMap = materialMaps.Any(m => m.IsNormalMap);
 
-                        if (isNormalMap)
+                        if (materialMaps.Count(m => m.IsNormalMap) != materialMaps.Count)
                         {
-                            // Try to auto-detect normal maps
-                            tImporter.textureType = TextureImporterType.NormalMap;
+                            Debug.LogWarning($"Texture is being used as normal and albedo at the same time, ignoring normal", importer);
+                            isNormalMap = false;
                         }
-                        else if (tImporter.textureType == TextureImporterType.Sprite)
-                        {
-                            // Force disable sprite mode, even for 2D projects
-                            tImporter.textureType = TextureImporterType.Default;
-                        }
+
+                        TextureImporterType targetImportType = GetTextureImporterType(tImporter, isNormalMap);
+                        tImporter.textureType = targetImportType;
 
                         tImporter.crunchedCompression = true;
                         tImporter.sRGBTexture = !metallics.Contains(tex);
@@ -232,12 +229,21 @@ namespace AssetBundleConverter.Editor
                         EditorUtility.SetDirty(tImporter);
                         tImporter.SaveAndReimport();
                     }
-                    else
-                    {
-                        throw new Exception($"GLTFImporter: Unable to import texture at path: {texPath}");
-                    }
+                    else { throw new Exception($"GLTFImporter: Unable to import texture at path: {texPath}"); }
                 }
             }
+        }
+
+        private static TextureImporterType GetTextureImporterType(TextureImporter tImporter, bool isNormalMap)
+        {
+            var targetImportType = tImporter.textureType;
+
+            if (isNormalMap)
+                targetImportType = TextureImporterType.NormalMap;
+            else if (tImporter.textureType == TextureImporterType.Sprite)
+                targetImportType = TextureImporterType.Default;
+
+            return targetImportType;
         }
 
         /*private void FixMaterialReferences(List<Material> materials, string folderName, Renderer[] renderers)
@@ -264,6 +270,7 @@ namespace AssetBundleConverter.Editor
                 Debug.LogError("FATAL!");
                 return;
             }
+
             foreach (var r in renderers)
             {
                 var sharedMaterials = r.sharedMaterials;

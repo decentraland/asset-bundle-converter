@@ -46,9 +46,9 @@ ENV NODE_PATH $NVM_DIR/versions/node/$NODE_VERSION/lib/node_modules
 ENV PATH $NVM_DIR/versions/node/$NODE_VERSION/bin:$PATH
 
 # Change this value ONLY if we have done breaking changes for every material, doing so is VERY costly
-ENV AB_VERSION v8
-ENV AB_VERSION_WINDOWS v11
-ENV AB_VERSION_MAC v12
+ENV AB_VERSION v9
+ENV AB_VERSION_WINDOWS v12
+ENV AB_VERSION_MAC v13
 
 # NODE_ENV is used to configure some runtime options, like JSON logger
 ENV NODE_ENV production
