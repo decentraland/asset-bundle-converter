@@ -215,8 +215,6 @@ namespace AssetBundleConverter.Editor
                         foreach (TexMaterialMap materialMap in materialMaps)
                             isNormalMap &= materialMap.IsNormalMap;
 
-                        Debug.Log($"[TEX-LOG] {texPath} isNormal: " + isNormalMap);
-
                         TextureImporterType targetImportType = GetTextureImporterType(tImporter, isNormalMap);
                         tImporter.textureType = targetImportType;
 
@@ -332,8 +330,6 @@ namespace AssetBundleConverter.Editor
 
                     if (!tex)
                         continue;
-
-                    Debug.Log(propertyName);
 
                     if (textureHash.Add(tex))
                     {
