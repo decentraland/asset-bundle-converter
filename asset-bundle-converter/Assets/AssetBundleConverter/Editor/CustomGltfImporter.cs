@@ -328,11 +328,12 @@ namespace AssetBundleConverter.Editor
                 if (ShaderUtil.GetPropertyType(shader, i) == ShaderUtil.ShaderPropertyType.TexEnv)
                 {
                     var propertyName = ShaderUtil.GetPropertyName(shader, i);
-                    Debug.Log(propertyName);
                     var tex = mat.GetTexture(propertyName) as Texture2D;
 
                     if (!tex)
                         continue;
+
+                    Debug.Log(propertyName);
 
                     if (textureHash.Add(tex))
                     {
