@@ -69,7 +69,6 @@ namespace AssetBundleConverter
             public bool isWearable;
             public BuildTarget buildTarget = BuildTarget.WebGL;
             public BuildPipelineType BuildPipelineType = BuildPipelineType.Default;
-            public bool noStack = true;
 
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 
