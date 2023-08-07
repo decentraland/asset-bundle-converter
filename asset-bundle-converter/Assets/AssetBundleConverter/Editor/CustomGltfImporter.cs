@@ -208,13 +208,14 @@ namespace AssetBundleConverter.Editor
                     if (importer is TextureImporter tImporter)
                     {
                         tImporter.isReadable = false;
-                        bool isNormalMap = materialMaps.Any(m => m.IsNormalMap);
 
-                        if (materialMaps.Count(m => m.IsNormalMap) != materialMaps.Count)
-                        {
-                            Debug.LogWarning($"Texture is being used as normal and albedo at the same time, ignoring normal", importer);
-                            isNormalMap = false;
-                        }
+                        // texture is considered normal only if all material maps are true
+                        var isNormalMap = true;
+
+                        foreach (TexMaterialMap materialMap in materialMaps)
+                            isNormalMap &= materialMap.IsNormalMap;
+
+                        Debug.Log($"[TEX-LOG] {texPath} isNormal: " + isNormalMap);
 
                         TextureImporterType targetImportType = GetTextureImporterType(tImporter, isNormalMap);
                         tImporter.textureType = targetImportType;
@@ -327,6 +328,7 @@ namespace AssetBundleConverter.Editor
                 if (ShaderUtil.GetPropertyType(shader, i) == ShaderUtil.ShaderPropertyType.TexEnv)
                 {
                     var propertyName = ShaderUtil.GetPropertyName(shader, i);
+                    Debug.Log(propertyName);
                     var tex = mat.GetTexture(propertyName) as Texture2D;
 
                     if (!tex)

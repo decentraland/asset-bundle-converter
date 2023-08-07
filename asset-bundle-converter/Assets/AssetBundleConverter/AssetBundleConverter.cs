@@ -108,6 +108,11 @@ namespace DCL.ABConverter
             finalDownloadedAssetDbPath = PathUtils.FixDirectorySeparator(Config.ASSET_BUNDLES_PATH_ROOT + Config.DASH);
 
             log.verboseEnabled = true;
+
+            if (this.settings.noStack)
+            {
+                Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.None);
+            }
         }
 
         /// <summary>

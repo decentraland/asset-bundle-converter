@@ -96,6 +96,11 @@ namespace DCL.ABConverter
                                           };
                 }
 
+                if (Utils.ParseOption(commandLineArgs, "nostack", 1, out string[] _))
+                {
+                    settings.noStack = true;
+                }
+
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_BUILD_SCENE_SYNTAX, 1, out string[] sceneCid))
                 {
                     if (sceneCid == null || string.IsNullOrEmpty(sceneCid[0]))
