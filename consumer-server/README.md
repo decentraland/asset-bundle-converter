@@ -1,50 +1,21 @@
-# template-server
+# Consumer Server
 
-## Architecture
+The **Consumer Server** is tasked with receiving deployment notifications from the [deployments-to-sqs](https://github.com/decentraland/deployments-to-sqs) service and handling them to facilitate efficient importing within WebGL environments.
 
-Extension of "ports and adapters architecture", also known as "hexagonal architecture".
+The initial deployments made to the Catalysts can be significantly optimized by re-importing all the `gltf` files and transforming them into AssetBundles. This optimization leads to accelerated importing and loading processes on the client-side.
 
-With this architecture, code is organized into several layers: logic, controllers, adapters, and components (ports).
+## Optimization Workflow
 
-## Application lifecycle
+As outlined in [deployments-to-sqs](https://github.com/decentraland/deployments-to-sqs), notifications for `wearables`, `emotes`, and `scenes` deployments are communicated through an AWS SNS topic named `deployments-sns-${env}`. This optimization can only be applied to deployments of these specific entity types.
 
-1. **Start application lifecycle** - Handled by [src/index.ts](src/index.ts) in only one line of code: `Lifecycle.run({ main, initComponents })`
-2. **Create components** - Handled by [src/components.ts](src/components.ts) in the function `initComponents`
-3. **Wire application & start components** - Handled by [src/service.ts](src/service.ts) in the funciton `main`.
-   1. First wire HTTP routes and other events with [controllers](#src/controllers)
-   2. Then call to `startComponents()` to initialize the components (i.e. http-listener)
+The Consumer Server continuously monitors the `ab-conversion-queue` SQS queue, which acts as a subscriber to the aforementioned SNS topic. Consequently, whenever a new deployment arrives in the queue, the server processes it and makes the resulting artifacts accessible through a Content Delivery Network (CDN).
 
-The same lifecycle is also valid for tests: [test/components.ts](test/components.ts)
+Upon completing the process of making artifacts available on the CDN, each entity will possess two distinct versions:
+* The optimized variant residing within the CDN
+* The original variant residing on the Catalysts
 
-## Namespaces
+Consequently, at the present moment, clients will primarily attempt to retrieve entity deployment artifacts from the CDN. If these artifacts cannot be located, the clients will proceed to acquire them from any available Catalyst source.
 
-### src/logic
+You may find below a chart detailing the current workflow to convert entities deployments:
 
-Deals with pure business logic and shouldn't have side-effects or throw exceptions.
-
-### src/controllers
-
-The "glue" between all the other layers, orchestrating calls between pure business logic and adapters.
-
-Controllers always receive an hydrated context containing components and parameters to call the business logic e.g:
-
-```ts
-// handler for /ping
-export async function pingHandler(context: {
-  url: URL // parameter added by http-server
-  components: AppComponents // components of the app, part of the global context
-}) {
-  components.metrics.increment("test_ping_counter")
-  return { status: 200 }
-}
-```
-
-### src/adapters
-
-The layer that converts external data representations into internal ones, and vice-versa. Acts as buffer to protect the service from changes in the outside world; when a data representation changes, you only need to change how the adapters deal with it.
-
-### src/components.ts
-
-We use the components abstraction to organize our adapters (e.g. HTTP client, database client, redis client) and any other logic that needs to track mutable state or encode dependencies between stateful components. For every environment (e.g. test, e2e, prod, staging...) we have a different version of our component systems, enabling us to easily inject mocks or different implementations for different contexts.
-
-We make components available to incoming http and kafka handlers. For instance, the http-server handlers have access to things like the database or HTTP components, and pass them down to the controller level for general use.
+![Workflow](./docs/images/ab-converter-workflow.png)
