@@ -238,6 +238,12 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
     } catch (err: any) {
       logger.error(err, defaultLoggerMetadata)
     }
+    // delete library folder
+    try {
+      await rimraf(`$PROJECT_PATH/Library`, { maxRetries: 3 })
+    } catch (err: any) {
+      logger.error(err, defaultLoggerMetadata)
+    }
   }
 
   logger.debug("Conversion finished", defaultLoggerMetadata)
