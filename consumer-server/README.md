@@ -18,4 +18,4 @@ Consequently, at the present moment, clients will primarily attempt to retrieve 
 
 You may find below a chart detailing the current workflow to convert entities deployments:
 
-![Workflow](./docs/images/ab-converter-workflow.png)
+![Workflow](./docs/images/ab-converter-workflow.jpeg)
