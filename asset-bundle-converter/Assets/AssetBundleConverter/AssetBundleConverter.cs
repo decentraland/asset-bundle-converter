@@ -185,6 +185,7 @@ namespace DCL.ABConverter
 
                 bundlesEndTime = EditorApplication.timeSinceStartup;
             }
+            
 
             if (isExitForced)
                 return;
