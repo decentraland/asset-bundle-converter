@@ -90,6 +90,8 @@ namespace DCL.ABConverter
         private double bundlesEndTime;
         private double visualTestStartupTime;
         private double visualTestEndTime;
+        private double startupAllocated;
+        private double startupReserved;
 
         private bool isExitForced = false;
         private IABLogger log => env.logger;
@@ -117,6 +119,9 @@ namespace DCL.ABConverter
         /// <returns></returns>
         public async Task ConvertAsync(IReadOnlyList<ContentServerUtils.MappingPair> rawContents)
         {
+            startupAllocated = Profiler.GetTotalAllocatedMemoryLong() / 100000.0;
+            startupReserved = Profiler.GetTotalReservedMemoryLong() / 100000.0;
+
             if (settings.buildTarget is not (BuildTarget.WebGL or BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX))
             {
                 var message = $"Build target is invalid: {settings.buildTarget.ToString()}";
@@ -179,13 +184,15 @@ namespace DCL.ABConverter
 
             if (settings.createAssetBundle)
             {
+                GC.Collect();
+
                 bundlesStartupTime = EditorApplication.timeSinceStartup;
 
                 MarkAndBuildForTarget(settings.buildTarget);
 
                 bundlesEndTime = EditorApplication.timeSinceStartup;
             }
-            
+
 
             if (isExitForced)
                 return;
@@ -289,12 +296,14 @@ namespace DCL.ABConverter
                         textures.Add(gltfImport.GetTexture(i));
 
                     embedExtractTextureTime.Start();
+
                     if (textures.Count > 0)
                     {
                         string directory = Path.GetDirectoryName(relativePath);
 
                         textures = ExtractEmbedTexturesFromGltf(textures, directory);
                     }
+
                     embedExtractTextureTime.Stop();
 
                     embedExtractMaterialTime.Start();
@@ -310,6 +319,7 @@ namespace DCL.ABConverter
                     if (importerSuccess)
                     {
                         GameObject importedGameObject = env.assetDatabase.LoadAssetAtPath<GameObject>(relativePath);
+
                         if (importedGameObject == null)
                         {
                             var message = "Fatal error when importing this object, check previous error messages";
@@ -318,7 +328,8 @@ namespace DCL.ABConverter
                             ForceExit((int)ErrorCodes.GLTFAST_CRITICAL_ERROR);
                             break;
                         }
-                    } else
+                    }
+                    else
                     {
                         var message = $"Failed to get the gltf importer for {gltfUrl} \nPath: {relativePath}";
                         log.Error(message);
@@ -352,11 +363,9 @@ namespace DCL.ABConverter
 
                     log.Verbose($"<color={color}>Ended loading gltf {gltfUrl} with result <b>{loadingSuccess}</b></color>");
                 }
+
                 // This case handles a missing asset, most likely creator's fault, gltf will be skipped
-                catch (AssetNotMappedException e)
-                {
-                    Debug.LogError($"<b>{gltf.AssetPath.fileName}</b> will be skipped since one of its dependencies is missing: <b>{e.Message}</b>");
-                }
+                catch (AssetNotMappedException e) { Debug.LogError($"<b>{gltf.AssetPath.fileName}</b> will be skipped since one of its dependencies is missing: <b>{e.Message}</b>"); }
                 catch (Exception e)
                 {
                     log.Error("UNCAUGHT FATAL: Failed to load GLTF " + gltf.AssetPath.hash);
@@ -364,6 +373,10 @@ namespace DCL.ABConverter
                     errorReporter.ReportException(new ConversionException(ConversionStep.Import, settings, e));
                     ForceExit((int)ErrorCodes.GLTFAST_CRITICAL_ERROR);
                     break;
+                }
+                finally
+                {
+                    gltfImport.Dispose();
                 }
             }
 
@@ -564,6 +577,9 @@ namespace DCL.ABConverter
                         RenderTexture.ReleaseTemporary(tmp);
 
                         env.file.WriteAllBytes(texPath, readableTexture.EncodeToPNG());
+
+                        tmp.DiscardContents();
+                        Object.DestroyImmediate(readableTexture);
                     }
 
                     env.assetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
@@ -579,7 +595,6 @@ namespace DCL.ABConverter
 
         private void OnFinish()
         {
-            if (settings.cleanAndExitOnFinish) { CleanAndExit(CurrentState.lastErrorCode); }
 
             double conversionTime = EditorApplication.timeSinceStartup - conversionStartupTime;
             double downloadTime = downloadEndTime - downloadStartupTime;
@@ -592,27 +607,31 @@ namespace DCL.ABConverter
             double bundlesTime = bundlesEndTime - bundlesStartupTime;
             double visualTestsTime = visualTestEndTime - visualTestStartupTime;
 
+            var allocated = Profiler.GetTotalAllocatedMemoryLong() / 100000.0;
+            var reserved = Profiler.GetTotalReservedMemoryLong() / 100000.0;
+
             logBuffer = $"Conversion finished!. last error code = {CurrentState.lastErrorCode}";
             logBuffer += "\n";
-            logBuffer += $"Converted {totalAssets - skippedAssets} of {totalAssets}. (Skipped {skippedAssets})\n";
-            logBuffer += $"Total download time: {downloadTime} seconds\n";
-            logBuffer += $"Total non-gltf import time: {nonGltfImportTime} seconds\n";
-            logBuffer += $"Total gltf import time: {importTime} seconds\n";
-            logBuffer += $" - texture extraction time: {extractTextureTime} seconds\n";
-            logBuffer += $" - material extraction time: {extractMaterialTime} seconds\n";
-            logBuffer += $" - configure importer time: {configureTime} seconds\n";
-            logBuffer += $"Total bundle conversion time: {bundlesTime} seconds\n";
-            logBuffer += $"Total visual tests time: {visualTestsTime} seconds\n";
+            logBuffer += $"GLTFs Converted {totalAssets - skippedAssets} of {totalAssets}. (Skipped {skippedAssets})\n";
+            logBuffer += $"Total download time: {downloadTime:F} seconds\n";
+            logBuffer += $"Total non-gltf import time: {nonGltfImportTime:F} seconds\n";
+            logBuffer += $"Total gltf import time: {importTime:F} seconds\n";
+            logBuffer += $" - texture extraction time: {extractTextureTime:F} seconds\n";
+            logBuffer += $" - material extraction time: {extractMaterialTime:F} seconds\n";
+            logBuffer += $" - configure importer time: {configureTime:F} seconds\n";
+            logBuffer += $"Total bundle conversion time: {bundlesTime:F} seconds\n";
             logBuffer += "\n";
-            logBuffer += $"Total: {conversionTime} seconds\n";
+            logBuffer += $"Total: {conversionTime:F} seconds\n";
+            if (totalAssets > 0) { logBuffer += $"Estimated time per asset: {conversionTime / totalAssets:F}\n"; }
+            logBuffer += "\n";
+            logBuffer += $"Startup Memory | Allocated: {startupAllocated:F} MB Reserved: {startupReserved:F} MB\n";
+            logBuffer += $"End Memory | Allocated: {allocated:F} MB Reserved: {reserved:F} MB\n";
 
-            if (totalAssets > 0) { logBuffer += $"Estimated time per asset: {conversionTime / totalAssets}\n"; }
-
-            //Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.None)
             log.Info(logBuffer);
-            //Application.SetStackTraceLogType(LogType.Log, StackTraceLogType.ScriptOnly);
 
             errorReporter.Dispose();
+
+            if (settings.cleanAndExitOnFinish) { CleanAndExit(CurrentState.lastErrorCode); }
         }
 
         /// <summary>
@@ -819,6 +838,7 @@ namespace DCL.ABConverter
                 errorReporter.ReportException(new ConversionException(ConversionStep.Fetch, settings, e));
             }
 
+            downloadedData.Clear();
             downloadedData = null;
 
             return true;
