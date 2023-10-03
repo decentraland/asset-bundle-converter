@@ -20,5 +20,9 @@ namespace AssetBundleConverter.Wrappers.Interfaces
         Material GetMaterial(int index);
 
         void Dispose();
+
+        Material defaultMaterial { get; }
+
+
     }
 }

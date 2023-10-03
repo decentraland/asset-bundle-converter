@@ -12,11 +12,13 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
     {
         private GltfImport importer;
         private ConsoleLogger logger;
+        private IMaterialGenerator materialGenerator;
 
-        public GltfImportWrapper(GltFastFileProvider gltFastFileProvider, UninterruptedDeferAgent uninterruptedDeferAgent, IMaterialGenerator getNewMaterialGenerator, ConsoleLogger consoleLogger)
+        public GltfImportWrapper(GltFastFileProvider gltFastFileProvider, UninterruptedDeferAgent uninterruptedDeferAgent, IMaterialGenerator materialGenerator, ConsoleLogger consoleLogger)
         {
             logger = consoleLogger;
-            importer = new GltfImport(gltFastFileProvider, uninterruptedDeferAgent, getNewMaterialGenerator, logger);
+            this.materialGenerator = materialGenerator;
+            importer = new GltfImport(gltFastFileProvider, uninterruptedDeferAgent, this.materialGenerator, logger);
         }
 
         public async Task Load(string gltfUrl, ImportSettings importSettings) =>
@@ -37,6 +39,17 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
         public void Dispose()
         {
             importer.Dispose();
+        }
+
+        public Material defaultMaterial
+        {
+            get
+            {
+                if (importer.defaultMaterial == null)
+                    importer.defaultMaterial = materialGenerator.GetDefaultMaterial();
+
+                return importer.defaultMaterial;
+            }
         }
     }
 }

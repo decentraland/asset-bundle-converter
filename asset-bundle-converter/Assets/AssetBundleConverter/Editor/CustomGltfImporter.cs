@@ -141,18 +141,42 @@ namespace AssetBundleConverter.Editor
                 if (invalidMaterial == null)
                     continue;
 
-                string materialName = Utils.NicifyName(invalidMaterial.name);
-                var path = $"{folderName}{Path.DirectorySeparatorChar}Materials{Path.DirectorySeparatorChar}{materialName}.mat";
-                Material validMaterial = AssetDatabase.LoadAssetAtPath<Material>(path);
-
-                if (validMaterial == null)
-                    throw new Exception(path + " does not exist");
+                string invalidMaterialName = invalidMaterial.name;
+                Material validMaterial = GetExtractedMaterial(folderName, invalidMaterialName);
 
                 materials.Add(validMaterial);
                 ReplaceReferences(renderers, validMaterial);
             }
 
+            if (m_Gltf.defaultMaterial != null)
+            {
+                Material validDefaultMaterial = GetExtractedMaterial(folderName, m_Gltf.defaultMaterial.name);
+                materials.Add(validDefaultMaterial);
+                ReplaceReferences(renderers, validDefaultMaterial);
+                foreach (Renderer renderer in renderers)
+                {
+                    var sharedMaterials = renderer.sharedMaterials;
+                    for (var i = 0; i < sharedMaterials.Length; i++)
+                        if (sharedMaterials[i] == null)
+                            sharedMaterials[i] = validDefaultMaterial;
+
+                    renderer.sharedMaterials = sharedMaterials;
+                }
+            }
+
             return materials;
+        }
+
+        private Material GetExtractedMaterial(string folderName, string materialName)
+        {
+            materialName = Utils.NicifyName(materialName);
+            var path = $"{folderName}{Path.DirectorySeparatorChar}Materials{Path.DirectorySeparatorChar}{materialName}.mat";
+            var validMaterial = AssetDatabase.LoadAssetAtPath<Material>(path);
+
+            if (validMaterial == null)
+                throw new Exception(path + " does not exist");
+
+            return validMaterial;
         }
 
         private static Dictionary<string, TexMaterialMap> GetMatMapsFromMaterial(Material rendererSharedMaterial)

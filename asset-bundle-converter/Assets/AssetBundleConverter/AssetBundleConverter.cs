@@ -62,7 +62,7 @@ namespace DCL.ABConverter
 
         private const float MAX_TEXTURE_SIZE = 512f;
 
-        private const string VERSION = "6.0";
+        private const string VERSION = "7.0";
 
         private readonly Dictionary<string, string> lowerCaseHashes = new ();
         public State CurrentState { get; } = new ();
@@ -396,72 +396,87 @@ namespace DCL.ABConverter
                 texNameMap[texture.name.ToLowerInvariant()] = texture;
 
             var folder = gltf.AssetPath.assetFolder;
-            var materialRoot = $"{folder}Materials{Path.DirectorySeparatorChar}";
-            env.directory.CreateDirectory(materialRoot);
+            var materialDirectory = $"{folder}Materials{Path.DirectorySeparatorChar}";
+            env.directory.CreateDirectory(materialDirectory);
 
-            for (int t = 0; t < gltfImport.MaterialCount; t++)
+            if (gltfImport.defaultMaterial != null)
+            {
+                var mat = gltfImport.defaultMaterial;
+                CreateMaterialAsset(mat, materialDirectory, texNameMap);
+            }
+
+            for (var t = 0; t < gltfImport.MaterialCount; t++)
             {
                 var originalMaterial = gltfImport.GetMaterial(t);
-                string matName = Utils.NicifyName(originalMaterial.name);
-
-                string materialPath =
-                    PathUtils.GetRelativePathTo(Application.dataPath, string.Concat(materialRoot, matName, ".mat"));
-
-                var previousMat = env.assetDatabase.LoadAssetAtPath<Material>(materialPath);
-
-                if (previousMat != null)
-                    env.assetDatabase.DeleteAsset(materialPath);
-
-                Profiler.BeginSample("ExtractEmbedMaterials.CreateAsset");
-                env.assetDatabase.CreateAsset(Object.Instantiate(originalMaterial), materialPath);
-                //env.assetDatabase.SaveAssets();
-                Profiler.EndSample();
-
-                var newMaterial = env.assetDatabase.LoadAssetAtPath<Material>(materialPath);
-
-                var shader = newMaterial.shader;
-
-                if (settings.stripShaders)
-                    env.assetDatabase.MarkAssetBundle(env.assetDatabase, shader, shader.name + "_IGNORE" + PlatformUtils.GetPlatform());
-
-                var textureProperties = GetTextureProperties(shader);
-
-                Profiler.BeginSample("ExtractEmbedMaterials.SetTexture");
-                for (var i = 0; i < textureProperties.Count; ++i)
-                {
-                    int propertyId = textureProperties[i];
-                    var tex = originalMaterial.GetTexture(propertyId) as Texture2D;
-
-                    // we ensure that the property has a valid material
-                    if (!tex) continue;
-
-                    // we reassign the texture reference
-                    string texName = Utils.NicifyName(tex.name);
-                    texName = Path.GetFileNameWithoutExtension(texName).ToLowerInvariant();
-
-                    var prevTexture = newMaterial.GetTexture(propertyId);
-
-                    if (texNameMap.ContainsKey(texName))
-                        newMaterial.SetTexture(propertyId, texNameMap[texName]);
-                    else
-                    {
-                        if (prevTexture == null)
-                        {
-                            var message = $"Failed to set texture \"{texName}\" to material \"{matName}\". This will cause white materials";
-                            log.Error(message);
-                            errorReporter.ReportError(message, settings);
-                            ForceExit((int)ErrorCodes.EMBED_MATERIAL_FAILURE);
-                            return;
-                        }
-                    }
-                }
-                Profiler.EndSample();
-
-                EditorUtility.SetDirty(newMaterial);
+                CreateMaterialAsset(originalMaterial, materialDirectory, texNameMap);
             }
+
             Profiler.EndSample();
             log.Verbose($"gltf creating dummy materials completed: {gltfUrl}");
             RefreshAssetsWithNoLogs();
+        }
+
+        private void CreateMaterialAsset(Material originalMaterial, string materialRoot, Dictionary<string, Texture2D> texNameMap)
+        {
+            string matName = Utils.NicifyName(originalMaterial.name);
+
+            string materialPath =
+                PathUtils.GetRelativePathTo(Application.dataPath, string.Concat(materialRoot, matName, ".mat"));
+
+            var previousMat = env.assetDatabase.LoadAssetAtPath<Material>(materialPath);
+
+            if (previousMat != null)
+                env.assetDatabase.DeleteAsset(materialPath);
+
+            Profiler.BeginSample("ExtractEmbedMaterials.CreateAsset");
+            env.assetDatabase.CreateAsset(Object.Instantiate(originalMaterial), materialPath);
+            //env.assetDatabase.SaveAssets();
+            Profiler.EndSample();
+
+            var newMaterial = env.assetDatabase.LoadAssetAtPath<Material>(materialPath);
+
+            var shader = newMaterial.shader;
+
+            if (settings.stripShaders)
+                env.assetDatabase.MarkAssetBundle(env.assetDatabase, shader,
+                    shader.name + "_IGNORE" + PlatformUtils.GetPlatform());
+
+            var textureProperties = GetTextureProperties(shader);
+
+            Profiler.BeginSample("ExtractEmbedMaterials.SetTexture");
+            for (var i = 0; i < textureProperties.Count; ++i)
+            {
+                int propertyId = textureProperties[i];
+                var tex = originalMaterial.GetTexture(propertyId) as Texture2D;
+
+                // we ensure that the property has a valid material
+                if (!tex) continue;
+
+                // we reassign the texture reference
+                string texName = Utils.NicifyName(tex.name);
+                texName = Path.GetFileNameWithoutExtension(texName).ToLowerInvariant();
+
+                var prevTexture = newMaterial.GetTexture(propertyId);
+
+                if (texNameMap.ContainsKey(texName))
+                    newMaterial.SetTexture(propertyId, texNameMap[texName]);
+                else
+                {
+                    if (prevTexture == null)
+                    {
+                        var message =
+                            $"Failed to set texture \"{texName}\" to material \"{matName}\". This will cause white materials";
+                        log.Error(message);
+                        errorReporter.ReportError(message, settings);
+                        ForceExit((int)ErrorCodes.EMBED_MATERIAL_FAILURE);
+                        return;
+                    }
+                }
+            }
+
+            Profiler.EndSample();
+
+            EditorUtility.SetDirty(newMaterial);
         }
 
         private readonly Dictionary<Shader, List<int>> textureProperties = new ();
@@ -805,8 +820,9 @@ namespace DCL.ABConverter
 
                 downloadStartupTime = EditorApplication.timeSinceStartup;
 
-                foreach (Task downloadTask in downloadTasks)
-                    await downloadTask;
+                if (settings.clearDirectoriesOnStart)
+                    foreach (Task downloadTask in downloadTasks)
+                        await downloadTask;
 
                 downloadEndTime = EditorApplication.timeSinceStartup;
 
@@ -835,6 +851,7 @@ namespace DCL.ABConverter
             }
             catch (Exception e)
             {
+                Debug.LogException(e);
                 errorReporter.ReportException(new ConversionException(ConversionStep.Fetch, settings, e));
             }
 
@@ -844,11 +861,33 @@ namespace DCL.ABConverter
             return true;
         }
 
+        private async Task RecursiveDownload(Task downloadTask, int tryCount, int maxTries)
+        {
+            if (tryCount >= maxTries)
+            {
+                var message = $"Download Failed by max retry count exceeded, probably a connection error";
+                log.Error(message);
+                errorReporter.ReportError(message, settings);
+                ForceExit((int)ErrorCodes.DOWNLOAD_FAILED);
+                throw new OperationCanceledException();
+            }
+
+            try
+            {
+                await downloadTask;
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+                await Task.Delay(TimeSpan.FromSeconds(1));
+                await RecursiveDownload(downloadTask, tryCount+1, maxTries);
+            }
+        }
+
         public async Task CreateDownloadTask(AssetPath assetPath)
         {
             DownloadHandler downloadHandler = null;
             string url = settings.baseUrl + assetPath.hash;
-
 
             try
             {
@@ -1045,7 +1084,6 @@ namespace DCL.ABConverter
         {
             string outputPath = assetPath.finalPath;
             string outputPathDir = Path.GetDirectoryName(outputPath);
-            var data = downloadedData[assetPath];
 
             void FinallyImportAsset()
             {
@@ -1073,6 +1111,7 @@ namespace DCL.ABConverter
             if (!env.directory.Exists(outputPathDir))
                 env.directory.CreateDirectory(outputPathDir);
 
+            byte[] data = downloadedData[assetPath];
             env.file.WriteAllBytes(outputPath, data);
 
             FinallyImportAsset();
