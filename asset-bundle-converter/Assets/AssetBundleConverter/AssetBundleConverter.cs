@@ -44,6 +44,7 @@ namespace DCL.ABConverter
             EMBED_MATERIAL_FAILURE,
             DOWNLOAD_FAILED,
             INVALID_PLATFORM,
+            GLTF_PROCESS_MISMATCH,
         }
 
         public class State
@@ -92,6 +93,8 @@ namespace DCL.ABConverter
         private double visualTestEndTime;
         private double startupAllocated;
         private double startupReserved;
+        private int totalGltfsToProcess;
+        private int totalGltfsProcessed;
 
         private bool isExitForced = false;
         private IABLogger log => env.logger;
@@ -181,6 +184,15 @@ namespace DCL.ABConverter
             importEndTime = EditorApplication.timeSinceStartup;
 
             EditorUtility.ClearProgressBar();
+
+            if (totalGltfsProcessed != totalGltfsToProcess)
+            {
+                var message = $"GLTF count mismatch GLTF to process: {totalGltfsToProcess} vs GLTF processed: {totalGltfsProcessed}";
+                log.Error(message);
+                errorReporter.ReportError(message, settings);
+                ForceExit((int)ErrorCodes.GLTF_PROCESS_MISMATCH);
+                return;
+            }
 
             if (settings.createAssetBundle)
             {
@@ -378,6 +390,8 @@ namespace DCL.ABConverter
                 {
                     gltfImport.Dispose();
                 }
+
+                totalGltfsProcessed++;
             }
 
             EditorUtility.ClearProgressBar();
@@ -836,6 +850,8 @@ namespace DCL.ABConverter
                 AddAssetPathsToContentTable(bufferPaths);
                 AddAssetPathsToContentTable(gltfPaths, true);
 
+                totalGltfsToProcess = gltfPaths.Count;
+
                 foreach (var gltfPath in gltfPaths)
                 {
                     if (isExitForced) break;
@@ -853,6 +869,8 @@ namespace DCL.ABConverter
             {
                 Debug.LogException(e);
                 errorReporter.ReportException(new ConversionException(ConversionStep.Fetch, settings, e));
+                ForceExit((int)ErrorCodes.DOWNLOAD_FAILED);
+                return false;
             }
 
             downloadedData.Clear();
@@ -901,7 +919,7 @@ namespace DCL.ABConverter
                     return;
                 }
             }
-            catch (HttpRequestException e)
+            catch (Exception e)
             {
                 var message = $"Download Failed {url} -- {e.Message}";
                 log.Error(message);
