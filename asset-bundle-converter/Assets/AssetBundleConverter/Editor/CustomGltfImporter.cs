@@ -90,8 +90,16 @@ namespace AssetBundleConverter.Editor
 
             foreach (MeshFilter filter in meshFilters)
             {
-                if (filter.name.Contains("_collider", StringComparison.InvariantCultureIgnoreCase))
+                if (filter.name.Contains("_collider", StringComparison.OrdinalIgnoreCase))
                     ConfigureColliders(filter);
+            }
+
+            var renderers = sceneGo.GetComponentsInChildren<Renderer>();
+
+            foreach (Renderer r in renderers)
+            {
+                if (r.name.Contains("_collider", StringComparison.OrdinalIgnoreCase))
+                    DestroyImmediate(r);
             }
         }
 
