@@ -40,6 +40,8 @@ namespace AssetBundleConverter
         private string entityId = "QmYy2TMDEfag99yZV4ZdpjievYUfdQgBVfFHKCDAge3zQi";
         private string wearablesCollectionId = "urn:decentraland:off-chain:base-avatars";
         private string debugEntity = "bafkreib66ufmbowp4ee2u3kdu6t52kouie7kd7tfrlv3l5kejz6yjcaq5i";
+
+        // The empty scenes url should be like "https://cdn.decentraland.org/@dcl/explorer/1.0.152291-20231017100112.commit-07d38e3/loader/empty-scenes/contents/"
         private string mappingName = "../mappings.json";
         private string batchBaseUrl = "";
         private string batchSceneId = "";
