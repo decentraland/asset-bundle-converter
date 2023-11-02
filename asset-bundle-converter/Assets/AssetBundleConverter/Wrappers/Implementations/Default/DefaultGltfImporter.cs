@@ -1,5 +1,4 @@
-﻿
-using AssetBundleConverter.Editor;
+﻿using AssetBundleConverter.Editor;
 using AssetBundleConverter.Wrappers.Interfaces;
 using DCL;
 using DCL.ABConverter;
@@ -7,9 +6,7 @@ using GLTFast;
 using GLTFast.Logging;
 using GLTFast.Materials;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEditor;
-using UnityEngine;
 
 namespace AssetBundleConverter.Wrappers.Implementations.Default
 {
@@ -26,9 +23,9 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
             this.assetDatabase = assetDatabase;
         }
 
-        public IGltfImport GetImporter(AssetPath filePath, Dictionary<string, string> contentTable, ShaderType shaderType)
+        public IGltfImport GetImporter(AssetPath filePath, Dictionary<string, string> contentTable, ShaderType shaderType, BuildTarget buildTarget)
         {
-            getNewMaterialGenerator = GetNewMaterialGenerator(shaderType);
+            getNewMaterialGenerator = GetNewMaterialGenerator(shaderType, buildTarget);
 
             return new GltfImportWrapper(
                 new GltFastFileProvider(filePath.fileRootPath, filePath.hash, contentTable),
@@ -37,13 +34,10 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
                 gltfLogger);
         }
 
-        private IMaterialGenerator GetNewMaterialGenerator(ShaderType shaderType)
-        {
-            if (shaderType == ShaderType.Dcl)
-                return new AssetBundleConverterMaterialGenerator();
-
-            return null;
-        }
+        private static IMaterialGenerator GetNewMaterialGenerator(ShaderType shaderType, BuildTarget buildTarget) =>
+            shaderType == ShaderType.Dcl
+                ? new AssetBundleConverterMaterialGenerator(AssetBundleConverterMaterialGenerator.UseNewShader(buildTarget))
+                : null;
 
         public bool ConfigureImporter(string relativePath, ContentMap[] contentMap, string fileRootPath, string hash, ShaderType shaderType )
         {

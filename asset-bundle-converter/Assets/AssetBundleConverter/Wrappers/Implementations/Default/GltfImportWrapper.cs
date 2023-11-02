@@ -10,13 +10,15 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 {
     public class GltfImportWrapper : IGltfImport
     {
-        private GltfImport importer;
-        private ConsoleLogger logger;
-        private IMaterialGenerator materialGenerator;
+        private readonly GltfImport importer;
+        private readonly ConsoleLogger logger;
+        private readonly IMaterialGenerator materialGenerator;
+        private readonly GltFastFileProvider fileProvider;
 
         public GltfImportWrapper(GltFastFileProvider gltFastFileProvider, UninterruptedDeferAgent uninterruptedDeferAgent, IMaterialGenerator materialGenerator, ConsoleLogger consoleLogger)
         {
             logger = consoleLogger;
+            fileProvider = gltFastFileProvider;
             this.materialGenerator = materialGenerator;
             importer = new GltfImport(gltFastFileProvider, uninterruptedDeferAgent, this.materialGenerator, logger);
         }

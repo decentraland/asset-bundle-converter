@@ -149,7 +149,7 @@ namespace AssetBundleConverter.Tests
             buildPipeline.BuildAssetBundles(Arg.Any<string>(), Arg.Any<BuildAssetBundleOptions>(), Arg.Any<BuildTarget>()).Returns(Substitute.For<IAssetBundleManifest>());
             var gltf = Substitute.For<IGltfImport>();
 
-            gltfImporter.GetImporter(Arg.Any<AssetPath>(), Arg.Any<Dictionary<string, string>>(), Arg.Any<ShaderType>()).Returns(gltf);
+            gltfImporter.GetImporter(Arg.Any<AssetPath>(), Arg.Any<Dictionary<string, string>>(), Arg.Any<ShaderType>(), Arg.Any<BuildTarget>()).Returns(gltf);
             gltfImporter.ConfigureImporter(Arg.Any<string>(), Arg.Any<ContentMap[]>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ShaderType>()).Returns(true);
             assetDatabase.LoadAssetAtPath<GameObject>(PathUtils.FullPathToAssetPath(assetPath.finalPath)).Returns(dummyGo);
 
@@ -170,7 +170,7 @@ namespace AssetBundleConverter.Tests
             file.Received().WriteAllBytes(Arg.Is(assetPath.finalPath), Arg.Any<byte[]>());
 
             // Ensure that the importer is being created
-            gltfImporter.Received().GetImporter(Arg.Any<AssetPath>(), Arg.Any<Dictionary<string, string>>(), Arg.Any<ShaderType>());
+            gltfImporter.Received().GetImporter(Arg.Any<AssetPath>(), Arg.Any<Dictionary<string, string>>(), Arg.Any<ShaderType>(), Arg.Any<BuildTarget>());
 
             // Ensure that the gltf import is being loaded
             await gltf.Received().Load(Arg.Any<string>(), Arg.Any<ImportSettings>());
@@ -275,7 +275,7 @@ namespace AssetBundleConverter.Tests
             webRequest.Get(exampleBaseURL).Returns(new DownloadHandlerMock());
             buildPipeline.BuildAssetBundles(Arg.Any<string>(), Arg.Any<BuildAssetBundleOptions>(), Arg.Any<BuildTarget>()).Returns(Substitute.For<IAssetBundleManifest>());
             var gltf = Substitute.For<IGltfImport>();
-            gltfImporter.GetImporter(Arg.Any<AssetPath>(), Arg.Any<Dictionary<string, string>>(), Arg.Any<ShaderType>()).Returns(gltf);
+            gltfImporter.GetImporter(Arg.Any<AssetPath>(), Arg.Any<Dictionary<string, string>>(), Arg.Any<ShaderType>(), Arg.Any<BuildTarget>()).Returns(gltf);
             gltfImporter.ConfigureImporter(Arg.Any<string>(), Arg.Any<ContentMap[]>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ShaderType>()).Returns(true);
             assetDatabase.LoadAssetAtPath<GameObject>(PathUtils.FullPathToAssetPath(assetPath.finalPath)).Returns(dummyGo);
             return gltf;
