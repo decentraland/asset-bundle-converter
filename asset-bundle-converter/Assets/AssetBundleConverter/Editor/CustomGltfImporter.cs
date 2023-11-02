@@ -91,7 +91,7 @@ namespace AssetBundleConverter.Editor
             foreach (MeshFilter filter in meshFilters)
             {
                 if (filter.name.Contains("_collider", StringComparison.OrdinalIgnoreCase))
-                    ConfigureColliders(filter);
+                    ConfigureColliders(filter.transform, filter);
             }
 
             var renderers = sceneGo.GetComponentsInChildren<Renderer>();
@@ -103,16 +103,19 @@ namespace AssetBundleConverter.Editor
             }
         }
 
-        private static void ConfigureColliders(MeshFilter filter)
+        private static void ConfigureColliders(Transform transform, MeshFilter filter)
         {
-            Physics.BakeMesh(filter.sharedMesh.GetInstanceID(), false);
-            filter.gameObject.AddComponent<MeshCollider>();
-            DestroyImmediate(filter.GetComponent<MeshRenderer>());
+            if (filter != null)
+            {
+                Physics.BakeMesh(filter.sharedMesh.GetInstanceID(), false);
+                filter.gameObject.AddComponent<MeshCollider>();
+                DestroyImmediate(filter.GetComponent<MeshRenderer>());
+            }
 
-            foreach (Transform child in filter.transform)
+            foreach (Transform child in transform)
             {
                 var f = child.gameObject.GetComponent<MeshFilter>();
-                ConfigureColliders(f);
+                ConfigureColliders(child, f);
             }
         }
 
