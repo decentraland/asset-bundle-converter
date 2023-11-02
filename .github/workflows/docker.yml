@@ -8,13 +8,13 @@ jobs:
     strategy:
       matrix:
         include:
-        - unity_docker_image: unityci/editor:2022.3.2f1-webgl-1
+        - unity_docker_image: unityci/editor:2022.3.12f1-webgl-3.0.0
           service_name: asset-bundle-converter
           platform_target: webgl
-        - unity_docker_image: unityci/editor:2022.3.2f1-windows-mono-1
+        - unity_docker_image: unityci/editor:2022.3.12f1-windows-mono-3.0.0
           service_name: asset-bundle-converter-windows
           platform_target: windows
-        - unity_docker_image: unityci/editor:2022.3.2f1-mac-mono-1
+        - unity_docker_image: unityci/editor:2022.3.12f1-mac-mono-3.0.0
           service_name: asset-bundle-converter-mac
           platform_target: mac
 
