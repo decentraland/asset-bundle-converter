@@ -26,15 +26,8 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
             if (useSceneShader)
             {
-                foreach (var keywordName in mat.shaderKeywords)
-                {
-                    mat.DisableKeyword(keywordName);
-                }
-
                 // Enable Forward+ and soft shadows
                 mat.EnableKeyword("_FORWARD_PLUS");
-                mat.EnableKeyword("_NORMALMAP");
-                mat.EnableKeyword("_EMISSION");
                 mat.EnableKeyword("_ADDITIONAL_LIGHT_SHADOWS");
                 mat.EnableKeyword("_MAIN_LIGHT_SHADOWS_CASCADE");
                 mat.EnableKeyword("_SHADOWS_SOFT");
