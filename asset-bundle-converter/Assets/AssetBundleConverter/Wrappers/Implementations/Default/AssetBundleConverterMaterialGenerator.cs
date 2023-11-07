@@ -1,4 +1,5 @@
 ﻿using DCL.GLTFast.Wrappers;
+using DCL.Shaders;
 using GLTFast;
 using UnityEditor;
 using UnityEngine;
@@ -27,10 +28,10 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
             if (useSceneShader)
             {
                 // Enable Forward+ and soft shadows
-                mat.EnableKeyword("_FORWARD_PLUS");
-                mat.EnableKeyword("_ADDITIONAL_LIGHT_SHADOWS");
-                mat.EnableKeyword("_MAIN_LIGHT_SHADOWS_CASCADE");
-                mat.EnableKeyword("_SHADOWS_SOFT");
+                mat.EnableKeyword(ShaderUtils.FW_PLUS);
+                mat.EnableKeyword(ShaderUtils.FW_PLUS_LIGHT_SHADOWS);
+                mat.EnableKeyword(ShaderUtils.FW_PLUS_SHADOWS_CASCADE);
+                mat.EnableKeyword(ShaderUtils.FW_PLUS_SHADOWS_SOFT);
             }
 
             return mat;

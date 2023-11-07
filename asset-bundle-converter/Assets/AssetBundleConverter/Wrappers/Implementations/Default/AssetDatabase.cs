@@ -82,9 +82,14 @@ namespace DCL
                 UnityEditor.AssetDatabase.CreateAsset(obj, path);
             }
 
-            public void MarkAssetBundle(IAssetDatabase assetDb, Object asset, string abName)
+            public void AssignAssetBundle(Shader shader)
             {
-                Utils.MarkAssetForAssetBundleBuild(assetDb, asset, abName);
+                Utils.AssignShaderBundle(this, shader);
+            }
+
+            public void MarkAssetBundle(Object asset, string abName)
+            {
+                Utils.MarkAssetForAssetBundleBuild(this, asset, abName);
             }
         }
     }

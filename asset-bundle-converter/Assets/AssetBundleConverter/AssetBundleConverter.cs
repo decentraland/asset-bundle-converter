@@ -458,8 +458,7 @@ namespace DCL.ABConverter
             var shader = newMaterial.shader;
 
             if (settings.stripShaders)
-                env.assetDatabase.MarkAssetBundle(env.assetDatabase, shader,
-                    shader.name + "_IGNORE" + PlatformUtils.GetPlatform());
+                env.assetDatabase.AssignAssetBundle(shader);
 
             var textureProperties = GetTextureProperties(shader);
 
@@ -725,7 +724,7 @@ namespace DCL.ABConverter
 
             // 1. Convert flagged folders to asset bundles only to automatically get dependencies for the metadata
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
-                BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle,
+                BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
                 target);
 
             if (manifest == null)
@@ -750,7 +749,7 @@ namespace DCL.ABConverter
 
             // 3. Convert flagged folders to asset bundles again but this time they have the metadata file inside
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
-                BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle,
+                BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
                 target);
 
             var afterSecondBuild = EditorApplication.timeSinceStartup;
