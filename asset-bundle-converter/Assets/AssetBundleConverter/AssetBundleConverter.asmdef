@@ -15,7 +15,8 @@
         "GUID:9887bf5401cdc9140916d3edbea10b69",
         "GUID:f51ebe6a0ceec4240a699833d6309b23",
         "GUID:5c1ff9bd975acec488150743d53a93ca",
-        "GUID:c5ecc461727906345a35491a0440694f"
+        "GUID:c5ecc461727906345a35491a0440694f",
+        "GUID:15fc0a57446b3144c949da3e2b9737a9"
     ],
     "includePlatforms": [
         "Editor"
@@ -24,7 +25,6 @@
     "allowUnsafeCode": false,
     "overrideReferences": true,
     "precompiledReferences": [
-        "Newtonsoft.Json.dll",
         "Sentry.dll",
         "Unity.Plastic.Newtonsoft.Json.dll"
     ],

@@ -73,7 +73,7 @@ namespace AssetBundleConverter.Editor
             }
 
             if (!useOriginalMaterials)
-                SetupCustomMaterialGenerator(new AssetBundleConverterMaterialGenerator());
+                SetupCustomMaterialGenerator(new AssetBundleConverterMaterialGenerator(AssetBundleConverterMaterialGenerator.UseNewShader(EditorUserBuildSettings.activeBuildTarget)));
 
             try { base.OnImportAsset(ctx); }
             catch (Exception e)

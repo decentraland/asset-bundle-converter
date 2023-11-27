@@ -241,6 +241,25 @@ namespace DCL.ABConverter
             importer.SetAssetBundleNameAndVariant(abName, "");
         }
 
+        internal static void AssignShaderBundle(IAssetDatabase db, Shader shader)
+        {
+            var abName = shader.name + "_IGNORE" + PlatformUtils.GetPlatform();
+
+            string assetPath = PathUtils.GetRelativePathTo(Application.dataPath, db.GetAssetPath(shader));
+
+            var importer = AssetImporter.GetAtPath(assetPath);
+
+            if (importer)
+                importer.SetAssetBundleNameAndVariant(abName, "");
+
+            // find a variants collection
+            var variantsPath = assetPath.Replace(".shader", "Variants.shadervariants");
+
+            importer = AssetImporter.GetAtPath(variantsPath);
+            if (importer)
+                importer.SetAssetBundleNameAndVariant(abName, "");
+        }
+
         internal static bool MarkAssetForAssetBundleBuild(IAssetDatabase assetDb, Object asset, string abName)
         {
             string assetPath = PathUtils.GetRelativePathTo(Application.dataPath, assetDb.GetAssetPath(asset));

@@ -15,6 +15,7 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.Profiling;
+using UnityEngine.Rendering.Universal;
 using Debug = UnityEngine.Debug;
 using Environment = AssetBundleConverter.Environment;
 using Object = UnityEngine.Object;
@@ -145,6 +146,7 @@ namespace DCL.ABConverter
 
             // First step: initialize directories to download the original assets and to store the results
             InitializeDirectoryPaths(settings.clearDirectoriesOnStart, settings.clearDirectoriesOnStart);
+            AdjustRenderingMode(settings.buildTarget);
             env.assetDatabase.Refresh();
 
             await env.editor.Delay(TimeSpan.FromSeconds(0.1f));
@@ -205,7 +207,6 @@ namespace DCL.ABConverter
                 bundlesEndTime = EditorApplication.timeSinceStartup;
             }
 
-
             if (isExitForced)
                 return;
 
@@ -217,6 +218,21 @@ namespace DCL.ABConverter
             }
 
             OnFinish();
+        }
+
+        private void AdjustRenderingMode(BuildTarget targetPlatform)
+        {
+            var universalRendererData = Resources.FindObjectsOfTypeAll<UniversalRendererData>().First();
+            var rendererDataPath = AssetDatabase.GetAssetPath(universalRendererData);
+
+            universalRendererData.renderingMode = targetPlatform switch
+                                                  {
+                                                      BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX => RenderingMode.ForwardPlus,
+                                                      BuildTarget.WebGL => RenderingMode.Forward,
+                                                      _ => universalRendererData.renderingMode
+                                                  };
+
+            AssetDatabase.ImportAsset(rendererDataPath);
         }
 
         private void MarkAndBuildForTarget(BuildTarget target)
@@ -437,23 +453,12 @@ namespace DCL.ABConverter
             string materialPath =
                 PathUtils.GetRelativePathTo(Application.dataPath, string.Concat(materialRoot, matName, ".mat"));
 
-            var previousMat = env.assetDatabase.LoadAssetAtPath<Material>(materialPath);
-
-            if (previousMat != null)
-                env.assetDatabase.DeleteAsset(materialPath);
-
-            Profiler.BeginSample("ExtractEmbedMaterials.CreateAsset");
-            env.assetDatabase.CreateAsset(Object.Instantiate(originalMaterial), materialPath);
-            //env.assetDatabase.SaveAssets();
-            Profiler.EndSample();
-
-            var newMaterial = env.assetDatabase.LoadAssetAtPath<Material>(materialPath);
+            var newMaterial = Object.Instantiate(originalMaterial);
 
             var shader = newMaterial.shader;
 
             if (settings.stripShaders)
-                env.assetDatabase.MarkAssetBundle(env.assetDatabase, shader,
-                    shader.name + "_IGNORE" + PlatformUtils.GetPlatform());
+                env.assetDatabase.AssignAssetBundle(shader);
 
             var textureProperties = GetTextureProperties(shader);
 
@@ -461,32 +466,24 @@ namespace DCL.ABConverter
             for (var i = 0; i < textureProperties.Count; ++i)
             {
                 int propertyId = textureProperties[i];
-                var tex = originalMaterial.GetTexture(propertyId) as Texture2D;
-
-                // we ensure that the property has a valid material
-                if (!tex) continue;
 
                 // we reassign the texture reference
-                string texName = Utils.NicifyName(tex.name);
-                texName = Path.GetFileNameWithoutExtension(texName).ToLowerInvariant();
-
                 var prevTexture = newMaterial.GetTexture(propertyId);
 
-                if (texNameMap.ContainsKey(texName))
-                    newMaterial.SetTexture(propertyId, texNameMap[texName]);
-                else
-                {
-                    if (prevTexture == null)
-                    {
-                        var message =
-                            $"Failed to set texture \"{texName}\" to material \"{matName}\". This will cause white materials";
-                        log.Error(message);
-                        errorReporter.ReportError(message, settings);
-                        ForceExit((int)ErrorCodes.EMBED_MATERIAL_FAILURE);
-                        return;
-                    }
-                }
+                // after copying a material it should hold the reference to the original texture
+                if (!prevTexture) continue;
+
+                string texName = Utils.NicifyName(prevTexture.name);
+                texName = Path.GetFileNameWithoutExtension(texName).ToLowerInvariant();
+
+                if (texNameMap.TryGetValue(texName, out Texture2D tex))
+                    newMaterial.SetTexture(propertyId, tex);
             }
+
+            Profiler.BeginSample("ExtractEmbedMaterials.CreateAsset");
+            env.assetDatabase.CreateAsset(newMaterial, materialPath);
+            //env.assetDatabase.SaveAssets();
+            Profiler.EndSample();
 
             Profiler.EndSample();
 
@@ -727,7 +724,7 @@ namespace DCL.ABConverter
 
             // 1. Convert flagged folders to asset bundles only to automatically get dependencies for the metadata
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
-                BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle,
+                BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
                 target);
 
             if (manifest == null)
@@ -752,7 +749,7 @@ namespace DCL.ABConverter
 
             // 3. Convert flagged folders to asset bundles again but this time they have the metadata file inside
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
-                BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle,
+                BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
                 target);
 
             var afterSecondBuild = EditorApplication.timeSinceStartup;
@@ -1138,7 +1135,7 @@ namespace DCL.ABConverter
         }
 
         private IGltfImport CreateGltfImport(AssetPath filePath) =>
-            env.gltfImporter.GetImporter(filePath, contentTable, settings.shaderType);
+            env.gltfImporter.GetImporter(filePath, contentTable, settings.shaderType, settings.buildTarget);
 
         private void ReduceTextureSizeIfNeeded(string texturePath, float maxSize)
         {

@@ -23,7 +23,7 @@ namespace DCL
         void SaveImporter(AssetImporter gltfImporter);
 
         void CreateAsset(Object obj, string path);
-
-        void MarkAssetBundle(IAssetDatabase assetDb, Object asset, string abName);
+        void AssignAssetBundle(Shader shader);
+        void MarkAssetBundle(Object asset, string abName);
     }
 }
