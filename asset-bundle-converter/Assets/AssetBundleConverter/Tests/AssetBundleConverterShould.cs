@@ -246,24 +246,13 @@ namespace AssetBundleConverter.Tests
             gltf.GetMaterial(0).Returns(material);
             material.SetTexture("_BaseMap", exampleTexture);
 
-            var materialCopy = new Material(Shader.Find("DCL/Universal Render Pipeline/Lit"));
-            material.name = materialName;
-
-            // When a material asset is created whe make a copy of it, but for simplicity we are going to use our test material
-            // the first call returns the original material
-            // the second call returns the new instance which has no texture
-            assetDatabase.LoadAssetAtPath<Material>(materialPath).Returns(material, materialCopy);
-
             // Ensure that a when the material asset is created, the new instance of the material is a copy
             assetDatabase.When(ad => ad.CreateAsset(Arg.Any<Material>(), Arg.Any<string>())).Do(c => Assert.AreNotEqual(c.Arg<Material>(), material));
 
             await converter.ConvertAsync(new List<ContentServerUtils.MappingPair> { exampleAsset });
 
-            // Ensure that a material asset is created
-            assetDatabase.Received().CreateAsset(Arg.Any<Material>(), Arg.Any<string>());
-
-            // Ensure that the new material has a texture reference
-            Assert.IsNotNull(materialCopy.GetTexture("_BaseMap"), "Material has no texture");
+            // Ensure that a material asset is created and the texture is set for this material
+            assetDatabase.Received(1).CreateAsset(Arg.Is<Material>(m => m.GetTexture("_BaseMap")), Arg.Any<string>());
         }
 
         private IGltfImport ConfigureGltf(ContentServerUtils.MappingPair mappingPair)
