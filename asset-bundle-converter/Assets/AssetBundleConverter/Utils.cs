@@ -241,7 +241,10 @@ namespace DCL.ABConverter
             importer.SetAssetBundleNameAndVariant(abName, "");
         }
 
-        internal static void AssignShaderBundle(IAssetDatabase db, Shader shader)
+        /// <param name="db"></param>
+        /// <param name="shader"></param>
+        /// <param name="buildVariantsCollection">Building variants collection is expensive and not required from CI</param>
+        internal static void AssignShaderBundle(IAssetDatabase db, Shader shader, bool buildVariantsCollection)
         {
             var abName = shader.name + "_IGNORE" + PlatformUtils.GetPlatform();
 
@@ -257,7 +260,7 @@ namespace DCL.ABConverter
 
             importer = AssetImporter.GetAtPath(variantsPath);
             if (importer)
-                importer.SetAssetBundleNameAndVariant(abName, "");
+                importer.SetAssetBundleNameAndVariant(buildVariantsCollection ? abName : "", "");
         }
 
         internal static bool MarkAssetForAssetBundleBuild(IAssetDatabase assetDb, Object asset, string abName)

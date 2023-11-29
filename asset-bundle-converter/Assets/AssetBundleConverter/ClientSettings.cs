@@ -60,8 +60,16 @@ namespace AssetBundleConverter
             public bool createAssetBundle = true;
             public bool placeOnScene = true;
             public string importOnlyEntity;
+
             public ShaderType shaderType = ShaderType.Dcl;
+
             public bool stripShaders = true;
+
+            /// <summary>
+            /// Whether to include all possible shader variants into the shader bundle
+            /// </summary>
+            public bool includeShaderVariants = false;
+
             public bool importGltf = true;
             public string targetHash;
             public Vector2Int? targetPointer = null;

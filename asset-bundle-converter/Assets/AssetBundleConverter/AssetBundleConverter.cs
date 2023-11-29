@@ -458,7 +458,7 @@ namespace DCL.ABConverter
             var shader = newMaterial.shader;
 
             if (settings.stripShaders)
-                env.assetDatabase.AssignAssetBundle(shader);
+                env.assetDatabase.AssignAssetBundle(shader, settings.includeShaderVariants);
 
             var textureProperties = GetTextureProperties(shader);
 

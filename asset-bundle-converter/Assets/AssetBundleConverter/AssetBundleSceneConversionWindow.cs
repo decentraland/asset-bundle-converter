@@ -58,6 +58,7 @@ namespace AssetBundleConverter
         private int yCoord = -110;
         private BuildPipelineType buildPipelineType = BuildPipelineType.Scriptable;
         private ShaderType shader = ShaderType.Dcl;
+        private bool includeShaderVariants;
         private SupportedBuildTarget buildTarget = SupportedBuildTarget.WebGL;
 
         private ClientSettings clientSettings;
@@ -86,6 +87,7 @@ namespace AssetBundleConverter
             placeOnScene = EditorGUILayout.Toggle("Place on Scene", placeOnScene);
             createAssetBundle = EditorGUILayout.Toggle("Create Asset Bundle", createAssetBundle);
             clearDownloads = EditorGUILayout.Toggle("Clear Downloads", clearDownloads);
+            includeShaderVariants = EditorGUILayout.Toggle("Include Shader Variants", includeShaderVariants);
             showDebugOptions = EditorGUILayout.Toggle("Show debug options", showDebugOptions);
 
             RenderUrlEditor();
@@ -309,6 +311,7 @@ namespace AssetBundleConverter
                 importOnlyEntity = showDebugOptions ? debugEntity : "",
                 shaderType = shader,
                 stripShaders = stripShaders,
+                includeShaderVariants = includeShaderVariants,
                 importGltf = importGltf,
                 placeOnScene = placeOnScene,
                 verbose = verbose,
