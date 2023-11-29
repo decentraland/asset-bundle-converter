@@ -82,9 +82,9 @@ namespace DCL
                 UnityEditor.AssetDatabase.CreateAsset(obj, path);
             }
 
-            public void AssignAssetBundle(Shader shader)
+            public void AssignAssetBundle(Shader shader, bool withVariants)
             {
-                Utils.AssignShaderBundle(this, shader);
+                Utils.AssignShaderBundle(this, shader, withVariants);
             }
 
             public void MarkAssetBundle(Object asset, string abName)

@@ -258,6 +258,9 @@ namespace DCL.ABConverter
             if (Utils.ParseOption(commandLineArgs, Config.CLI_KEEP_BUNDLES_SYNTAX, 0, out _))
                 settings.deleteDownloadPathAfterFinished = false;
 
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_INCLUDE_SHADER_VARIANTS, 0, out _))
+                settings.includeShaderVariants = true;
+
             // Target is setup during the commandline argument -buildTarget
             settings.buildTarget = EditorUserBuildSettings.activeBuildTarget;
 
