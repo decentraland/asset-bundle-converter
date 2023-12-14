@@ -1,0 +1,150 @@
+{
+  "scene-coords": [-129,-77],
+  "rendereable-entities": [
+    {
+      "entityId": 512,
+      "componentId": 1,
+      "componentName": "core::Transform",
+      "data": {
+        "position": {
+          "x": 6,
+          "y": 10,
+          "z": 10
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1,
+          "z": 0,
+          "w": 6.123234262925839e-17
+        },
+        "scale": {
+          "x": 4,
+          "y": 4,
+          "z": 4
+        },
+        "parent": 0
+      }
+    },
+    {
+      "entityId": 513,
+      "componentId": 1,
+      "componentName": "core::Transform",
+      "data": {
+        "position": {
+          "x": 4,
+          "y": 2,
+          "z": 4
+        },
+        "rotation": {
+          "x": 0.47300055623054504,
+          "y": 0.1854609102010727,
+          "z": 0.4399643838405609,
+          "w": 0.7404769062995911
+        },
+        "scale": {
+          "x": 0.75,
+          "y": 1.25,
+          "z": 0.75
+        },
+        "parent": 0
+      }
+    },
+    {
+      "entityId": 514,
+      "componentId": 1,
+      "componentName": "core::Transform",
+      "data": {
+        "position": {
+          "x": 12,
+          "y": 2,
+          "z": 12
+        },
+        "rotation": {
+          "x": -0.4497462809085846,
+          "y": 0.32085761427879333,
+          "z": -0.7655088305473328,
+          "w": 0.32981032133102417
+        },
+        "scale": {
+          "x": 2.3299999237060547,
+          "y": 1.25,
+          "z": 1
+        },
+        "parent": 0
+      }
+    },
+    {
+      "entityId": 512,
+      "componentId": 1041,
+      "componentName": "core::GltfContainer",
+      "data": {
+        "src": "models/Monster.glb"
+      }
+    },
+    {
+      "entityId": 513,
+      "componentId": 1017,
+      "componentName": "core::Material",
+      "data": {
+        "material": {
+          "$case": "unlit",
+          "unlit": {
+            "texture": {
+              "tex": {
+                "$case": "texture",
+                "texture": {
+                  "src": "images/scene-thumbnail.png"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "entityId": 514,
+      "componentId": 1017,
+      "componentName": "core::Material",
+      "data": {
+        "material": {
+          "$case": "pbr",
+          "pbr": {
+            "albedoColor": {
+              "r": 15,
+              "g": 0,
+              "b": 0,
+              "a": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "entityId": 513,
+      "componentId": 1018,
+      "componentName": "core::MeshRenderer",
+      "data": {
+        "mesh": {
+          "$case": "box",
+          "box": {
+            "uvs": []
+          }
+        }
+      }
+    },
+    {
+      "entityId": 514,
+      "componentId": 1018,
+      "componentName": "core::MeshRenderer",
+      "data": {
+        "mesh": {
+          "$case": "cylinder",
+          "cylinder": {
+            "radiusTop": 1,
+            "radiusBottom": 0
+          }
+        }
+      }
+    }
+  ]   
+}

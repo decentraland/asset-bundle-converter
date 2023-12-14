@@ -75,6 +75,7 @@ namespace DCL.ABConverter
         private List<AssetPath> assetsToMark = new ();
         private List<GltfImportSettings> gltfToWait = new ();
         private Dictionary<string, string> contentTable = new ();
+        private Dictionary<string, string> lodContentTable = new ();
         private Dictionary<string, string> gltfOriginalNames = new ();
         private string logBuffer;
         private int totalAssets;
@@ -100,6 +101,8 @@ namespace DCL.ABConverter
         private bool isExitForced = false;
         private IABLogger log => env.logger;
 
+        private SceneLODGenerator sceneLODGenerator;
+
         public AssetBundleConverter(Environment env, ClientSettings settings)
         {
             this.settings = settings;
@@ -114,6 +117,7 @@ namespace DCL.ABConverter
             finalDownloadedAssetDbPath = PathUtils.FixDirectorySeparator(Config.ASSET_BUNDLES_PATH_ROOT + Config.DASH);
 
             log.verboseEnabled = true;
+            sceneLODGenerator = new SceneLODGenerator();
         }
 
         /// <summary>
@@ -195,6 +199,9 @@ namespace DCL.ABConverter
                 ForceExit((int)ErrorCodes.GLTF_PROCESS_MISMATCH);
                 return;
             }
+
+            if (settings.createSceneLOD)
+                await sceneLODGenerator.GenerateSceneLOD(lodContentTable);
 
             if (settings.createAssetBundle)
             {
@@ -942,6 +949,8 @@ namespace DCL.ABConverter
                 string finalKey = useHash ? Utils.EnsureStartWithSlash(assetPath.hashPath) : Utils.EnsureStartWithSlash(assetPath.filePath);
                 finalKey = finalKey.ToLower();
                 contentTable[finalKey] = relativeFinalPath;
+
+                lodContentTable[assetPath.filePath] = relativeFinalPath;
             }
         }
 

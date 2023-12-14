@@ -48,6 +48,7 @@ namespace AssetBundleConverter
         private string batchModeParams = "";
         private string baseUrl;
         private bool placeOnScene = true;
+        private bool createSceneLOD = false;
         private bool visualTest = false;
         private bool clearDownloads = true;
         private bool createAssetBundle = true;
@@ -85,6 +86,8 @@ namespace AssetBundleConverter
 
             visualTest = EditorGUILayout.Toggle("Visual Test", visualTest);
             placeOnScene = EditorGUILayout.Toggle("Place on Scene", placeOnScene);
+            createSceneLOD = EditorGUILayout.Toggle("Create Scene LOD", createSceneLOD);
+
             createAssetBundle = EditorGUILayout.Toggle("Create Asset Bundle", createAssetBundle);
             clearDownloads = EditorGUILayout.Toggle("Clear Downloads", clearDownloads);
             includeShaderVariants = EditorGUILayout.Toggle("Include Shader Variants", includeShaderVariants);
@@ -314,6 +317,7 @@ namespace AssetBundleConverter
                 includeShaderVariants = includeShaderVariants,
                 importGltf = importGltf,
                 placeOnScene = placeOnScene,
+                createSceneLOD = createSceneLOD,
                 verbose = verbose,
                 buildTarget = GetBuildTarget(),
                 BuildPipelineType = buildPipelineType

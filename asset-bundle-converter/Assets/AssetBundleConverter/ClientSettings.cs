@@ -59,6 +59,7 @@ namespace AssetBundleConverter
             public bool visualTest = true;
             public bool createAssetBundle = true;
             public bool placeOnScene = true;
+            public bool createSceneLOD = false;
             public string importOnlyEntity;
 
             public ShaderType shaderType = ShaderType.Dcl;
