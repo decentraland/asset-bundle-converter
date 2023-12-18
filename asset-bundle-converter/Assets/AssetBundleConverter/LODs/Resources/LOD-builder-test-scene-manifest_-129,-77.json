@@ -1,5 +1,8 @@
 {
-  "scene-coords": [-129,-77],
+  "scene-coords": [
+    -129,
+    -77
+  ],
   "rendereable-entities": [
     {
       "entityId": 512,
@@ -146,5 +149,5 @@
         }
       }
     }
-  ]   
+  ]
 }

@@ -1,5 +1,4 @@
-// unset:none
-using System.Numerics;
+using UnityEngine;
 
 namespace Utility.Primitives
 {

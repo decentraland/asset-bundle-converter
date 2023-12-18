@@ -9,7 +9,7 @@ public class SceneLODGenerator {
 
     public async UniTask GenerateSceneLOD(Dictionary<string, string> lodContentTable)
     {
-        TextAsset sceneDescriptorJson = Resources.Load<TextAsset>("LOD-builder-test-scene-manifest");
+        TextAsset sceneDescriptorJson = Resources.Load<TextAsset>("rendereable-entities-manifest");
         SceneDescriptorData sceneDescriptor = JsonConvert.DeserializeObject<SceneDescriptorData>(sceneDescriptorJson.text);
 
         Dictionary<int, DCLRendereableEntity> renderableEntitiesDictionary = new Dictionary<int, DCLRendereableEntity>();
@@ -24,7 +24,10 @@ public class SceneLODGenerator {
         }
 
         foreach (var dclRendereableEntity in renderableEntitiesDictionary)
-            dclRendereableEntity.Value.InstantiateEntity(lodContentTable);
+            dclRendereableEntity.Value.InitEntity();
+
+        foreach (KeyValuePair<int, DCLRendereableEntity> dclRendereableEntity in renderableEntitiesDictionary)
+            dclRendereableEntity.Value.PositionAndInstantiteMesh(lodContentTable, renderableEntitiesDictionary);
 
     }
 }

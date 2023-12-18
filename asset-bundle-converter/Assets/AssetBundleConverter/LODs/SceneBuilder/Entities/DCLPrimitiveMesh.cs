@@ -41,6 +41,19 @@ namespace AssetBundleConverter.LODs
 
         protected override Mesh GetMesh() =>
             CylinderVariantsFactory.Create(radiusTop,radiusBottom);
+    }
 
+    public class Plane : DCLPrimitiveMesh
+    {
+        public float[] uvs;
+
+        protected override Mesh GetMesh() =>
+            PlaneFactory.Create(uvs);
+    }
+
+    public class Sphere : DCLPrimitiveMesh
+    {
+        protected override Mesh GetMesh() =>
+            SphereFactory.Create();
     }
 }

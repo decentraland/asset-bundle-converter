@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using Utility.Primitives.Utility.Primitives;
 
 namespace Utility.Primitives
 {
@@ -19,6 +20,7 @@ namespace Utility.Primitives
             float openingAngle = OPENING_ANGLE)
         {
             Mesh mesh = new Mesh();
+            mesh.name = "DCL Cylinder/Cone";
 
             if (openingAngle is > 0 and < 180)
             {
@@ -34,12 +36,12 @@ namespace Utility.Primitives
 
             int finalVerticesCount = 4 * numVertices2;
 
-            Vector3[] vertices = new Vector3[finalVerticesCount];
+            Vector3[] vertices = PrimitivesBuffersPool.EQUAL_TO_VERTICES.Rent(finalVerticesCount);
 
             // 0..n-1: top, n..2n-1: bottom
-            Vector3[] normals = new Vector3[finalVerticesCount];
+            Vector3[] normals = PrimitivesBuffersPool.EQUAL_TO_VERTICES.Rent(finalVerticesCount);
 
-            Vector2[] uvs = new Vector2[finalVerticesCount];
+            Vector2[] uvs = PrimitivesBuffersPool.UVS.Rent(finalVerticesCount);
 
             int[] tris;
             float slope = Mathf.Atan((radiusBottom - radiusTop) / length); // (rad difference)/height
@@ -127,7 +129,9 @@ namespace Utility.Primitives
             mesh.SetNormals(normals, 0, finalVerticesCount);
             mesh.SetUVs(0, uvs, 0, finalVerticesCount);
 
-
+            PrimitivesBuffersPool.EQUAL_TO_VERTICES.Return(vertices);
+            PrimitivesBuffersPool.EQUAL_TO_VERTICES.Return(normals);
+            PrimitivesBuffersPool.UVS.Return(uvs);
 
             // create triangles
             // here we need to take care of point order, depending on inside and outside
@@ -139,7 +143,7 @@ namespace Utility.Primitives
             {
                 // top cone
                 trianglesCount = (numVertices2 * 3) + (numVertices * 6);
-                tris = new int[trianglesCount];
+                tris = PrimitivesBuffersPool.TRIANGLES.Rent(trianglesCount);
 
                 for (i = 0; i < numVertices; i++)
                 {
@@ -152,7 +156,7 @@ namespace Utility.Primitives
             {
                 // bottom cone
                 trianglesCount = (numVertices2 * 3) + (numVertices * 6);
-                tris = new int[trianglesCount];
+                tris = PrimitivesBuffersPool.TRIANGLES.Rent(trianglesCount);
 
                 for (i = 0; i < numVertices; i++)
                 {
@@ -165,7 +169,7 @@ namespace Utility.Primitives
             {
                 // truncated cone
                 trianglesCount = (numVertices * 6) + (numVertices * 6);
-                tris = new int[trianglesCount];
+                tris = PrimitivesBuffersPool.TRIANGLES.Rent(trianglesCount);
 
                 for (i = 0; i < numVertices; i++)
                 {
@@ -204,6 +208,8 @@ namespace Utility.Primitives
             }
 
             mesh.SetTriangles(tris, 0, trianglesCount, 0);
+
+            PrimitivesBuffersPool.TRIANGLES.Return(tris);
 
             return mesh;
         }

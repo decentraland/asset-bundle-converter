@@ -13,6 +13,9 @@ namespace AssetBundleConverter.LODs.JsonParsing
     {
         public const string Box = "box";
         public const string Cylinder = "cylinder";
+        public const string Sphere = "sphere";
+        public const string Plane = "plane";
+
     }
 
     public class MaterialConstants

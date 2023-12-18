@@ -25,6 +25,14 @@ namespace AssetBundleConverter.LODs.JsonParsing
                     dclMesh = new Cylinder();
                     serializer.Populate(jsonObject["cylinder"].CreateReader(), dclMesh);
                     break;
+                case MeshConstants.Plane:
+                    dclMesh = new Plane();
+                    serializer.Populate(jsonObject["plane"].CreateReader(), dclMesh);
+                    break;
+                case MeshConstants.Sphere:
+                    dclMesh = new Sphere();
+                    serializer.Populate(jsonObject["sphere"].CreateReader(), dclMesh);
+                    break;
             }
 
             return dclMesh;

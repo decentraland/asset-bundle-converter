@@ -1,8 +1,6 @@
 using AssetBundleConverter.LODs.JsonParsing;
-using System;
 using System.Collections.Generic;
 using UnityEngine;
-using Mesh = UnityEngine.Mesh;
 
 namespace AssetBundleConverter.LODs
 {
@@ -37,20 +35,29 @@ namespace AssetBundleConverter.LODs
             }
         }
 
-        public void InstantiateEntity(Dictionary<string, string> contentTable)
+        public void InitEntity()
         {
             instantiatedEntity = new GameObject();
             instantiatedEntity.name = $"Entity_{entityID}";
-            InstantiateTransform();
-            rendereableMesh.InstantiateMesh(instantiatedEntity.transform, dclMaterial, contentTable);
         }
 
-        private void InstantiateTransform()
+        public void PositionAndInstantiteMesh(Dictionary<string, string> contentTable, Dictionary<int, DCLRendereableEntity> renderableEntities)
         {
-            instantiatedEntity.transform.position = new Vector3(transform.position.x, transform.position.y, transform.position.z);
-            instantiatedEntity.transform.rotation = new Quaternion(transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w);
+            InstantiateTransform(renderableEntities);
+            rendereableMesh?.InstantiateMesh(instantiatedEntity.transform, dclMaterial, contentTable);
+        }
+
+        private void InstantiateTransform(Dictionary<int, DCLRendereableEntity> renderableEntities)
+        {
+            if (transform.parent != 0)
+                if (renderableEntities.TryGetValue((int)transform.parent, out DCLRendereableEntity rendereableEntity))
+                    instantiatedEntity.transform.SetParent(rendereableEntity.instantiatedEntity.transform);
+
+            instantiatedEntity.transform.localPosition = new Vector3(transform.position.x, transform.position.y, transform.position.z);
+            instantiatedEntity.transform.localRotation = new Quaternion(transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w);
             instantiatedEntity.transform.localScale = new Vector3(transform.scale.x, transform.scale.y, transform.scale.z);
         }
+
     }
 }
 

@@ -19,12 +19,9 @@ namespace AssetBundleConverter.LODs
         {
             if (contentTable.TryGetValue(src, out string texturePath))
             {
-                GameObject container = GameObject.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(texturePath));
+                GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(texturePath);
+                GameObject container = Object.Instantiate(prefab, parent, false);
                 container.name = "GLTFMesh";
-                container.transform.SetParent(parent);
-                container.transform.localPosition = Vector3.zero;
-                container.transform.localScale = Vector3.one;
-                container.transform.localRotation = Quaternion.identity;
             }
         }
     }

@@ -1,6 +1,6 @@
-using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using Utility.Primitives.Utility.Primitives;
 
 namespace Utility.Primitives
 {
@@ -9,15 +9,16 @@ namespace Utility.Primitives
         internal const int VERTICES_NUM = 24;
         internal const int TRIS_NUM = 36;
 
-        public static Mesh Create(float[] uvs)
+        public static Mesh Create(float[] customUvs)
         {
             Mesh mesh = new Mesh();
+            mesh.name = "DCL Box";
 
-            Vector3[] vertices = new Vector3[VERTICES_NUM]; //top bottom left right front back
-            Vector3[] normals = new Vector3[VERTICES_NUM] ;
-            Vector2[] defaultUVs = new Vector2[VERTICES_NUM];
-            Vector2[] uvs2 = new Vector2 [VERTICES_NUM];
-            int[] tris = new int[TRIS_NUM];
+            Vector3[] vertices = PrimitivesBuffersPool.EQUAL_TO_VERTICES.Rent(VERTICES_NUM); //top bottom left right front back
+            Vector3[] normals = PrimitivesBuffersPool.EQUAL_TO_VERTICES.Rent(VERTICES_NUM);
+            var defaultUVs = new Vector2[VERTICES_NUM];
+            Vector2[] uvs2 = PrimitivesBuffersPool.UVS.Rent(VERTICES_NUM);
+            int[] tris = PrimitivesBuffersPool.TRIANGLES.Rent(TRIS_NUM);
 
             var vIndex = 0;
 
@@ -223,12 +224,15 @@ namespace Utility.Primitives
             mesh.SetUVs(1, uvs2, 0, VERTICES_NUM);
             mesh.SetTriangles(tris, 0, TRIS_NUM, 0);
 
-            if (uvs.Length > 0)
-                mesh.SetUVs(0, PrimitivesUtils.FloatArrayToV2List(uvs.ToList()), 0, VERTICES_NUM);
+            if (customUvs.Length > 0)
+                mesh.SetUVs(0, PrimitivesUtils.FloatArrayToV2List(customUvs.ToList()), 0, VERTICES_NUM);
+
+            PrimitivesBuffersPool.EQUAL_TO_VERTICES.Return(vertices);
+            PrimitivesBuffersPool.EQUAL_TO_VERTICES.Return(normals);
+            PrimitivesBuffersPool.UVS.Return(uvs2);
+            PrimitivesBuffersPool.TRIANGLES.Return(tris);
 
             return mesh;
         }
-
-
     }
 }

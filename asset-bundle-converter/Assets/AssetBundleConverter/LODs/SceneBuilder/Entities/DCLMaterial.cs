@@ -37,7 +37,7 @@ namespace AssetBundleConverter.LODs
     [Serializable]
     public class UnlitMaterial : DCLMaterial
     {
-        private static readonly Shader CACHED_SHADER = Shader.Find("Universal Render Pipeline/Unlit");
+        private static readonly Shader CACHED_SHADER = Shader.Find("DCL/Universal Render Pipeline/Unlit");
         protected override Shader GetShader() =>
             CACHED_SHADER;
     }
@@ -45,7 +45,7 @@ namespace AssetBundleConverter.LODs
     [Serializable]
     public class PBRMaterial : DCLMaterial
     {
-        private static readonly Shader CACHED_SHADER = Shader.Find("Universal Render Pipeline/Lit");
+        private static readonly Shader CACHED_SHADER = Shader.Find("DCL/Universal Render Pipeline/Lit");
         public AlbedoColor albedoColor = new ();
 
         protected override Color GetColor() =>
