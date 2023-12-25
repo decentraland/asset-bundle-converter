@@ -164,7 +164,7 @@ namespace DCL.ABConverter
                 if (!await DownloadAssets(rawContents))
                 {
                     log.Info("All assets are already converted");
-                    OnFinish();
+                    //OnFinish();
 
                     return;
                 }
@@ -177,12 +177,12 @@ namespace DCL.ABConverter
             if (isExitForced)
                 return;
 
-            if (await ProcessAllGltfs())
+            /*if (await ProcessAllGltfs())
             {
                 OnFinish();
 
                 return;
-            }
+            }*/
 
             if (isExitForced)
                 return;
@@ -191,14 +191,14 @@ namespace DCL.ABConverter
 
             EditorUtility.ClearProgressBar();
 
-            if (totalGltfsProcessed != totalGltfsToProcess)
+            /*if (totalGltfsProcessed != totalGltfsToProcess)
             {
                 var message = $"GLTF count mismatch GLTF to process: {totalGltfsToProcess} vs GLTF processed: {totalGltfsProcessed}";
                 log.Error(message);
                 errorReporter.ReportError(message, settings);
                 ForceExit((int)ErrorCodes.GLTF_PROCESS_MISMATCH);
                 return;
-            }
+            }*/
 
             if (settings.createSceneLOD)
                 await sceneLODGenerator.GenerateSceneLOD(lodContentTable);
@@ -224,7 +224,7 @@ namespace DCL.ABConverter
                 visualTestEndTime = EditorApplication.timeSinceStartup;
             }
 
-            OnFinish();
+            //OnFinish();
         }
 
         private void AdjustRenderingMode(BuildTarget targetPlatform)
@@ -832,9 +832,9 @@ namespace DCL.ABConverter
                     return false;
 
                 List<Task> downloadTasks = new List<Task>();
-                downloadTasks.AddRange(gltfPaths.Select(CreateDownloadTask));
+                /*downloadTasks.AddRange(gltfPaths.Select(CreateDownloadTask));
                 downloadTasks.AddRange(bufferPaths.Select(CreateDownloadTask));
-                downloadTasks.AddRange(texturePaths.Select(CreateDownloadTask));
+                downloadTasks.AddRange(texturePaths.Select(CreateDownloadTask));*/
 
                 downloadStartupTime = EditorApplication.timeSinceStartup;
 
@@ -914,7 +914,6 @@ namespace DCL.ABConverter
             try
             {
                 downloadHandler = await env.webRequest.Get(url);
-
                 if (downloadHandler == null)
                 {
                     var message = $"Download Failed {url} -- null DownloadHandler?";

@@ -37,7 +37,7 @@ namespace AssetBundleConverter
         private readonly string[] tabs = { TAB_SCENE, TAB_PARCELS, TAB_RANDOM, TAB_WEARABLES_COLLECTION, TEST_BATCHMODE, EMPTY_SCENES };
         private readonly string[] urlOptions = { URL_PEERS, URL_WORLDS, CUSTOM };
 
-        private string entityId = "QmYy2TMDEfag99yZV4ZdpjievYUfdQgBVfFHKCDAge3zQi";
+        private string entityId = "bafkreieifr7pyaofncd6o7vdptvqgreqxxtcn3goycmiz4cnwz7yewjldq";
         private string wearablesCollectionId = "urn:decentraland:off-chain:base-avatars";
         private string debugEntity = "bafkreib66ufmbowp4ee2u3kdu6t52kouie7kd7tfrlv3l5kejz6yjcaq5i";
 
@@ -47,11 +47,11 @@ namespace AssetBundleConverter
         private string batchSceneId = "";
         private string batchModeParams = "";
         private string baseUrl;
-        private bool placeOnScene = true;
-        private bool createSceneLOD = false;
+        private bool placeOnScene = false;
+        private bool createSceneLOD = true;
         private bool visualTest = false;
-        private bool clearDownloads = true;
-        private bool createAssetBundle = true;
+        private bool clearDownloads = false;
+        private bool createAssetBundle = false;
         private bool verbose = false;
         private int currentTab = 0;
         private int currentUrlOption = 0;
@@ -60,7 +60,7 @@ namespace AssetBundleConverter
         private BuildPipelineType buildPipelineType = BuildPipelineType.Scriptable;
         private ShaderType shader = ShaderType.Dcl;
         private bool includeShaderVariants;
-        private SupportedBuildTarget buildTarget = SupportedBuildTarget.WebGL;
+        private SupportedBuildTarget buildTarget = SupportedBuildTarget.Mac;
 
         private ClientSettings clientSettings;
         private bool showDebugOptions;
@@ -310,7 +310,7 @@ namespace AssetBundleConverter
                 baseUrl = baseUrl,
                 cleanAndExitOnFinish = false,
                 createAssetBundle = createAssetBundle,
-                clearDirectoriesOnStart = clearDownloads,
+                clearDirectoriesOnStart = false,
                 importOnlyEntity = showDebugOptions ? debugEntity : "",
                 shaderType = shader,
                 stripShaders = stripShaders,
