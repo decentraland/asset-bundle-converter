@@ -13,12 +13,20 @@ using Random = UnityEngine.Random;
 
 public class ExportFBXAssetBundles : MonoBehaviour
 {
+    
+    static string outputPath = Path.Combine(Application.dataPath, "../AssetBundles/");
+    
+    [MenuItem("Assets/Export Asset Bundles")]
+    static void ExportAssetBundles()
+    {
+        BuildPipeline.BuildAssetBundles(outputPath,  BuildAssetBundleOptions.None, EditorUserBuildSettings.activeBuildTarget);
+    }
+    
     [MenuItem("Assets/Export FBX To Asset Bundles")]
     private static void ExportAllAssetBundles()
     {
         string inPath = Path.Combine(Application.dataPath, "ExportToAssetBundle");
         string tempPath = Path.Combine(Application.dataPath, "temp");
-        string outputPath = Path.Combine(Application.dataPath, "../AssetBundles/");
         Directory.CreateDirectory(outputPath);
 
         string[] fileEntries = Directory.GetFiles(inPath, "*.fbx", SearchOption.AllDirectories);
