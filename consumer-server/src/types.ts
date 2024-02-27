@@ -22,7 +22,7 @@ export type BaseComponents = {
   logs: ILoggerComponent
   server: IHttpServerComponent<GlobalContext>
   fetch: IFetchComponent
-  taskQueue: ITaskQueue<DeploymentToSqs>
+  taskQueue: ITaskQueue<DeploymentToSqs & { lodBucketDirectory: string | undefined }>
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
   cdnS3: S3
   runner: IRunnerComponent
