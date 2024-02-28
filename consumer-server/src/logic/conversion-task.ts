@@ -118,7 +118,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
       outDirectory,
       projectPath: $PROJECT_PATH,
       unityPath: $UNITY_PATH,
-      timeout: 60 * 60 * 1000, // 60min,
+      timeout: 120 * 60 * 1000, // 120min temporarily doubled
       unityBuildTarget: unityBuildTarget,
     })
 
