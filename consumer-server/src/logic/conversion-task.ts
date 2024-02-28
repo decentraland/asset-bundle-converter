@@ -106,7 +106,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
   const s3LogKey = `logs/${$AB_VERSION}/${entityId}/${new Date().toISOString()}.txt`
   const outDirectory = `/tmp/asset_bundles_contents/entity_${entityId}`
 
-  const defaultLoggerMetadata = { entityId, contentServerUrl, version: $AB_VERSION, logFile }
+  const defaultLoggerMetadata = { entityId, contentServerUrl, version: $AB_VERSION, logFile: s3LogKey }
 
   logger.info("Starting conversion for " + $BUILD_TARGET, defaultLoggerMetadata)
 
