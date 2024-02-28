@@ -43,7 +43,6 @@ jobs:
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: quay.io/decentraland/${{ matrix.service_name }}:next,quay.io/decentraland/${{ matrix.service_name }}:${{ github.sha }}
           #load: true
-          load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
@@ -62,7 +61,7 @@ jobs:
           docker run \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
             -v $(pwd):/app \
-            quay.io/decentraland/${{ matrix.service_name }}@next \
+            quay.io/decentraland/${{ matrix.service_name }}@${{ steps.docker_build.outputs.digest }} \
               sh -c "cd /app ; ls -la ; chmod +x ci-editmode-test.sh ; ./ci-editmode-test.sh"
 
       - name: Run test conversion of urn:decentraland:off-chain:base-avatars:brown_pants
