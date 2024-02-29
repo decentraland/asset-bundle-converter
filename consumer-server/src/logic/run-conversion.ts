@@ -58,7 +58,7 @@ export async function runLodsConversion(logger: ILoggerComponent.ILogger, compon
   const childArguments: string[] = [
     '-projectPath', options.projectPath,
     '-batchmode',
-    '-executeMethod', 'DCL.ABConverter.SceneClient.ExportFBXAssetBundles',
+    '-executeMethod', 'DCL.ABConverter.LODClient.ExportS3LODsToAssetBundles',
     '-sceneCid', options.entityId,
     '-logFile', options.logFile,
     '-bucket', options.lodBucket,

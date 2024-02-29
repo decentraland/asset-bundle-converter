@@ -1,1 +1,1 @@
-"C:\Program Files\Unity\Hub\Editor\2021.3.14f1\Editor\Unity.exe" -projectPath "asset-bundle-converter" -batchmode -executeMethod DCL.ABConverter.SceneClient.ExportSceneToAssetBundles -x "-110" -y "-110" -output "AssetBundles" -logFile ./tmp/log.txt
+"C:\Program Files\Unity\Hub\Editor\2022.3.12f1\Editor\Unity.exe" -projectPath "asset-bundle-converter" -batchmode -executeMethod DCL.ABConverter.LODClient.ExportLODAssetBundles.ExportS3LODsToAssetBundles -bucket "lods" -bucketDirectory "LOD/Sources/1707159813915/" -output "AssetBundles" 
