@@ -56,7 +56,7 @@ namespace AssetBundleConverter
             public string baseUrl;
 
             public bool cleanAndExitOnFinish = true;
-            public bool visualTest = true;
+            public bool visualTest = false;
             public bool createAssetBundle = true;
             public bool placeOnScene = true;
             public string importOnlyEntity;
