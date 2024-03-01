@@ -65,6 +65,7 @@ namespace AssetBundleConverter.Tests
             {
                 finalAssetBundlePath = EXAMPLE_AB_PATH,
                 baseUrl = EXAMPLE_BASE_URL,
+                visualTest = true,
             };
 
             converter = new DCL.ABConverter.AssetBundleConverter(environment, clientSettings);
