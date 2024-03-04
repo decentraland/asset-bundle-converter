@@ -45,8 +45,7 @@ export async function runLodsConversion(logger: ILoggerComponent.ILogger, compon
   logFile: string,
   outDirectory: string,
   entityId: string,
-  lodBucket: string,
-  lodBucketDirectory: string,
+  lods: string[],
   unityPath: string,
   projectPath: string,
   timeout: number
@@ -61,8 +60,7 @@ export async function runLodsConversion(logger: ILoggerComponent.ILogger, compon
     '-executeMethod', 'DCL.ABConverter.LODClient.ExportS3LODsToAssetBundles',
     '-sceneCid', options.entityId,
     '-logFile', options.logFile,
-    '-bucket', options.lodBucket,
-    '-bucketDirectory', options.lodBucketDirectory,
+    '-lods', options.lods.join(','),
     '-output', options.outDirectory
   ]
 

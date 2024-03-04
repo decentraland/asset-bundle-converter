@@ -36,8 +36,8 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
       await components.taskQueue.consumeAndProcessJob(async (job, message) => {
         try {
           components.metrics.increment('ab_converter_running_conversion')
-          if (job.lodBucketDirectory) {
-            await executeLODConversion(components, job.entity.entityId, job.lodBucketDirectory)
+          if (job.lods) {
+            await executeLODConversion(components, job.entity.entityId, job.lods)
           } else {
             await executeConversion(components, job.entity.entityId, job.contentServerUrls![0], job.force)
           }

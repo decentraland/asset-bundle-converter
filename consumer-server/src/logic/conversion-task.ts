@@ -73,7 +73,7 @@ function getAbVersionEnvName(buildTarget: string)
   }
 }
 
-export async function executeLODConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, entityId: string, lodBucketDirectory: string) { 
+export async function executeLODConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, entityId: string, lods: string[]) { 
   const $LOD_BUCKET = await components.config.getString('LOD_BUCKET')
   if (!$LOD_BUCKET) {
     throw new Error('LOD_BUCKET is not defined')
@@ -92,7 +92,7 @@ export async function executeLODConversion(components: Pick<AppComponents, 'logs
   const logFile = `/tmp/asset_bundles_logs/export_log_${entityId}_${Date.now()}.txt`
   const s3LogKey = `logs/${$AB_VERSION}/${entityId}/${new Date().toISOString()}.txt`
   const outDirectory = `/tmp/asset_bundles_contents/entity_${entityId}`
-  let defaultLoggerMetadata = { entityId, lodBucketDirectory, version: $AB_VERSION, logFile } as any
+  let defaultLoggerMetadata = { entityId, lods, version: $AB_VERSION, logFile } as any
 
   logger.info("Starting conversion for " + $BUILD_TARGET, defaultLoggerMetadata)
 
@@ -101,8 +101,7 @@ export async function executeLODConversion(components: Pick<AppComponents, 'logs
       entityId,
       logFile,
       outDirectory,
-      lodBucket: $LOD_BUCKET,
-      lodBucketDirectory,
+      lods,
       unityPath: $UNITY_PATH,
       projectPath: $PROJECT_PATH,
       timeout: 60 * 60 * 1000,
