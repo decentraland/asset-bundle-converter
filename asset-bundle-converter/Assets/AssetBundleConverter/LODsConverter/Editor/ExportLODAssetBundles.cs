@@ -9,9 +9,11 @@ using Amazon;
 using Amazon.S3;
 using Amazon.S3.Model;
 using AssetBundleConverter.LODsConverter.Utils;
+using Cysharp.Threading.Tasks;
 using DCL.ABConverter;
 using DCL.Shaders;
 using UnityEngine.Experimental.Rendering;
+using UnityEngine.Networking;
 using UnityEngine.Rendering;
 using Object = UnityEngine.Object;
 using Random = UnityEngine.Random;
@@ -23,7 +25,60 @@ namespace DCL.ABConverter.LODClient
         private static readonly string outputPath = Path.Combine(Application.dataPath, "../AssetBundles/");
         private static readonly string tempPath = Path.Combine(Application.dataPath, "temp");
 
-        [MenuItem("Assets/Export AMAZON Asset Bundles")]
+        public static async void ExportURLLODsToAssetBundles()
+        {
+            string[] commandLineArgs = Environment.GetCommandLineArgs();
+
+            string lodsURL = "";
+            string customOutputDirectory = "";
+
+            if (Utils.ParseOption(commandLineArgs, Config.LODS_URL, 1, out string[] lodsURLArg))
+                lodsURL = lodsURLArg[0].ToLower();
+
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_CUSTOM_OUTPUT_ROOT_PATH, 1, out string[] outputDirectoryArg))
+                customOutputDirectory = outputDirectoryArg[0].ToLower();
+            else
+                customOutputDirectory = outputPath;
+
+            string[] downloadedFiles = await DownloadRawLOD(lodsURL);
+            ExportFilesToAssetBundles(downloadedFiles, customOutputDirectory);
+        }
+
+        private static async Task<string[]> DownloadRawLOD(string lodsURL)
+        {
+            Directory.CreateDirectory(tempPath);
+            string[] filesToDownload = lodsURL.Split(",");
+            string[] downloadedPaths = new string[filesToDownload.Length];
+            for (int index = 0; index < filesToDownload.Length; index++)
+            {
+                string url = filesToDownload[index];
+                using (var webRequest = UnityWebRequest.Get(url))
+                {
+                    string fileName = Path.GetFileName(url);
+                    // Modify this path according to your needs
+                    string savePath = Path.Combine(tempPath, fileName);
+
+                    // Await the completion of the download
+                    await webRequest.SendWebRequest();
+
+                    if (webRequest.result == UnityWebRequest.Result.Success)
+                    {
+                        // Success, save the downloaded file
+                        File.WriteAllBytes(savePath, webRequest.downloadHandler.data);
+                        Debug.Log($"File downloaded and saved to {savePath}");
+                        downloadedPaths[index] = savePath;
+                    }
+                    else
+                    {
+                        Debug.LogError($"Error downloading {url}: {webRequest.error}");
+                        return null;
+                    }
+                }
+            }
+
+            return  downloadedPaths;
+        }
+
         public static async void ExportS3LODsToAssetBundles()
         {
             string[] commandLineArgs = Environment.GetCommandLineArgs();
