@@ -46,34 +46,7 @@ namespace DCL.ABConverter
                 Utils.Exit(1);
             }
         }
-
-        
-
-        public static async void ExportS3LODsToAssetBundles()
-        {
-            string[] commandLineArgs = Environment.GetCommandLineArgs();
-
-            string bucketName = "";
-            string bucketDirectory = "";
-            string customOutputDirectory = "";
-
-            if (Utils.ParseOption(commandLineArgs, Config.CLI_BUCKET, 1, out string[] bucketArg))
-                bucketName = bucketArg[0].ToLower();
-
-            if (Utils.ParseOption(commandLineArgs, Config.CLI_BUCKET_DIRECTORY, 1, out string[] bucketDirectoryArg))
-                bucketDirectory = bucketDirectoryArg[0].ToLower();
-
-            if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_CUSTOM_OUTPUT_ROOT_PATH, 1, out string[] outputDirectoryArg))
-                customOutputDirectory = outputDirectoryArg[0].ToLower();
-            else
-                customOutputDirectory = outputPath;
-
-            var amazonS3FileProvider = new AmazonS3FileProvider("lods", "LOD/Sources/1707159813915/", tempPath);
-            await amazonS3FileProvider.Download();
-
-            //string[] downloadedFiles = Array.Empty<string>();
-            //ExportFilesToAssetBundles(downloadedFiles, customOutputDirectory);
-        }
+              
 
         [MenuItem("Assets/Export Asset Bundles")]
         private static void ExportAssetBundles()
