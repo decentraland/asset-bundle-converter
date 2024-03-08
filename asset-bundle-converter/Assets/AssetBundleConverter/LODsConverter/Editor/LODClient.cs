@@ -3,81 +3,44 @@ using UnityEngine;
 using UnityEditor;
 using System.IO;
 using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Amazon;
-using Amazon.S3;
-using Amazon.S3.Model;
 using AssetBundleConverter.LODsConverter.Utils;
-using Cysharp.Threading.Tasks;
-using DCL.ABConverter;
-using DCL.Shaders;
-using UnityEngine.Experimental.Rendering;
-using UnityEngine.Networking;
 using UnityEngine.Rendering;
 using Object = UnityEngine.Object;
-using Random = UnityEngine.Random;
 
-namespace DCL.ABConverter.LODClient
+namespace DCL.ABConverter
 {
-    public class ExportLODAssetBundles : MonoBehaviour
+    public class LODClient : MonoBehaviour
     {
-        private static readonly string outputPath = Path.Combine(Application.dataPath, "../AssetBundles/");
+        private static readonly string outputPath = Config.ASSET_BUNDLES_PATH_ROOT + Path.DirectorySeparatorChar;
         private static readonly string tempPath = Path.Combine(Application.dataPath, "temp");
 
+
+        [MenuItem("Assets/Export URL LODs")]
         public static async void ExportURLLODsToAssetBundles()
         {
             string[] commandLineArgs = Environment.GetCommandLineArgs();
-
-            string lodsURL = "";
+            
             string customOutputDirectory = "";
+            string lodsURL = "";
 
             if (Utils.ParseOption(commandLineArgs, Config.LODS_URL, 1, out string[] lodsURLArg))
-                lodsURL = lodsURLArg[0].ToLower();
+                lodsURL = lodsURLArg[0];
 
             if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_CUSTOM_OUTPUT_ROOT_PATH, 1, out string[] outputDirectoryArg))
-                customOutputDirectory = outputDirectoryArg[0].ToLower();
+                customOutputDirectory = outputDirectoryArg[0] + "/";
             else
                 customOutputDirectory = outputPath;
 
-            string[] downloadedFiles = await DownloadRawLOD(lodsURL);
+            Debug.Log("Starting file download");
+            var urlFileDownloader = new URLFileDownloader(lodsURL, tempPath);
+            string[] downloadedFiles = await urlFileDownloader.Download();
+            Debug.Log("Finished file download");
+            AssetDatabase.SaveAssets();
             ExportFilesToAssetBundles(downloadedFiles, customOutputDirectory);
+            Utils.Exit();
         }
 
-        private static async Task<string[]> DownloadRawLOD(string lodsURL)
-        {
-            Directory.CreateDirectory(tempPath);
-            string[] filesToDownload = lodsURL.Split(",");
-            string[] downloadedPaths = new string[filesToDownload.Length];
-            for (int index = 0; index < filesToDownload.Length; index++)
-            {
-                string url = filesToDownload[index];
-                using (var webRequest = UnityWebRequest.Get(url))
-                {
-                    string fileName = Path.GetFileName(url);
-                    // Modify this path according to your needs
-                    string savePath = Path.Combine(tempPath, fileName);
-
-                    // Await the completion of the download
-                    await webRequest.SendWebRequest();
-
-                    if (webRequest.result == UnityWebRequest.Result.Success)
-                    {
-                        // Success, save the downloaded file
-                        File.WriteAllBytes(savePath, webRequest.downloadHandler.data);
-                        Debug.Log($"File downloaded and saved to {savePath}");
-                        downloadedPaths[index] = savePath;
-                    }
-                    else
-                    {
-                        Debug.LogError($"Error downloading {url}: {webRequest.error}");
-                        return null;
-                    }
-                }
-            }
-
-            return  downloadedPaths;
-        }
+        
 
         public static async void ExportS3LODsToAssetBundles()
         {
@@ -99,7 +62,7 @@ namespace DCL.ABConverter.LODClient
                 customOutputDirectory = outputPath;
 
             var amazonS3FileProvider = new AmazonS3FileProvider("lods", "LOD/Sources/1707159813915/", tempPath);
-            await amazonS3FileProvider.DownloadFilesAsync();
+            await amazonS3FileProvider.Download();
 
             //string[] downloadedFiles = Array.Empty<string>();
             //ExportFilesToAssetBundles(downloadedFiles, customOutputDirectory);
@@ -137,9 +100,6 @@ namespace DCL.ABConverter.LODClient
                 GC.Collect();
             }
 
-            // Save assets and refresh the AssetDatabase
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
 
             BuildPipeline.BuildAssetBundles(outputPath,  BuildAssetBundleOptions.None, EditorUserBuildSettings.activeBuildTarget);
             Directory.Delete(tempPath, true);
@@ -180,12 +140,10 @@ namespace DCL.ABConverter.LODClient
                 string prefabPath = tempPath + "/" + instantiated + ".prefab";
                 PrefabUtility.SaveAsPrefabAsset(instantiated, prefabPath);
                 DestroyImmediate(instantiated);
-                // Save assets and refresh the AssetDatabase
-                AssetDatabase.SaveAssets();
-                AssetDatabase.Refresh();
 
                 var prefabImporter = AssetImporter.GetAtPath(PathUtils.GetRelativePathTo(Application.dataPath, prefabPath));
                 prefabImporter.SetAssetBundleNameAndVariant(fileNameWithoutExtension, "");
+                AssetDatabase.Refresh();
             }
         }
 
@@ -244,8 +202,6 @@ namespace DCL.ABConverter.LODClient
                     {
                         string materialPath = Path.Combine(tempPath, materialName);
                         AssetDatabase.CreateAsset(duplicatedMaterial, materialPath);
-                        // Save assets and refresh the AssetDatabase
-                        AssetDatabase.SaveAssets();
                         AssetDatabase.Refresh();
                         materialsDictionary.Add(materialName, AssetDatabase.LoadAssetAtPath<Material>(materialPath));
                     }
