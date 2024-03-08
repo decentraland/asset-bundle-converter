@@ -30,8 +30,8 @@ export async function initComponents(): Promise<AppComponents> {
 
   const sqsQueue = await config.getString('TASK_QUEUE')
   const taskQueue = sqsQueue ?
-  createSqsAdapter<DeploymentToSqs>({ logs, metrics }, { queueUrl: sqsQueue, queueRegion: AWS_REGION }) :
-  createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: "ConversionTaskQueue" })
+  createSqsAdapter<DeploymentToSqs & { lods: string[] | undefined }>({ logs, metrics }, { queueUrl: sqsQueue, queueRegion: AWS_REGION }) :
+  createMemoryQueueAdapter<DeploymentToSqs & { lods: string[] | undefined }>({ logs, metrics }, { queueName: "ConversionTaskQueue" })
   
   const s3Bucket = await config.getString('CDN_BUCKET')
   const cdnS3 = s3Bucket ? new AWS.S3({}) : new MockAws.S3({})
