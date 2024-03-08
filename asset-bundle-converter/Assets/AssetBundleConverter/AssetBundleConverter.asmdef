@@ -26,9 +26,7 @@
     "overrideReferences": true,
     "precompiledReferences": [
         "Sentry.dll",
-        "Unity.Plastic.Newtonsoft.Json.dll",
-        "AWSSDK.Core.dll",
-        "AWSSDK.S3.dll"
+        "Unity.Plastic.Newtonsoft.Json.dll"
     ],
     "autoReferenced": true,
     "defineConstraints": [],
