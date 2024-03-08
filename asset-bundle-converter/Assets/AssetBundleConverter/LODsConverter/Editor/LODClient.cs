@@ -35,9 +35,16 @@ namespace DCL.ABConverter
             var urlFileDownloader = new URLFileDownloader(lodsURL, tempPath);
             string[] downloadedFiles = await urlFileDownloader.Download();
             Debug.Log("Finished file download");
-            AssetDatabase.SaveAssets();
-            ExportFilesToAssetBundles(downloadedFiles, customOutputDirectory);
-            Utils.Exit();
+            try
+            {
+                AssetDatabase.SaveAssets();
+                ExportFilesToAssetBundles(downloadedFiles, customOutputDirectory);
+                Utils.Exit();
+            }
+            catch (Exception e)
+            {
+                Utils.Exit(1);
+            }
         }
 
         
