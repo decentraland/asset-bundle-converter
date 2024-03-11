@@ -19,6 +19,9 @@ public class LODConversion
     private readonly string tempPath;
     private readonly string[] urlsToConvert;
 
+    //TODO: CLEAN THIS UP HERE AND IN THE ASSET BUNDLE BUILDER. THIS IS NOT USED IN ALPHA
+    private const string VERSION = "7.0";
+
     public LODConversion(string customOutputPath, string[] urlsToConvert)
     {
         this.urlsToConvert = urlsToConvert;
@@ -55,7 +58,7 @@ public class LODConversion
             Utils.Exit(1);
         }
 
-        //Directory.Delete(tempPath, true);
+        Directory.Delete(tempPath, true);
         Debug.Log("Conversion done");
         Utils.Exit();
     }
@@ -212,7 +215,7 @@ public class LODConversion
         }
 
         // 2. Create metadata (dependencies, version, timestamp) and store in the target folders to be converted again later with the metadata inside
-        AssetBundleMetadataBuilder.Generate(new SystemWrappers.File(), tempPath, dictionaryForMetadataBuilder, manifest);
+        AssetBundleMetadataBuilder.Generate(new SystemWrappers.File(), tempPath, dictionaryForMetadataBuilder, manifest, VERSION);
 
         AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
         AssetDatabase.SaveAssets();
