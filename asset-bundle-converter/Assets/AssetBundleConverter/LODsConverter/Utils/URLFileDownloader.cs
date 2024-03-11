@@ -8,10 +8,10 @@ namespace AssetBundleConverter.LODsConverter.Utils
 {
     public class URLFileDownloader : IFileDownloader
     {
-        private readonly string lodsURL;
+        private readonly string[] lodsURL;
         private readonly string tempDownloadPath;
 
-        public URLFileDownloader(string lodsURL, string tempDownloadPath)
+        public URLFileDownloader(string[] lodsURL, string tempDownloadPath)
         {
             this.lodsURL = lodsURL;
             this.tempDownloadPath = tempDownloadPath;
@@ -20,11 +20,10 @@ namespace AssetBundleConverter.LODsConverter.Utils
         public async Task<string[]> Download()
         {
             Directory.CreateDirectory(tempDownloadPath);
-            string[] filesToDownload = lodsURL.Split(";");
-            string[] downloadedPaths = new string[filesToDownload.Length];
-            for (int index = 0; index < filesToDownload.Length; index++)
+            string[] downloadedPaths = new string[lodsURL.Length];
+            for (int index = 0; index < lodsURL.Length; index++)
             {
-                string url = filesToDownload[index];
+                string url = lodsURL[index];
                 using (var webRequest = UnityWebRequest.Get(url))
                 {
                     string fileName = Path.GetFileName(url);
