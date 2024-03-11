@@ -17,11 +17,7 @@ public class LODConversion
 {
     private readonly string outputPath;
     private readonly string tempPath;
-
     private readonly string[] urlsToConvert;
-    private string[] downloadedFiles;
-
-    public IBuildPipeline buildPipeline;
 
     public LODConversion(string customOutputPath, string[] urlsToConvert)
     {
@@ -34,10 +30,11 @@ public class LODConversion
     {
         Directory.CreateDirectory(outputPath);
         Directory.CreateDirectory(tempPath);
-        await DownloadFiles();
+        string[] downloadedFiles = await DownloadFiles();
         AssetDatabase.SaveAssets();
         try
         {
+            var dictionaryStringForMetadata = new Dictionary<string, string>();
             foreach (string downloadedFile in downloadedFiles)
             {
                 string fileNameWithoutExtension = Path.GetFileNameWithoutExtension(downloadedFile).ToLower();
@@ -45,29 +42,30 @@ public class LODConversion
                 if (File.Exists(assetBundlePath))
                     continue;
 
+                dictionaryStringForMetadata.Add(fileNameWithoutExtension, fileNameWithoutExtension);
                 string newPath = LODUtils.MoveFileToMatchingFolder(downloadedFile);
                 BuildPrefab(PathUtils.GetRelativePathTo(Application.dataPath, newPath));
-
-                buildPipeline = new ScriptableBuildPipeline();
-                BuildAssetBundles(EditorUserBuildSettings.activeBuildTarget, Path.GetFileNameWithoutExtension(downloadedFile).ToLower(), out var manifest);
-
-                //Directory.Delete(tempPath, true);
-                Debug.Log("Conversion done");
-                Utils.Exit();
             }
+
+            BuildAssetBundles(EditorUserBuildSettings.activeBuildTarget, dictionaryStringForMetadata);
         }
         catch (Exception e)
         {
+            Directory.Delete(tempPath, true);
             Utils.Exit(1);
         }
+
+        //Directory.Delete(tempPath, true);
+        Debug.Log("Conversion done");
+        Utils.Exit();
     }
 
-    private async Task DownloadFiles()
+    private async Task<string[]> DownloadFiles()
     {
         Debug.Log("Starting file download");
         var urlFileDownloader = new URLFileDownloader(urlsToConvert, tempPath);
-        downloadedFiles = await urlFileDownloader.Download();
         Debug.Log("Finished file download");
+        return await urlFileDownloader.Download();
     }
 
     private void BuildPrefab(string fileToProcess)
@@ -195,13 +193,15 @@ public class LODConversion
         duplicatedMaterial.color = new Color(duplicatedMaterial.color.r, duplicatedMaterial.color.g, duplicatedMaterial.color.b, setDefaultTransparency ? 0.8f : duplicatedMaterial.color.a);
     }
 
-    public bool BuildAssetBundles(BuildTarget target, string fileName, out IAssetBundleManifest manifest)
+    public void BuildAssetBundles(BuildTarget target, Dictionary<string, string> dictionaryForMetadataBuilder)
     {
         AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
         AssetDatabase.SaveAssets();
 
+        IBuildPipeline buildPipeline = new ScriptableBuildPipeline();
+        
         // 1. Convert flagged folders to asset bundles only to automatically get dependencies for the metadata
-        manifest = buildPipeline.BuildAssetBundles(outputPath,
+        var manifest = buildPipeline.BuildAssetBundles(outputPath,
             BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
             target);
 
@@ -209,26 +209,17 @@ public class LODConversion
         {
             string message = "Error generating asset bundle!";
             Utils.Exit(1);
-            return false;
         }
 
         // 2. Create metadata (dependencies, version, timestamp) and store in the target folders to be converted again later with the metadata inside
-        AssetBundleMetadataBuilder.Generate(new SystemWrappers.File(),
-            tempPath, new Dictionary<string, string>
-            {
-                {
-                    fileName, fileName
-                }
-            }, manifest);
+        AssetBundleMetadataBuilder.Generate(new SystemWrappers.File(), tempPath, dictionaryForMetadataBuilder, manifest);
 
         AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
         AssetDatabase.SaveAssets();
 
         // 3. Convert flagged folders to asset bundles again but this time they have the metadata file inside
-        manifest = buildPipeline.BuildAssetBundles(outputPath,
+        buildPipeline.BuildAssetBundles(outputPath,
             BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
             target);
-
-        return true;
     }
 }
