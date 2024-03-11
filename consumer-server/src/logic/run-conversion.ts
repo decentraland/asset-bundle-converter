@@ -60,7 +60,7 @@ export async function runLodsConversion(logger: ILoggerComponent.ILogger, compon
     '-executeMethod', 'DCL.ABConverter.LODClient.ExportURLLODsToAssetBundles',
     '-sceneCid', options.entityId,
     '-logFile', options.logFile,
-    '-lods', options.lods.join(','),
+    '-lods', options.lods.join(';'),
     '-output', options.outDirectory
   ]
 
