@@ -16,8 +16,7 @@ using SystemWrappers = AssetBundleConverter.Wrappers.Implementations.Default.Sys
 
 public class LODConversion
 {
-    private readonly string outputPath;
-    private readonly string tempPath;
+    private readonly LODPathHandler lodPathHandler;
     private readonly string[] urlsToConvert;
 
     //TODO: CLEAN THIS UP HERE AND IN THE ASSET BUNDLE BUILDER. THIS IS NOT USED IN ALPHA
@@ -26,17 +25,13 @@ public class LODConversion
     public LODConversion(string customOutputPath, string[] urlsToConvert)
     {
         this.urlsToConvert = urlsToConvert;
-        tempPath = LODConstants.DEFAULT_TEMP_PATH;
-        outputPath = !string.IsNullOrEmpty(customOutputPath) ? customOutputPath : LODConstants.DEFAULT_OUTPUT_PATH;
+        lodPathHandler = new LODPathHandler(customOutputPath);
     }
 
     public async void ConvertLODs()
     {
         PlatformUtils.currentTarget = EditorUserBuildSettings.activeBuildTarget;
         IAssetDatabase assetDatabase = new UnityEditorWrappers.AssetDatabase();
-        
-        Directory.CreateDirectory(outputPath);
-        Directory.CreateDirectory(tempPath);
 
         string[] downloadedFilePaths = await DownloadFiles();
         AssetDatabase.SaveAssets();
@@ -46,7 +41,7 @@ public class LODConversion
             var dictionaryStringForMetadata = new Dictionary<string, string>();
             foreach (string downloadedFilePath in downloadedFilePaths)
             {
-                var lodPathHandler = new LODPathHandler(tempPath, outputPath, downloadedFilePath);
+                lodPathHandler.SetCurrentFile(downloadedFilePath);
                 if (File.Exists(lodPathHandler.assetBundlePath))
                     continue;
                 dictionaryStringForMetadata.Add(lodPathHandler.fileNameWithoutExtension, lodPathHandler.fileNameWithoutExtension);
@@ -61,7 +56,7 @@ public class LODConversion
         }
         catch (Exception e)
         {
-            Directory.Delete(tempPath, true);
+            Directory.Delete(lodPathHandler.tempPath, true);
             Utils.Exit(1);
         }
 
@@ -73,7 +68,7 @@ public class LODConversion
     private async Task<string[]> DownloadFiles()
     {
         Debug.Log("Starting file download");
-        var urlFileDownloader = new URLFileDownloader(urlsToConvert, tempPath);
+        var urlFileDownloader = new URLFileDownloader(urlsToConvert, lodPathHandler.tempPath);
         Debug.Log("Finished file download");
         return await urlFileDownloader.Download();
     }
@@ -198,7 +193,7 @@ public class LODConversion
         IBuildPipeline buildPipeline = new ScriptableBuildPipeline();
         
         // 1. Convert flagged folders to asset bundles only to automatically get dependencies for the metadata
-        var manifest = buildPipeline.BuildAssetBundles(outputPath,
+        var manifest = buildPipeline.BuildAssetBundles(lodPathHandler.outputPath,
             BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
             target);
 
@@ -209,13 +204,13 @@ public class LODConversion
         }
 
         // 2. Create metadata (dependencies, version, timestamp) and store in the target folders to be converted again later with the metadata inside
-        AssetBundleMetadataBuilder.Generate(new SystemWrappers.File(), tempPath, dictionaryForMetadataBuilder, manifest, VERSION);
+        AssetBundleMetadataBuilder.Generate(new SystemWrappers.File(), lodPathHandler.tempPath, dictionaryForMetadataBuilder, manifest, VERSION);
 
         AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
         AssetDatabase.SaveAssets();
 
         // 3. Convert flagged folders to asset bundles again but this time they have the metadata file inside
-        buildPipeline.BuildAssetBundles(outputPath,
+        buildPipeline.BuildAssetBundles(lodPathHandler.outputPath,
             BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
             target);
     }

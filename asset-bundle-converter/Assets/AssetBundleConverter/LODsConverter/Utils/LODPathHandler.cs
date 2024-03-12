@@ -9,11 +9,12 @@ namespace AssetBundleConverter.LODsConverter.Utils
     public class LODPathHandler
     {
         public string tempPath;
+        public string outputPath;
 
-        public string filePath;
         public string fileDirectoryRelativeToDataPath;
         public string filePathRelativeToDataPath;
 
+        public string filePath;
         public string fileName;
         public string fileNameWithoutExtension;
 
@@ -24,17 +25,24 @@ namespace AssetBundleConverter.LODsConverter.Utils
 
         public string prefabPathRelativeToDataPath;
 
-
-        public LODPathHandler(string tempPath, string outputPath, string filePath)
+        public LODPathHandler(string customOutputPath)
         {
-            this.tempPath = tempPath;
-            this.filePath = filePath;
+            outputPath = !string.IsNullOrEmpty(customOutputPath) ? customOutputPath : LODConstants.DEFAULT_OUTPUT_PATH;
+            tempPath = LODConstants.DEFAULT_TEMP_PATH;
+
+            Directory.CreateDirectory(outputPath);
+            Directory.CreateDirectory(tempPath);
+        }
+
+        public void SetCurrentFile(string downloadedFilePath)
+        {
+            filePath = downloadedFilePath;
             fileName = Path.GetFileName(filePath);
             fileNameWithoutExtension = Path.GetFileNameWithoutExtension(filePath);
             assetBundleFileName = fileNameWithoutExtension + PlatformUtils.GetPlatform();
             assetBundlePath = Path.Combine(outputPath, assetBundleFileName);
         }
-
+        
         public void MoveFileToMatchingFolder()
         {
             string fileDirectory = Path.GetDirectoryName(filePath);
@@ -42,21 +50,22 @@ namespace AssetBundleConverter.LODsConverter.Utils
             if (fileDirectory.EndsWith(fileNameWithoutExtension))
             {
                 Console.WriteLine("The file is already in the correct folder.");
-                filePathRelativeToDataPath = PathUtils.GetRelativePathTo(Application.dataPath, filePath);
+                UpdatePaths(filePath);
                 return;
             }
 
             string targetFolderPath = Path.Combine(fileDirectory, fileNameWithoutExtension);
             Directory.CreateDirectory(targetFolderPath);
-
-            // Create a new path for the file in the new folder
             string newFilePath = Path.Combine(targetFolderPath, fileName);
-
-            // Move the file to the new folder
             File.Move(filePath, newFilePath);
 
+            UpdatePaths(newFilePath);
+        }
+
+        private void UpdatePaths(string newFilePath)
+        {
             filePath = newFilePath;
-            fileDirectory = Path.GetDirectoryName(filePath);
+            string fileDirectory = Path.GetDirectoryName(filePath);
             filePathRelativeToDataPath = PathUtils.GetRelativePathTo(Application.dataPath, filePath);
             fileDirectoryRelativeToDataPath = PathUtils.GetRelativePathTo(Application.dataPath, fileDirectory);
 
@@ -65,7 +74,6 @@ namespace AssetBundleConverter.LODsConverter.Utils
             materialsPathRelativeToDataPath = PathUtils.GetRelativePathTo(Application.dataPath, materialsPath);
 
             prefabPathRelativeToDataPath = PathUtils.GetRelativePathTo(Application.dataPath, fileDirectory + "/" + fileNameWithoutExtension + ".prefab");
-
             // Save assets and refresh the AssetDatabase
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
