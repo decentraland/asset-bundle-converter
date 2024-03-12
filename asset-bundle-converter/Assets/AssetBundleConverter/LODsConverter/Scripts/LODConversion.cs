@@ -60,7 +60,7 @@ public class LODConversion
             Utils.Exit(1);
         }
 
-        //Directory.Delete(tempPath, true);
+        Directory.Delete(lodPathHandler.tempPath, true);
         Debug.Log("Conversion done");
         Utils.Exit();
     }
