@@ -31,13 +31,14 @@ public class LODConversion
 
     public async void ConvertLODs()
     {
+        PlatformUtils.currentTarget = EditorUserBuildSettings.activeBuildTarget;
+        
         Directory.CreateDirectory(outputPath);
         Directory.CreateDirectory(tempPath);
         string[] downloadedFiles = await DownloadFiles();
         AssetDatabase.SaveAssets();
 
         IAssetDatabase assetDatabase = new UnityEditorWrappers.AssetDatabase();
-
         try
         {
             var dictionaryStringForMetadata = new Dictionary<string, string>();
