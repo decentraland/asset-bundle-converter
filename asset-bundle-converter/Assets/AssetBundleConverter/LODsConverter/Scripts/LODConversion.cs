@@ -35,6 +35,9 @@ public class LODConversion
         Directory.CreateDirectory(tempPath);
         string[] downloadedFiles = await DownloadFiles();
         AssetDatabase.SaveAssets();
+
+        IAssetDatabase assetDatabase = new UnityEditorWrappers.AssetDatabase();
+
         try
         {
             var dictionaryStringForMetadata = new Dictionary<string, string>();
@@ -50,6 +53,7 @@ public class LODConversion
                 BuildPrefab(PathUtils.GetRelativePathTo(Application.dataPath, newPath));
             }
 
+            assetDatabase.AssignAssetBundle(Shader.Find("DCL/Scene"), false);
             BuildAssetBundles(EditorUserBuildSettings.activeBuildTarget, dictionaryStringForMetadata);
         }
         catch (Exception e)
@@ -107,7 +111,7 @@ public class LODConversion
             Object.DestroyImmediate(instantiated);
 
             var prefabImporter = AssetImporter.GetAtPath(filePath);
-            prefabImporter.SetAssetBundleNameAndVariant(fileNameWithoutExtension, "");
+            prefabImporter.SetAssetBundleNameAndVariant(fileNameWithoutExtension + PlatformUtils.GetPlatform(), "");
             AssetDatabase.Refresh();
         }
     }

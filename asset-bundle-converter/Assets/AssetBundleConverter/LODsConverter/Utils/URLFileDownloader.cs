@@ -19,7 +19,6 @@ namespace AssetBundleConverter.LODsConverter.Utils
 
         public async Task<string[]> Download()
         {
-            Directory.CreateDirectory(tempDownloadPath);
             string[] downloadedPaths = new string[lodsURL.Length];
             for (int index = 0; index < lodsURL.Length; index++)
             {
