@@ -73,7 +73,7 @@ namespace AssetBundleConverter.LODsConverter.Utils
             Directory.CreateDirectory(materialsPath);
             materialsPathRelativeToDataPath = PathUtils.GetRelativePathTo(Application.dataPath, materialsPath);
 
-            prefabPathRelativeToDataPath = PathUtils.GetRelativePathTo(Application.dataPath, fileDirectory + "/" + fileNameWithoutExtension + ".prefab");
+            prefabPathRelativeToDataPath = PathUtils.GetRelativePathTo(Application.dataPath, fileDirectory + "/" + fileNameWithoutExtension + " (gameobject).prefab");
             // Save assets and refresh the AssetDatabase
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();

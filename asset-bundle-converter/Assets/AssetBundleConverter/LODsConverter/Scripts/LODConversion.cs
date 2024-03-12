@@ -58,6 +58,7 @@ public class LODConversion
         {
             Directory.Delete(lodPathHandler.tempPath, true);
             Utils.Exit(1);
+            return;
         }
 
         Directory.Delete(lodPathHandler.tempPath, true);
