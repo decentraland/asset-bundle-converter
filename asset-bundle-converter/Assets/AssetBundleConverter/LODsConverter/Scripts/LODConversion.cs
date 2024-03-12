@@ -99,7 +99,7 @@ public class LODConversion
         PrefabUtility.SaveAsPrefabAsset(instantiated, lodPathHandler.prefabPathRelativeToDataPath);
         Object.DestroyImmediate(instantiated);
 
-        var prefabImporter = AssetImporter.GetAtPath(lodPathHandler.prefabPathRelativeToDataPath);
+        var prefabImporter = AssetImporter.GetAtPath(lodPathHandler.fileDirectoryRelativeToDataPath);
         prefabImporter.SetAssetBundleNameAndVariant(lodPathHandler.assetBundleFileName, "");
     }
 
