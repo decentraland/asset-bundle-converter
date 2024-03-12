@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using AssetBundleConverter.LODsConverter.Utils;
 using AssetBundleConverter.Wrappers.Interfaces;
@@ -32,28 +33,29 @@ public class LODConversion
     public async void ConvertLODs()
     {
         PlatformUtils.currentTarget = EditorUserBuildSettings.activeBuildTarget;
+        IAssetDatabase assetDatabase = new UnityEditorWrappers.AssetDatabase();
         
         Directory.CreateDirectory(outputPath);
         Directory.CreateDirectory(tempPath);
-        string[] downloadedFiles = await DownloadFiles();
-        AssetDatabase.SaveAssets();
 
-        IAssetDatabase assetDatabase = new UnityEditorWrappers.AssetDatabase();
+        string[] downloadedFilePaths = await DownloadFiles();
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
         try
         {
             var dictionaryStringForMetadata = new Dictionary<string, string>();
-            foreach (string downloadedFile in downloadedFiles)
+            foreach (string downloadedFilePath in downloadedFilePaths)
             {
-                string fileNameWithoutExtension = Path.GetFileNameWithoutExtension(downloadedFile).ToLower();
-                string assetBundlePath = Path.Combine(outputPath, fileNameWithoutExtension);
-                if (File.Exists(assetBundlePath))
+                var lodPathHandler = new LODPathHandler(tempPath, outputPath, downloadedFilePath);
+                if (File.Exists(lodPathHandler.assetBundlePath))
                     continue;
-
-                dictionaryStringForMetadata.Add(fileNameWithoutExtension, fileNameWithoutExtension);
-                string newPath = LODUtils.MoveFileToMatchingFolder(downloadedFile);
-                BuildPrefab(PathUtils.GetRelativePathTo(Application.dataPath, newPath));
+                dictionaryStringForMetadata.Add(lodPathHandler.fileNameWithoutExtension, lodPathHandler.fileNameWithoutExtension);
+                lodPathHandler.MoveFileToMatchingFolder();
+                BuildPrefab(lodPathHandler);
             }
 
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
             assetDatabase.AssignAssetBundle(Shader.Find("DCL/Scene"), false);
             BuildAssetBundles(EditorUserBuildSettings.activeBuildTarget, dictionaryStringForMetadata);
         }
@@ -63,7 +65,7 @@ public class LODConversion
             Utils.Exit(1);
         }
 
-        Directory.Delete(tempPath, true);
+        //Directory.Delete(tempPath, true);
         Debug.Log("Conversion done");
         Utils.Exit();
     }
@@ -76,49 +78,37 @@ public class LODConversion
         return await urlFileDownloader.Download();
     }
 
-    private void BuildPrefab(string fileToProcess)
+    private void BuildPrefab(LODPathHandler lodPathHandler)
     {
-        var asset = AssetDatabase.LoadAssetAtPath<Object>(fileToProcess);
-        if (asset == null) return;
+        var importer = AssetImporter.GetAtPath(lodPathHandler.filePathRelativeToDataPath) as ModelImporter;
+        if (importer == null) return;
 
-        string fileNameWithoutExtension = Path.GetFileNameWithoutExtension(fileToProcess).ToLower();
-        string filePath = Path.GetDirectoryName(fileToProcess);
-        string filePathRelativeToDataPath = PathUtils.GetRelativePathTo(Application.dataPath, filePath);
+        importer.ExtractTextures(lodPathHandler.fileDirectoryRelativeToDataPath);
+        AssetDatabase.WriteImportSettingsIfDirty(lodPathHandler.filePathRelativeToDataPath);
+        AssetDatabase.ImportAsset(lodPathHandler.filePathRelativeToDataPath, ImportAssetOptions.ForceUpdate);
 
-        // Extracting textures and materials
-        var importer = AssetImporter.GetAtPath(fileToProcess) as ModelImporter;
+        var instantiated = Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(lodPathHandler.filePathRelativeToDataPath));
 
-        if (importer != null)
+        if (lodPathHandler.filePath.Contains("_0"))
         {
-            importer.ExtractTextures(Path.GetDirectoryName(fileToProcess));
-
-            importer.materialImportMode = ModelImporterMaterialImportMode.ImportStandard;
-            AssetDatabase.WriteImportSettingsIfDirty(fileToProcess);
-            AssetDatabase.ImportAsset(fileToProcess, ImportAssetOptions.ForceUpdate);
-
-            var instantiated = Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(fileToProcess));
-            instantiated.name = fileNameWithoutExtension;
-
-            if (fileToProcess.Contains("_0"))
-            {
-                SetDCLShaderMaterial(fileToProcess, instantiated, filePathRelativeToDataPath, false);
-                GenerateColliders(fileToProcess, instantiated);
-            }
-            else
-                SetDCLShaderMaterial(fileToProcess, instantiated,  filePathRelativeToDataPath, true);
-
-            importer.SearchAndRemapMaterials(ModelImporterMaterialName.BasedOnMaterialName, ModelImporterMaterialSearch.Local);
-            string prefabPath = filePath + "/" + instantiated + ".prefab";
-            PrefabUtility.SaveAsPrefabAsset(instantiated, prefabPath);
-            Object.DestroyImmediate(instantiated);
-
-            var prefabImporter = AssetImporter.GetAtPath(filePath);
-            prefabImporter.SetAssetBundleNameAndVariant(fileNameWithoutExtension + PlatformUtils.GetPlatform(), "");
-            AssetDatabase.Refresh();
+            SetDCLShaderMaterial(lodPathHandler, instantiated, false);
+            GenerateColliders(instantiated);
         }
+        else
+            SetDCLShaderMaterial(lodPathHandler, instantiated, true);
+
+        importer.SearchAndRemapMaterials(ModelImporterMaterialName.BasedOnMaterialName, ModelImporterMaterialSearch.Local);
+        AssetDatabase.WriteImportSettingsIfDirty(lodPathHandler.filePathRelativeToDataPath);
+        AssetDatabase.ImportAsset(lodPathHandler.filePath, ImportAssetOptions.ForceUpdate);
+
+        PrefabUtility.SaveAsPrefabAsset(instantiated, lodPathHandler.prefabPathRelativeToDataPath);
+        Object.DestroyImmediate(instantiated);
+
+        var prefabImporter = AssetImporter.GetAtPath(lodPathHandler.prefabPathRelativeToDataPath);
+        prefabImporter.SetAssetBundleNameAndVariant(lodPathHandler.assetBundleFileName, "");
     }
 
-    private void GenerateColliders(string path, GameObject instantiated)
+    private void GenerateColliders(GameObject instantiated)
     {
         var meshFilters = instantiated.GetComponentsInChildren<MeshFilter>();
 
@@ -153,7 +143,7 @@ public class LODConversion
         }
     }
 
-    private void SetDCLShaderMaterial(string path, GameObject transform, string tempPath, bool setDefaultTransparency)
+    private void SetDCLShaderMaterial(LODPathHandler lodPathHandler, GameObject transform, bool setDefaultTransparency)
     {
         var childrenRenderers = transform.GetComponentsInChildren<Renderer>();
         var materialsDictionary = new Dictionary<string, Material>();
@@ -168,19 +158,16 @@ public class LODConversion
                 if (duplicatedMaterial.name.Contains("FORCED_TRANSPARENT"))
                     ApplyTransparency(duplicatedMaterial, setDefaultTransparency);
 
-                string materialName = $"{duplicatedMaterial.name.Replace("(Instance)", Path.GetFileNameWithoutExtension(path))}.mat";
+                string materialName = $"{duplicatedMaterial.name.Replace("(Instance)", lodPathHandler.fileNameWithoutExtension)}.mat";
                 if (!materialsDictionary.ContainsKey(materialName))
                 {
-                    Directory.CreateDirectory(Path.Combine(tempPath, "Materials"));
-                    string materialPath = Path.Combine(tempPath, "Materials" , materialName);
+                    string materialPath = Path.Combine(lodPathHandler.materialsPathRelativeToDataPath, materialName);
                     AssetDatabase.CreateAsset(duplicatedMaterial, materialPath);
                     AssetDatabase.Refresh();
                     materialsDictionary.Add(materialName, AssetDatabase.LoadAssetAtPath<Material>(materialPath));
                 }
-
                 savedMaterials.Add(materialsDictionary[materialName]);
             }
-
             componentsInChild.sharedMaterials = savedMaterials.ToArray();
         }
     }
