@@ -91,6 +91,7 @@ public class LODConversion
         if (importer != null)
         {
             importer.ExtractTextures(Path.GetDirectoryName(fileToProcess));
+
             importer.materialImportMode = ModelImporterMaterialImportMode.ImportStandard;
             AssetDatabase.WriteImportSettingsIfDirty(fileToProcess);
             AssetDatabase.ImportAsset(fileToProcess, ImportAssetOptions.ForceUpdate);
@@ -106,7 +107,7 @@ public class LODConversion
             else
                 SetDCLShaderMaterial(fileToProcess, instantiated,  filePathRelativeToDataPath, true);
 
-
+            importer.SearchAndRemapMaterials(ModelImporterMaterialName.BasedOnMaterialName, ModelImporterMaterialSearch.Local);
             string prefabPath = filePath + "/" + instantiated + ".prefab";
             PrefabUtility.SaveAsPrefabAsset(instantiated, prefabPath);
             Object.DestroyImmediate(instantiated);
@@ -170,7 +171,8 @@ public class LODConversion
                 string materialName = $"{duplicatedMaterial.name.Replace("(Instance)", Path.GetFileNameWithoutExtension(path))}.mat";
                 if (!materialsDictionary.ContainsKey(materialName))
                 {
-                    string materialPath = Path.Combine(tempPath, materialName);
+                    Directory.CreateDirectory(Path.Combine(tempPath, "Materials"));
+                    string materialPath = Path.Combine(tempPath, "Materials" , materialName);
                     AssetDatabase.CreateAsset(duplicatedMaterial, materialPath);
                     AssetDatabase.Refresh();
                     materialsDictionary.Add(materialName, AssetDatabase.LoadAssetAtPath<Material>(materialPath));
