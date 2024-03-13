@@ -61,6 +61,9 @@ public class LODConversion
             return;
         }
 
+        //Temporal hack
+        lodPathHandler.RelocateOutputFolder();
+
         Directory.Delete(lodPathHandler.tempPath, true);
         Debug.Log("Conversion done");
         Utils.Exit();

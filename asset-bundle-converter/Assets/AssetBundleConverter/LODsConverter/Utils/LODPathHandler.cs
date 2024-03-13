@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Text.RegularExpressions;
 using DCL.ABConverter;
 using UnityEditor;
 using UnityEngine;
@@ -77,6 +78,40 @@ namespace AssetBundleConverter.LODsConverter.Utils
             // Save assets and refresh the AssetDatabase
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
+        }
+
+        public void RelocateOutputFolder()
+        {
+            string[] files = Directory.GetFiles(outputPath);
+
+            foreach (string file in files)
+            {
+                try
+                {
+                    // Extract the numeric value (X) from the filename
+                    string fileName = Path.GetFileName(file);
+                    var match = Regex.Match(Path.GetFileName(file), @"[^_]+_(\d+)_[^_]+");
+                    if (match.Success)
+                    {
+                        string number = match.Groups[1].Value;
+
+                        // Create target folder path (e.g., "LOD/0")
+                        string targetFolderPath = Path.Combine(outputPath, $"LOD/{number}");
+                        if (!Directory.Exists(targetFolderPath))
+                        {
+                            Directory.CreateDirectory(targetFolderPath);
+                        }
+
+                        // Move the file to the target folder
+                        string targetFilePath = Path.Combine(targetFolderPath, fileName);
+                        File.Move(file, targetFilePath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error processing file '{file}': {ex.Message}");
+                }
+            }
         }
     }
 }
