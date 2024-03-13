@@ -96,7 +96,7 @@ namespace AssetBundleConverter.LODsConverter.Utils
                         string number = match.Groups[1].Value;
 
                         // Create target folder path (e.g., "LOD/0")
-                        string targetFolderPath = Path.Combine(outputPath, $"LOD/{number}");
+                        string targetFolderPath = Path.Combine(outputPath, $"{number}");
                         if (!Directory.Exists(targetFolderPath))
                         {
                             Directory.CreateDirectory(targetFolderPath);
