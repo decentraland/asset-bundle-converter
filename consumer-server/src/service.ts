@@ -1,6 +1,6 @@
 import { ILoggerComponent, Lifecycle } from "@well-known-components/interfaces"
 import { setupRouter } from "./controllers/routes"
-import { executeConversion } from "./logic/conversion-task"
+import { executeConversion, executeLODConversion } from "./logic/conversion-task"
 import checkDiskSpace from 'check-disk-space'
 import { AppComponents, GlobalContext, TestComponents } from "./types"
 
@@ -36,7 +36,11 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
       await components.taskQueue.consumeAndProcessJob(async (job, message) => {
         try {
           components.metrics.increment('ab_converter_running_conversion')
-          await executeConversion(components, job.entity.entityId, job.contentServerUrls![0], job.force)
+          if (job.lods) {
+            await executeLODConversion(components, job.entity.entityId, job.lods)
+          } else {
+            await executeConversion(components, job.entity.entityId, job.contentServerUrls![0], job.force)
+          }
         } finally {
           components.metrics.decrement('ab_converter_running_conversion')
         }

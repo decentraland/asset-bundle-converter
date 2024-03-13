@@ -35,6 +35,8 @@ namespace DCL.ABConverter
         internal static string[] gltfExtensions = { ".glb", ".gltf" };
         internal static string[] textureExtensions = { ".jpg", ".png", ".jpeg", ".tga", ".gif", ".bmp", ".psd", ".tiff", ".iff", ".ktx" };
 
+        internal const string LODS_URL = "lods";
+
         internal static string GetDownloadPath() => PathUtils.FixDirectorySeparator(DOWNLOADED_PATH_ROOT + DASH);
     }
 }

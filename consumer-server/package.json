@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@dcl/cdn-uploader": "^1.4.1-20230208155013.commit-f75a6ee",
-    "@dcl/schemas": "^8.2.1-20230713143922.commit-b923191",
+    "@dcl/schemas": "^10.4.0",
     "@well-known-components/env-config-provider": "^1.1.1",
     "@well-known-components/http-server": "^1.1.6-20220927190058.commit-2dfb235",
     "@well-known-components/interfaces": "^1.1.2",

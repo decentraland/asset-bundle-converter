@@ -3,7 +3,7 @@ import { FileVariant } from '@dcl/cdn-uploader/dist/types'
 import * as promises from 'fs/promises'
 import { rimraf } from 'rimraf'
 import { AppComponents } from '../types'
-import { runConversion } from './run-conversion'
+import { runConversion, runLodsConversion } from './run-conversion'
 
 type Manifest = {
   version: string
@@ -71,6 +71,115 @@ function getAbVersionEnvName(buildTarget: string)
     default:
       throw "Invalid buildTarget"
   }
+}
+
+export async function executeLODConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, entityId: string, lods: string[]) { 
+  const $LOD_BUCKET = await components.config.getString('LOD_BUCKET')
+  if (!$LOD_BUCKET) {
+    throw new Error('LOD_BUCKET is not defined')
+  }
+
+  const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
+  const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
+  const $PROJECT_PATH = await components.config.requireString('PROJECT_PATH')
+  const $BUILD_TARGET = await components.config.requireString('BUILD_TARGET')
+
+  const abVersionEnvName = getAbVersionEnvName($BUILD_TARGET)
+  const $AB_VERSION = await components.config.requireString(abVersionEnvName)
+  const logger = components.logs.getLogger(`ExecuteConversion`)
+
+  const cdnBucket = await getCdnBucket(components)
+  const logFile = `/tmp/asset_bundles_logs/export_log_${entityId}_${Date.now()}.txt`
+  const s3LogKey = `logs/${$AB_VERSION}/${entityId}/${new Date().toISOString()}.txt`
+  const outDirectory = `/tmp/asset_bundles_contents/entity_${entityId}`
+  let defaultLoggerMetadata = { entityId, lods, version: $AB_VERSION, logFile } as any
+
+  logger.info("Starting conversion for " + $BUILD_TARGET, defaultLoggerMetadata)
+
+  try {
+    const exitCode = await runLodsConversion(logger, components, {
+      entityId,
+      logFile,
+      outDirectory,
+      lods,
+      unityPath: $UNITY_PATH,
+      projectPath: $PROJECT_PATH,
+      timeout: 60 * 60 * 1000,
+    })
+
+    components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })
+
+    const generatedFiles = await promises.readdir(outDirectory)
+
+    if (generatedFiles.length == 0) {
+      // this is an error, if succeeded, we should see at least a manifest file
+      components.metrics.increment('ab_converter_empty_conversion', { ab_version: $AB_VERSION })
+      logger.error('Empty conversion', { ...defaultLoggerMetadata } as any)
+      return
+    }
+
+    await uploadDir(components.cdnS3, cdnBucket, outDirectory, 'LOD', {
+      concurrency: 10,
+      matches: [
+        {
+          // the rest of the elements will be uploaded as application/wasm
+          // to be compressed and cached by cloudflare
+          match: "**/*",
+          contentType: "application/wasm",
+          immutable: true,
+          variants: [FileVariant.Brotli, FileVariant.Uncompressed],
+          skipRepeated: true
+        }
+      ]
+    })
+  } catch (error: any) {
+    logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
+    components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
+    logger.error(error)
+
+    setTimeout(() => {
+      // kill the process in one minute, enough time to allow prometheus to collect the metrics
+      process.exit(199)
+    }, 60_000)
+
+    throw error
+  } finally {
+    if ($LOGS_BUCKET) {
+      const log = `https://${$LOGS_BUCKET}.s3.amazonaws.com/${s3LogKey}`
+
+      logger.info(`LogFile=${log}`, defaultLoggerMetadata)
+      await components.cdnS3
+        .upload({
+          Bucket: $LOGS_BUCKET,
+          Key: s3LogKey,
+          Body: await promises.readFile(logFile),
+          ACL: 'public-read',
+        })
+        .promise()
+    } else {
+      logger.info(`!!!!!!!! Log file not deleted or uploaded ${logFile}`, defaultLoggerMetadata)
+    }
+
+    // delete output files
+    try {
+      await rimraf(logFile, { maxRetries: 3 })
+    } catch (err: any) {
+      logger.error(err, defaultLoggerMetadata)
+    }
+    try {
+      await rimraf(outDirectory, { maxRetries: 3 })
+    } catch (err: any) {
+      logger.error(err, defaultLoggerMetadata)
+    }
+    // delete library folder
+    try {
+      await rimraf(`$PROJECT_PATH/Library`, { maxRetries: 3 })
+    } catch (err: any) {
+      logger.error(err, defaultLoggerMetadata)
+    }
+  }
+
+  logger.debug("LOD Conversion finished", defaultLoggerMetadata)
 }
 
 export async function executeConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, entityId: string, contentServerUrl: string, force: boolean | undefined) {
