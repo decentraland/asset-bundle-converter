@@ -118,7 +118,7 @@ export async function executeLODConversion(components: Pick<AppComponents, 'logs
       return
     }
 
-    await uploadDir(components.cdnS3, cdnBucket, outDirectory, $AB_VERSION, {
+    await uploadDir(components.cdnS3, cdnBucket, outDirectory, 'LOD', {
       concurrency: 10,
       matches: [
         {
