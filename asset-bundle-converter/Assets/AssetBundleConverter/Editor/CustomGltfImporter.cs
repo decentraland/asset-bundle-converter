@@ -75,12 +75,44 @@ namespace AssetBundleConverter.Editor
             if (!useOriginalMaterials)
                 SetupCustomMaterialGenerator(new AssetBundleConverterMaterialGenerator(AssetBundleConverterMaterialGenerator.UseNewShader(EditorUserBuildSettings.activeBuildTarget)));
 
-            try { base.OnImportAsset(ctx); }
+            try
+            {
+                base.OnImportAsset(ctx);
+
+                SwapAnimatorPostProcess(ctx);
+            }
             catch (Exception e)
             {
                 Debug.LogError("UNCAUGHT FATAL: Failed to Import GLTF " + hash);
                 Debug.LogException(e);
                 Utils.Exit((int)DCL.ABConverter.AssetBundleConverter.ErrorCodes.GLTFAST_CRITICAL_ERROR);
+            }
+        }
+
+        // In explorer alpha we are using non legacy animations and since we cannot create an Animator graph, we just add the clips to an Animation component so we can fetch them easily
+        // we dont even need to check the current platform target since animators only are created by desktop targets
+        private void SwapAnimatorPostProcess(AssetImportContext ctx)
+        {
+            GameObject gameObject = ctx.mainObject as GameObject;
+
+            if (gameObject != null)
+            {
+                Animator animator = gameObject.GetComponent<Animator>();
+
+                if (animator != null)
+                {
+                    DestroyImmediate(animator);
+                    var clips = m_Gltf.GetAnimationClips();
+                    var animation = gameObject.AddComponent<Animation>();
+
+                    foreach (AnimationClip animationClip in clips)
+                    {
+                        // we trick the Animation component believing that we are truly adding a legacy animation
+                        animationClip.legacy = true;
+                        animation.AddClip(animationClip, animationClip.name);
+                        animationClip.legacy = false;
+                    }
+                }
             }
         }
 

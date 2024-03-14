@@ -281,9 +281,11 @@ namespace DCL.ABConverter
 
             ContentMap[] contentMap = contentTable.Select(kvp => new ContentMap(kvp.Key, kvp.Value)).ToArray();
 
+            AnimationMethod animationMethod = GetAnimationMethod();
+
             var importSettings = new ImportSettings
             {
-                AnimationMethod = AnimationMethod.Legacy,
+                AnimationMethod = animationMethod,
                 NodeNameMethod = NameImportMethod.OriginalUnique,
                 AnisotropicFilterLevel = 0,
                 GenerateMipMaps = false
@@ -341,7 +343,7 @@ namespace DCL.ABConverter
                     log.Verbose($"Importing {relativePath}");
 
                     configureGltftime.Start();
-                    bool importerSuccess = env.gltfImporter.ConfigureImporter(relativePath, contentMap, gltf.AssetPath.fileRootPath, gltf.AssetPath.hash, settings.shaderType);
+                    bool importerSuccess = env.gltfImporter.ConfigureImporter(relativePath, contentMap, gltf.AssetPath.fileRootPath, gltf.AssetPath.hash, settings.shaderType, animationMethod);
                     configureGltftime.Stop();
 
                     if (importerSuccess)
@@ -416,6 +418,9 @@ namespace DCL.ABConverter
 
             return false;
         }
+
+        private AnimationMethod GetAnimationMethod() =>
+            settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX ? AnimationMethod.Mecanim : AnimationMethod.Legacy;
 
         private void ExtractEmbedMaterialsFromGltf(List<Texture2D> textures, GltfImportSettings gltf, IGltfImport gltfImport, string gltfUrl)
         {
