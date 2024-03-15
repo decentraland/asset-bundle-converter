@@ -74,11 +74,6 @@ function getAbVersionEnvName(buildTarget: string)
 }
 
 export async function executeLODConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, entityId: string, lods: string[]) { 
-  const $LOD_BUCKET = await components.config.getString('LOD_BUCKET')
-  if (!$LOD_BUCKET) {
-    throw new Error('LOD_BUCKET is not defined')
-  }
-
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
   const $PROJECT_PATH = await components.config.requireString('PROJECT_PATH')
