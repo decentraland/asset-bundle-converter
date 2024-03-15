@@ -454,11 +454,6 @@ namespace DCL.ABConverter
                 var newCopy = Object.Instantiate(animationClip);
                 newCopy.name = animationClip.name;
 
-                // setup the loop
-                var animationSettings = AnimationUtility.GetAnimationClipSettings(newCopy);
-                animationSettings.loopTime = true;
-                AnimationUtility.SetAnimationClipSettings(newCopy, animationSettings);
-
                 // embed clip into the animatorController
                 AssetDatabase.AddObjectToAsset(newCopy, controller);
                 AssetDatabase.ImportAsset(AssetDatabase.GetAssetPath(newCopy));
