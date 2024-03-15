@@ -43,8 +43,8 @@ jobs:
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: quay.io/decentraland/${{ matrix.service_name }}:next,quay.io/decentraland/${{ matrix.service_name }}:${{ github.sha }}
           #load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
           build-args: |
             COMMIT_HASH=${{ github.sha }}
             UNITY_DOCKER_IMAGE=${{ matrix.unity_docker_image }}
