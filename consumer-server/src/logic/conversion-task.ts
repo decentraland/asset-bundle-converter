@@ -93,6 +93,11 @@ export async function executeLODConversion(components: Pick<AppComponents, 'logs
 
   logger.info("Starting conversion for " + $BUILD_TARGET, defaultLoggerMetadata)
 
+  if (!unityBuildTarget) {
+    logger.error('Could not find a build target', { ...defaultLoggerMetadata } as any)
+    return
+  }
+
   try {
     const exitCode = await runLodsConversion(logger, components, {
       entityId,
@@ -102,7 +107,7 @@ export async function executeLODConversion(components: Pick<AppComponents, 'logs
       unityPath: $UNITY_PATH,
       projectPath: $PROJECT_PATH,
       timeout: 60 * 60 * 1000,
-      unityBuildTarget : unityBuildTarget
+      unityBuildTarget
     })
 
     components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })
