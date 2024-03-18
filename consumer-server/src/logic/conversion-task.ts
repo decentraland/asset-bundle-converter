@@ -80,6 +80,8 @@ export async function executeLODConversion(components: Pick<AppComponents, 'logs
   const $BUILD_TARGET = await components.config.requireString('BUILD_TARGET')
 
   const abVersionEnvName = getAbVersionEnvName($BUILD_TARGET)
+  const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
+  
   const $AB_VERSION = await components.config.requireString(abVersionEnvName)
   const logger = components.logs.getLogger(`ExecuteConversion`)
 
@@ -100,6 +102,7 @@ export async function executeLODConversion(components: Pick<AppComponents, 'logs
       unityPath: $UNITY_PATH,
       projectPath: $PROJECT_PATH,
       timeout: 60 * 60 * 1000,
+      unityBuildTarget : unityBuildTarget
     })
 
     components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })

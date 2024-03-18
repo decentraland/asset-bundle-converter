@@ -48,7 +48,8 @@ export async function runLodsConversion(logger: ILoggerComponent.ILogger, compon
   lods: string[],
   unityPath: string,
   projectPath: string,
-  timeout: number
+  timeout: number,
+  unityBuildTarget: string,
 }) {
   makeLogFileAndOutputDirectoryAvailable(options)
 
@@ -61,7 +62,8 @@ export async function runLodsConversion(logger: ILoggerComponent.ILogger, compon
     '-sceneCid', options.entityId,
     '-logFile', options.logFile,
     '-lods', options.lods.join(';'),
-    '-output', options.outDirectory
+    '-output', options.outDirectory,
+    '-buildTarget', options.unityBuildTarget
   ]
 
   return await executeProgram({ logger, components, childArg0, childArguments, projectPath: options.projectPath, timeout: options.timeout })
