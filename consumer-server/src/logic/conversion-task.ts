@@ -86,9 +86,9 @@ export async function executeLODConversion(components: Pick<AppComponents, 'logs
   const logger = components.logs.getLogger(`ExecuteConversion`)
 
   const cdnBucket = await getCdnBucket(components)
-  const logFile = `/tmp/asset_bundles_logs/export_log_${entityId}_${Date.now()}.txt`
-  const s3LogKey = `logs/${$AB_VERSION}/${entityId}/${new Date().toISOString()}.txt`
-  const outDirectory = `/tmp/asset_bundles_contents/entity_${entityId}`
+  const logFile = `/tmp/lods_logs/export_log_${entityId}_${Date.now()}.txt`
+  const s3LogKey = `logs/lods/${$AB_VERSION}/${entityId}/${new Date().toISOString()}.txt`
+  const outDirectory = `/tmp/lods_contents/entity_${entityId}`
   let defaultLoggerMetadata = { entityId, lods, version: $AB_VERSION, logFile } as any
 
   logger.info("Starting conversion for " + $BUILD_TARGET, defaultLoggerMetadata)
