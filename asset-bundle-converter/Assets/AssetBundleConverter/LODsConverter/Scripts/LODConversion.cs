@@ -32,8 +32,17 @@ public class LODConversion
     {
         PlatformUtils.currentTarget = EditorUserBuildSettings.activeBuildTarget;
         IAssetDatabase assetDatabase = new UnityEditorWrappers.AssetDatabase();
-
-        string[] downloadedFilePaths = await DownloadFiles();
+        string[] downloadedFilePaths;
+        try
+        {
+            downloadedFilePaths = await DownloadFiles();
+        }
+        catch (Exception e)
+        {
+            Debug.Log("DOWNLOAD FAILED");
+            Utils.Exit(1);
+            return;
+        }
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
         try
