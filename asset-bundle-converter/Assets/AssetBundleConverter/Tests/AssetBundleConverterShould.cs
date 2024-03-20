@@ -82,10 +82,16 @@ namespace AssetBundleConverter.Tests
             if (exitCode != 0) throw new Exception("Exit code " + exitCode);
         }
 
+        private static DCL.ABConverter.AssetBundleConverter.ConversionParams GetParams(ContentServerUtils.MappingPair mappingPair) =>
+            new () {rawContents = new[] { mappingPair} , entityType = "scene"} ;
+
         [Test]
         public async Task LoadVisualSceneOnStart()
         {
-            await converter.ConvertAsync(new DCL.ABConverter.AssetBundleConverter.ConversionParams());
+            var exampleAsset = new ContentServerUtils.MappingPair { file = "example.png", hash = "example" };
+            BaseSetup(exampleAsset, out string _, out string _);
+
+            await converter.ConvertAsync(GetParams(exampleAsset));
 
             await editor.Received().LoadVisualTestSceneAsync();
         }
@@ -93,7 +99,10 @@ namespace AssetBundleConverter.Tests
         [Test]
         public async Task InitializeDirectories()
         {
-            await converter.ConvertAsync(new DCL.ABConverter.AssetBundleConverter.ConversionParams());
+            var exampleAsset = new ContentServerUtils.MappingPair { file = "example.png", hash = "example" };
+            BaseSetup(exampleAsset, out string _, out string _);
+
+            await converter.ConvertAsync(GetParams(exampleAsset));
 
             directory.Received(1).InitializeDirectory(Arg.Is(EXAMPLE_AB_PATH), Arg.Any<bool>());
         }
@@ -102,17 +111,9 @@ namespace AssetBundleConverter.Tests
         public async Task TextureAssetIsProcessed()
         {
             var exampleAsset = new ContentServerUtils.MappingPair { file = "example.png", hash = "example" };
-            var assetPath = new AssetPath(Config.GetDownloadPath(), exampleAsset);
+            AssetPath assetPath = BaseSetup(exampleAsset, out string directoryName, out string exampleBaseURL);
 
-            string directoryName = Path.GetDirectoryName(assetPath.finalPath);
-            string exampleBaseURL = EXAMPLE_BASE_URL + exampleAsset.hash;
-
-            directory.Exists(directoryName).Returns(false);
-            webRequest.Get(exampleBaseURL).Returns(new DownloadHandlerMock());
-            var manifest = Substitute.For<IAssetBundleManifest>();
-            buildPipeline.BuildAssetBundles(Arg.Any<string>(), Arg.Any<BuildAssetBundleOptions>(), Arg.Any<BuildTarget>()).Returns(manifest);
-
-            await converter.ConvertAsync(new DCL.ABConverter.AssetBundleConverter.ConversionParams());
+            await converter.ConvertAsync(GetParams(exampleAsset));
 
             // Ensure that web request is done
             webRequest.Received().Get(Arg.Is(exampleBaseURL));
@@ -134,6 +135,20 @@ namespace AssetBundleConverter.Tests
 
             // Ensure that visual tests are ran
             await editor.Received().TestConvertedAssetsAsync(Arg.Any<Environment>(), Arg.Any<ClientSettings>(), Arg.Any<List<AssetPath>>(), Arg.Any<IErrorReporter>());
+        }
+
+        private AssetPath BaseSetup(ContentServerUtils.MappingPair exampleAsset, out string directoryName, out string exampleBaseURL)
+        {
+            var assetPath = new AssetPath(Config.GetDownloadPath(), exampleAsset);
+
+            directoryName = Path.GetDirectoryName(assetPath.finalPath);
+            exampleBaseURL = EXAMPLE_BASE_URL + exampleAsset.hash;
+
+            directory.Exists(directoryName).Returns(false);
+            webRequest.Get(exampleBaseURL).Returns(new DownloadHandlerMock());
+            var manifest = Substitute.For<IAssetBundleManifest>();
+            buildPipeline.BuildAssetBundles(Arg.Any<string>(), Arg.Any<BuildAssetBundleOptions>(), Arg.Any<BuildTarget>()).Returns(manifest);
+            return assetPath;
         }
 
         [Test]
@@ -159,7 +174,7 @@ namespace AssetBundleConverter.Tests
             gltf.TextureCount.Returns(0);
             gltf.MaterialCount.Returns(0);
 
-            await converter.ConvertAsync(new DCL.ABConverter.AssetBundleConverter.ConversionParams());
+            await converter.ConvertAsync(GetParams(exampleAsset));
 
             // Ensure that web request is done
             webRequest.Received().Get(Arg.Is(exampleBaseURL));
@@ -206,7 +221,7 @@ namespace AssetBundleConverter.Tests
             exampleTexture.name = textureName;
             gltf.GetTexture(0).Returns(exampleTexture);
 
-            await converter.ConvertAsync(new DCL.ABConverter.AssetBundleConverter.ConversionParams());
+            await converter.ConvertAsync(GetParams(exampleAsset));
 
             var texturePath = $"{DOWNLOAD_FOLDER}{hash}{separator}Textures{separator}{textureName}.png";
 
@@ -250,7 +265,7 @@ namespace AssetBundleConverter.Tests
             // Ensure that a when the material asset is created, the new instance of the material is a copy
             assetDatabase.When(ad => ad.CreateAsset(Arg.Any<Material>(), Arg.Any<string>())).Do(c => Assert.AreNotEqual(c.Arg<Material>(), material));
 
-            await converter.ConvertAsync(new DCL.ABConverter.AssetBundleConverter.ConversionParams());
+            await converter.ConvertAsync(GetParams(exampleAsset));
 
             // Ensure that a material asset is created and the texture is set for this material
             assetDatabase.Received(1).CreateAsset(Arg.Is<Material>(m => m.GetTexture("_BaseMap")), Arg.Any<string>());
