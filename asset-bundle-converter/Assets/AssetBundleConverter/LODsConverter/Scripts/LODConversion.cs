@@ -31,6 +31,8 @@ public class LODConversion
     public async void ConvertLODs()
     {
         PlatformUtils.currentTarget = EditorUserBuildSettings.activeBuildTarget;
+        //TODO (Juani) Temporal hack. Clean with the regular asset bundle process
+        ClearDownloadedFolder();
         IAssetDatabase assetDatabase = new UnityEditorWrappers.AssetDatabase();
         string[] downloadedFilePaths;
         try
@@ -61,33 +63,6 @@ public class LODConversion
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             assetDatabase.AssignAssetBundle(Shader.Find("DCL/Scene"), false);
-
-            string[] assetBundleNames = AssetDatabase.GetAllAssetBundleNames();
-            // Dictionary to hold asset bundle names and their assets
-            var bundleAssets = new Dictionary<string, List<string>>();
-
-            foreach (string name in assetBundleNames)
-            {
-                // Initialize the list for this bundle
-                bundleAssets[name] = new List<string>();
-
-                // Get the asset paths for each asset in the bundle
-                string[] assetPaths = AssetDatabase.GetAssetPathsFromAssetBundle(name);
-
-                foreach (string path in assetPaths)
-                {
-                    Debug.Log($"JUANI ASSET {name} has path {path}");
-                    bundleAssets[name].Add(path);
-                }
-            }
-
-            // Get all file names in all directories and subdirectories.
-            string[] files = Directory.GetFiles(lodPathHandler.tempPath, "*.*", SearchOption.AllDirectories);
-
-            // Print the name of each file.
-            foreach (string file in files)
-                Debug.Log($"JUANI File {file} is is temp path");
-            
             BuildAssetBundles(EditorUserBuildSettings.activeBuildTarget, dictionaryStringForMetadata);
         }
         catch (Exception e)
@@ -103,6 +78,12 @@ public class LODConversion
         Directory.Delete(lodPathHandler.tempPath, true);
         Debug.Log("Conversion done");
         Utils.Exit();
+    }
+
+    private void ClearDownloadedFolder()
+    {
+        if (Directory.Exists(Config.GetDownloadPath()))
+            Directory.Delete(Config.GetDownloadPath(), true);
     }
 
     private async Task<string[]> DownloadFiles()
