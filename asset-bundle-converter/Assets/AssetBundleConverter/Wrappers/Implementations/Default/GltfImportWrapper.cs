@@ -3,6 +3,7 @@ using GLTFast;
 using GLTFast.Logging;
 using GLTFast.Materials;
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEngine;
 
@@ -37,6 +38,9 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
         public Material GetMaterial(int index) =>
             importer.GetMaterial(index);
+
+        public IReadOnlyList<AnimationClip> GetClips() =>
+            importer.GetAnimationClips();
 
         public void Dispose()
         {

@@ -12,6 +12,7 @@ using AssetBundleConverter.Wrappers.Interfaces;
 using GLTFast;
 using System.Diagnostics;
 using UnityEditor;
+using UnityEditor.Animations;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.Profiling;
@@ -24,6 +25,12 @@ namespace DCL.ABConverter
 {
     public class AssetBundleConverter
     {
+        public struct ConversionParams
+        {
+            public IReadOnlyList<ContentServerUtils.MappingPair> rawContents;
+            public string entityType;
+        }
+
         private struct GltfImportSettings
         {
             public string url;
@@ -99,6 +106,8 @@ namespace DCL.ABConverter
 
         private bool isExitForced = false;
         private IABLogger log => env.logger;
+        private Dictionary<AssetPath, byte[]> downloadedData = new();
+        private string entityType;
 
         public AssetBundleConverter(Environment env, ClientSettings settings)
         {
@@ -119,10 +128,12 @@ namespace DCL.ABConverter
         /// <summary>
         /// Entry point of the AssetBundleConverter
         /// </summary>
-        /// <param name="rawContents"></param>
+        /// <param name="conversionParams"></param>
         /// <returns></returns>
-        public async Task ConvertAsync(IReadOnlyList<ContentServerUtils.MappingPair> rawContents)
+        public async Task ConvertAsync(ConversionParams conversionParams)
         {
+            var rawContents = conversionParams.rawContents;
+            entityType = conversionParams.entityType;
             startupAllocated = Profiler.GetTotalAllocatedMemoryLong() / 100000.0;
             startupReserved = Profiler.GetTotalReservedMemoryLong() / 100000.0;
 
@@ -281,9 +292,11 @@ namespace DCL.ABConverter
 
             ContentMap[] contentMap = contentTable.Select(kvp => new ContentMap(kvp.Key, kvp.Value)).ToArray();
 
+            AnimationMethod animationMethod = GetAnimationMethod();
+
             var importSettings = new ImportSettings
             {
-                AnimationMethod = AnimationMethod.Legacy,
+                AnimationMethod = animationMethod,
                 NodeNameMethod = NameImportMethod.OriginalUnique,
                 AnisotropicFilterLevel = 0,
                 GenerateMipMaps = false
@@ -325,10 +338,10 @@ namespace DCL.ABConverter
 
                     embedExtractTextureTime.Start();
 
+                    string directory = Path.GetDirectoryName(relativePath);
+
                     if (textures.Count > 0)
                     {
-                        string directory = Path.GetDirectoryName(relativePath);
-
                         textures = ExtractEmbedTexturesFromGltf(textures, directory);
                     }
 
@@ -338,10 +351,15 @@ namespace DCL.ABConverter
                     ExtractEmbedMaterialsFromGltf(textures, gltf, gltfImport, gltfUrl);
                     embedExtractMaterialTime.Stop();
 
+                    if (animationMethod == AnimationMethod.Mecanim)
+                    {
+                        CreateAnimatorController(gltfImport, directory);
+                    }
+
                     log.Verbose($"Importing {relativePath}");
 
                     configureGltftime.Start();
-                    bool importerSuccess = env.gltfImporter.ConfigureImporter(relativePath, contentMap, gltf.AssetPath.fileRootPath, gltf.AssetPath.hash, settings.shaderType);
+                    bool importerSuccess = env.gltfImporter.ConfigureImporter(relativePath, contentMap, gltf.AssetPath.fileRootPath, gltf.AssetPath.hash, settings.shaderType, animationMethod);
                     configureGltftime.Stop();
 
                     if (importerSuccess)
@@ -415,6 +433,48 @@ namespace DCL.ABConverter
             log.Info("Ended importing GLTFs");
 
             return false;
+        }
+
+        private void CreateAnimatorController(IGltfImport gltfImport, string directory)
+        {
+            var animatorRoot = $"{directory}/Animator/";
+
+            if (!env.directory.Exists(animatorRoot))
+                env.directory.CreateDirectory(animatorRoot);
+
+            var filePath = $"{animatorRoot}animatorController.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(filePath);
+            var clips = gltfImport.GetClips();
+
+            var rootStateMachine = controller.layers[0].stateMachine;
+
+            foreach (AnimationClip animationClip in clips)
+            {
+                // copy the animation asset so we dont use the same references that will get disposed
+                var newCopy = Object.Instantiate(animationClip);
+                newCopy.name = animationClip.name;
+
+                // embed clip into the animatorController
+                AssetDatabase.AddObjectToAsset(newCopy, controller);
+                AssetDatabase.ImportAsset(AssetDatabase.GetAssetPath(newCopy));
+
+                // configure the animator
+                string animationClipName = newCopy.name;
+                controller.AddParameter(animationClipName, AnimatorControllerParameterType.Trigger);
+                var state = controller.AddMotion(newCopy, 0);
+                var anyStateTransition = rootStateMachine.AddAnyStateTransition(state);
+                anyStateTransition.AddCondition(AnimatorConditionMode.If, 0, animationClipName);
+                anyStateTransition.duration = 0;
+            }
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+        }
+
+        private AnimationMethod GetAnimationMethod()
+        {
+            if (!entityType.ToLower().Contains("emote")) return AnimationMethod.Legacy;
+            return settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX ? AnimationMethod.Mecanim : AnimationMethod.Legacy;
         }
 
         private void ExtractEmbedMaterialsFromGltf(List<Texture2D> textures, GltfImportSettings gltf, IGltfImport gltfImport, string gltfUrl)
@@ -808,7 +868,6 @@ namespace DCL.ABConverter
         /// <param name="rawContents">An array containing all the assets to be dumped.</param>
         /// <returns>true if succeeded</returns>
         ///
-        private Dictionary<AssetPath, byte[]> downloadedData = new();
 
         private async Task<bool> DownloadAssets(IReadOnlyList<ContentServerUtils.MappingPair> rawContents)
         {

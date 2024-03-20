@@ -7,6 +7,7 @@ using DCL.ABConverter;
 using GLTFast.Editor;
 using System.Text.RegularExpressions;
 using UnityEditor;
+using UnityEditor.Animations;
 using UnityEditor.AssetImporters;
 using UnityEngine;
 using Object = UnityEngine.Object;
@@ -75,12 +76,48 @@ namespace AssetBundleConverter.Editor
             if (!useOriginalMaterials)
                 SetupCustomMaterialGenerator(new AssetBundleConverterMaterialGenerator(AssetBundleConverterMaterialGenerator.UseNewShader(EditorUserBuildSettings.activeBuildTarget)));
 
-            try { base.OnImportAsset(ctx); }
+            try
+            {
+                base.OnImportAsset(ctx);
+
+                ReferenceAnimatorController(ctx);
+            }
             catch (Exception e)
             {
                 Debug.LogError("UNCAUGHT FATAL: Failed to Import GLTF " + hash);
                 Debug.LogException(e);
                 Utils.Exit((int)DCL.ABConverter.AssetBundleConverter.ErrorCodes.GLTFAST_CRITICAL_ERROR);
+            }
+        }
+
+        private void ReferenceAnimatorController(AssetImportContext ctx)
+        {
+            GameObject gameObject = ctx.mainObject as GameObject;
+            if (gameObject != null)
+            {
+                Animator animator = gameObject.GetComponent<Animator>();
+
+                if (animator != null)
+                {
+                    var folderName = $"{Path.GetDirectoryName(ctx.assetPath)}/Animator/";
+                    string filePath = folderName + "animatorController.controller";
+                    AnimatorController animationController = AssetDatabase.LoadAssetAtPath<AnimatorController>(filePath);
+                    animator.runtimeAnimatorController = animationController;
+                }
+            }
+        }
+
+        // When creating Animators we embed the clips into the animator controller, so we prevent duplicating the clips here
+        protected override void CreateAnimationClips(AssetImportContext ctx)
+        {
+            GameObject gameObject = ctx.mainObject as GameObject;
+
+            if (gameObject != null)
+            {
+                Animator animator = gameObject.GetComponent<Animator>();
+
+                if (animator == null)
+                    base.CreateAnimationClips(ctx);
             }
         }
 
@@ -164,9 +201,11 @@ namespace AssetBundleConverter.Editor
                 Material validDefaultMaterial = GetExtractedMaterial(folderName, m_Gltf.defaultMaterial.name);
                 materials.Add(validDefaultMaterial);
                 ReplaceReferences(renderers, validDefaultMaterial);
+
                 foreach (Renderer renderer in renderers)
                 {
                     var sharedMaterials = renderer.sharedMaterials;
+
                     for (var i = 0; i < sharedMaterials.Length; i++)
                         if (sharedMaterials[i] == null)
                             sharedMaterials[i] = validDefaultMaterial;

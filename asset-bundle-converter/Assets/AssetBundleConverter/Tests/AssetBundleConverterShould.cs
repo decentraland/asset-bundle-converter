@@ -85,7 +85,7 @@ namespace AssetBundleConverter.Tests
         [Test]
         public async Task LoadVisualSceneOnStart()
         {
-            await converter.ConvertAsync(new List<ContentServerUtils.MappingPair>());
+            await converter.ConvertAsync(new DCL.ABConverter.AssetBundleConverter.ConversionParams());
 
             await editor.Received().LoadVisualTestSceneAsync();
         }
@@ -93,7 +93,7 @@ namespace AssetBundleConverter.Tests
         [Test]
         public async Task InitializeDirectories()
         {
-            await converter.ConvertAsync(new List<ContentServerUtils.MappingPair>());
+            await converter.ConvertAsync(new DCL.ABConverter.AssetBundleConverter.ConversionParams());
 
             directory.Received(1).InitializeDirectory(Arg.Is(EXAMPLE_AB_PATH), Arg.Any<bool>());
         }
@@ -112,7 +112,7 @@ namespace AssetBundleConverter.Tests
             var manifest = Substitute.For<IAssetBundleManifest>();
             buildPipeline.BuildAssetBundles(Arg.Any<string>(), Arg.Any<BuildAssetBundleOptions>(), Arg.Any<BuildTarget>()).Returns(manifest);
 
-            await converter.ConvertAsync(new List<ContentServerUtils.MappingPair> { exampleAsset });
+            await converter.ConvertAsync(new DCL.ABConverter.AssetBundleConverter.ConversionParams());
 
             // Ensure that web request is done
             webRequest.Received().Get(Arg.Is(exampleBaseURL));
@@ -151,7 +151,7 @@ namespace AssetBundleConverter.Tests
             var gltf = Substitute.For<IGltfImport>();
 
             gltfImporter.GetImporter(Arg.Any<AssetPath>(), Arg.Any<Dictionary<string, string>>(), Arg.Any<ShaderType>(), Arg.Any<BuildTarget>()).Returns(gltf);
-            gltfImporter.ConfigureImporter(Arg.Any<string>(), Arg.Any<ContentMap[]>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ShaderType>()).Returns(true);
+            gltfImporter.ConfigureImporter(Arg.Any<string>(), Arg.Any<ContentMap[]>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ShaderType>(), Arg.Any<AnimationMethod>()).Returns(true);
             assetDatabase.LoadAssetAtPath<GameObject>(PathUtils.FullPathToAssetPath(assetPath.finalPath)).Returns(dummyGo);
 
             gltf.LoadingDone.Returns(true);
@@ -159,7 +159,7 @@ namespace AssetBundleConverter.Tests
             gltf.TextureCount.Returns(0);
             gltf.MaterialCount.Returns(0);
 
-            await converter.ConvertAsync(new List<ContentServerUtils.MappingPair> { exampleAsset });
+            await converter.ConvertAsync(new DCL.ABConverter.AssetBundleConverter.ConversionParams());
 
             // Ensure that web request is done
             webRequest.Received().Get(Arg.Is(exampleBaseURL));
@@ -177,7 +177,7 @@ namespace AssetBundleConverter.Tests
             await gltf.Received().Load(Arg.Any<string>(), Arg.Any<ImportSettings>());
 
             // Ensure that the imported is properly configured
-            gltfImporter.Received().ConfigureImporter(Arg.Any<string>(), Arg.Any<ContentMap[]>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ShaderType>());
+            gltfImporter.Received().ConfigureImporter(Arg.Any<string>(), Arg.Any<ContentMap[]>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ShaderType>(), Arg.Any<AnimationMethod>());
 
             // Ensure that asset was marked for asset bundle build
             directory.Received().MarkFolderForAssetBundleBuild(assetPath.finalPath, assetPath.hash);
@@ -206,7 +206,7 @@ namespace AssetBundleConverter.Tests
             exampleTexture.name = textureName;
             gltf.GetTexture(0).Returns(exampleTexture);
 
-            await converter.ConvertAsync(new List<ContentServerUtils.MappingPair> { exampleAsset });
+            await converter.ConvertAsync(new DCL.ABConverter.AssetBundleConverter.ConversionParams());
 
             var texturePath = $"{DOWNLOAD_FOLDER}{hash}{separator}Textures{separator}{textureName}.png";
 
@@ -250,7 +250,7 @@ namespace AssetBundleConverter.Tests
             // Ensure that a when the material asset is created, the new instance of the material is a copy
             assetDatabase.When(ad => ad.CreateAsset(Arg.Any<Material>(), Arg.Any<string>())).Do(c => Assert.AreNotEqual(c.Arg<Material>(), material));
 
-            await converter.ConvertAsync(new List<ContentServerUtils.MappingPair> { exampleAsset });
+            await converter.ConvertAsync(new DCL.ABConverter.AssetBundleConverter.ConversionParams());
 
             // Ensure that a material asset is created and the texture is set for this material
             assetDatabase.Received(1).CreateAsset(Arg.Is<Material>(m => m.GetTexture("_BaseMap")), Arg.Any<string>());
@@ -266,7 +266,7 @@ namespace AssetBundleConverter.Tests
             buildPipeline.BuildAssetBundles(Arg.Any<string>(), Arg.Any<BuildAssetBundleOptions>(), Arg.Any<BuildTarget>()).Returns(Substitute.For<IAssetBundleManifest>());
             var gltf = Substitute.For<IGltfImport>();
             gltfImporter.GetImporter(Arg.Any<AssetPath>(), Arg.Any<Dictionary<string, string>>(), Arg.Any<ShaderType>(), Arg.Any<BuildTarget>()).Returns(gltf);
-            gltfImporter.ConfigureImporter(Arg.Any<string>(), Arg.Any<ContentMap[]>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ShaderType>()).Returns(true);
+            gltfImporter.ConfigureImporter(Arg.Any<string>(), Arg.Any<ContentMap[]>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ShaderType>(), Arg.Any<AnimationMethod>()).Returns(true);
             assetDatabase.LoadAssetAtPath<GameObject>(PathUtils.FullPathToAssetPath(assetPath.finalPath)).Returns(dummyGo);
             return gltf;
         }

@@ -39,7 +39,8 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
                 ? new AssetBundleConverterMaterialGenerator(AssetBundleConverterMaterialGenerator.UseNewShader(buildTarget))
                 : null;
 
-        public bool ConfigureImporter(string relativePath, ContentMap[] contentMap, string fileRootPath, string hash, ShaderType shaderType )
+        public bool ConfigureImporter(string relativePath, ContentMap[] contentMap, string fileRootPath, string hash, ShaderType shaderType,
+            AnimationMethod animationMethod)
         {
             var gltfImporter = AssetImporter.GetAtPath(relativePath) as CustomGltfImporter;
             if (gltfImporter != null)
@@ -47,7 +48,7 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
                 gltfImporter.SetupCustomFileProvider(contentMap, fileRootPath, hash);
 
                 gltfImporter.useOriginalMaterials = shaderType == ShaderType.GlTFast;
-                gltfImporter.importSettings.AnimationMethod = AnimationMethod.Legacy;
+                gltfImporter.importSettings.AnimationMethod = animationMethod;
                 gltfImporter.importSettings.GenerateMipMaps = false;
 
                 assetDatabase.SaveImporter(gltfImporter);

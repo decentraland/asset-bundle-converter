@@ -280,13 +280,15 @@ namespace DCL.ABConverter
             var apiResponse = await Utils.GetEntityMappingsAsync(settings.targetHash, settings, env.webRequest);
             if (apiResponse == null) return GetUnexpectedResult();
             var mappings = apiResponse.SelectMany(m => m.content);
-            return await ConvertEntitiesToAssetBundles(mappings.ToArray(), settings);
+            string entityType = apiResponse[0].type;
+            return await ConvertEntitiesToAssetBundles(mappings.ToArray(), entityType, settings);
         }
 
         public static async Task<AssetBundleConverter.State> ConvertEmptyScenesByMapping(ClientSettings settings)
         {
             EnsureEnvironment(settings.BuildPipelineType);
-            return await ConvertEntitiesToAssetBundles(await Utils.GetEmptyScenesMappingAsync(settings.targetHash, settings, env.webRequest), settings);
+            ContentServerUtils.MappingPair[] emptyScenesMapping = await Utils.GetEmptyScenesMappingAsync(settings.targetHash, settings, env.webRequest);
+            return await ConvertEntitiesToAssetBundles(emptyScenesMapping, "scene", settings);
         }
 
         /// <summary>
@@ -302,7 +304,8 @@ namespace DCL.ABConverter
             var apiResponse = await Utils.GetEntityMappings(settings.targetPointer.Value, settings, env.webRequest);
             if (apiResponse == null) return GetUnexpectedResult();
             var mappings = apiResponse.SelectMany(m => m.content);
-            return await ConvertEntitiesToAssetBundles(mappings.ToArray(), settings);
+            var entityType = apiResponse[0].type;
+            return await ConvertEntitiesToAssetBundles(mappings.ToArray(), entityType, settings);
         }
 
         private static AssetBundleConverter.State GetUnexpectedResult() =>
@@ -315,7 +318,7 @@ namespace DCL.ABConverter
             settings.isWearable = true;
 
             var mappings = await WearablesClient.GetCollectionMappingsAsync(settings.targetHash, ContentServerUtils.ApiTLD.ORG, env.webRequest);
-            return await ConvertEntitiesToAssetBundles(mappings, settings);
+            return await ConvertEntitiesToAssetBundles(mappings, "wearable", settings);
         }
 
         /// <summary>
@@ -324,7 +327,7 @@ namespace DCL.ABConverter
         /// <param name="entitiesId">The cid list for the scenes to gather from the catalyst's content server</param>
         /// <param name="settings">Any conversion settings object, if its null, a new one will be created</param>
         /// <returns>A state context object useful for tracking the conversion progress</returns>
-        private static async Task<AssetBundleConverter.State> ConvertEntitiesToAssetBundles(IReadOnlyList<ContentServerUtils.MappingPair> mappingPairs, ClientSettings settings)
+        private static async Task<AssetBundleConverter.State> ConvertEntitiesToAssetBundles(IReadOnlyList<ContentServerUtils.MappingPair> mappingPairs, string entityType, ClientSettings settings)
         {
             if (mappingPairs == null || mappingPairs.Count == 0)
             {
@@ -339,7 +342,11 @@ namespace DCL.ABConverter
             EnsureEnvironment(settings.BuildPipelineType);
 
             var core = new AssetBundleConverter(env, settings);
-            await core.ConvertAsync(mappingPairs);
+            await core.ConvertAsync(new AssetBundleConverter.ConversionParams
+            {
+                rawContents = mappingPairs,
+                entityType = entityType,
+            });
             return core.CurrentState;
         }
     }

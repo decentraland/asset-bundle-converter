@@ -1,5 +1,6 @@
 ﻿using GLTFast;
 using GLTFast.Logging;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEngine;
 
@@ -18,6 +19,8 @@ namespace AssetBundleConverter.Wrappers.Interfaces
         Texture2D GetTexture(int index);
 
         Material GetMaterial(int index);
+
+        IReadOnlyList<AnimationClip> GetClips();
 
         void Dispose();
 
