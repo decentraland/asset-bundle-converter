@@ -96,10 +96,14 @@ namespace AssetBundleConverter.Editor
             if (gameObject != null)
             {
                 Animator animator = gameObject.GetComponent<Animator>();
-                var folderName = $"{Path.GetDirectoryName(ctx.assetPath)}/Animator/";
-                string filePath = folderName + "animatorController.controller";
-                AnimatorController animationController = AssetDatabase.LoadAssetAtPath<AnimatorController>(filePath);
-                animator.runtimeAnimatorController = animationController;
+
+                if (animator != null)
+                {
+                    var folderName = $"{Path.GetDirectoryName(ctx.assetPath)}/Animator/";
+                    string filePath = folderName + "animatorController.controller";
+                    AnimatorController animationController = AssetDatabase.LoadAssetAtPath<AnimatorController>(filePath);
+                    animator.runtimeAnimatorController = animationController;
+                }
             }
         }
 

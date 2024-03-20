@@ -464,6 +464,7 @@ namespace DCL.ABConverter
                 var state = controller.AddMotion(newCopy, 0);
                 var anyStateTransition = rootStateMachine.AddAnyStateTransition(state);
                 anyStateTransition.AddCondition(AnimatorConditionMode.If, 0, animationClipName);
+                anyStateTransition.duration = 0;
             }
 
             AssetDatabase.SaveAssets();
