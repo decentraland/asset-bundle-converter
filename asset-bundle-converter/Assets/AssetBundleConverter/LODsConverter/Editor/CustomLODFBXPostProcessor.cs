@@ -42,7 +42,7 @@ public class CustomLODFBXPostProcessor : AssetPostprocessor
 
     private void OnPostprocessModel(GameObject model)
     {
-        if (model.name.Contains("_0"))
+        if (context.assetPath.EndsWith(".fbx") && model.name.EndsWith("_0"))
             GenerateColliders(model);
     }
 }
