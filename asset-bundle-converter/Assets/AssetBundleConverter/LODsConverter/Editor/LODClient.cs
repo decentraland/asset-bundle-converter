@@ -36,16 +36,11 @@ namespace DCL.ABConverter
         [MenuItem("Decentraland/LOD/Export FBX Folder To Asset Bundles")]
         private static async void ExportFBXToAssetBundles()
         {
-            string[] subdirectoryEntries = Directory.GetDirectories(Path.Combine(Application.dataPath, "AssetBundleConverter/LODsConverter/ExportLODToAssetBundle"));
-            foreach (string subdirectory in subdirectoryEntries)
+            string[] fileEntries = Directory.GetFiles(Path.Combine(Application.dataPath, "AssetBundleConverter/LODsConverter/ExportLODToAssetBundle"), "*.fbx", SearchOption.AllDirectories);
+            if (fileEntries.Length > 0)
             {
-                string[] fileEntries = Directory.GetFiles(subdirectory, "*.fbx", SearchOption.AllDirectories);
-                if (fileEntries.Length > 0)
-                {
-                    var lodConversion = new LODConversion(LODConstants.DEFAULT_OUTPUT_PATH, fileEntries);
-                    await lodConversion.ConvertLODs();
-                    Directory.Delete(subdirectory, true);
-                }
+                var lodConversion = new LODConversion(LODConstants.DEFAULT_OUTPUT_PATH, fileEntries);
+                await lodConversion.ConvertLODs();
             }
         }
         

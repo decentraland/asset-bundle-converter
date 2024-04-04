@@ -66,7 +66,7 @@ public class LODConversion
             AssetDatabase.Refresh();
             assetDatabase.AssignAssetBundle(usedLOD0Shader, false);
             assetDatabase.AssignAssetBundle(usedLODShader, false);
-            //BuildAssetBundles(EditorUserBuildSettings.activeBuildTarget, dictionaryStringForMetadata);
+            BuildAssetBundles(EditorUserBuildSettings.activeBuildTarget, dictionaryStringForMetadata);
         }
         catch (Exception e)
         {
@@ -76,8 +76,11 @@ public class LODConversion
         }
 
         lodPathHandler.RelocateOutputFolder();
-        //Directory.Delete(lodPathHandler.tempPath, true);
-        Debug.Log("Conversion done");
+        Directory.Delete(lodPathHandler.tempPath, true);
+        foreach (string downloadedFilePath in downloadedFilePaths)
+        {
+            Debug.Log($"LOD conversion done for {Path.GetFileName(downloadedFilePath)}");
+        }
         Utils.Exit();
     }
 
