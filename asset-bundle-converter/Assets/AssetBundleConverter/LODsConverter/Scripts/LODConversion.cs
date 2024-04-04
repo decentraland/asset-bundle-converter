@@ -18,6 +18,9 @@ public class LODConversion
 {
     private readonly LODPathHandler lodPathHandler;
     private readonly string[] urlsToConvert;
+    private readonly Shader usedLODShader;
+    private readonly Shader usedLOD0Shader;
+
 
     //TODO: CLEAN THIS UP HERE AND IN THE ASSET BUNDLE BUILDER. THIS IS NOT USED IN ALPHA
     private const string VERSION = "7.0";
@@ -26,9 +29,11 @@ public class LODConversion
     {
         this.urlsToConvert = urlsToConvert;
         lodPathHandler = new LODPathHandler(customOutputPath);
+        usedLOD0Shader = Shader.Find("DCL/Scene");
+        usedLODShader = Shader.Find("DCL/Scene_TexArray");
     }
 
-    public async void ConvertLODs()
+    public async Task ConvertLODs()
     {
         PlatformUtils.currentTarget = EditorUserBuildSettings.activeBuildTarget;
         //TODO (Juani) Temporal hack. Clean with the regular asset bundle process
@@ -53,16 +58,14 @@ public class LODConversion
             foreach (string downloadedFilePath in downloadedFilePaths)
             {
                 lodPathHandler.SetCurrentFile(downloadedFilePath);
-                if (File.Exists(lodPathHandler.assetBundlePath))
-                    continue;
                 dictionaryStringForMetadata.Add(lodPathHandler.fileNameWithoutExtension, lodPathHandler.fileNameWithoutExtension);
                 lodPathHandler.MoveFileToMatchingFolder();
                 BuildPrefab(lodPathHandler);
             }
-
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            assetDatabase.AssignAssetBundle(Shader.Find("DCL/Scene"), false);
+            assetDatabase.AssignAssetBundle(usedLOD0Shader, false);
+            assetDatabase.AssignAssetBundle(usedLODShader, false);
             BuildAssetBundles(EditorUserBuildSettings.activeBuildTarget, dictionaryStringForMetadata);
         }
         catch (Exception e)
@@ -72,11 +75,12 @@ public class LODConversion
             return;
         }
 
-        //Temporal hack
         lodPathHandler.RelocateOutputFolder();
-
         Directory.Delete(lodPathHandler.tempPath, true);
-        Debug.Log("Conversion done");
+        foreach (string downloadedFilePath in downloadedFilePaths)
+        {
+            Debug.Log($"LOD conversion done for {Path.GetFileName(downloadedFilePath)}");
+        }
         Utils.Exit();
     }
 
@@ -102,63 +106,50 @@ public class LODConversion
         AssetDatabase.WriteImportSettingsIfDirty(lodPathHandler.filePathRelativeToDataPath);
         AssetDatabase.ImportAsset(lodPathHandler.filePathRelativeToDataPath, ImportAssetOptions.ForceUpdate);
 
-        var instantiated = Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(lodPathHandler.filePathRelativeToDataPath));
+        var asset = AssetDatabase.LoadAssetAtPath<GameObject>(lodPathHandler.filePathRelativeToDataPath);
 
         if (lodPathHandler.filePath.Contains("_0"))
         {
-            SetDCLShaderMaterial(lodPathHandler, instantiated, false);
-            GenerateColliders(instantiated);
+            SetDCLShaderMaterial(lodPathHandler, asset, false, usedLOD0Shader);
         }
         else
-            SetDCLShaderMaterial(lodPathHandler, instantiated, true);
+        {
+            EnsureTextureFormat();
+            SetDCLShaderMaterial(lodPathHandler, asset, true, usedLODShader);
+        }
 
         importer.SearchAndRemapMaterials(ModelImporterMaterialName.BasedOnMaterialName, ModelImporterMaterialSearch.Local);
         AssetDatabase.WriteImportSettingsIfDirty(lodPathHandler.filePathRelativeToDataPath);
         AssetDatabase.ImportAsset(lodPathHandler.filePath, ImportAssetOptions.ForceUpdate);
 
-        PrefabUtility.SaveAsPrefabAsset(instantiated, lodPathHandler.prefabPathRelativeToDataPath);
-        Object.DestroyImmediate(instantiated);
-
         var prefabImporter = AssetImporter.GetAtPath(lodPathHandler.fileDirectoryRelativeToDataPath);
         prefabImporter.SetAssetBundleNameAndVariant(lodPathHandler.assetBundleFileName, "");
     }
 
-    private void GenerateColliders(GameObject instantiated)
+    private void EnsureTextureFormat()
     {
-        var meshFilters = instantiated.GetComponentsInChildren<MeshFilter>();
-
-        foreach (var filter in meshFilters)
+        string[] texturePaths = Directory.GetFiles(lodPathHandler.fileDirectory, "*.png", SearchOption.AllDirectories);
+        foreach (string texturePath in texturePaths)
         {
-            if (filter.name.Contains("_collider", StringComparison.OrdinalIgnoreCase))
-                ConfigureColliders(filter.transform, filter);
-        }
+            string assetPath = PathUtils.GetRelativePathTo(Application.dataPath, texturePath);
+            var importer = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+            var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
 
-        var renderers = instantiated.GetComponentsInChildren<Renderer>();
-
-        foreach (var r in renderers)
-        {
-            if (r.name.Contains("_collider", StringComparison.OrdinalIgnoreCase))
-                Object.DestroyImmediate(r);
+            if (importer != null)
+            {
+                importer.textureType = TextureImporterType.Default;
+                importer.isReadable = true;
+                importer.SetPlatformTextureSettings(new TextureImporterPlatformSettings
+                {
+                    overridden = true, maxTextureSize = texture.width, name = "Standalone", format = TextureImporterFormat.BC7,
+                    textureCompression = TextureImporterCompression.Compressed
+                });
+                AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
+            }
         }
     }
 
-    private void ConfigureColliders(Transform transform, MeshFilter filter)
-    {
-        if (filter != null)
-        {
-            Physics.BakeMesh(filter.sharedMesh.GetInstanceID(), false);
-            filter.gameObject.AddComponent<MeshCollider>();
-            Object.DestroyImmediate(filter.GetComponent<MeshRenderer>());
-        }
-
-        foreach (Transform child in transform)
-        {
-            var f = child.gameObject.GetComponent<MeshFilter>();
-            ConfigureColliders(child, f);
-        }
-    }
-
-    private void SetDCLShaderMaterial(LODPathHandler lodPathHandler, GameObject transform, bool setDefaultTransparency)
+    private void SetDCLShaderMaterial(LODPathHandler lodPathHandler, GameObject transform, bool setDefaultTransparency, Shader shader)
     {
         var childrenRenderers = transform.GetComponentsInChildren<Renderer>();
         var materialsDictionary = new Dictionary<string, Material>();
@@ -169,7 +160,8 @@ public class LODConversion
             {
                 var material = componentsInChild.sharedMaterials[i];
                 var duplicatedMaterial = new Material(material);
-                duplicatedMaterial.shader = Shader.Find("DCL/Scene");
+                duplicatedMaterial.shader = shader;
+                
                 if (duplicatedMaterial.name.Contains("FORCED_TRANSPARENT"))
                     ApplyTransparency(duplicatedMaterial, setDefaultTransparency);
 

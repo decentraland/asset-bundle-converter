@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEditor;
 using System.IO;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using AssetBundleConverter.LODsConverter.Utils;
 using AssetBundleConverter.Wrappers.Interfaces;
 using UnityEngine.Rendering;
@@ -12,9 +13,8 @@ namespace DCL.ABConverter
 {
     public class LODClient : MonoBehaviour
     {
-
-        [MenuItem("Assets/Export URL LODs")]
-        public static void ExportURLLODsToAssetBundles()
+        [MenuItem("Decentraland/LOD/Export URL LODs")]
+        public static async void ExportURLLODsToAssetBundles()
         {
             string[] commandLineArgs = Environment.GetCommandLineArgs();
             
@@ -30,15 +30,18 @@ namespace DCL.ABConverter
                 customOutputDirectory = outputDirectoryArg[0] + "/";
 
             var lodConversion = new LODConversion(customOutputDirectory, lodsURL.Split(";"));
-            lodConversion.ConvertLODs();
+            await lodConversion.ConvertLODs();
         }
 
-        [MenuItem("Assets/Export FBX Folder To Asset Bundles")]
-        private static void ExportFBXToAssetBundles()
+        [MenuItem("Decentraland/LOD/Export FBX Folder To Asset Bundles")]
+        private static async void ExportFBXToAssetBundles()
         {
-            string[] fileEntries = Directory.GetFiles(Path.Combine(Application.dataPath, "ExportToAssetBundle"), "*.fbx", SearchOption.AllDirectories);
-            var lodConversion = new LODConversion(LODConstants.DEFAULT_OUTPUT_PATH, fileEntries);
-            lodConversion.ConvertLODs();
+            string[] fileEntries = Directory.GetFiles(Path.Combine(Application.dataPath, "AssetBundleConverter/LODsConverter/ExportLODToAssetBundle"), "*.fbx", SearchOption.AllDirectories);
+            if (fileEntries.Length > 0)
+            {
+                var lodConversion = new LODConversion(LODConstants.DEFAULT_OUTPUT_PATH, fileEntries);
+                await lodConversion.ConvertLODs();
+            }
         }
         
     }
