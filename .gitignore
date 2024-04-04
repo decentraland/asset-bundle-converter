@@ -64,3 +64,8 @@ Unity_lic.*
 asset-bundle-converter/Assets/git-submodules/unity-shared-dependencies/Runtime/Shaders/URP/Lit.shader.meta
 
 .idea/
+
+# LODs
+
+asset-bundle-converter/Assets/AssetBundleConverter/LODsConverter/ExportLODToAssetBundle/
+asset-bundle-converter/Assets/AssetBundleConverter/LODsConverter/ExportLODToAssetBundle.meta

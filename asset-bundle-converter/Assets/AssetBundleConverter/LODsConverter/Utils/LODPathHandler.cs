@@ -16,6 +16,7 @@ namespace AssetBundleConverter.LODsConverter.Utils
         public string filePathRelativeToDataPath;
 
         public string filePath;
+        public string fileDirectory;
         public string fileName;
         public string fileNameWithoutExtension;
 
@@ -39,23 +40,23 @@ namespace AssetBundleConverter.LODsConverter.Utils
         {
             filePath = downloadedFilePath;
             fileName = Path.GetFileName(filePath);
-            fileNameWithoutExtension = Path.GetFileNameWithoutExtension(filePath);
+            fileNameWithoutExtension = Path.GetFileNameWithoutExtension(filePath).ToLower();
             assetBundleFileName = fileNameWithoutExtension + PlatformUtils.GetPlatform();
             assetBundlePath = Path.Combine(outputPath, assetBundleFileName);
         }
         
         public void MoveFileToMatchingFolder()
         {
-            string fileDirectory = Path.GetDirectoryName(filePath);
+            string newFileDirectory = Path.GetDirectoryName(filePath);
 
-            if (fileDirectory.EndsWith(fileNameWithoutExtension))
+            if (newFileDirectory.EndsWith(fileNameWithoutExtension))
             {
                 Console.WriteLine("The file is already in the correct folder.");
                 UpdatePaths(filePath);
                 return;
             }
 
-            string targetFolderPath = Path.Combine(fileDirectory, fileNameWithoutExtension);
+            string targetFolderPath = Path.Combine(newFileDirectory, fileNameWithoutExtension.ToLower());
             Directory.CreateDirectory(targetFolderPath);
             string newFilePath = Path.Combine(targetFolderPath, fileName);
             File.Move(filePath, newFilePath);
@@ -66,13 +67,14 @@ namespace AssetBundleConverter.LODsConverter.Utils
         private void UpdatePaths(string newFilePath)
         {
             filePath = newFilePath;
-            string fileDirectory = Path.GetDirectoryName(filePath);
+            fileDirectory = Path.GetDirectoryName(filePath);
             filePathRelativeToDataPath = PathUtils.GetRelativePathTo(Application.dataPath, filePath);
             fileDirectoryRelativeToDataPath = PathUtils.GetRelativePathTo(Application.dataPath, fileDirectory);
 
             string materialsPath = Path.Combine(fileDirectory, "Materials");
             Directory.CreateDirectory(materialsPath);
             materialsPathRelativeToDataPath = PathUtils.GetRelativePathTo(Application.dataPath, materialsPath);
+            
 
             prefabPathRelativeToDataPath = PathUtils.GetRelativePathTo(Application.dataPath, fileDirectory + "/" + fileNameWithoutExtension + " (gameobject).prefab");
             // Save assets and refresh the AssetDatabase
