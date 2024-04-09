@@ -90,7 +90,8 @@ export async function runConversion(
   if (!contentServerUrl.endsWith('/')) contentServerUrl += '/'
 
   // TODO: Temporal hack, we need to standardize this
-  if (contentServerUrl !== 'https://sdk-team-cdn.decentraland.org/ipfs/') {
+  if (contentServerUrl !== 'https://sdk-team-cdn.decentraland.org/ipfs/' &&
+      !contentServerUrl.endsWith('contents/')) {
     contentServerUrl += 'contents/'
   }
 
