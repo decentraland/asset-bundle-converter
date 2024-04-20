@@ -21,7 +21,6 @@ public class LODConversion
     private readonly Shader usedLODShader;
     private readonly Shader usedLOD0Shader;
 
-
     //TODO: CLEAN THIS UP HERE AND IN THE ASSET BUNDLE BUILDER. THIS IS NOT USED IN ALPHA
     private const string VERSION = "7.0";
 
@@ -35,14 +34,18 @@ public class LODConversion
 
     public async Task ConvertLODs()
     {
-        PlatformUtils.currentTarget = EditorUserBuildSettings.activeBuildTarget;
         //TODO (Juani) Temporal hack. Clean with the regular asset bundle process
         ClearDownloadedFolder();
+        PlatformUtils.currentTarget = EditorUserBuildSettings.activeBuildTarget;
+
         IAssetDatabase assetDatabase = new UnityEditorWrappers.AssetDatabase();
+        IWebRequestManager webRequestManager = new WebRequestManager(); 
         string[] downloadedFilePaths;
+
         try
         {
-            downloadedFilePaths = await DownloadFiles();
+            downloadedFilePaths = await webRequestManager.DownloadAndSaveFiles(urlsToConvert, lodPathHandler.tempPath);
+            ;
         }
         catch (Exception e)
         {
@@ -58,9 +61,10 @@ public class LODConversion
             foreach (string downloadedFilePath in downloadedFilePaths)
             {
                 lodPathHandler.SetCurrentFile(downloadedFilePath);
+                var parcels = await webRequestManager.GetDecodedParcels(lodPathHandler.fileName);
                 dictionaryStringForMetadata.Add(lodPathHandler.fileNameWithoutExtension, lodPathHandler.fileNameWithoutExtension);
                 lodPathHandler.MoveFileToMatchingFolder();
-                BuildPrefab(lodPathHandler);
+                BuildPrefab(lodPathHandler, parcels);
             }
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -70,13 +74,14 @@ public class LODConversion
         }
         catch (Exception e)
         {
+            Debug.LogError($"Unexpected exit with error {e.Message}");
             Directory.Delete(lodPathHandler.tempPath, true);
             Utils.Exit(1);
             return;
         }
 
         lodPathHandler.RelocateOutputFolder();
-        Directory.Delete(lodPathHandler.tempPath, true);
+        //Directory.Delete(lodPathHandler.tempPath, true);
         foreach (string downloadedFilePath in downloadedFilePaths)
         {
             Debug.Log($"LOD conversion done for {Path.GetFileName(downloadedFilePath)}");
@@ -90,14 +95,7 @@ public class LODConversion
             Directory.Delete(Config.GetDownloadPath(), true);
     }
 
-    private async Task<string[]> DownloadFiles()
-    {
-        var urlFileDownloader = new URLFileDownloader(urlsToConvert, lodPathHandler.tempPath);
-        Debug.Log("ALL files downloaded succesfully!");
-        return await urlFileDownloader.Download();
-    }
-
-    private void BuildPrefab(LODPathHandler lodPathHandler)
+    private void BuildPrefab(LODPathHandler lodPathHandler, List<Vector2Int> decodedParcels)
     {
         var importer = AssetImporter.GetAtPath(lodPathHandler.filePathRelativeToDataPath) as ModelImporter;
         if (importer == null) return;
@@ -110,12 +108,12 @@ public class LODConversion
 
         if (lodPathHandler.filePath.Contains("_0"))
         {
-            SetDCLShaderMaterial(lodPathHandler, asset, false, usedLOD0Shader);
+            SetDCLShaderMaterial(lodPathHandler, asset, false, usedLOD0Shader, decodedParcels);
         }
         else
         {
             EnsureTextureFormat();
-            SetDCLShaderMaterial(lodPathHandler, asset, true, usedLODShader);
+            SetDCLShaderMaterial(lodPathHandler, asset, true, usedLODShader, decodedParcels);
         }
 
         importer.SearchAndRemapMaterials(ModelImporterMaterialName.BasedOnMaterialName, ModelImporterMaterialSearch.Local);
@@ -149,7 +147,7 @@ public class LODConversion
         }
     }
 
-    private void SetDCLShaderMaterial(LODPathHandler lodPathHandler, GameObject transform, bool setDefaultTransparency, Shader shader)
+    private void SetDCLShaderMaterial(LODPathHandler lodPathHandler, GameObject transform, bool setDefaultTransparency, Shader shader, List<Vector2Int> decodedParcels)
     {
         var childrenRenderers = transform.GetComponentsInChildren<Renderer>();
         var materialsDictionary = new Dictionary<string, Material>();
@@ -173,6 +171,8 @@ public class LODConversion
                     AssetDatabase.Refresh();
                     materialsDictionary.Add(materialName, AssetDatabase.LoadAssetAtPath<Material>(materialPath));
                 }
+
+                //materialsDictionary[materialName].SetVector(Shader.PropertyToID("_PlaneClipping"), SceneCircumscribedPlanesCalculator.CalculatePlane(decodedParcels));
                 savedMaterials.Add(materialsDictionary[materialName]);
             }
             componentsInChild.sharedMaterials = savedMaterials.ToArray();
@@ -226,4 +226,6 @@ public class LODConversion
             BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
             target);
     }
+    
+    
 }
