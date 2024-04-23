@@ -28,7 +28,7 @@ namespace DCL.ABConverter
         public struct ConversionParams
         {
             public IReadOnlyList<ContentServerUtils.MappingPair> rawContents;
-            public string entityType;
+            public ContentServerUtils.EntityMappingsDTO apiResponse;
         }
 
         private struct GltfImportSettings
@@ -107,7 +107,7 @@ namespace DCL.ABConverter
         private bool isExitForced = false;
         private IABLogger log => env.logger;
         private Dictionary<AssetPath, byte[]> downloadedData = new();
-        private string entityType;
+        private ContentServerUtils.EntityMappingsDTO entityDTO;
 
         public AssetBundleConverter(Environment env, ClientSettings settings)
         {
@@ -133,7 +133,7 @@ namespace DCL.ABConverter
         public async Task ConvertAsync(ConversionParams conversionParams)
         {
             var rawContents = conversionParams.rawContents;
-            entityType = conversionParams.entityType;
+            entityDTO = conversionParams.apiResponse;
             startupAllocated = Profiler.GetTotalAllocatedMemoryLong() / 100000.0;
             startupReserved = Profiler.GetTotalReservedMemoryLong() / 100000.0;
 
@@ -453,6 +453,13 @@ namespace DCL.ABConverter
                 var newCopy = Object.Instantiate(animationClip);
                 newCopy.name = animationClip.name;
 
+                if (entityDTO.metadata.emoteDataADR74.loop)
+                {
+                    var animationClipSettings = AnimationUtility.GetAnimationClipSettings(newCopy);
+                    animationClipSettings.loopTime = true;
+                    AnimationUtility.SetAnimationClipSettings(newCopy, animationClipSettings);
+                }
+
                 // embed clip into the animatorController
                 AssetDatabase.AddObjectToAsset(newCopy, controller);
                 AssetDatabase.ImportAsset(AssetDatabase.GetAssetPath(newCopy));
@@ -472,7 +479,7 @@ namespace DCL.ABConverter
 
         private AnimationMethod GetAnimationMethod()
         {
-            if (!entityType.ToLower().Contains("emote")) return AnimationMethod.Legacy;
+            if (!entityDTO.type.ToLower().Contains("emote")) return AnimationMethod.Legacy;
             return settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX ? AnimationMethod.Mecanim : AnimationMethod.Legacy;
         }
 
