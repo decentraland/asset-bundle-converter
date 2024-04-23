@@ -59,6 +59,9 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
         /// <returns>True if the data is a glTF-Binary, false otherwise</returns>
         public static bool IsGltfBinary(byte[] data)
         {
+            if (data is null or { Length: 0 })
+                return true;
+
             var magic = BitConverter.ToUInt32(data, 0);
             return magic == GLB_MAGIC;
         }

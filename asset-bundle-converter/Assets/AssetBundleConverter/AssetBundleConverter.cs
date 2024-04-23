@@ -306,8 +306,9 @@ namespace DCL.ABConverter
             {
                 if (isExitForced) break;
 
-                var gltfUrl = gltf.url;
+                string gltfUrl = gltf.url;
                 var gltfImport = gltf.import;
+                string relativePath = PathUtils.FullPathToAssetPath(gltfUrl);
 
                 try
                 {
@@ -330,7 +331,6 @@ namespace DCL.ABConverter
                         continue;
                     }
 
-                    var relativePath = PathUtils.FullPathToAssetPath(gltfUrl);
                     var textures = new List<Texture2D>();
 
                     for (int i = 0; i < gltfImport.TextureCount; i++)
@@ -340,10 +340,7 @@ namespace DCL.ABConverter
 
                     string directory = Path.GetDirectoryName(relativePath);
 
-                    if (textures.Count > 0)
-                    {
-                        textures = ExtractEmbedTexturesFromGltf(textures, directory);
-                    }
+                    if (textures.Count > 0) { textures = ExtractEmbedTexturesFromGltf(textures, directory); }
 
                     embedExtractTextureTime.Stop();
 
@@ -351,10 +348,7 @@ namespace DCL.ABConverter
                     ExtractEmbedMaterialsFromGltf(textures, gltf, gltfImport, gltfUrl);
                     embedExtractMaterialTime.Stop();
 
-                    if (animationMethod == AnimationMethod.Mecanim)
-                    {
-                        CreateAnimatorController(gltfImport, directory);
-                    }
+                    if (animationMethod == AnimationMethod.Mecanim) { CreateAnimatorController(gltfImport, directory); }
 
                     log.Verbose($"Importing {relativePath}");
 
@@ -412,6 +406,14 @@ namespace DCL.ABConverter
 
                 // This case handles a missing asset, most likely creator's fault, gltf will be skipped
                 catch (AssetNotMappedException e) { Debug.LogError($"<b>{gltf.AssetPath.fileName}</b> will be skipped since one of its dependencies is missing: <b>{e.Message}</b>"); }
+                catch (FileLoadException)
+                {
+                    Debug.LogError($"<b>{gltf.AssetPath.fileName} ({gltf.AssetPath.hash})</b> Failed to load since its empty, we will replace this with an empty game object");
+                    GameObject replacement = new GameObject(gltf.AssetPath.hash);
+                    env.assetDatabase.DeleteAsset(relativePath);
+                    string prefabPath = Path.ChangeExtension(relativePath, ".prefab");
+                    PrefabUtility.SaveAsPrefabAsset(replacement, prefabPath);
+                }
                 catch (Exception e)
                 {
                     log.Error("UNCAUGHT FATAL: Failed to load GLTF " + gltf.AssetPath.hash);
@@ -420,10 +422,7 @@ namespace DCL.ABConverter
                     ForceExit((int)ErrorCodes.GLTFAST_CRITICAL_ERROR);
                     break;
                 }
-                finally
-                {
-                    gltfImport.Dispose();
-                }
+                finally { gltfImport.Dispose(); }
 
                 totalGltfsProcessed++;
             }
