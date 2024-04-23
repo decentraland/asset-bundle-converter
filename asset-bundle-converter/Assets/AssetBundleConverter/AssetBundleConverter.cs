@@ -479,6 +479,7 @@ namespace DCL.ABConverter
 
         private AnimationMethod GetAnimationMethod()
         {
+            if (entityDTO == null) return AnimationMethod.Legacy;
             if (!entityDTO.type.ToLower().Contains("emote")) return AnimationMethod.Legacy;
             return settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX ? AnimationMethod.Mecanim : AnimationMethod.Legacy;
         }
