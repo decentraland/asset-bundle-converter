@@ -280,15 +280,22 @@ namespace DCL.ABConverter
             var apiResponse = await Utils.GetEntityMappingsAsync(settings.targetHash, settings, env.webRequest);
             if (apiResponse == null) return GetUnexpectedResult();
             var mappings = apiResponse.SelectMany(m => m.content);
-            string entityType = apiResponse[0].type;
-            return await ConvertEntitiesToAssetBundles(mappings.ToArray(), entityType, settings);
+
+            return await ConvertEntitiesToAssetBundles(new AssetBundleConverter.ConversionParams
+            {
+                rawContents = mappings.ToArray(),
+                apiResponse = apiResponse[0],
+            }, settings);
         }
 
         public static async Task<AssetBundleConverter.State> ConvertEmptyScenesByMapping(ClientSettings settings)
         {
             EnsureEnvironment(settings.BuildPipelineType);
             ContentServerUtils.MappingPair[] emptyScenesMapping = await Utils.GetEmptyScenesMappingAsync(settings.targetHash, settings, env.webRequest);
-            return await ConvertEntitiesToAssetBundles(emptyScenesMapping, "scene", settings);
+            return await ConvertEntitiesToAssetBundles(new AssetBundleConverter.ConversionParams
+            {
+                rawContents = emptyScenesMapping,
+            }, settings);
         }
 
         /// <summary>
@@ -304,8 +311,12 @@ namespace DCL.ABConverter
             var apiResponse = await Utils.GetEntityMappings(settings.targetPointer.Value, settings, env.webRequest);
             if (apiResponse == null) return GetUnexpectedResult();
             var mappings = apiResponse.SelectMany(m => m.content);
-            var entityType = apiResponse[0].type;
-            return await ConvertEntitiesToAssetBundles(mappings.ToArray(), entityType, settings);
+
+            return await ConvertEntitiesToAssetBundles(new AssetBundleConverter.ConversionParams
+            {
+                apiResponse = apiResponse[0],
+                rawContents = mappings.ToArray(),
+            }, settings);
         }
 
         private static AssetBundleConverter.State GetUnexpectedResult() =>
@@ -318,7 +329,10 @@ namespace DCL.ABConverter
             settings.isWearable = true;
 
             var mappings = await WearablesClient.GetCollectionMappingsAsync(settings.targetHash, ContentServerUtils.ApiTLD.ORG, env.webRequest);
-            return await ConvertEntitiesToAssetBundles(mappings, "wearable", settings);
+            return await ConvertEntitiesToAssetBundles(new AssetBundleConverter.ConversionParams
+            {
+                rawContents = mappings.ToArray(),
+            }, settings);
         }
 
         /// <summary>
@@ -327,8 +341,9 @@ namespace DCL.ABConverter
         /// <param name="entitiesId">The cid list for the scenes to gather from the catalyst's content server</param>
         /// <param name="settings">Any conversion settings object, if its null, a new one will be created</param>
         /// <returns>A state context object useful for tracking the conversion progress</returns>
-        private static async Task<AssetBundleConverter.State> ConvertEntitiesToAssetBundles(IReadOnlyList<ContentServerUtils.MappingPair> mappingPairs, string entityType, ClientSettings settings)
+        private static async Task<AssetBundleConverter.State> ConvertEntitiesToAssetBundles(AssetBundleConverter.ConversionParams conversionParams, ClientSettings settings)
         {
+            var mappingPairs = conversionParams.rawContents;
             if (mappingPairs == null || mappingPairs.Count == 0)
             {
                 log.Error("Entity list is null or count == 0! Maybe this sector lacks scenes or content requests failed?");
@@ -342,11 +357,7 @@ namespace DCL.ABConverter
             EnsureEnvironment(settings.BuildPipelineType);
 
             var core = new AssetBundleConverter(env, settings);
-            await core.ConvertAsync(new AssetBundleConverter.ConversionParams
-            {
-                rawContents = mappingPairs,
-                entityType = entityType,
-            });
+            await core.ConvertAsync(conversionParams);
             return core.CurrentState;
         }
     }

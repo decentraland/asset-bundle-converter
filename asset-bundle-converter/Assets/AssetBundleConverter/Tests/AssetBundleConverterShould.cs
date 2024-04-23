@@ -83,7 +83,7 @@ namespace AssetBundleConverter.Tests
         }
 
         private static DCL.ABConverter.AssetBundleConverter.ConversionParams GetParams(ContentServerUtils.MappingPair mappingPair) =>
-            new () {rawContents = new[] { mappingPair} , entityType = "scene"} ;
+            new () {rawContents = new[] { mappingPair}} ;
 
         [Test]
         public async Task LoadVisualSceneOnStart()

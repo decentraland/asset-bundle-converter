@@ -1,3 +1,5 @@
+using System;
+
 namespace DCL
 {
     public static class ContentServerUtils
@@ -6,28 +8,88 @@ namespace DCL
         private const string DEFAULT_ENDPOINT_ENTITIES = "/content/entities/active";
         private const string DEFAULT_ENDPOINT_LAMBDAS = "/lambdas/";
 
-        [System.Serializable]
+        [Serializable]
         public class PointerData
         {
             public int x;
             public int y;
         }
 
-        [System.Serializable]
+        [Serializable]
         public class MappingPair
         {
             public string file;
             public string hash;
         }
 
-        [System.Serializable]
+        [Serializable]
         public class EntityMappingsDTO
         {
             public string type;
             public string[] pointers;
             public long timestamp;
             public MappingPair[] content;
-            public object metadata;
+
+            // not every entity is an emote but this does not fail for now, if we need to parse other entities we need to refactor this a bit
+            public EmoteMetadataDTO metadata;
+        }
+
+        [Serializable]
+        public struct Representation
+        {
+            public string[] bodyShapes;
+            public string mainFile;
+            public string[] contents;
+            public string[] overrideHides;
+            public string[] overrideReplaces;
+        }
+
+        [Serializable]
+        public abstract class DataBase
+        {
+            public Representation[] representations;
+            public string category;
+            public string[] tags;
+            public string[] replaces;
+            public string[] hides;
+            public string[] removesDefaultHiding;
+        }
+
+        [Serializable]
+        public struct I18n
+        {
+            public string code;
+            public string text;
+        }
+
+        [Serializable]
+        public abstract class MetadataBase
+        {
+            public abstract DataBase AbstractData { get; }
+
+            //urn
+            public string id;
+            public string name;
+
+            public I18n[] i18n;
+            public string thumbnail;
+
+            public string rarity;
+            public string description;
+        }
+
+        [Serializable]
+        public class EmoteMetadataDTO : MetadataBase
+        {
+            public Data emoteDataADR74;
+
+            public override DataBase AbstractData => emoteDataADR74;
+
+            [Serializable]
+            public class Data : DataBase
+            {
+                public bool loop;
+            }
         }
 
         public enum ApiTLD
