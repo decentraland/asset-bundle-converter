@@ -41,8 +41,6 @@ public class LODConversion
         IAssetDatabase assetDatabase = new UnityEditorWrappers.AssetDatabase();
         IWebRequestManager webRequestManager = new WebRequestManager(); 
         string[] downloadedFilePaths;
-        Parcel parcel = null;
-        
         try
         {
             downloadedFilePaths = await webRequestManager.DownloadAndSaveFiles(urlsToConvert, lodPathHandler.tempPath);
@@ -60,7 +58,7 @@ public class LODConversion
             foreach (string downloadedFilePath in downloadedFilePaths)
             {
                 lodPathHandler.SetCurrentFile(downloadedFilePath);
-                parcel = await webRequestManager.GetParcel(lodPathHandler.fileName);
+                var parcel = await webRequestManager.GetParcel(lodPathHandler.fileName);
                 lodPathHandler.MoveFileToMatchingFolder();
                 BuildPrefab(lodPathHandler, parcel);
             }
@@ -79,7 +77,7 @@ public class LODConversion
         }
 
         lodPathHandler.RelocateOutputFolder();
-        //Directory.Delete(lodPathHandler.tempPath, true);
+        Directory.Delete(lodPathHandler.tempPath, true);
         foreach (string downloadedFilePath in downloadedFilePaths)
         {
             Debug.Log($"LOD conversion done for {Path.GetFileName(downloadedFilePath)}");
@@ -102,8 +100,6 @@ public class LODConversion
         AssetDatabase.WriteImportSettingsIfDirty(lodPathHandler.filePathRelativeToDataPath);
         AssetDatabase.ImportAsset(lodPathHandler.filePathRelativeToDataPath, ImportAssetOptions.ForceUpdate);
 
-        var decodedBasePointer = parcel.GetDecodedBasePointer();
-        
         var instantiatedLOD = GameObject.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(lodPathHandler.filePathRelativeToDataPath));
         
         Vector4 scenePlane 
@@ -179,7 +175,7 @@ public class LODConversion
                     AssetDatabase.Refresh();
                     materialsDictionary.Add(materialName, AssetDatabase.LoadAssetAtPath<Material>(materialPath));
                 }
-                //materialsDictionary[materialName].SetVector(Shader.PropertyToID("_PlaneClipping"), scenePlane);
+                materialsDictionary[materialName].SetVector(Shader.PropertyToID("_PlaneClipping"), scenePlane);
                 savedMaterials.Add(materialsDictionary[materialName]);
             }
             componentsInChild.sharedMaterials = savedMaterials.ToArray();
