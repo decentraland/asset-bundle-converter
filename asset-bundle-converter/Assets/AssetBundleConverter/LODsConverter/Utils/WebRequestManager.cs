@@ -1,23 +1,43 @@
-﻿using System.IO;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
 using Cysharp.Threading.Tasks;
+using Unity.Plastic.Newtonsoft.Json;
 using UnityEngine;
 using UnityEngine.Networking;
 
 namespace AssetBundleConverter.LODsConverter.Utils
 {
-    public class URLFileDownloader : IFileDownloader
+    public class WebRequestManager : IWebRequestManager
     {
-        private readonly string[] lodsURL;
-        private readonly string tempDownloadPath;
-
-        public URLFileDownloader(string[] lodsURL, string tempDownloadPath)
+        public async Task<Parcel> GetParcel(string sceneIDWithLODLevel)
         {
-            this.lodsURL = lodsURL;
-            this.tempDownloadPath = tempDownloadPath;
+            var decodedParcels = new List<Vector2Int>();
+
+            string hash = sceneIDWithLODLevel.Split('_')[0];
+            string url = "https://peer.decentraland.org/content/entities/active/";
+
+            using (var request = UnityWebRequest.Post(url, "{\"ids\":[\"" + hash + "\"]}", "application/json"))
+            {
+                await request.SendWebRequest();
+                if (request.result == UnityWebRequest.Result.Success)
+                {
+                    string responseText = request.downloadHandler.text;
+                    var parcelData = JsonConvert.DeserializeObject<Parcel[]>(responseText);
+                    return parcelData[0];
+                    
+                }
+                else
+                {
+                    Debug.LogError($"Error getting decoded parcels for {hash}");
+                    DCL.ABConverter.Utils.Exit(1);
+                    return null;
+                }
+            }
         }
 
-        public async Task<string[]> Download()
+        public async Task<string[]> DownloadAndSaveFiles(string[] lodsURL, string tempDownloadPath)
         {
             string[] downloadedPaths = new string[lodsURL.Length];
             for (int index = 0; index < lodsURL.Length; index++)
@@ -39,8 +59,8 @@ namespace AssetBundleConverter.LODsConverter.Utils
                     }
                     else
                     {
-                        DCL.ABConverter.Utils.Exit(1);
                         Debug.LogError($"Error downloading {url}: {webRequest.error}");
+                        DCL.ABConverter.Utils.Exit(1);
                         return null;
                     }
                 }

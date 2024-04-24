@@ -22,10 +22,8 @@ namespace AssetBundleConverter.LODsConverter.Utils
 
         public string materialsPathRelativeToDataPath;
 
-        public string assetBundlePath;
         public string assetBundleFileName;
 
-        public string prefabPathRelativeToDataPath;
 
         public LODPathHandler(string customOutputPath)
         {
@@ -42,7 +40,6 @@ namespace AssetBundleConverter.LODsConverter.Utils
             fileName = Path.GetFileName(filePath);
             fileNameWithoutExtension = Path.GetFileNameWithoutExtension(filePath).ToLower();
             assetBundleFileName = fileNameWithoutExtension + PlatformUtils.GetPlatform();
-            assetBundlePath = Path.Combine(outputPath, assetBundleFileName);
         }
         
         public void MoveFileToMatchingFolder()
@@ -76,7 +73,6 @@ namespace AssetBundleConverter.LODsConverter.Utils
             materialsPathRelativeToDataPath = PathUtils.GetRelativePathTo(Application.dataPath, materialsPath);
             
 
-            prefabPathRelativeToDataPath = PathUtils.GetRelativePathTo(Application.dataPath, fileDirectory + "/" + fileNameWithoutExtension + " (gameobject).prefab");
             // Save assets and refresh the AssetDatabase
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
