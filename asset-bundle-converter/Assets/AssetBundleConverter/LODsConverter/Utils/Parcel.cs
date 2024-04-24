@@ -16,7 +16,7 @@ namespace AssetBundleConverter.LODsConverter.Utils
             {
                 public ParcelMetadata metadata;
     
-                public Vector2Int GetDecodedBasePointer()
+                public Vector2Int GetDecodedBaseParcel()
                 {
                     var decodedPointer = ParsePointer(metadata.scene.baseParcel);
                     return decodedPointer;

@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
@@ -8,11 +9,12 @@ namespace AssetBundleConverter.LODsConverter.Utils
     public class SceneCircumscribedPlanesCalculator
     {
         private const float PARCEL_SIZE = 16.0f;
-        private const float MAX_HEIGHT = 160.0f; 
+        private const float EXTEND_AMOUNT = 1f;
+        private const float MAX_HEIGHT = 200f;
 
-        private static ParcelCorners CalculateCorners(Vector2Int parcelPosition, bool normalizedInOrigin)
+        private static ParcelCorners CalculateCorners(Vector2Int parcelPosition)
         {
-            Vector3 min = normalizedInOrigin ? Vector3.zero : GetPositionByParcelPosition(parcelPosition);
+            Vector3 min = GetPositionByParcelPosition(parcelPosition);
             return new ParcelCorners(min, min + new Vector3(0, 0, PARCEL_SIZE), min + new Vector3(PARCEL_SIZE, 0, PARCEL_SIZE), min + new Vector3(PARCEL_SIZE, 0, 0));
         }
 
@@ -53,16 +55,18 @@ namespace AssetBundleConverter.LODsConverter.Utils
             }
         }
 
-        private static Bounds CalculateBoundingBox(Vector4 scenePlane)
+        private static Bounds CalculateSceneBoundingBox(Vector4 scenePlane, int parcelCount)
         {
+            //Following DCL Height standard (https://docs.decentraland.org/creator/development-guide/sdk7/scene-limitations/)
             Vector3 center = new Vector3((scenePlane[0] + scenePlane[1]) / 2, MAX_HEIGHT/2, (scenePlane[2] + scenePlane[3]) / 2);
-            Vector3 size = new Vector3(scenePlane[1] - scenePlane[0] , MAX_HEIGHT + 0.05f, scenePlane[3] - scenePlane[2]);
+            Vector3 size = new Vector3(scenePlane[1] - scenePlane[0]  + EXTEND_AMOUNT, MAX_HEIGHT + EXTEND_AMOUNT, scenePlane[3] - scenePlane[2] + EXTEND_AMOUNT);
             return new Bounds(center, size);
         }
         
-        public static void DisableObjectsOutsideBounds(List<Vector2Int> decodedParcels, GameObject parent)
+        public static void DisableObjectsOutsideBounds(Parcel parcel, GameObject parent)
         {
-            Bounds sceneBoundingBox = CalculateBoundingBox(CalculateScenePlane(decodedParcels, true));
+            parent.transform.position = GetPositionByParcelPosition(parcel.GetDecodedBaseParcel());
+            Bounds sceneBoundingBox = CalculateSceneBoundingBox(CalculateScenePlane(parcel.GetDecodedParcels()), parcel.GetDecodedParcels().Count);
             foreach (var renderer in parent.GetComponentsInChildren<MeshFilter>()) {
                 Bounds meshBounds = renderer.sharedMesh.bounds;
                 meshBounds.center = renderer.transform.TransformPoint(meshBounds.center);
@@ -90,13 +94,14 @@ namespace AssetBundleConverter.LODsConverter.Utils
                 if (!isFullyContained)
                     renderer.gameObject.SetActive(false);
             }
+            parent.transform.position = Vector3.zero;
         }
 
-        public static Vector4 CalculateScenePlane(List<Vector2Int> decodedParcels, bool normalizedInCenter)
+        public static Vector4 CalculateScenePlane(List<Vector2Int> decodedParcels)
         {
             List<ParcelCorners> parcelCorners = new List<ParcelCorners>();
             foreach (var decodedParcel in decodedParcels)
-                parcelCorners.Add(CalculateCorners(decodedParcel, normalizedInCenter));
+                parcelCorners.Add(CalculateCorners(decodedParcel));
 
             float circumscribedPlaneMinX = float.MaxValue;
             float circumscribedPlaneMaxX = float.MinValue;
@@ -115,7 +120,7 @@ namespace AssetBundleConverter.LODsConverter.Utils
 
             // to prevent on-boundary flickering (float accuracy) extend the circumscribed planes a little bit
 
-            const float EXTEND_AMOUNT = 0.05f;
+           
 
             circumscribedPlaneMinX -= EXTEND_AMOUNT;
             circumscribedPlaneMaxX += EXTEND_AMOUNT;

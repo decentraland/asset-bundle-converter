@@ -103,7 +103,7 @@ public class LODConversion
         var instantiatedLOD = GameObject.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(lodPathHandler.filePathRelativeToDataPath));
         
         Vector4 scenePlane 
-            = SceneCircumscribedPlanesCalculator.CalculateScenePlane(parcel.GetDecodedParcels(), false);
+            = SceneCircumscribedPlanesCalculator.CalculateScenePlane(parcel.GetDecodedParcels());
         
         if (lodPathHandler.filePath.Contains("_0"))
         {
@@ -119,7 +119,7 @@ public class LODConversion
         AssetDatabase.WriteImportSettingsIfDirty(lodPathHandler.filePathRelativeToDataPath);
         AssetDatabase.ImportAsset(lodPathHandler.filePath, ImportAssetOptions.ForceUpdate);
         
-        SceneCircumscribedPlanesCalculator.DisableObjectsOutsideBounds(parcel.GetDecodedParcels(), instantiatedLOD);
+        SceneCircumscribedPlanesCalculator.DisableObjectsOutsideBounds(parcel, instantiatedLOD);
 
         PrefabUtility.SaveAsPrefabAsset(instantiatedLOD,  $"{lodPathHandler.fileDirectoryRelativeToDataPath}/{lodPathHandler.fileNameWithoutExtension}.prefab");
         Object.DestroyImmediate(instantiatedLOD);
@@ -151,6 +151,17 @@ public class LODConversion
         }
     }
 
+    private void SetNormalTextureFormat(string textureName)
+    {
+        string assetPath = PathUtils.GetRelativePathTo(Application.dataPath, $"{lodPathHandler.fileDirectory}/{textureName}.png");
+        var importer = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+        if (importer != null)
+        {
+            importer.textureType = TextureImporterType.NormalMap;
+            AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
+        }
+    }
+
     private void SetDCLShaderMaterial(LODPathHandler lodPathHandler, GameObject transform, bool setDefaultTransparency, Shader shader, Vector4 scenePlane)
     {
         var childrenRenderers = transform.GetComponentsInChildren<Renderer>();
@@ -166,6 +177,12 @@ public class LODConversion
                 
                 if (duplicatedMaterial.name.Contains("FORCED_TRANSPARENT"))
                     ApplyTransparency(duplicatedMaterial, setDefaultTransparency);
+
+                
+                if (duplicatedMaterial.GetTexture("_BumpMap") != null)
+                {
+                    SetNormalTextureFormat(duplicatedMaterial.GetTexture("_BumpMap").name);
+                }
 
                 string materialName = $"{duplicatedMaterial.name.Replace("(Instance)", lodPathHandler.fileNameWithoutExtension)}.mat";
                 if (!materialsDictionary.ContainsKey(materialName))
