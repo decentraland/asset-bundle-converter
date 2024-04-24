@@ -41,11 +41,11 @@ public class LODConversion
         IAssetDatabase assetDatabase = new UnityEditorWrappers.AssetDatabase();
         IWebRequestManager webRequestManager = new WebRequestManager(); 
         string[] downloadedFilePaths;
-
+        Parcel parcel = null;
+        
         try
         {
             downloadedFilePaths = await webRequestManager.DownloadAndSaveFiles(urlsToConvert, lodPathHandler.tempPath);
-            ;
         }
         catch (Exception e)
         {
@@ -57,20 +57,18 @@ public class LODConversion
         AssetDatabase.Refresh();
         try
         {
-            var dictionaryStringForMetadata = new Dictionary<string, string>();
             foreach (string downloadedFilePath in downloadedFilePaths)
             {
                 lodPathHandler.SetCurrentFile(downloadedFilePath);
-                var parcels = await webRequestManager.GetDecodedParcels(lodPathHandler.fileName);
-                dictionaryStringForMetadata.Add(lodPathHandler.fileNameWithoutExtension, lodPathHandler.fileNameWithoutExtension);
+                parcel = await webRequestManager.GetParcel(lodPathHandler.fileName);
                 lodPathHandler.MoveFileToMatchingFolder();
-                BuildPrefab(lodPathHandler, parcels);
+                BuildPrefab(lodPathHandler, parcel);
             }
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             assetDatabase.AssignAssetBundle(usedLOD0Shader, false);
             assetDatabase.AssignAssetBundle(usedLODShader, false);
-            BuildAssetBundles(EditorUserBuildSettings.activeBuildTarget, dictionaryStringForMetadata);
+            BuildAssetBundles(EditorUserBuildSettings.activeBuildTarget);
         }
         catch (Exception e)
         {
@@ -95,7 +93,7 @@ public class LODConversion
             Directory.Delete(Config.GetDownloadPath(), true);
     }
 
-    private void BuildPrefab(LODPathHandler lodPathHandler, List<Vector2Int> decodedParcels)
+    private void BuildPrefab(LODPathHandler lodPathHandler, Parcel parcel)
     {
         var importer = AssetImporter.GetAtPath(lodPathHandler.filePathRelativeToDataPath) as ModelImporter;
         if (importer == null) return;
@@ -104,21 +102,32 @@ public class LODConversion
         AssetDatabase.WriteImportSettingsIfDirty(lodPathHandler.filePathRelativeToDataPath);
         AssetDatabase.ImportAsset(lodPathHandler.filePathRelativeToDataPath, ImportAssetOptions.ForceUpdate);
 
-        var asset = AssetDatabase.LoadAssetAtPath<GameObject>(lodPathHandler.filePathRelativeToDataPath);
-
+        var decodedBasePointer = parcel.GetDecodedBasePointer();
+        
+        var instantiatedLOD = GameObject.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(lodPathHandler.filePathRelativeToDataPath));
+        
+        Vector4 scenePlane 
+            = SceneCircumscribedPlanesCalculator.CalculateScenePlane(parcel.GetDecodedParcels(), false);
+        
         if (lodPathHandler.filePath.Contains("_0"))
         {
-            SetDCLShaderMaterial(lodPathHandler, asset, false, usedLOD0Shader, decodedParcels);
+            SetDCLShaderMaterial(lodPathHandler, instantiatedLOD, false, usedLOD0Shader, scenePlane);
         }
         else
         {
             EnsureTextureFormat();
-            SetDCLShaderMaterial(lodPathHandler, asset, true, usedLODShader, decodedParcels);
+            SetDCLShaderMaterial(lodPathHandler, instantiatedLOD, true, usedLODShader, scenePlane);
         }
 
         importer.SearchAndRemapMaterials(ModelImporterMaterialName.BasedOnMaterialName, ModelImporterMaterialSearch.Local);
         AssetDatabase.WriteImportSettingsIfDirty(lodPathHandler.filePathRelativeToDataPath);
         AssetDatabase.ImportAsset(lodPathHandler.filePath, ImportAssetOptions.ForceUpdate);
+        
+        SceneCircumscribedPlanesCalculator.DisableObjectsOutsideBounds(parcel.GetDecodedParcels(), instantiatedLOD);
+
+        PrefabUtility.SaveAsPrefabAsset(instantiatedLOD,  $"{lodPathHandler.fileDirectoryRelativeToDataPath}/{lodPathHandler.fileNameWithoutExtension}.prefab");
+        Object.DestroyImmediate(instantiatedLOD);
+        AssetDatabase.Refresh();
 
         var prefabImporter = AssetImporter.GetAtPath(lodPathHandler.fileDirectoryRelativeToDataPath);
         prefabImporter.SetAssetBundleNameAndVariant(lodPathHandler.assetBundleFileName, "");
@@ -132,7 +141,6 @@ public class LODConversion
             string assetPath = PathUtils.GetRelativePathTo(Application.dataPath, texturePath);
             var importer = AssetImporter.GetAtPath(assetPath) as TextureImporter;
             var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
-
             if (importer != null)
             {
                 importer.textureType = TextureImporterType.Default;
@@ -147,7 +155,7 @@ public class LODConversion
         }
     }
 
-    private void SetDCLShaderMaterial(LODPathHandler lodPathHandler, GameObject transform, bool setDefaultTransparency, Shader shader, List<Vector2Int> decodedParcels)
+    private void SetDCLShaderMaterial(LODPathHandler lodPathHandler, GameObject transform, bool setDefaultTransparency, Shader shader, Vector4 scenePlane)
     {
         var childrenRenderers = transform.GetComponentsInChildren<Renderer>();
         var materialsDictionary = new Dictionary<string, Material>();
@@ -171,8 +179,7 @@ public class LODConversion
                     AssetDatabase.Refresh();
                     materialsDictionary.Add(materialName, AssetDatabase.LoadAssetAtPath<Material>(materialPath));
                 }
-
-                //materialsDictionary[materialName].SetVector(Shader.PropertyToID("_PlaneClipping"), SceneCircumscribedPlanesCalculator.CalculatePlane(decodedParcels));
+                //materialsDictionary[materialName].SetVector(Shader.PropertyToID("_PlaneClipping"), scenePlane);
                 savedMaterials.Add(materialsDictionary[materialName]);
             }
             componentsInChild.sharedMaterials = savedMaterials.ToArray();
@@ -197,7 +204,7 @@ public class LODConversion
         duplicatedMaterial.color = new Color(duplicatedMaterial.color.r, duplicatedMaterial.color.g, duplicatedMaterial.color.b, setDefaultTransparency ? 0.8f : duplicatedMaterial.color.a);
     }
 
-    public void BuildAssetBundles(BuildTarget target, Dictionary<string, string> dictionaryForMetadataBuilder)
+    public void BuildAssetBundles(BuildTarget target)
     {
         AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
         AssetDatabase.SaveAssets();
@@ -214,9 +221,19 @@ public class LODConversion
             string message = "Error generating asset bundle!";
             Utils.Exit(1);
         }
+        
+        string[] lodAssetBundles = manifest.GetAllAssetBundles();
+        foreach (string assetBundle in lodAssetBundles)
+        {
+            if (assetBundle.Contains("_ignore"))
+                continue;
 
-        // 2. Create metadata (dependencies, version, timestamp) and store in the target folders to be converted again later with the metadata inside
-        AssetBundleMetadataBuilder.Generate(new SystemWrappers.File(), lodPathHandler.tempPath, dictionaryForMetadataBuilder, manifest, VERSION);
+            string lodName = PlatformUtils.RemovePlatform(assetBundle);
+            // 2. Create metadata (dependencies, version, timestamp) and store in the target folders to be converted again later with the metadata inside
+            AssetBundleMetadataBuilder.GenerateLODMetadata(lodPathHandler.tempPath,
+                manifest.GetAllDependencies(assetBundle), $"{lodName}.prefab", lodName);
+        }
+        
 
         AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
         AssetDatabase.SaveAssets();

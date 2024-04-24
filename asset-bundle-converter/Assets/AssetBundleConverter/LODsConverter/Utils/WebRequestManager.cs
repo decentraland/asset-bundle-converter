@@ -11,7 +11,7 @@ namespace AssetBundleConverter.LODsConverter.Utils
 {
     public class WebRequestManager : IWebRequestManager
     {
-        public async Task<List<Vector2Int>> GetDecodedParcels(string sceneIDWithLODLevel)
+        public async Task<Parcel> GetParcel(string sceneIDWithLODLevel)
         {
             var decodedParcels = new List<Vector2Int>();
 
@@ -24,14 +24,9 @@ namespace AssetBundleConverter.LODsConverter.Utils
                 if (request.result == UnityWebRequest.Result.Success)
                 {
                     string responseText = request.downloadHandler.text;
-                    var parcelData = JsonConvert.DeserializeObject<ParcelData[]>(responseText)[0];
-                    foreach (string pointer in parcelData.pointers)
-                    {
-                        string[] coords = pointer.Split(',');
-                        int x = int.Parse(coords[0]);
-                        int y = int.Parse(coords[1]);
-                        decodedParcels.Add(new Vector2Int(x, y));
-                    }
+                    var parcelData = JsonConvert.DeserializeObject<Parcel[]>(responseText);
+                    return parcelData[0];
+                    
                 }
                 else
                 {
@@ -40,8 +35,6 @@ namespace AssetBundleConverter.LODsConverter.Utils
                     return null;
                 }
             }
-
-            return decodedParcels;
         }
 
         public async Task<string[]> DownloadAndSaveFiles(string[] lodsURL, string tempDownloadPath)
@@ -74,22 +67,6 @@ namespace AssetBundleConverter.LODsConverter.Utils
             }
 
             return  downloadedPaths;
-        }
-
-        [Serializable]
-        private class ParcelResponse
-        {
-            public List<ParcelData> results;
-        }
-
-        [Serializable]
-        private class ParcelData
-        {
-            public string version;
-            public string id;
-            public string type;
-            public List<string> pointers;
-            public long timestamp;
         }
     }
 }

@@ -1,25 +1,27 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
+using Cysharp.Threading.Tasks;
 using UnityEngine;
 
 namespace AssetBundleConverter.LODsConverter.Utils
 {
     public class SceneCircumscribedPlanesCalculator
     {
-        public const float PARCEL_SIZE = 16.0f;
+        private const float PARCEL_SIZE = 16.0f;
+        private const float MAX_HEIGHT = 160.0f; 
 
-        public static ParcelCorners CalculateCorners(Vector2Int parcelPosition)
+        private static ParcelCorners CalculateCorners(Vector2Int parcelPosition, bool normalizedInOrigin)
         {
-            var min = GetPositionByParcelPosition(parcelPosition);
+            Vector3 min = normalizedInOrigin ? Vector3.zero : GetPositionByParcelPosition(parcelPosition);
             return new ParcelCorners(min, min + new Vector3(0, 0, PARCEL_SIZE), min + new Vector3(PARCEL_SIZE, 0, PARCEL_SIZE), min + new Vector3(PARCEL_SIZE, 0, 0));
         }
 
-        public static Vector3 GetPositionByParcelPosition(Vector2Int parcelPosition)
+        private static Vector3 GetPositionByParcelPosition(Vector2Int parcelPosition)
         {
             return new Vector3 (parcelPosition.x * PARCEL_SIZE, 0.0f, parcelPosition.y * PARCEL_SIZE);
         }
 
-        public readonly struct SceneCircumscribedPlanes
+        private readonly struct SceneCircumscribedPlanes
         {
             public readonly float MinX;
             public readonly float MaxX;
@@ -35,7 +37,7 @@ namespace AssetBundleConverter.LODsConverter.Utils
             }
         }
 
-        public readonly struct ParcelCorners
+        private readonly struct ParcelCorners
         {
             public readonly Vector3 minXZ;
             public readonly Vector3 minXmaxZ;
@@ -51,10 +53,50 @@ namespace AssetBundleConverter.LODsConverter.Utils
             }
         }
 
-        public static Vector4 CalculatePlane(List<Vector2Int> decodedParcels)
+        private static Bounds CalculateBoundingBox(Vector4 scenePlane)
         {
-            IReadOnlyList<ParcelCorners> parcelCorners = new List<ParcelCorners>(decodedParcels.Select(CalculateCorners));
+            Vector3 center = new Vector3((scenePlane[0] + scenePlane[1]) / 2, MAX_HEIGHT/2, (scenePlane[2] + scenePlane[3]) / 2);
+            Vector3 size = new Vector3(scenePlane[1] - scenePlane[0] , MAX_HEIGHT + 0.05f, scenePlane[3] - scenePlane[2]);
+            return new Bounds(center, size);
+        }
+        
+        public static void DisableObjectsOutsideBounds(List<Vector2Int> decodedParcels, GameObject parent)
+        {
+            Bounds sceneBoundingBox = CalculateBoundingBox(CalculateScenePlane(decodedParcels, true));
+            foreach (var renderer in parent.GetComponentsInChildren<MeshFilter>()) {
+                Bounds meshBounds = renderer.sharedMesh.bounds;
+                meshBounds.center = renderer.transform.TransformPoint(meshBounds.center);
+                meshBounds.size = renderer.transform.TransformVector(meshBounds.size);
+                bool isFullyContained = true;
+                Vector3[] meshCorners = new Vector3[]
+                {
+                    meshBounds.min,
+                    new Vector3(meshBounds.max.x, meshBounds.min.y, meshBounds.min.z),
+                    new Vector3(meshBounds.min.x, meshBounds.max.y, meshBounds.min.z),
+                    new Vector3(meshBounds.min.x, meshBounds.min.y, meshBounds.max.z),
+                    new Vector3(meshBounds.max.x, meshBounds.max.y, meshBounds.min.z),
+                    new Vector3(meshBounds.min.x, meshBounds.max.y, meshBounds.max.z),
+                    new Vector3(meshBounds.max.x, meshBounds.min.y, meshBounds.max.z),
+                    meshBounds.max
+                };
+                
+                foreach (Vector3 corner in meshCorners) {
+                    if (!sceneBoundingBox.Contains(corner)) {
+                        isFullyContained = false;
+                        break;
+                    }
+                }
 
+                if (!isFullyContained)
+                    renderer.gameObject.SetActive(false);
+            }
+        }
+
+        public static Vector4 CalculateScenePlane(List<Vector2Int> decodedParcels, bool normalizedInCenter)
+        {
+            List<ParcelCorners> parcelCorners = new List<ParcelCorners>();
+            foreach (var decodedParcel in decodedParcels)
+                parcelCorners.Add(CalculateCorners(decodedParcel, normalizedInCenter));
 
             float circumscribedPlaneMinX = float.MaxValue;
             float circumscribedPlaneMaxX = float.MinValue;

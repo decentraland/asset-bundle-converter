@@ -8,6 +8,6 @@ namespace AssetBundleConverter.LODsConverter.Utils
     {
         Task<string[]> DownloadAndSaveFiles(string[] lodsURL, string tempDownloadPath);
 
-        Task<List<Vector2Int>> GetDecodedParcels(string sceneID);
+        Task<Parcel> GetParcel(string sceneID);
     }
 }
