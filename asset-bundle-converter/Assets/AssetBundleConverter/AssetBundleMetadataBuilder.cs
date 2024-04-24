@@ -32,7 +32,7 @@ namespace DCL.ABConverter
                 if (string.IsNullOrEmpty(assetBundles[i]))
                     continue;
 
-                var metadata = new AssetBundleMetadata { version = version, timestamp = DateTime.UtcNow.Ticks};
+                var metadata = new AssetBundleMetadata { version = version, timestamp = DateTime.UtcNow.Ticks };
                 string[] deps = manifest.GetAllDependencies(assetBundles[i]);
 
                 if (deps.Length > 0)
