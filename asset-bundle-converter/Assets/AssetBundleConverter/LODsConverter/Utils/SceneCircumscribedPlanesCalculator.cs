@@ -9,7 +9,7 @@ namespace AssetBundleConverter.LODsConverter.Utils
     public class SceneCircumscribedPlanesCalculator
     {
         private const float PARCEL_SIZE = 16.0f;
-        private const float EXTEND_AMOUNT = 1f;
+        private const float EXTEND_AMOUNT = 2f;
         private const float MAX_HEIGHT = 200f;
 
         private static ParcelCorners CalculateCorners(Vector2Int parcelPosition)
