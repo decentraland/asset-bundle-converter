@@ -72,6 +72,7 @@ namespace DCL.ABConverter
         private const float MAX_TEXTURE_SIZE = 512f;
 
         private const string VERSION = "7.0";
+        private const string LOOP_PARAMETER = "Loop";
 
         private readonly Dictionary<string, string> lowerCaseHashes = new ();
         public State CurrentState { get; } = new ();
@@ -108,6 +109,7 @@ namespace DCL.ABConverter
         private IABLogger log => env.logger;
         private Dictionary<AssetPath, byte[]> downloadedData = new();
         private ContentServerUtils.EntityMappingsDTO entityDTO;
+        private readonly Dictionary<Shader, List<int>> textureProperties = new ();
 
         public AssetBundleConverter(Environment env, ClientSettings settings)
         {
@@ -447,18 +449,13 @@ namespace DCL.ABConverter
 
             var rootStateMachine = controller.layers[0].stateMachine;
 
+            controller.AddParameter(LOOP_PARAMETER, AnimatorControllerParameterType.Bool);
+
             foreach (AnimationClip animationClip in clips)
             {
                 // copy the animation asset so we dont use the same references that will get disposed
                 var newCopy = Object.Instantiate(animationClip);
                 newCopy.name = animationClip.name;
-
-                if (entityDTO.metadata.emoteDataADR74.loop)
-                {
-                    var animationClipSettings = AnimationUtility.GetAnimationClipSettings(newCopy);
-                    animationClipSettings.loopTime = true;
-                    AnimationUtility.SetAnimationClipSettings(newCopy, animationClipSettings);
-                }
 
                 // embed clip into the animatorController
                 AssetDatabase.AddObjectToAsset(newCopy, controller);
@@ -471,6 +468,20 @@ namespace DCL.ABConverter
                 var anyStateTransition = rootStateMachine.AddAnyStateTransition(state);
                 anyStateTransition.AddCondition(AnimatorConditionMode.If, 0, animationClipName);
                 anyStateTransition.duration = 0;
+
+                var stateLoop = controller.AddMotion(newCopy, 0);
+
+                var loopTransition = state.AddTransition(stateLoop);
+                loopTransition.AddCondition(AnimatorConditionMode.If, 0, LOOP_PARAMETER);
+                loopTransition.exitTime = 1;
+                loopTransition.duration = 0;
+                loopTransition.hasExitTime = true;
+
+                var loopBackTransition = stateLoop.AddTransition(state);
+                loopBackTransition.AddCondition(AnimatorConditionMode.If, 0, LOOP_PARAMETER);
+                loopBackTransition.exitTime = 1;
+                loopBackTransition.duration = 0;
+                loopBackTransition.hasExitTime = true;
             }
 
             AssetDatabase.SaveAssets();
@@ -557,7 +568,6 @@ namespace DCL.ABConverter
             EditorUtility.SetDirty(newMaterial);
         }
 
-        private readonly Dictionary<Shader, List<int>> textureProperties = new ();
         private List<int> GetTextureProperties(Shader shader)
         {
             Profiler.BeginSample("GetTextureProperties");
