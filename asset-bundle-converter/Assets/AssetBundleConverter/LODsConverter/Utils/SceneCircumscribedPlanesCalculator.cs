@@ -9,8 +9,7 @@ namespace AssetBundleConverter.LODsConverter.Utils
     public class SceneCircumscribedPlanesCalculator
     {
         private const float PARCEL_SIZE = 16.0f;
-        private const float EXTEND_AMOUNT = 2f;
-        private const float EXTEND_Y_AMOUNT = 20f;
+        private const float EXTEND_AMOUNT = 4f;
         private const float MAX_HEIGHT = 200f;
 
         private static ParcelCorners CalculateCorners(Vector2Int parcelPosition)
@@ -58,9 +57,12 @@ namespace AssetBundleConverter.LODsConverter.Utils
 
         private static Bounds CalculateSceneBoundingBox(Vector4 scenePlane, int parcelCount)
         {
-            //Following DCL Height standard (https://docs.decentraland.org/creator/development-guide/sdk7/scene-limitations/)
-            Vector3 center = new Vector3((scenePlane[0] + scenePlane[1]) / 2, MAX_HEIGHT/2, (scenePlane[2] + scenePlane[3]) / 2);
-            Vector3 size = new Vector3(scenePlane[1] - scenePlane[0]  + EXTEND_AMOUNT, MAX_HEIGHT + EXTEND_Y_AMOUNT, scenePlane[3] - scenePlane[2] + EXTEND_AMOUNT);
+            Vector3 center = new Vector3((scenePlane[0] + scenePlane[1]) / 2, 0, (scenePlane[2] + scenePlane[3]) / 2);
+            
+            //NOTE: I was getting inconsistencies on LOD_1 because weird merging was done underground.
+            //SO, by setting MAX_HEIGHT * 2, the height wont be larger than MAX_HEIGHT going up,
+            //And we'll go until MAX_HEIGHT * 2 underground
+            Vector3 size = new Vector3(scenePlane[1] - scenePlane[0]  + EXTEND_AMOUNT, MAX_HEIGHT * 2, scenePlane[3] - scenePlane[2] + EXTEND_AMOUNT);
             return new Bounds(center, size);
         }
         
