@@ -82,11 +82,25 @@ export function createMemoryQueueAdapter<T>(components: Pick<AppComponents, "log
   }
 }
 
-
 export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'metrics'>, options: { queueUrl: string, priorityQueueUrl?: string, queueRegion?: string }): ITaskQueue<T> {
   const logger = components.logs.getLogger(options.queueUrl)
 
   const sqs = new SQS({ apiVersion: 'latest', region: options.queueRegion })
+
+  async function removeMessageFromQueues(receiptHandle: string, queuesUrl: string[]) {
+    try {
+      const queueUrl = queuesUrl[0]
+      await sqs.deleteMessage({ QueueUrl: queueUrl, ReceiptHandle: receiptHandle }).promise()
+      logger.info(`Deleted message from queue`, { receiptHandle, queueUrl })
+    } catch (error: any) {
+      logger.error(`Error deleting message from queue`, { error: error.message, code: error.code })
+      if (error.code === 'ReceiptHandleIsInvalid' && queuesUrl.length > 1) {
+        return await removeMessageFromQueues(receiptHandle, queuesUrl.slice(1))
+      } else {
+        throw error
+      }
+    }
+  }
 
   return {
     async publish(job, prioritize?: boolean) {
@@ -120,7 +134,6 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
       while (true) {
         try {
           let response
-          let pulledFromPriorityQueue = true
           
           if (options.priorityQueueUrl) {
             response = await Promise.race([
@@ -137,7 +150,6 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
           }
 
           if (!response || !response?.Messages || response?.Messages?.length < 1) {
-            pulledFromPriorityQueue = false
             response = await Promise.race([
               sqs.receiveMessage(normalQueueParams).promise(),
               timeout(30 * 60 * 1000, 'Timed out sqs.receiveMessage')
@@ -162,11 +174,7 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
 
                 return { result: undefined, message }
               } finally {
-                if (pulledFromPriorityQueue && options.priorityQueueUrl) {
-                  await sqs.deleteMessage({ QueueUrl: options.priorityQueueUrl, ReceiptHandle: it.ReceiptHandle! }).promise()
-                } else {
-                  await sqs.deleteMessage({ QueueUrl: options.queueUrl, ReceiptHandle: it.ReceiptHandle! }).promise()
-                }
+                await removeMessageFromQueues(it.ReceiptHandle!, [options.queueUrl, options.priorityQueueUrl].filter((queue) => queue !== undefined))
                 end()
               }
             }
