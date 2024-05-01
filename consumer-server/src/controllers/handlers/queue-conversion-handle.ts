@@ -16,7 +16,8 @@ export async function queueTaskHandler(context: HandlerContextWithPath<"metrics"
 
   if (!DeploymentToSqs.validate(body)) return { status: 403, body: { errors: DeploymentToSqs.validate.errors } }
 
-  const message = await taskQueue.publish(body as DeploymentToSqs)
+  const shouldPrioritize = !!(body as any)?.prioritize
+  const message = await taskQueue.publish(body as DeploymentToSqs, shouldPrioritize)
 
   return {
     status: 201,
