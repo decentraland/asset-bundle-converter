@@ -119,7 +119,8 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
 
       while (true) {
         try {
-          let response 
+          let response
+          let pulledFromPriorityQueue = true
           
           if (options.priorityQueueUrl) {
             response = await Promise.race([
@@ -136,6 +137,7 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
           }
 
           if (!response || !response?.Messages || response?.Messages?.length < 1) {
+            pulledFromPriorityQueue = false
             response = await Promise.race([
               sqs.receiveMessage(normalQueueParams).promise(),
               timeout(30 * 60 * 1000, 'Timed out sqs.receiveMessage')
@@ -160,7 +162,11 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
 
                 return { result: undefined, message }
               } finally {
-                await sqs.deleteMessage({ QueueUrl: options.queueUrl, ReceiptHandle: it.ReceiptHandle! }).promise()
+                if (pulledFromPriorityQueue && options.priorityQueueUrl) {
+                  await sqs.deleteMessage({ QueueUrl: options.priorityQueueUrl, ReceiptHandle: it.ReceiptHandle! }).promise()
+                } else {
+                  await sqs.deleteMessage({ QueueUrl: options.queueUrl, ReceiptHandle: it.ReceiptHandle! }).promise()
+                }
                 end()
               }
             }
