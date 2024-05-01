@@ -11,7 +11,7 @@ export interface TaskQueueMessage {
 
 export interface ITaskQueue<T> {
   // publishes a job for the queue
-  publish(job: T): Promise<TaskQueueMessage>
+  publish(job: T, prioritize?: boolean): Promise<TaskQueueMessage>
   // awaits for a job. then calls and waits for the taskRunner argument.
   // the result is then returned to the wrapper function.
   consumeAndProcessJob<R>(taskRunner: (job: T, message: TaskQueueMessage) => Promise<R>): Promise<{ result: R | undefined }>
@@ -83,20 +83,20 @@ export function createMemoryQueueAdapter<T>(components: Pick<AppComponents, "log
 }
 
 
-export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'metrics'>, options: { queueUrl: string, queueRegion?: string }): ITaskQueue<T> {
+export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'metrics'>, options: { queueUrl: string, priorityQueueUrl?: string, queueRegion?: string }): ITaskQueue<T> {
   const logger = components.logs.getLogger(options.queueUrl)
 
   const sqs = new SQS({ apiVersion: 'latest', region: options.queueRegion })
 
   return {
-    async publish(job) {
+    async publish(job, prioritize?: boolean) {
       const snsOverSqs: SNSOverSQSMessage = {
         Message: JSON.stringify(job)
       }
 
       const published = await sqs.sendMessage(
         {
-          QueueUrl: options.queueUrl,
+          QueueUrl: prioritize && options.priorityQueueUrl ? options.priorityQueueUrl : options.queueUrl,
           MessageBody: JSON.stringify(snsOverSqs),
         }).promise()
 
@@ -108,21 +108,40 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
       return m
     },
     async consumeAndProcessJob(taskRunner) {
-      while (true) {
-        const params: AWS.SQS.ReceiveMessageRequest = {
-          AttributeNames: ['SentTimestamp'],
-          MaxNumberOfMessages: 1,
-          MessageAttributeNames: ['All'],
-          QueueUrl: options.queueUrl,
-          WaitTimeSeconds: 15,
-          VisibilityTimeout: 3 * 3600 // 3 hours
-        }
+      const normalQueueParams: AWS.SQS.ReceiveMessageRequest = {
+        AttributeNames: ['SentTimestamp'],
+        MaxNumberOfMessages: 1,
+        MessageAttributeNames: ['All'],
+        QueueUrl: options.queueUrl,
+        WaitTimeSeconds: 15,
+        VisibilityTimeout: 3 * 3600 // 3 hours
+      }
 
+      while (true) {
         try {
-          const response = await Promise.race([
-            sqs.receiveMessage(params).promise(),
-            timeout(30 * 60 * 1000, 'Timed out sqs.receiveMessage')
-          ])
+          let response 
+          
+          if (options.priorityQueueUrl) {
+            response = await Promise.race([
+              sqs.receiveMessage({
+                AttributeNames: ['SentTimestamp'],
+                MaxNumberOfMessages: 1,
+                MessageAttributeNames: ['All'],
+                QueueUrl: options.priorityQueueUrl,
+                WaitTimeSeconds: 15,
+                VisibilityTimeout: 3 * 3600 // 3 hours
+              }).promise(),
+              timeout(30 * 60 * 1000, 'Timed out sqs.receiveMessage')
+            ])
+          }
+
+          if (!response || !response?.Messages || response?.Messages?.length < 1) {
+            response = await Promise.race([
+              sqs.receiveMessage(normalQueueParams).promise(),
+              timeout(30 * 60 * 1000, 'Timed out sqs.receiveMessage')
+            ])
+          }
+
 
           if (response.Messages && response.Messages.length > 0) {
             for (const it of response.Messages) {

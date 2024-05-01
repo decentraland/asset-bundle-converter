@@ -29,8 +29,9 @@ export async function initComponents(): Promise<AppComponents> {
   await instrumentHttpServerWithMetrics({ metrics, server, config })
 
   const sqsQueue = await config.getString('TASK_QUEUE')
+  const priorityQueue = await config.getString('PRIORITY_TASK_QUEUE')
   const taskQueue = sqsQueue ?
-  createSqsAdapter<DeploymentToSqs>({ logs, metrics }, { queueUrl: sqsQueue, queueRegion: AWS_REGION }) :
+  createSqsAdapter<DeploymentToSqs>({ logs, metrics }, { queueUrl: sqsQueue, priorityQueueUrl: priorityQueue, queueRegion: AWS_REGION }) :
   createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: "ConversionTaskQueue" })
   
   const s3Bucket = await config.getString('CDN_BUCKET')
