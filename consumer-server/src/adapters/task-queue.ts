@@ -87,19 +87,41 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
 
   const sqs = new SQS({ apiVersion: 'latest', region: options.queueRegion })
 
-  async function removeMessageFromQueues(receiptHandle: string, queuesUrl: string[]) {
-    try {
-      const queueUrl = queuesUrl[0]
-      await sqs.deleteMessage({ QueueUrl: queueUrl, ReceiptHandle: receiptHandle }).promise()
-      logger.info(`Deleted message from queue`, { receiptHandle, queueUrl })
-    } catch (error: any) {
-      logger.error(`Error deleting message from queue`, { error: error.message, code: error.code })
-      if (error.code === 'ReceiptHandleIsInvalid' && queuesUrl.length > 1) {
-        return await removeMessageFromQueues(receiptHandle, queuesUrl.slice(1))
-      } else {
-        throw error
-      }
+  async function receiveMessage(quantityOfMessages: number): Promise<{ response: SQS.ReceiveMessageResult & { $response: any } | undefined, queueUsed: string }> {
+    let response
+    let queueUsed = ''
+
+    if (options.priorityQueueUrl) {
+      response = await Promise.race([
+        sqs.receiveMessage({
+          AttributeNames: ['SentTimestamp'],
+          MaxNumberOfMessages: quantityOfMessages,
+          MessageAttributeNames: ['All'],
+          QueueUrl: options.priorityQueueUrl,
+          WaitTimeSeconds: 15,
+          VisibilityTimeout: 3 * 3600 // 3 hours
+        }).promise(),
+        timeout(30 * 60 * 1000, 'Timed out sqs.receiveMessage')
+      ])
+      queueUsed = options.priorityQueueUrl
     }
+
+    if (!response || !response?.Messages || response?.Messages?.length < 1) {
+      response = await Promise.race([
+        sqs.receiveMessage({
+          AttributeNames: ['SentTimestamp'],
+          MaxNumberOfMessages: quantityOfMessages,
+          MessageAttributeNames: ['All'],
+          QueueUrl: options.queueUrl,
+          WaitTimeSeconds: 15,
+          VisibilityTimeout: 3 * 3600 // 3 hours
+        }).promise(),
+        timeout(30 * 60 * 1000, 'Timed out sqs.receiveMessage')
+      ])
+      queueUsed = options.queueUrl
+    }
+
+    return { response, queueUsed }
   }
 
   return {
@@ -122,42 +144,11 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
       return m
     },
     async consumeAndProcessJob(taskRunner) {
-      const normalQueueParams: AWS.SQS.ReceiveMessageRequest = {
-        AttributeNames: ['SentTimestamp'],
-        MaxNumberOfMessages: 1,
-        MessageAttributeNames: ['All'],
-        QueueUrl: options.queueUrl,
-        WaitTimeSeconds: 15,
-        VisibilityTimeout: 3 * 3600 // 3 hours
-      }
-
       while (true) {
         try {
-          let response
-          
-          if (options.priorityQueueUrl) {
-            response = await Promise.race([
-              sqs.receiveMessage({
-                AttributeNames: ['SentTimestamp'],
-                MaxNumberOfMessages: 1,
-                MessageAttributeNames: ['All'],
-                QueueUrl: options.priorityQueueUrl,
-                WaitTimeSeconds: 15,
-                VisibilityTimeout: 3 * 3600 // 3 hours
-              }).promise(),
-              timeout(30 * 60 * 1000, 'Timed out sqs.receiveMessage')
-            ])
-          }
+          let { response, queueUsed } = await receiveMessage(1)
 
-          if (!response || !response?.Messages || response?.Messages?.length < 1) {
-            response = await Promise.race([
-              sqs.receiveMessage(normalQueueParams).promise(),
-              timeout(30 * 60 * 1000, 'Timed out sqs.receiveMessage')
-            ])
-          }
-
-
-          if (response.Messages && response.Messages.length > 0) {
+          if (!!response && response.Messages && response.Messages.length > 0) {
             for (const it of response.Messages) {
               const message: TaskQueueMessage = { id: it.MessageId! }
               const { end } = components.metrics.startTimer('job_queue_duration_seconds', { queue_name: options.queueUrl })
@@ -174,7 +165,7 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
 
                 return { result: undefined, message }
               } finally {
-                await removeMessageFromQueues(it.ReceiptHandle!, [options.queueUrl, options.priorityQueueUrl].filter((queue) => queue !== undefined))
+                await sqs.deleteMessage({ QueueUrl: queueUsed, ReceiptHandle: it.ReceiptHandle! }).promise()
                 end()
               }
             }
