@@ -43,6 +43,41 @@ public class CustomLODFBXPostProcessor : AssetPostprocessor
     private void OnPostprocessModel(GameObject model)
     {
         if (context.assetPath.EndsWith(".fbx") && model.name.EndsWith("_0"))
+        {
+            var renderers = model.GetComponentsInChildren<SkinnedMeshRenderer>();
+            foreach (var renderer in renderers)
+            {
+                if (ArrayContainsNaN(renderer.sharedMesh.bindposes))
+                    renderer.gameObject.SetActive(false);
+            }
             GenerateColliders(model);
+        }
     }
+
+    private bool MatrixContainsNaN(Matrix4x4 matrix)
+    {
+        for (int i = 0; i < 16; i++)
+        {
+            if (float.IsNaN(matrix[i]))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool ArrayContainsNaN(Matrix4x4[] matrices)
+    {
+        foreach (var matrix in matrices)
+        {
+            if (MatrixContainsNaN(matrix))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+    
 }
