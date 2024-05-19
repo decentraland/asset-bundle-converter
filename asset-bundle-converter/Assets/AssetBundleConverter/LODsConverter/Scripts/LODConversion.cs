@@ -176,15 +176,14 @@ public class LODConversion
                 var material = componentsInChild.sharedMaterials[i];
                 var duplicatedMaterial = new Material(material);
                 duplicatedMaterial.shader = shader;
+                duplicatedMaterial.SetVector(Shader.PropertyToID("_PlaneClipping"), scenePlane);
                 
                 if (duplicatedMaterial.name.Contains("FORCED_TRANSPARENT"))
                     ApplyTransparency(duplicatedMaterial, setDefaultTransparency);
 
                 
                 if (duplicatedMaterial.GetTexture("_BumpMap") != null)
-                {
                     SetNormalTextureFormat(duplicatedMaterial.GetTexture("_BumpMap").name);
-                }
 
                 string materialName = $"{duplicatedMaterial.name.Replace("(Instance)", lodPathHandler.fileNameWithoutExtension)}.mat";
                 if (!materialsDictionary.ContainsKey(materialName))
@@ -194,7 +193,6 @@ public class LODConversion
                     AssetDatabase.Refresh();
                     materialsDictionary.Add(materialName, AssetDatabase.LoadAssetAtPath<Material>(materialPath));
                 }
-                materialsDictionary[materialName].SetVector(Shader.PropertyToID("_PlaneClipping"), scenePlane);
                 savedMaterials.Add(materialsDictionary[materialName]);
             }
             componentsInChild.sharedMaterials = savedMaterials.ToArray();
