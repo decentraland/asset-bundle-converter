@@ -108,6 +108,8 @@ public class LODConversion
         if (lodPathHandler.filePath.Contains("_0"))
         {
             SetDCLShaderMaterial(lodPathHandler, instantiatedLOD, false, usedLOD0Shader, scenePlane);
+            ColliderGenerator.GenerateColliders(instantiatedLOD);
+            SkinnedMeshRendererValidator.ValidateSkinnedMeshRenderer(instantiatedLOD);
         }
         else
         {
