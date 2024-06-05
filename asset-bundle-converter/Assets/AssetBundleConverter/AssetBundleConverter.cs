@@ -403,6 +403,13 @@ namespace DCL.ABConverter
                             }
                     }
 
+                    if (settings.removeGLB)
+                    {
+                        GameObject originalGltf = env.assetDatabase.LoadAssetAtPath<GameObject>(relativePath);
+                        ExtractEmbedMeshesFromGLTF(gltf, originalGltf);
+                        PrefabUtility.SaveAsPrefabAsset(originalGltf, relativePath + ".prefab");
+                    }
+
                     log.Verbose($"<color={color}>Ended loading gltf {gltfUrl} with result <b>{loadingSuccess}</b></color>");
                 }
 
@@ -436,6 +443,44 @@ namespace DCL.ABConverter
             return false;
         }
 
+        private void ExtractEmbedMeshesFromGLTF(GltfImportSettings gltf, GameObject OriginalGltf)
+        {
+            Profiler.BeginSample("Extract embed meshes");
+
+            var folder = gltf.AssetPath.assetFolder;
+            var materialDirectory = $"{folder}Meshes{Path.DirectorySeparatorChar}";
+            env.directory.CreateDirectory(materialDirectory);
+
+            foreach (var meshFilter in OriginalGltf.GetComponentsInChildren<MeshFilter>())
+            {
+                Mesh meshFilterMesh = meshFilter.mesh;
+                Mesh newMesh = GetMeshCopy(materialDirectory, meshFilterMesh);
+                meshFilter.mesh = newMesh;
+            }
+
+            foreach (var smr in OriginalGltf.GetComponentsInChildren<SkinnedMeshRenderer>())
+            {
+                Mesh meshFilterMesh = smr.sharedMesh;
+                Mesh newMesh = GetMeshCopy(materialDirectory, meshFilterMesh);
+                smr.sharedMesh = newMesh;
+            }
+
+            Profiler.EndSample();
+            log.Verbose($"extracted meshes for: {gltf.AssetPath.hash}");
+            RefreshAssetsWithNoLogs();
+        }
+
+        private static Mesh GetMeshCopy(string materialDirectory, Mesh meshFilterMesh)
+        {
+
+            string newDir = materialDirectory + Utils.NicifyName(meshFilterMesh.name) + ".mesh";
+            newDir = "Assets" + newDir.Substring(Application.dataPath.Length);
+            AssetDatabase.CreateAsset(Object.Instantiate(meshFilterMesh), newDir);
+            RefreshAssetsWithNoLogs();
+            var newMesh = AssetDatabase.LoadAssetAtPath<Mesh>(newDir);
+            return newMesh;
+        }
+
         private void CreateAnimatorController(IGltfImport gltfImport, string directory)
         {
             var animatorRoot = $"{directory}/Animator/";
@@ -459,7 +504,6 @@ namespace DCL.ABConverter
 
                 // embed clip into the animatorController
                 AssetDatabase.AddObjectToAsset(newCopy, controller);
-                AssetDatabase.ImportAsset(AssetDatabase.GetAssetPath(newCopy));
 
                 // configure the animator
                 string animationClipName = newCopy.name;
@@ -1016,6 +1060,11 @@ namespace DCL.ABConverter
 
                 // since GLTF's are already renamed as their hash, we have to map them using their hash so the GltFastFileProvider can get them properly
                 string finalKey = useHash ? Utils.EnsureStartWithSlash(assetPath.hashPath) : Utils.EnsureStartWithSlash(assetPath.filePath);
+
+                if (assetPath.hash.StartsWith("C:", StringComparison.InvariantCultureIgnoreCase))
+                {
+                    finalKey = Utils.EnsureStartWithSlash(assetPath.hash);
+                }
                 finalKey = finalKey.ToLower();
                 contentTable[finalKey] = relativeFinalPath;
             }

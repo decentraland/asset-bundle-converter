@@ -40,6 +40,9 @@ namespace DCL.ABConverter
         {
             get
             {
+                if (pair.hash.StartsWith("C:", StringComparison.InvariantCultureIgnoreCase))
+                    return pair.hash;
+
                 string fileExt = Path.GetExtension(pair.file);
                 return assetFolder + pair.hash + fileExt;
             }
@@ -50,6 +53,10 @@ namespace DCL.ABConverter
             get
             {
                 char dash = Path.DirectorySeparatorChar;
+
+                if (pair.hash.StartsWith("C:", StringComparison.InvariantCultureIgnoreCase))
+                    return Path.GetDirectoryName(pair.hash) + dash;
+
                 return basePath + pair.hash + dash;
             }
         }

@@ -360,5 +360,21 @@ namespace DCL.ABConverter
             await core.ConvertAsync(conversionParams);
             return core.CurrentState;
         }
+
+        public static async Task ConvertGLTFListManually(List<ContentServerUtils.MappingPair> filePaths, string entityType, ClientSettings settings)
+        {
+            EnsureEnvironment(settings.BuildPipelineType);
+
+            var core = new AssetBundleConverter(env, settings);
+            await core.ConvertAsync(new AssetBundleConverter.ConversionParams()
+            {
+                apiResponse = new ContentServerUtils.EntityMappingsDTO()
+                {
+                    type = entityType,
+                    content = filePaths.ToArray(),
+                },
+                rawContents = filePaths.ToArray(),
+            });
+        }
     }
 }
