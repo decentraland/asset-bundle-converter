@@ -136,7 +136,22 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
         private Uri RebuildUrl(Uri url)
         {
             var absolutePath = url.OriginalString;
-            string relativePath = $"{fileRootPath}{absolutePath.Substring(absolutePath.IndexOf(hash) + hash.Length + 1)}";
+            string relativePath = "";
+            if (absolutePath.StartsWith("C:", StringComparison.InvariantCultureIgnoreCase) || absolutePath.StartsWith("/C:", StringComparison.InvariantCultureIgnoreCase))
+                relativePath = absolutePath;
+            else
+            {
+                if (hash.StartsWith("C:", StringComparison.InvariantCultureIgnoreCase))
+                {
+                    relativePath = hash;
+                }
+                else
+                {
+                    relativePath = $"{fileRootPath}{absolutePath.Substring(absolutePath.IndexOf(hash) + hash.Length + 1)}";
+                }
+
+            }
+
             relativePath = relativePath.Replace("\\", "/");
             return new Uri(relativePath, UriKind.Relative);
         }

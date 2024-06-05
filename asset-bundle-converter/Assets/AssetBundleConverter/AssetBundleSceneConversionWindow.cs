@@ -2,7 +2,10 @@
 using System.Threading.Tasks;
 using DCL;
 using DCL.ABConverter;
+using GLTFast.Schema;
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -75,6 +78,40 @@ namespace AssetBundleConverter
             thisWindow = window;
             thisWindow.minSize = new Vector2(550, 160);
             thisWindow.Show();
+        }
+
+        [MenuItem("Decentraland/Process Custom Emotes")]
+        private static async void InitManualAsync()
+        {
+            var files = SelectFiles();
+
+            await SceneClient.ConvertGLTFListManually(
+                files.Select(f => new ContentServerUtils.MappingPair() { file = Path.GetFileName(f), hash = f }).ToList(),
+                "emote",
+                new ClientSettings
+                {
+                    buildTarget = BuildTarget.StandaloneWindows64,
+                    BuildPipelineType = BuildPipelineType.Scriptable,
+                    createAssetBundle = false,
+                    removeGLB = true,
+                });
+        }
+
+        public static List<string> SelectFiles()
+        {
+            List<string> filePaths = new List<string>();
+
+            string folderPath = EditorUtility.OpenFolderPanel("Select Folder", "", "");
+
+            if (!string.IsNullOrEmpty(folderPath))
+            {
+                var files = Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories);
+
+                foreach (string file in files)
+                    if (!file.EndsWith(".meta")) { filePaths.Add(file.Replace("\\", "/")); }
+            }
+
+            return filePaths;
         }
 
         private void OnGUI()
@@ -172,7 +209,8 @@ namespace AssetBundleConverter
                         "-sceneCid", batchSceneId,
                         "-baseUrl", batchBaseUrl
                     };
-                    SceneClient.ExportSceneToAssetBundles(baseArgs.Concat(additionalArgs).ToArray(), new ClientSettings(){ verbose = verbose });
+
+                    SceneClient.ExportSceneToAssetBundles(baseArgs.Concat(additionalArgs).ToArray(), new ClientSettings() { verbose = verbose });
                 }
                 catch (Exception e) { Debug.LogException(e); }
             }
@@ -290,6 +328,7 @@ namespace AssetBundleConverter
             {
                 SetupSettings();
                 clientSettings.targetHash = wearablesCollectionId;
+
                 try
                 {
                     var state = await SceneClient.ConvertWearablesCollection(clientSettings);
