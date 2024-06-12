@@ -1,16 +1,15 @@
 ﻿using AssetBundleConverter;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Net.Http;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using AssetBundleConverter.Editor;
 using AssetBundleConverter.Wrappers.Implementations.Default;
 using AssetBundleConverter.Wrappers.Interfaces;
 using GLTFast;
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -438,6 +437,9 @@ namespace DCL.ABConverter
 
         private void CreateAnimatorController(IGltfImport gltfImport, string directory)
         {
+            var clips = gltfImport.GetClips();
+            if (clips == null) return;
+
             var animatorRoot = $"{directory}/Animator/";
 
             if (!env.directory.Exists(animatorRoot))
@@ -445,8 +447,6 @@ namespace DCL.ABConverter
 
             var filePath = $"{animatorRoot}animatorController.controller";
             var controller = AnimatorController.CreateAnimatorControllerAtPath(filePath);
-            var clips = gltfImport.GetClips();
-
             var rootStateMachine = controller.layers[0].stateMachine;
 
             controller.AddParameter(LOOP_PARAMETER, AnimatorControllerParameterType.Bool);
@@ -488,12 +488,10 @@ namespace DCL.ABConverter
             AssetDatabase.Refresh();
         }
 
-        private AnimationMethod GetAnimationMethod()
-        {
-            if (entityDTO == null) return AnimationMethod.Legacy;
-            if (!entityDTO.type.ToLower().Contains("emote")) return AnimationMethod.Legacy;
-            return settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX ? AnimationMethod.Mecanim : AnimationMethod.Legacy;
-        }
+        private AnimationMethod GetAnimationMethod() =>
+            settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX
+                ? AnimationMethod.Mecanim
+                : AnimationMethod.Legacy;
 
         private void ExtractEmbedMaterialsFromGltf(List<Texture2D> textures, GltfImportSettings gltf, IGltfImport gltfImport, string gltfUrl)
         {
