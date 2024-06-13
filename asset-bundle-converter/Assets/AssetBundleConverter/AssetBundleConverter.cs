@@ -1,16 +1,15 @@
-﻿using AssetBundleConverter;
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using AssetBundleConverter;
 using AssetBundleConverter.Editor;
 using AssetBundleConverter.Wrappers.Implementations.Default;
 using AssetBundleConverter.Wrappers.Interfaces;
 using GLTFast;
-using System.Diagnostics;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -900,16 +899,16 @@ namespace DCL.ABConverter
                 if (!FilterDumpList(ref gltfPaths))
                     return false;
 
-                List<Task> downloadTasks = new List<Task>();
-                downloadTasks.AddRange(gltfPaths.Select(CreateDownloadTask));
-                downloadTasks.AddRange(bufferPaths.Select(CreateDownloadTask));
-                downloadTasks.AddRange(texturePaths.Select(CreateDownloadTask));
+
 
                 downloadStartupTime = EditorApplication.timeSinceStartup;
 
                 if (settings.clearDirectoriesOnStart)
-                    foreach (Task downloadTask in downloadTasks)
-                        await downloadTask;
+                {
+                    foreach (var assetPath in gltfPaths) await CreateDownloadTask(assetPath);
+                    foreach (var assetPath in bufferPaths) await CreateDownloadTask(assetPath);
+                    foreach (var assetPath in texturePaths) await CreateDownloadTask(assetPath);
+                }
 
                 downloadEndTime = EditorApplication.timeSinceStartup;
 
