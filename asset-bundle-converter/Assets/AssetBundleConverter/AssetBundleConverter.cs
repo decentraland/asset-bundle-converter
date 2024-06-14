@@ -349,7 +349,8 @@ namespace DCL.ABConverter
                     ExtractEmbedMaterialsFromGltf(textures, gltf, gltfImport, gltfUrl);
                     embedExtractMaterialTime.Stop();
 
-                    if (animationMethod == AnimationMethod.Mecanim) { CreateAnimatorController(gltfImport, directory); }
+                    if (animationMethod == AnimationMethod.Mecanim)
+                        CreateAnimatorController(gltfImport, directory);
 
                     log.Verbose($"Importing {relativePath}");
 
@@ -453,7 +454,6 @@ namespace DCL.ABConverter
             foreach (AnimationClip clip in clips)
                 loop |= clip.wrapMode == WrapMode.Loop;
 
-            // TODO: should we have a loop parameter for each clip?
             controller.AddParameter(new AnimatorControllerParameter
             {
                 name = LOOP_PARAMETER,
