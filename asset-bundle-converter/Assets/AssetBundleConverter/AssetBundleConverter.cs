@@ -449,16 +449,13 @@ namespace DCL.ABConverter
             var filePath = $"{animatorRoot}animatorController.controller";
             var controller = AnimatorController.CreateAnimatorControllerAtPath(filePath);
             var rootStateMachine = controller.layers[0].stateMachine;
-            var loop = false;
-
-            foreach (AnimationClip clip in clips)
-                loop |= clip.wrapMode == WrapMode.Loop;
 
             controller.AddParameter(new AnimatorControllerParameter
             {
                 name = LOOP_PARAMETER,
                 type = AnimatorControllerParameterType.Bool,
-                defaultBool = loop,
+                // All clips are imported as wrapMode=Loop
+                defaultBool = true,
             });
 
             foreach (AnimationClip animationClip in clips)
