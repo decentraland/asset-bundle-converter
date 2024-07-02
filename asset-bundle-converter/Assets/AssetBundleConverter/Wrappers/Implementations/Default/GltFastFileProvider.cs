@@ -147,7 +147,7 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
             bool isContained = contentTable.ContainsKey(originalPath);
 
             if (!isContained)
-                throw new AssetNotMappedException(originalPath);
+                throw new AssetNotMappedException(originalPath, hash);
 
             string finalPath = contentTable[originalPath];
             return new Uri(finalPath, UriKind.Relative);
@@ -168,9 +168,15 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
     public class AssetNotMappedException : Exception
     {
-        public AssetNotMappedException(string message) : base(message)
-        {
+        private readonly string missingDependency;
+        private readonly string fileName;
 
+        public AssetNotMappedException(string missingDependency, string fileName) : base(missingDependency)
+        {
+            this.missingDependency = missingDependency;
+            this.fileName = fileName;
         }
+
+        public override string Message => $"<b>{fileName}</b> will be skipped since one of its dependencies is missing: <b>{missingDependency}</b>";
     }
 }

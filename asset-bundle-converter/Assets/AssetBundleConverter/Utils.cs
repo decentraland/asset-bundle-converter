@@ -305,7 +305,7 @@ namespace DCL.ABConverter
             catch (HttpRequestException e)
             {
                 Debug.LogException(new Exception($"Request error! mappings couldn't be fetched for scene {entityPointer}! -- {e.Message}"));
-                Exit((int)AssetBundleConverter.ErrorCodes.UNEXPECTED_ERROR);
+                Exit((int)ErrorCodes.UNEXPECTED_ERROR);
                 return null;
             }
 
@@ -332,7 +332,7 @@ namespace DCL.ABConverter
             {
                 var exception = new Exception($"Request error! Empty Scenes Mapping couldn't be fetched from {url}! -- {e.Message}");
                 Debug.LogException(exception);
-                Exit((int)AssetBundleConverter.ErrorCodes.UNEXPECTED_ERROR);
+                Exit((int)ErrorCodes.UNEXPECTED_ERROR);
                 return null;
             }
 
@@ -356,7 +356,7 @@ namespace DCL.ABConverter
             {
                 var exception = new Exception($"Request error! mappings couldn't be fetched for scene {entityId}! -- {e.Message}");
                 Debug.LogException(exception);
-                Exit((int)AssetBundleConverter.ErrorCodes.UNEXPECTED_ERROR);
+                Exit((int)ErrorCodes.UNEXPECTED_ERROR);
                 return null;
             }
 

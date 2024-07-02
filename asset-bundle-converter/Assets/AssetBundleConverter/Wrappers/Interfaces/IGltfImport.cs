@@ -1,12 +1,13 @@
 ﻿using GLTFast;
 using GLTFast.Logging;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEngine;
 
 namespace AssetBundleConverter.Wrappers.Interfaces
 {
-    public interface IGltfImport
+    public interface IGltfImport : IDisposable
     {
         Task Load(string gltfUrl, ImportSettings importSettings);
 
@@ -21,8 +22,6 @@ namespace AssetBundleConverter.Wrappers.Interfaces
         Material GetMaterial(int index);
 
         IReadOnlyList<AnimationClip> GetClips();
-
-        void Dispose();
 
         Material defaultMaterial { get; }
 
