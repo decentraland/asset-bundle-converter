@@ -469,10 +469,10 @@ namespace DCL.ABConverter
                 string animationClipName = clip.name;
 
                 // Configure parameters
-                var enabledParameterName = $"{animationClipName}_Enabled";
+                var triggerParameterName = $"{animationClipName}_Trigger";
                 var loopParameterName = $"{animationClipName}_{LOOP_PARAMETER}";
 
-                controller.AddParameter(enabledParameterName, AnimatorControllerParameterType.Bool);
+                controller.AddParameter(triggerParameterName, AnimatorControllerParameterType.Trigger);
                 controller.AddParameter(new AnimatorControllerParameter
                 {
                     name = loopParameterName,
@@ -488,24 +488,16 @@ namespace DCL.ABConverter
                 var layerStateMachine = controller.layers[layerIndex].stateMachine;
 
                 // Configure states
-                // Empty
                 var empty = layerStateMachine.AddState("Empty");
                 var state = controller.AddMotion(clip, layerIndex);
-                // var loopState = controller.AddMotion(clip, layerIndex);
 
-                {
-                    var anyStateTransition = layerStateMachine.AddAnyStateTransition(empty);
-                    anyStateTransition.AddCondition(AnimatorConditionMode.IfNot, 0, enabledParameterName);
-                    anyStateTransition.duration = 0;
-                    anyStateTransition.canTransitionToSelf = false;
-                }
-
+                // Configure transitions
                 // Clip
                 {
-                    var anyStateTransition = layerStateMachine.AddAnyStateTransition(state);
-                    anyStateTransition.AddCondition(AnimatorConditionMode.If, 0, enabledParameterName);
-                    anyStateTransition.duration = 0;
-                    anyStateTransition.canTransitionToSelf = false;
+                    AnimatorStateTransition fromAnyStateTransition = layerStateMachine.AddAnyStateTransition(state);
+                    fromAnyStateTransition.AddCondition(AnimatorConditionMode.If, 0, triggerParameterName);
+                    fromAnyStateTransition.duration = 0;
+                    fromAnyStateTransition.canTransitionToSelf = false;
 
                     AnimatorStateTransition loopTransition = state.AddTransition(state);
                     loopTransition.AddCondition(AnimatorConditionMode.If, 0, loopParameterName);
@@ -513,6 +505,12 @@ namespace DCL.ABConverter
                     loopTransition.duration = 0;
                     loopTransition.hasExitTime = true;
                     loopTransition.canTransitionToSelf = true;
+
+                    AnimatorStateTransition toEmptyTransition = state.AddTransition(empty);
+                    toEmptyTransition.AddCondition(AnimatorConditionMode.IfNot, 0, loopParameterName);
+                    toEmptyTransition.exitTime = 1;
+                    toEmptyTransition.duration = 0;
+                    toEmptyTransition.hasExitTime = true;
                 }
 
                 continue;
