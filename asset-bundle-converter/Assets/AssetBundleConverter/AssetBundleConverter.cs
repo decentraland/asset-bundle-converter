@@ -350,7 +350,14 @@ namespace DCL.ABConverter
                     embedExtractMaterialTime.Stop();
 
                     if (animationMethod == AnimationMethod.Mecanim)
-                        CreateAnimatorController(gltfImport, directory);
+                    {
+                        bool isEmote = entityDTO.type.ToLower().Contains("emote");
+
+                        if (isEmote)
+                            CreateAnimatorController(gltfImport, directory);
+                        else
+                            CreateLayeredAnimatorController(gltfImport, directory);
+                    }
 
                     log.Verbose($"Importing {relativePath}");
 
@@ -434,6 +441,94 @@ namespace DCL.ABConverter
             log.Info("Ended importing GLTFs");
 
             return false;
+        }
+
+        private void CreateLayeredAnimatorController(IGltfImport gltfImport, string directory)
+        {
+            var clips = gltfImport.GetClips();
+            if (clips == null) return;
+
+            var animatorRoot = $"{directory}/Animator/";
+
+            if (!env.directory.Exists(animatorRoot))
+                env.directory.CreateDirectory(animatorRoot);
+
+            var filePath = $"{animatorRoot}animatorController.controller";
+            var controller = AnimatorController.CreateAnimatorControllerAtPath(filePath);
+
+            foreach (AnimationClip originalClip in clips)
+            {
+                // copy the animation asset so we dont use the same references that will get disposed
+                var clip = Object.Instantiate(originalClip);
+                clip.name = originalClip.name;
+
+                // embed clip into the animatorController
+                AssetDatabase.AddObjectToAsset(clip, controller);
+                AssetDatabase.ImportAsset(AssetDatabase.GetAssetPath(clip));
+
+                string animationClipName = clip.name;
+
+                // Configure parameters
+                var enabledParameterName = $"{animationClipName}_Enabled";
+                var loopParameterName = $"{animationClipName}_{LOOP_PARAMETER}";
+
+                controller.AddParameter(enabledParameterName, AnimatorControllerParameterType.Bool);
+                controller.AddParameter(new AnimatorControllerParameter
+                {
+                    name = loopParameterName,
+                    type = AnimatorControllerParameterType.Bool,
+                    defaultBool = originalClip.wrapMode == WrapMode.Loop,
+                });
+
+                // Configure layers
+                string layerName = controller.MakeUniqueLayerName(animationClipName);
+                controller.AddLayer(layerName);
+
+                int layerIndex = GetLayerIndex();
+                var layerStateMachine = controller.layers[layerIndex].stateMachine;
+
+                // Configure states
+                // Empty
+                var empty = layerStateMachine.AddState("Empty");
+                var state = controller.AddMotion(clip, layerIndex);
+                // var loopState = controller.AddMotion(clip, layerIndex);
+
+                {
+                    var anyStateTransition = layerStateMachine.AddAnyStateTransition(empty);
+                    anyStateTransition.AddCondition(AnimatorConditionMode.IfNot, 0, enabledParameterName);
+                    anyStateTransition.duration = 0;
+                    anyStateTransition.canTransitionToSelf = false;
+                }
+
+                // Clip
+                {
+                    var anyStateTransition = layerStateMachine.AddAnyStateTransition(state);
+                    anyStateTransition.AddCondition(AnimatorConditionMode.If, 0, enabledParameterName);
+                    anyStateTransition.duration = 0;
+                    anyStateTransition.canTransitionToSelf = false;
+
+                    AnimatorStateTransition loopTransition = state.AddTransition(state);
+                    loopTransition.AddCondition(AnimatorConditionMode.If, 0, loopParameterName);
+                    loopTransition.exitTime = 1;
+                    loopTransition.duration = 0;
+                    loopTransition.hasExitTime = true;
+                    loopTransition.canTransitionToSelf = true;
+                }
+
+                continue;
+
+                int GetLayerIndex()
+                {
+                    for (var i = 0; i < controller.layers.Length; i++)
+                        if (controller.layers[i].name == layerName)
+                            return i;
+
+                    return -1;
+                }
+            }
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
         }
 
         private void CreateAnimatorController(IGltfImport gltfImport, string directory)
