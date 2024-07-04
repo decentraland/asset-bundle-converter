@@ -456,8 +456,10 @@ namespace DCL.ABConverter
             var filePath = $"{animatorRoot}animatorController.controller";
             var controller = AnimatorController.CreateAnimatorControllerAtPath(filePath);
 
-            foreach (AnimationClip originalClip in clips)
+            for (var i = 0; i < clips.Count; i++)
             {
+                AnimationClip originalClip = clips[i];
+
                 // copy the animation asset so we dont use the same references that will get disposed
                 var clip = Object.Instantiate(originalClip);
                 clip.name = originalClip.name;
@@ -466,6 +468,8 @@ namespace DCL.ABConverter
                 AssetDatabase.AddObjectToAsset(clip, controller);
                 AssetDatabase.ImportAsset(AssetDatabase.GetAssetPath(clip));
 
+                // We consider the first state as default state so it results in the same behaviour as 'play automatically' from the old Animation component
+                bool isDefaultState = i == 0;
                 string animationClipName = clip.name;
 
                 // Configure parameters
@@ -474,37 +478,51 @@ namespace DCL.ABConverter
                 var enabledParameterName = $"{animationClipName}_Enabled";
 
                 controller.AddParameter(triggerParameterName, AnimatorControllerParameterType.Trigger);
+
                 controller.AddParameter(new AnimatorControllerParameter
                 {
                     name = loopParameterName,
                     type = AnimatorControllerParameterType.Bool,
                     defaultBool = originalClip.wrapMode == WrapMode.Loop,
                 });
+
                 controller.AddParameter(new AnimatorControllerParameter
                 {
                     name = enabledParameterName,
                     type = AnimatorControllerParameterType.Bool,
-                    defaultBool = false,
+                    defaultBool = isDefaultState,
                 });
 
                 // Configure layers
                 string layerName = controller.MakeUniqueLayerName(animationClipName);
-                controller.AddLayer(layerName);
-
+                controller.AddLayer(new AnimatorControllerLayer
+                {
+                    name = animationClipName,
+                    defaultWeight = isDefaultState ? 1f : 0f,
+                    stateMachine = new AnimatorStateMachine(),
+                    iKPass = false,
+                    blendingMode = AnimatorLayerBlendingMode.Override,
+                    avatarMask = null,
+                });
                 int layerIndex = GetLayerIndex();
-                var layerStateMachine = controller.layers[layerIndex].stateMachine;
+                AnimatorControllerLayer layer = controller.layers[layerIndex];
+                AnimatorStateMachine layerStateMachine = layer.stateMachine;
 
                 // Configure states
                 var empty = layerStateMachine.AddState("Empty");
                 var state = controller.AddMotion(clip, layerIndex);
 
+                layerStateMachine.defaultState = isDefaultState ? state : empty;
+
                 // Configure transitions
+                // TODO: should we add a small duration? it would make smoother transitions
                 // Empty
                 {
                     AnimatorStateTransition fromAnyStateTransition = layerStateMachine.AddAnyStateTransition(empty);
                     fromAnyStateTransition.AddCondition(AnimatorConditionMode.IfNot, 0, enabledParameterName);
                     fromAnyStateTransition.duration = 0;
                 }
+
                 // Clip
                 {
                     AnimatorStateTransition fromAnyStateTransition = layerStateMachine.AddAnyStateTransition(state);
