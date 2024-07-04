@@ -471,6 +471,7 @@ namespace DCL.ABConverter
                 // Configure parameters
                 var triggerParameterName = $"{animationClipName}_Trigger";
                 var loopParameterName = $"{animationClipName}_{LOOP_PARAMETER}";
+                var enabledParameterName = $"{animationClipName}_Enabled";
 
                 controller.AddParameter(triggerParameterName, AnimatorControllerParameterType.Trigger);
                 controller.AddParameter(new AnimatorControllerParameter
@@ -478,6 +479,12 @@ namespace DCL.ABConverter
                     name = loopParameterName,
                     type = AnimatorControllerParameterType.Bool,
                     defaultBool = originalClip.wrapMode == WrapMode.Loop,
+                });
+                controller.AddParameter(new AnimatorControllerParameter
+                {
+                    name = enabledParameterName,
+                    type = AnimatorControllerParameterType.Bool,
+                    defaultBool = false,
                 });
 
                 // Configure layers
@@ -492,6 +499,12 @@ namespace DCL.ABConverter
                 var state = controller.AddMotion(clip, layerIndex);
 
                 // Configure transitions
+                // Empty
+                {
+                    AnimatorStateTransition fromAnyStateTransition = layerStateMachine.AddAnyStateTransition(empty);
+                    fromAnyStateTransition.AddCondition(AnimatorConditionMode.IfNot, 0, enabledParameterName);
+                    fromAnyStateTransition.duration = 0;
+                }
                 // Clip
                 {
                     AnimatorStateTransition fromAnyStateTransition = layerStateMachine.AddAnyStateTransition(state);
