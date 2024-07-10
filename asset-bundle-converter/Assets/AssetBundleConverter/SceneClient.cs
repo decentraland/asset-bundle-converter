@@ -44,7 +44,7 @@ namespace DCL.ABConverter
             catch (Exception e)
             {
                 Debug.LogException(e);
-                Utils.Exit((int)AssetBundleConverter.ErrorCodes.UNEXPECTED_ERROR);
+                Utils.Exit((int)ErrorCodes.UNEXPECTED_ERROR);
             }
         }
 
@@ -67,7 +67,7 @@ namespace DCL.ABConverter
             catch (Exception e)
             {
                 Debug.LogException(e);
-                Utils.Exit((int)AssetBundleConverter.ErrorCodes.UNEXPECTED_ERROR);
+                Utils.Exit((int)ErrorCodes.UNEXPECTED_ERROR);
             }
         }
 
@@ -164,7 +164,7 @@ namespace DCL.ABConverter
             {
                 Debug.LogException(e);
                 log.Exception(e.ToString());
-                Utils.Exit((int)AssetBundleConverter.ErrorCodes.UNEXPECTED_ERROR);
+                Utils.Exit((int)ErrorCodes.UNEXPECTED_ERROR);
             }
         }
 
@@ -273,7 +273,7 @@ namespace DCL.ABConverter
         /// <param name="entityId">The scene cid in the multi-hash format (i.e. Qm...etc)</param>
         /// <param name="settings">Conversion settings</param>
         /// <returns>A state context object useful for tracking the conversion progress</returns>
-        public static async Task<AssetBundleConverter.State> ConvertEntityById(ClientSettings settings)
+        public static async Task<ConversionState> ConvertEntityById(ClientSettings settings)
         {
             EnsureEnvironment(settings.BuildPipelineType);
 
@@ -288,7 +288,7 @@ namespace DCL.ABConverter
             }, settings);
         }
 
-        public static async Task<AssetBundleConverter.State> ConvertEmptyScenesByMapping(ClientSettings settings)
+        public static async Task<ConversionState> ConvertEmptyScenesByMapping(ClientSettings settings)
         {
             EnsureEnvironment(settings.BuildPipelineType);
             ContentServerUtils.MappingPair[] emptyScenesMapping = await Utils.GetEmptyScenesMappingAsync(settings.targetHash, settings, env.webRequest);
@@ -304,7 +304,7 @@ namespace DCL.ABConverter
         /// <param name="pointer">The entity position in world</param>
         /// <param name="settings">Conversion settings</param>
         /// <returns>A state context object useful for tracking the conversion progress</returns>
-        public static async Task<AssetBundleConverter.State> ConvertEntityByPointer(ClientSettings settings)
+        public static async Task<ConversionState> ConvertEntityByPointer(ClientSettings settings)
         {
             EnsureEnvironment(settings.BuildPipelineType);
 
@@ -319,10 +319,10 @@ namespace DCL.ABConverter
             }, settings);
         }
 
-        private static AssetBundleConverter.State GetUnexpectedResult() =>
-            new (){step = AssetBundleConverter.State.Step.IDLE, lastErrorCode = AssetBundleConverter.ErrorCodes.UNEXPECTED_ERROR};
+        private static ConversionState GetUnexpectedResult() =>
+            new (){step = ConversionState.Step.IDLE, lastErrorCode = ErrorCodes.UNEXPECTED_ERROR};
 
-        public static async Task<AssetBundleConverter.State> ConvertWearablesCollection(ClientSettings settings)
+        public static async Task<ConversionState> ConvertWearablesCollection(ClientSettings settings)
         {
             EnsureEnvironment(settings.BuildPipelineType);
 
@@ -341,13 +341,13 @@ namespace DCL.ABConverter
         /// <param name="entitiesId">The cid list for the scenes to gather from the catalyst's content server</param>
         /// <param name="settings">Any conversion settings object, if its null, a new one will be created</param>
         /// <returns>A state context object useful for tracking the conversion progress</returns>
-        private static async Task<AssetBundleConverter.State> ConvertEntitiesToAssetBundles(AssetBundleConverter.ConversionParams conversionParams, ClientSettings settings)
+        private static async Task<ConversionState> ConvertEntitiesToAssetBundles(AssetBundleConverter.ConversionParams conversionParams, ClientSettings settings)
         {
             var mappingPairs = conversionParams.rawContents;
             if (mappingPairs == null || mappingPairs.Count == 0)
             {
                 log.Error("Entity list is null or count == 0! Maybe this sector lacks scenes or content requests failed?");
-                return new AssetBundleConverter.State { lastErrorCode = AssetBundleConverter.ErrorCodes.SCENE_LIST_NULL };
+                return new ConversionState { lastErrorCode = ErrorCodes.SCENE_LIST_NULL };
             }
 
             log.Info($"Converting {mappingPairs.Count} entities...");

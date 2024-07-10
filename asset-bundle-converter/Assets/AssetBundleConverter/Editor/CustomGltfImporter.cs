@@ -86,7 +86,7 @@ namespace AssetBundleConverter.Editor
             {
                 Debug.LogError("UNCAUGHT FATAL: Failed to Import GLTF " + hash);
                 Debug.LogException(e);
-                Utils.Exit((int)DCL.ABConverter.AssetBundleConverter.ErrorCodes.GLTFAST_CRITICAL_ERROR);
+                Utils.Exit((int)ErrorCodes.GLTFAST_CRITICAL_ERROR);
             }
         }
 

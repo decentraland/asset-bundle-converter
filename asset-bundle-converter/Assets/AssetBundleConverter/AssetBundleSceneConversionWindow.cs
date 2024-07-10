@@ -1,12 +1,10 @@
-﻿using AssetBundleConverter.Wearables;
+﻿using AssetBundleConverter.Persistence;
 using System.Threading.Tasks;
-using DCL;
 using DCL.ABConverter;
 using System;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
-using Random = System.Random;
 
 namespace AssetBundleConverter
 {
@@ -50,16 +48,20 @@ namespace AssetBundleConverter
         private bool placeOnScene = true;
         private bool visualTest = false;
         private bool clearDownloads = true;
-        private bool createAssetBundle = true;
-        private bool verbose = false;
+        private PersistentSetting<int> downloadBatchSize;
+        private PersistentSetting<float> failingConversionTolerance;
+        private PersistentSetting<bool> createAssetBundle;
+        private PersistentSetting<bool> verbose;
         private int currentTab = 0;
         private int currentUrlOption = 0;
-        private int xCoord = -110;
-        private int yCoord = -110;
-        private BuildPipelineType buildPipelineType = BuildPipelineType.Scriptable;
+
+        private PersistentSetting<int> xCoord;
+        private PersistentSetting<int> yCoord;
+
+        private PersistentSetting<BuildPipelineType> buildPipelineType;
         private ShaderType shader = ShaderType.Dcl;
         private bool includeShaderVariants;
-        private SupportedBuildTarget buildTarget = SupportedBuildTarget.WebGL;
+        private PersistentSetting<SupportedBuildTarget> buildTarget;
 
         private ClientSettings clientSettings;
         private bool showDebugOptions;
@@ -77,15 +79,29 @@ namespace AssetBundleConverter
             thisWindow.Show();
         }
 
+        private void OnEnable()
+        {
+            createAssetBundle = PersistentSetting.CreateBool(nameof(createAssetBundle), true);
+            verbose = PersistentSetting.CreateBool(nameof(verbose), false);
+            xCoord = PersistentSetting.CreateInt(nameof(xCoord), -110);
+            yCoord = PersistentSetting.CreateInt(nameof(yCoord), -110);
+            buildPipelineType = PersistentSetting.CreateEnum(nameof(buildPipelineType), BuildPipelineType.Scriptable);
+            buildTarget = PersistentSetting.CreateEnum(nameof(buildTarget), SupportedBuildTarget.WebGL);
+            failingConversionTolerance = PersistentSetting.CreateFloat(nameof(failingConversionTolerance), 0.05f); // 5%
+            downloadBatchSize = PersistentSetting.CreateInt(nameof(downloadBatchSize), 20);
+        }
+
         private void OnGUI()
         {
             GUILayout.Space(5);
-            buildPipelineType = (BuildPipelineType)EditorGUILayout.EnumPopup("Build Pipeline", buildPipelineType);
-            buildTarget = (SupportedBuildTarget)EditorGUILayout.EnumPopup("Build Target", buildTarget);
+            buildPipelineType.Value = (BuildPipelineType)EditorGUILayout.EnumPopup("Build Pipeline", buildPipelineType);
+            buildTarget.Value = (SupportedBuildTarget)EditorGUILayout.EnumPopup("Build Target", buildTarget);
 
             visualTest = EditorGUILayout.Toggle("Visual Test", visualTest);
             placeOnScene = EditorGUILayout.Toggle("Place on Scene", placeOnScene);
-            createAssetBundle = EditorGUILayout.Toggle("Create Asset Bundle", createAssetBundle);
+            createAssetBundle.Value = EditorGUILayout.Toggle("Create Asset Bundle", createAssetBundle);
+            downloadBatchSize.Value = ClampDownloadBatchSize(EditorGUILayout.IntField("Download Batch Size", downloadBatchSize));
+            failingConversionTolerance.Value = ClampConversionTolerance(EditorGUILayout.FloatField("Failed Conversion Tolerance", failingConversionTolerance));
             clearDownloads = EditorGUILayout.Toggle("Clear Downloads", clearDownloads);
             includeShaderVariants = EditorGUILayout.Toggle("Include Shader Variants", includeShaderVariants);
             showDebugOptions = EditorGUILayout.Toggle("Show debug options", showDebugOptions);
@@ -188,7 +204,7 @@ namespace AssetBundleConverter
             stripShaders = EditorGUILayout.Toggle("Strip Shaders", stripShaders);
             importGltf = EditorGUILayout.Toggle("Import GLTFs", importGltf);
             shader = (ShaderType)EditorGUILayout.EnumPopup("Shader Type", shader);
-            verbose = EditorGUILayout.Toggle("Verbose", verbose);
+            verbose.Value = EditorGUILayout.Toggle("Verbose", verbose);
             GUI.color = defaultColor;
             GUILayout.Space(5);
         }
@@ -235,8 +251,8 @@ namespace AssetBundleConverter
 
         private async Task RenderEntityByPointerAsync()
         {
-            xCoord = EditorGUILayout.IntField("X", xCoord);
-            yCoord = EditorGUILayout.IntField("Y", yCoord);
+            xCoord.Value = EditorGUILayout.IntField("X", xCoord);
+            yCoord.Value = EditorGUILayout.IntField("Y", yCoord);
 
             GUILayout.FlexibleSpace();
 
@@ -299,6 +315,12 @@ namespace AssetBundleConverter
             }
         }
 
+        private int ClampDownloadBatchSize(int value) =>
+            Mathf.Clamp(value, 1, 1000);
+
+        private float ClampConversionTolerance(float value) =>
+            Mathf.Clamp(value, 0f, 0.5f);
+
         private void SetupSettings()
         {
             clientSettings = new ClientSettings
@@ -307,6 +329,8 @@ namespace AssetBundleConverter
                 baseUrl = baseUrl,
                 cleanAndExitOnFinish = false,
                 createAssetBundle = createAssetBundle,
+                downloadBatchSize = ClampDownloadBatchSize(downloadBatchSize),
+                failingConversionTolerance = ClampConversionTolerance(failingConversionTolerance),
                 clearDirectoriesOnStart = clearDownloads,
                 importOnlyEntity = showDebugOptions ? debugEntity : "",
                 shaderType = shader,
@@ -320,15 +344,15 @@ namespace AssetBundleConverter
             };
         }
 
-        private void OnConversionEnd(DCL.ABConverter.AssetBundleConverter.State state)
+        private void OnConversionEnd(ConversionState state)
         {
-            if (createAssetBundle && state.lastErrorCode == DCL.ABConverter.AssetBundleConverter.ErrorCodes.SUCCESS)
+            if (createAssetBundle && state.lastErrorCode == ErrorCodes.SUCCESS)
                 EditorUtility.RevealInFinder(Config.ASSET_BUNDLES_PATH_ROOT);
         }
 
         private BuildTarget GetBuildTarget()
         {
-            return buildTarget switch
+            return buildTarget.Value switch
                    {
                        SupportedBuildTarget.WebGL => BuildTarget.WebGL,
                        SupportedBuildTarget.Windows => BuildTarget.StandaloneWindows64,

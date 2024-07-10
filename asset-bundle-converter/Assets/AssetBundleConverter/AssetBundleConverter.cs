@@ -37,44 +37,13 @@ namespace DCL.ABConverter
             public AssetPath AssetPath;
         }
 
-        // For consistency, never remove any of these enum values as it will break old error codes
-        public enum ErrorCodes
-        {
-            SUCCESS,
-            UNDEFINED,
-            SCENE_LIST_NULL,
-            ASSET_BUNDLE_BUILD_FAIL,
-            VISUAL_TEST_FAILED,
-            UNEXPECTED_ERROR,
-            GLTFAST_CRITICAL_ERROR,
-            GLTF_IMPORTER_NOT_FOUND,
-            EMBED_MATERIAL_FAILURE,
-            DOWNLOAD_FAILED,
-            INVALID_PLATFORM,
-            GLTF_PROCESS_MISMATCH,
-        }
-
-        public class State
-        {
-            public enum Step
-            {
-                IDLE,
-                DUMPING_ASSETS,
-                BUILDING_ASSET_BUNDLES,
-                FINISHED,
-            }
-
-            public Step step { get; internal set; }
-            public ErrorCodes lastErrorCode { get; internal set; }
-        }
-
         private const float MAX_TEXTURE_SIZE = 512f;
 
         private const string VERSION = "7.0";
         private const string LOOP_PARAMETER = "Loop";
 
         private readonly Dictionary<string, string> lowerCaseHashes = new ();
-        public State CurrentState { get; } = new ();
+        public ConversionState CurrentState { get; } = new ();
         private Environment env;
         private ClientSettings settings;
         private readonly string finalDownloadedPath;
@@ -84,7 +53,6 @@ namespace DCL.ABConverter
         private Dictionary<string, string> contentTable = new ();
         private Dictionary<string, string> gltfOriginalNames = new ();
         private string logBuffer;
-        private int totalAssets;
         private int skippedAssets;
         private IErrorReporter errorReporter;
 
@@ -101,7 +69,20 @@ namespace DCL.ABConverter
         private double visualTestEndTime;
         private double startupAllocated;
         private double startupReserved;
+
+        /// <summary>
+        /// Total number of GLTFs required by the conversion process
+        /// </summary>
+        private int totalGltfs;
+
+        /// <summary>
+        /// Total number of missing GLTFs
+        /// </summary>
         private int totalGltfsToProcess;
+
+        /// <summary>
+        /// Total number of successfully processed GLTFs
+        /// </summary>
         private int totalGltfsProcessed;
 
         private bool isExitForced = false;
@@ -143,7 +124,7 @@ namespace DCL.ABConverter
                 var message = $"Build target is invalid: {settings.buildTarget.ToString()}";
                 log.Error(message);
                 errorReporter.ReportError(message, settings);
-                ForceExit((int)ErrorCodes.INVALID_PLATFORM);
+                ForceExit(ErrorCodes.INVALID_PLATFORM);
                 return;
             }
 
@@ -168,15 +149,13 @@ namespace DCL.ABConverter
 
             if (settings.importGltf)
             {
-
-                if (!await DownloadAssets(rawContents))
+                if (!await ResolveAssets(rawContents))
                 {
                     log.Info("All assets are already converted");
                     OnFinish();
 
                     return;
                 }
-
             }
 
             // Third step: we import gltfs
@@ -185,28 +164,14 @@ namespace DCL.ABConverter
             if (isExitForced)
                 return;
 
-            if (await ProcessAllGltfs())
-            {
-                OnFinish();
-
-                return;
-            }
-
-            if (isExitForced)
-                return;
+            await ProcessAllGltfs();
 
             importEndTime = EditorApplication.timeSinceStartup;
 
             EditorUtility.ClearProgressBar();
 
-            if (totalGltfsProcessed != totalGltfsToProcess)
-            {
-                var message = $"GLTF count mismatch GLTF to process: {totalGltfsToProcess} vs GLTF processed: {totalGltfsProcessed}";
-                log.Error(message);
-                errorReporter.ReportError(message, settings);
-                ForceExit((int)ErrorCodes.GLTF_PROCESS_MISMATCH);
+            if (TryExitWithGltfErrors())
                 return;
-            }
 
             if (settings.createAssetBundle)
             {
@@ -230,6 +195,30 @@ namespace DCL.ABConverter
             }
 
             OnFinish();
+        }
+
+        private bool TryExitWithGltfErrors()
+        {
+            var failedAssets = totalGltfsToProcess - totalGltfsProcessed;
+            var toleratedCount = Mathf.RoundToInt(settings.failingConversionTolerance * totalGltfs);
+
+            // Try tolerate errors
+            if (failedAssets <= toleratedCount)
+            {
+                log.Warning($"Failed to convert {failedAssets} assets, but tolerating up to {toleratedCount} errors");
+
+                if (failedAssets > 0)
+                    CurrentState.lastErrorCode = ErrorCodes.CONVERSION_ERRORS_TOLERATED;
+
+                return false;
+            }
+
+
+            var message = $"GLTF count mismatch GLTF to process: {totalGltfsToProcess} vs GLTF processed: {totalGltfsProcessed}";
+            log.Error(message);
+            errorReporter.ReportError(message, settings);
+            ForceExit(ErrorCodes.GLTF_PROCESS_MISMATCH);
+            return true;
         }
 
         private void AdjustRenderingMode(BuildTarget targetPlatform)
@@ -256,19 +245,19 @@ namespace DCL.ABConverter
             // Fifth step: we build the Asset Bundles
             env.assetDatabase.Refresh();
             env.assetDatabase.SaveAssets();
-            CurrentState.step = State.Step.BUILDING_ASSET_BUNDLES;
+            CurrentState.step = ConversionState.Step.BUILDING_ASSET_BUNDLES;
 
             if (BuildAssetBundles(target, out var manifest))
             {
                 CleanAssetBundleFolder(manifest.GetAllAssetBundles());
 
                 CurrentState.lastErrorCode = ErrorCodes.SUCCESS;
-                CurrentState.step = State.Step.FINISHED;
+                CurrentState.step = ConversionState.Step.FINISHED;
             }
             else
             {
                 CurrentState.lastErrorCode = ErrorCodes.ASSET_BUNDLE_BUILD_FAIL;
-                CurrentState.step = State.Step.FINISHED;
+                CurrentState.step = ConversionState.Step.FINISHED;
             }
         }
 
@@ -279,7 +268,11 @@ namespace DCL.ABConverter
         private Stopwatch embedExtractTextureTime;
         private Stopwatch embedExtractMaterialTime;
         private Stopwatch configureGltftime;
-        private async Task<bool> ProcessAllGltfs()
+
+        /// <summary>
+        /// Does not force exit
+        /// </summary>
+        private async Task ProcessAllGltfs()
         {
             embedExtractTextureTime = new Stopwatch();
             embedExtractMaterialTime = new Stopwatch();
@@ -305,8 +298,6 @@ namespace DCL.ABConverter
 
             foreach (GltfImportSettings gltf in gltfToWait)
             {
-                if (isExitForced) break;
-
                 string gltfUrl = gltf.url;
                 var gltfImport = gltf.import;
                 string relativePath = PathUtils.FullPathToAssetPath(gltfUrl);
@@ -326,7 +317,7 @@ namespace DCL.ABConverter
 
                     if (!loadingSuccess)
                     {
-                        var message = $"GLTF is invalid or contains errors: {gltfImport.LastErrorCode}";
+                        var message = $"GLTF is invalid or contains errors: {gltfUrl}, {gltfImport.LastErrorCode}";
                         log.Error(message);
                         errorReporter.ReportError(message, settings);
                         continue;
@@ -374,8 +365,8 @@ namespace DCL.ABConverter
                             var message = "Fatal error when importing this object, check previous error messages";
                             log.Error(message);
                             errorReporter.ReportError(message, settings);
-                            ForceExit((int)ErrorCodes.GLTFAST_CRITICAL_ERROR);
-                            break;
+                            SetExitState(ErrorCodes.GLTFAST_CRITICAL_ERROR);
+                            continue;
                         }
                     }
                     else
@@ -383,7 +374,7 @@ namespace DCL.ABConverter
                         var message = $"Failed to get the gltf importer for {gltfUrl} \nPath: {relativePath}";
                         log.Error(message);
                         errorReporter.ReportError(message, settings);
-                        ForceExit((int)ErrorCodes.GLTF_IMPORTER_NOT_FOUND);
+                        SetExitState(ErrorCodes.GLTF_IMPORTER_NOT_FOUND);
                         continue;
                     }
 
@@ -413,8 +404,6 @@ namespace DCL.ABConverter
                     log.Verbose($"<color={color}>Ended loading gltf {gltfUrl} with result <b>{loadingSuccess}</b></color>");
                 }
 
-                // This case handles a missing asset, most likely creator's fault, gltf will be skipped
-                catch (AssetNotMappedException e) { Debug.LogError($"<b>{gltf.AssetPath.fileName}</b> will be skipped since one of its dependencies is missing: <b>{e.Message}</b>"); }
                 catch (FileLoadException)
                 {
                     Debug.LogError($"<b>{gltf.AssetPath.fileName} ({gltf.AssetPath.hash})</b> Failed to load since its empty, we will replace this with an empty game object");
@@ -422,16 +411,16 @@ namespace DCL.ABConverter
                     env.assetDatabase.DeleteAsset(relativePath);
                     string prefabPath = Path.ChangeExtension(relativePath, ".prefab");
                     PrefabUtility.SaveAsPrefabAsset(replacement, prefabPath);
+                    // it's not an error so we don't skip the iteration
                 }
                 catch (Exception e)
                 {
                     log.Error("UNCAUGHT FATAL: Failed to load GLTF " + gltf.AssetPath.hash);
                     Debug.LogException(e);
                     errorReporter.ReportException(new ConversionException(ConversionStep.Import, settings, e));
-                    ForceExit((int)ErrorCodes.GLTFAST_CRITICAL_ERROR);
-                    break;
+                    SetExitState(ErrorCodes.GLTFAST_CRITICAL_ERROR);
+                    continue;
                 }
-                finally { gltfImport.Dispose(); }
 
                 totalGltfsProcessed++;
             }
@@ -439,8 +428,6 @@ namespace DCL.ABConverter
             EditorUtility.ClearProgressBar();
 
             log.Info("Ended importing GLTFs");
-
-            return false;
         }
 
         private void CreateLayeredAnimatorController(IGltfImport gltfImport, string directory)
@@ -844,7 +831,7 @@ namespace DCL.ABConverter
 
             logBuffer = $"Conversion finished!. last error code = {CurrentState.lastErrorCode}";
             logBuffer += "\n";
-            logBuffer += $"GLTFs Converted {totalAssets - skippedAssets} of {totalAssets}. (Skipped {skippedAssets})\n";
+            logBuffer += $"GLTFs Converted {totalGltfs - skippedAssets} of {totalGltfs}. (Skipped {skippedAssets})\n";
             logBuffer += $"Total download time: {downloadTime:F} seconds\n";
             logBuffer += $"Total non-gltf import time: {nonGltfImportTime:F} seconds\n";
             logBuffer += $"Total gltf import time: {importTime:F} seconds\n";
@@ -854,7 +841,7 @@ namespace DCL.ABConverter
             logBuffer += $"Total bundle conversion time: {bundlesTime:F} seconds\n";
             logBuffer += "\n";
             logBuffer += $"Total: {conversionTime:F} seconds\n";
-            if (totalAssets > 0) { logBuffer += $"Estimated time per asset: {conversionTime / totalAssets:F}\n"; }
+            if (totalGltfs > 0) { logBuffer += $"Estimated time per asset: {conversionTime / totalGltfs:F}\n"; }
             logBuffer += "\n";
             logBuffer += $"Startup Memory | Allocated: {startupAllocated:F} MB Reserved: {startupReserved:F} MB\n";
             logBuffer += $"End Memory | Allocated: {allocated:F} MB Reserved: {reserved:F} MB\n";
@@ -893,7 +880,7 @@ namespace DCL.ABConverter
             foreach (var gltf in gltfToWait)
                 gltf.import.Dispose();
 
-            ForceExit((int)errorCode);
+            ForceExit(errorCode);
         }
 
         internal void CleanupWorkingFolders()
@@ -938,7 +925,7 @@ namespace DCL.ABConverter
                 var message = "Error generating asset bundle!";
                 log.Error(message);
                 errorReporter.ReportError(message, settings);
-                ForceExit((int)ErrorCodes.ASSET_BUNDLE_BUILD_FAIL);
+                ForceExit(ErrorCodes.ASSET_BUNDLE_BUILD_FAIL);
                 return false;
             }
 
@@ -1014,8 +1001,7 @@ namespace DCL.ABConverter
         /// <param name="rawContents">An array containing all the assets to be dumped.</param>
         /// <returns>true if succeeded</returns>
         ///
-
-        private async Task<bool> DownloadAssets(IReadOnlyList<ContentServerUtils.MappingPair> rawContents)
+        private async Task<bool> ResolveAssets(IReadOnlyList<ContentServerUtils.MappingPair> rawContents)
         {
             try
             {
@@ -1029,16 +1015,38 @@ namespace DCL.ABConverter
                 if (!FilterDumpList(ref gltfPaths))
                     return false;
 
-                List<Task> downloadTasks = new List<Task>();
-                downloadTasks.AddRange(gltfPaths.Select(CreateDownloadTask));
-                downloadTasks.AddRange(bufferPaths.Select(CreateDownloadTask));
-                downloadTasks.AddRange(texturePaths.Select(CreateDownloadTask));
+                FilterImportedAssets(gltfPaths, texturePaths, bufferPaths);
+
+                List<Task> downloadTasks = new List<Task>(settings.downloadBatchSize);
 
                 downloadStartupTime = EditorApplication.timeSinceStartup;
 
-                if (settings.clearDirectoriesOnStart)
-                    foreach (Task downloadTask in downloadTasks)
-                        await downloadTask;
+                int totalAssetsToDownload = gltfPaths.Count + bufferPaths.Count + texturePaths.Count;
+                int progress = 0;
+
+                long GetTotalMegabytesDownloaded() =>
+                    downloadedData.Values.Sum(array => array.LongLength) / (1024 * 1024);
+
+                async Task DownloadBatchAsync()
+                {
+                    await Task.WhenAll(downloadTasks);
+                    log.Verbose($"{nameof(ResolveAssets)}: {progress}/{totalAssetsToDownload}; {GetTotalMegabytesDownloaded()} MB");
+                    downloadTasks.Clear();
+                }
+
+                // start and await in batches
+                foreach (AssetPath path in gltfPaths.Concat(bufferPaths).Concat(texturePaths))
+                {
+                    progress++;
+
+                    downloadTasks.Add(CreateDownloadTask(path));
+
+                    if (downloadTasks.Count >= settings.downloadBatchSize)
+                        await DownloadBatchAsync();
+                }
+
+                // Download last batch
+                if (downloadTasks.Count > 0) await DownloadBatchAsync();
 
                 downloadEndTime = EditorApplication.timeSinceStartup;
 
@@ -1071,7 +1079,7 @@ namespace DCL.ABConverter
             {
                 Debug.LogException(e);
                 errorReporter.ReportException(new ConversionException(ConversionStep.Fetch, settings, e));
-                ForceExit((int)ErrorCodes.DOWNLOAD_FAILED);
+                ForceExit(ErrorCodes.DOWNLOAD_FAILED);
                 return false;
             }
 
@@ -1088,7 +1096,7 @@ namespace DCL.ABConverter
                 var message = $"Download Failed by max retry count exceeded, probably a connection error";
                 log.Error(message);
                 errorReporter.ReportError(message, settings);
-                ForceExit((int)ErrorCodes.DOWNLOAD_FAILED);
+                ForceExit(ErrorCodes.DOWNLOAD_FAILED);
                 throw new OperationCanceledException();
             }
 
@@ -1126,7 +1134,7 @@ namespace DCL.ABConverter
                 var message = $"Download Failed {url} -- {e.Message}";
                 log.Error(message);
                 errorReporter.ReportError(message, settings);
-                ForceExit((int)ErrorCodes.DOWNLOAD_FAILED);
+                ForceExit(ErrorCodes.DOWNLOAD_FAILED);
                 return;
             }
 
@@ -1151,6 +1159,74 @@ namespace DCL.ABConverter
         }
 
         /// <summary>
+        /// Removes assets that are already imported from the list
+        /// </summary>
+        private void FilterImportedAssets(List<AssetPath> gltfPaths, List<AssetPath> texturePaths, List<AssetPath> bufferPaths)
+        {
+            // All assets must be re-downloaded
+            if (settings.clearDirectoriesOnStart)
+                return;
+
+            bool CheckAssetIsImported(AssetPath path)
+            {
+                var importer = env.assetDatabase.GetImporterAtPath(path.finalPath);
+
+                if (!importer)
+                    return false;
+
+                var asset = env.assetDatabase.LoadAssetAtPath<Object>(path.finalPath);
+                // in case of a trouble the asset is not imported
+                if (!asset || asset.GetType() == typeof(DefaultAsset))
+                    return false;
+
+                return true;
+            }
+
+            var existingAssetPaths = new List<AssetPath>(gltfPaths.Count + texturePaths.Count + bufferPaths.Count);
+
+            void ProcessImportedAsset(AssetPath assetPath)
+            {
+                existingAssetPaths.Add(assetPath);
+                assetsToMark.Add(assetPath);
+            }
+
+            for (int i = gltfPaths.Count - 1; i >= 0; i--)
+            {
+                var path = gltfPaths[i];
+                if (CheckAssetIsImported(path))
+                {
+                    ProcessImportedAsset(path);
+                    gltfPaths.RemoveAt(i);
+                }
+            }
+
+            AddAssetPathsToContentTable(existingAssetPaths, true);
+            existingAssetPaths.Clear();
+
+            for (int i = texturePaths.Count - 1; i >= 0; i--)
+            {
+                var path = texturePaths[i];
+                if (CheckAssetIsImported(path))
+                {
+                    ProcessImportedAsset(path);
+                    texturePaths.RemoveAt(i);
+                }
+            }
+
+            for (int i = bufferPaths.Count - 1; i >= 0; i--)
+            {
+                var path = bufferPaths[i];
+                if (CheckAssetIsImported(path))
+                {
+                    ProcessImportedAsset(path);
+                    bufferPaths.RemoveAt(i);
+                }
+            }
+
+            AddAssetPathsToContentTable(existingAssetPaths);
+        }
+
+        /// <summary>
         /// Trims off existing asset bundles from the given AssetPath array,
         /// if none exists and shouldAbortBecauseAllBundlesExist is true, it will return false.
         /// </summary>
@@ -1160,7 +1236,7 @@ namespace DCL.ABConverter
         {
             bool shouldBuildAssetBundles;
 
-            totalAssets = gltfPaths.Count;
+            totalGltfs = gltfPaths.Count;
 
             if (settings.skipAlreadyBuiltBundles)
             {
@@ -1422,10 +1498,15 @@ namespace DCL.ABConverter
             return path != null ? gltfPath : null;
         }
 
-        private void ForceExit(int errorCode = 0)
+        private void SetExitState(ErrorCodes error)
+        {
+            CurrentState.lastErrorCode = error;
+        }
+
+        private void ForceExit(ErrorCodes errorCode = ErrorCodes.SUCCESS)
         {
             isExitForced = true;
-            env.editor.Exit(errorCode);
+            env.editor.Exit((int)errorCode);
         }
     }
 }
