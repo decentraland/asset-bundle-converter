@@ -164,15 +164,7 @@ namespace DCL.ABConverter
             if (isExitForced)
                 return;
 
-            if (await ProcessAllGltfs())
-            {
-                OnFinish();
-
-                return;
-            }
-
-            if (isExitForced)
-                return;
+            await ProcessAllGltfs();
 
             importEndTime = EditorApplication.timeSinceStartup;
 
@@ -276,7 +268,11 @@ namespace DCL.ABConverter
         private Stopwatch embedExtractTextureTime;
         private Stopwatch embedExtractMaterialTime;
         private Stopwatch configureGltftime;
-        private async Task<bool> ProcessAllGltfs()
+
+        /// <summary>
+        /// Does not force exit
+        /// </summary>
+        private async Task ProcessAllGltfs()
         {
             embedExtractTextureTime = new Stopwatch();
             embedExtractMaterialTime = new Stopwatch();
@@ -302,8 +298,6 @@ namespace DCL.ABConverter
 
             foreach (GltfImportSettings gltf in gltfToWait)
             {
-                if (isExitForced) break;
-
                 string gltfUrl = gltf.url;
                 var gltfImport = gltf.import;
                 string relativePath = PathUtils.FullPathToAssetPath(gltfUrl);
@@ -427,8 +421,6 @@ namespace DCL.ABConverter
             EditorUtility.ClearProgressBar();
 
             log.Info("Ended importing GLTFs");
-
-            return false;
         }
 
         private void CreateAnimatorController(IGltfImport gltfImport, string directory)
@@ -901,9 +893,7 @@ namespace DCL.ABConverter
 
                 FilterImportedAssets(gltfPaths, texturePaths, bufferPaths);
 
-                const int BATCH_SIZE = 20;
-
-                List<Task> downloadTasks = new List<Task>(BATCH_SIZE);
+                List<Task> downloadTasks = new List<Task>(settings.downloadBatchSize);
 
                 downloadStartupTime = EditorApplication.timeSinceStartup;
 
@@ -927,7 +917,7 @@ namespace DCL.ABConverter
 
                     downloadTasks.Add(CreateDownloadTask(path));
 
-                    if (downloadTasks.Count >= BATCH_SIZE)
+                    if (downloadTasks.Count >= settings.downloadBatchSize)
                         await DownloadBatchAsync();
                 }
 

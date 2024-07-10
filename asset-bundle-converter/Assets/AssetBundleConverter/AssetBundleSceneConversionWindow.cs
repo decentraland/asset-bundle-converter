@@ -48,6 +48,7 @@ namespace AssetBundleConverter
         private bool placeOnScene = true;
         private bool visualTest = false;
         private bool clearDownloads = true;
+        private PersistentSetting<int> downloadBatchSize;
         private PersistentSetting<float> failingConversionTolerance;
         private PersistentSetting<bool> createAssetBundle;
         private PersistentSetting<bool> verbose;
@@ -87,6 +88,7 @@ namespace AssetBundleConverter
             buildPipelineType = PersistentSetting.CreateEnum(nameof(buildPipelineType), BuildPipelineType.Scriptable);
             buildTarget = PersistentSetting.CreateEnum(nameof(buildTarget), SupportedBuildTarget.WebGL);
             failingConversionTolerance = PersistentSetting.CreateFloat(nameof(failingConversionTolerance), 0.05f); // 5%
+            downloadBatchSize = PersistentSetting.CreateInt(nameof(downloadBatchSize), 20);
         }
 
         private void OnGUI()
@@ -98,6 +100,7 @@ namespace AssetBundleConverter
             visualTest = EditorGUILayout.Toggle("Visual Test", visualTest);
             placeOnScene = EditorGUILayout.Toggle("Place on Scene", placeOnScene);
             createAssetBundle.Value = EditorGUILayout.Toggle("Create Asset Bundle", createAssetBundle);
+            downloadBatchSize.Value = ClampDownloadBatchSize(EditorGUILayout.IntField("Download Batch Size", downloadBatchSize));
             failingConversionTolerance.Value = ClampConversionTolerance(EditorGUILayout.FloatField("Failed Conversion Tolerance", failingConversionTolerance));
             clearDownloads = EditorGUILayout.Toggle("Clear Downloads", clearDownloads);
             includeShaderVariants = EditorGUILayout.Toggle("Include Shader Variants", includeShaderVariants);
@@ -312,6 +315,9 @@ namespace AssetBundleConverter
             }
         }
 
+        private int ClampDownloadBatchSize(int value) =>
+            Mathf.Clamp(value, 1, 1000);
+
         private float ClampConversionTolerance(float value) =>
             Mathf.Clamp(value, 0f, 0.5f);
 
@@ -323,6 +329,7 @@ namespace AssetBundleConverter
                 baseUrl = baseUrl,
                 cleanAndExitOnFinish = false,
                 createAssetBundle = createAssetBundle,
+                downloadBatchSize = ClampDownloadBatchSize(downloadBatchSize),
                 failingConversionTolerance = ClampConversionTolerance(failingConversionTolerance),
                 clearDirectoriesOnStart = clearDownloads,
                 importOnlyEntity = showDebugOptions ? debugEntity : "",

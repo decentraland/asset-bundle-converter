@@ -58,6 +58,7 @@ namespace AssetBundleConverter
             public bool cleanAndExitOnFinish = true;
             public bool visualTest = false;
             public bool createAssetBundle = true;
+            public int downloadBatchSize = 20;
             public float failingConversionTolerance = 0.05f;
             public bool placeOnScene = true;
             public string importOnlyEntity;
