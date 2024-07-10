@@ -497,6 +497,8 @@ namespace DCL.ABConverter
 
                 // Configure states
                 var empty = layerStateMachine.AddState("Empty");
+                // The current animation system expects the clips to stay on its current frame when the execution stops
+                empty.writeDefaultValues = false;
                 var state = controller.AddMotion(clip, layerIndex);
 
                 layerStateMachine.defaultState = isDefaultState ? state : empty;
