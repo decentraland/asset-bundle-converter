@@ -9,6 +9,7 @@ export function execCommand(logger: ILoggerComponent.ILogger, command: string, a
 
   const child = spawn(command, args, { env, cwd })
     .on('exit', (code, signal) => {
+      logger.info('Command exited', { code, signal } as any)
       if (signal === 'SIGTERM' || signal == 'SIGKILL') {
         exitFuture.reject(new Error('SIGTERM sent to the process'))
       } else {
