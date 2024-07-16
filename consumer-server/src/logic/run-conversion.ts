@@ -5,13 +5,15 @@ import { dirname } from 'path'
 import { AppComponents } from '../types'
 import { execCommand } from './run-command'
 
-async function makeLogFileAndOutputDirectoryAvailable(options: {
+async function setupStartDirectories(options: {
   logFile: string,
-  outDirectory: string
+  outDirectory: string,
+  projectPath : string
 }) {
   // touch logfile and create folders
   await fs.mkdir(dirname(options.logFile), { recursive: true })
   await fs.mkdir(options.outDirectory, { recursive: true })
+  await fs.rmdir(options.projectPath + "/Assets/_Downloaded", { recursive: true });
   closeSync(openSync(options.logFile, 'w'))
 }
 
@@ -51,7 +53,7 @@ export async function runLodsConversion(logger: ILoggerComponent.ILogger, compon
   timeout: number,
   unityBuildTarget: string,
 }) {
-  makeLogFileAndOutputDirectoryAvailable(options)
+  setupStartDirectories(options)
 
   const childArg0 = `${options.unityPath}/Editor/Unity`
 
@@ -63,7 +65,8 @@ export async function runLodsConversion(logger: ILoggerComponent.ILogger, compon
     '-logFile', options.logFile,
     '-lods', options.lods.join(';'),
     '-output', options.outDirectory,
-    '-buildTarget', options.unityBuildTarget
+    '-buildTarget', options.unityBuildTarget,
+    '-deleteDownloadPathAfterFinished'  
   ]
 
   return await executeProgram({ logger, components, childArg0, childArguments, projectPath: options.projectPath, timeout: options.timeout })
@@ -83,7 +86,7 @@ export async function runConversion(
     unityBuildTarget: string,
   }
 ) {
-  makeLogFileAndOutputDirectoryAvailable(options)
+  setupStartDirectories(options)
 
   // normalize content server URL
   let contentServerUrl = options.contentServerUrl
