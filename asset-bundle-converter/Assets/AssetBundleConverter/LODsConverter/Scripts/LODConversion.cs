@@ -34,8 +34,6 @@ public class LODConversion
 
     public async Task ConvertLODs()
     {
-        //TODO (Juani) Temporal hack. Clean with the regular asset bundle process
-        ClearDownloadedFolder();
         PlatformUtils.currentTarget = EditorUserBuildSettings.activeBuildTarget;
 
         IAssetDatabase assetDatabase = new UnityEditorWrappers.AssetDatabase();
@@ -83,12 +81,6 @@ public class LODConversion
             Debug.Log($"LOD conversion done for {Path.GetFileName(downloadedFilePath)}");
         }
         Utils.Exit();
-    }
-
-    private void ClearDownloadedFolder()
-    {
-        if (Directory.Exists(Config.GetDownloadPath()))
-            Directory.Delete(Config.GetDownloadPath(), true);
     }
 
     private void BuildPrefab(LODPathHandler lodPathHandler, Parcel parcel)
