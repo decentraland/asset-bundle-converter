@@ -495,6 +495,8 @@ namespace DCL.ABConverter
                 AnimatorControllerLayer layer = controller.layers[layerIndex];
                 AnimatorStateMachine layerStateMachine = layer.stateMachine;
 
+                AssetDatabase.AddObjectToAsset(layerStateMachine, controller);
+
                 // Configure states
                 var empty = layerStateMachine.AddState("Empty");
                 // The current animation system expects the clips to stay on its current frame when the execution stops
