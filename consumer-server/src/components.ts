@@ -22,7 +22,12 @@ export async function initComponents(): Promise<AppComponents> {
 
   const metrics = await createMetricsComponent(metricDeclarations, { config })
   const logs = await createLogComponent({ metrics })
-  const server = await createServerComponent<GlobalContext>({ config, logs }, {})
+  const server = await createServerComponent<GlobalContext>({ config, logs }, {
+    cors: {
+      methods: ['GET', 'HEAD', 'OPTIONS', 'DELETE', 'POST', 'PUT'],
+      maxAge: 86400
+    }
+  })
   const statusChecks = await createStatusCheckComponent({ server, config })
   const fetch = await createFetchComponent()
 
