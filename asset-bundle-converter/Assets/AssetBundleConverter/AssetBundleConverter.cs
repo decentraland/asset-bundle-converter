@@ -777,7 +777,7 @@ namespace DCL.ABConverter
                     if (!Path.HasExtension(texPath))
                         texPath += ".png";
 
-                    if (tex.isReadable)
+                    if (tex.isReadable && !TextureUtils.IsCompressedFormat(tex.format))
                     {
                         env.file.WriteAllBytes(texPath, tex.EncodeToPNG());
                     }

@@ -14,6 +14,7 @@ using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.Rendering;
 using static DCL.ContentServerUtils;
+using Environment = System.Environment;
 using Object = UnityEngine.Object;
 
 namespace DCL.ABConverter
@@ -168,6 +169,31 @@ namespace DCL.ABConverter
         }
     }
 
+    public static class TextureUtils
+    {
+        public static    bool IsCompressedFormat(TextureFormat format)
+        {
+            switch (format)
+            {
+                case TextureFormat.DXT1:
+                case TextureFormat.DXT5:
+                case TextureFormat.BC7:
+                case TextureFormat.ETC_RGB4:
+                case TextureFormat.ETC2_RGB:
+                case TextureFormat.ETC2_RGBA8:
+                case TextureFormat.ASTC_4x4:
+                case TextureFormat.ASTC_5x5:
+                case TextureFormat.ASTC_6x6:
+                case TextureFormat.ASTC_8x8:
+                case TextureFormat.ASTC_10x10:
+                case TextureFormat.ASTC_12x12:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+    }
+
     public static class Utils
     {
         [Serializable]
@@ -183,7 +209,7 @@ namespace DCL.ABConverter
 
         internal static bool ParseOption(string optionName, int argsQty, out string[] foundArgs)
         {
-            return ParseOptionExplicit(System.Environment.GetCommandLineArgs(), optionName, argsQty, out foundArgs);
+            return ParseOptionExplicit(Environment.GetCommandLineArgs(), optionName, argsQty, out foundArgs);
         }
 
         internal static bool ParseOptionExplicit(string[] rawArgsList, string optionName, int expectedArgsQty, out string[] foundArgs)
@@ -224,6 +250,8 @@ namespace DCL.ABConverter
 
             return true;
         }
+        
+        
 
         internal static void Exit(int errorCode = 0)
         {
