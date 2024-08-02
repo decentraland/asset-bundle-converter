@@ -171,7 +171,7 @@ namespace DCL.ABConverter
 
     public static class TextureUtils
     {
-        public static    bool IsCompressedFormat(TextureFormat format)
+        public static bool IsCompressedFormat(TextureFormat format)
         {
             switch (format)
             {
