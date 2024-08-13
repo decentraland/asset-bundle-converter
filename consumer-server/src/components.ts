@@ -1,8 +1,8 @@
 import { createDotEnvConfigComponent } from "@well-known-components/env-config-provider"
-import { createServerComponent, createStatusCheckComponent } from "@well-known-components/http-server"
+import { createServerComponent, createStatusCheckComponent, instrumentHttpServerWithPromClientRegistry } from "@well-known-components/http-server"
 import { createLogComponent } from "@well-known-components/logger"
 import { createFetchComponent } from "./adapters/fetch"
-import { createMetricsComponent, instrumentHttpServerWithMetrics } from "@well-known-components/metrics"
+import { createMetricsComponent } from "@well-known-components/metrics"
 import { AppComponents, GlobalContext } from "./types"
 import { metricDeclarations } from "./metrics"
 import AWS from "aws-sdk"
@@ -31,14 +31,14 @@ export async function initComponents(): Promise<AppComponents> {
   const statusChecks = await createStatusCheckComponent({ server, config })
   const fetch = await createFetchComponent()
 
-  await instrumentHttpServerWithMetrics({ metrics, server, config })
+  await instrumentHttpServerWithPromClientRegistry({ metrics, server, config, registry: metrics.registry! })
 
   const sqsQueue = await config.getString('TASK_QUEUE')
   const priorityQueue = await config.getString('PRIORITY_TASK_QUEUE')
   const taskQueue = sqsQueue ?
   createSqsAdapter<DeploymentToSqs>({ logs, metrics }, { queueUrl: sqsQueue, priorityQueueUrl: priorityQueue, queueRegion: AWS_REGION }) :
   createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: "ConversionTaskQueue" })
-  
+
   const s3Bucket = await config.getString('CDN_BUCKET')
   const cdnS3 = s3Bucket ? new AWS.S3({}) : new MockAws.S3({})
 

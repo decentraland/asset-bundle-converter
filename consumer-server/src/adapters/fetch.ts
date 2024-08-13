@@ -1,5 +1,5 @@
-import { IFetchComponent } from "@well-known-components/http-server"
 import * as nodeFetch from "node-fetch"
+import { IFetchComponent } from "@well-known-components/interfaces"
 
 export async function createFetchComponent() {
   const fetch: IFetchComponent = {

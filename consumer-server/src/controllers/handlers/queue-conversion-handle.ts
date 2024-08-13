@@ -5,7 +5,6 @@ import { IHttpServerComponent } from "@well-known-components/interfaces"
 // handlers arguments only type what they need, to make unit testing easier
 export async function queueTaskHandler(context: HandlerContextWithPath<"metrics" | "taskQueue" | 'config', "/queue-task">): Promise<IHttpServerComponent.IResponse> {
   const {
-    url,
     components: { taskQueue, config },
     request
   } = context

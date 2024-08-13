@@ -1,10 +1,10 @@
-import type { IFetchComponent } from "@well-known-components/http-server"
 import type {
   IConfigComponent,
   ILoggerComponent,
   IHttpServerComponent,
   IBaseComponent,
   IMetricsComponent,
+  IFetchComponent,
 } from "@well-known-components/interfaces"
 import { metricDeclarations } from "./metrics"
 import { ITaskQueue } from "./adapters/task-queue"
