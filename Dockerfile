@@ -19,6 +19,10 @@ COPY consumer-server/package.json /consumer-server/package.json
 COPY consumer-server/package-lock.json /consumer-server/package-lock.json
 RUN npm ci
 
+# Make commit hash available to application
+ARG COMMIT_HASH
+RUN echo "COMMIT_HASH=$COMMIT_HASH" >> .env
+
 # build the consumer-server
 COPY consumer-server /consumer-server
 RUN npm run build
