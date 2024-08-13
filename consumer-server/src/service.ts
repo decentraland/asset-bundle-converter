@@ -1,4 +1,4 @@
-import { ILoggerComponent, Lifecycle } from "@well-known-components/interfaces"
+import { Lifecycle } from "@well-known-components/interfaces"
 import { setupRouter } from "./controllers/routes"
 import { executeConversion, executeLODConversion } from "./logic/conversion-task"
 import checkDiskSpace from 'check-disk-space'

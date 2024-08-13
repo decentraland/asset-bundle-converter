@@ -1,4 +1,3 @@
-import future from "fp-future";
 import { IBaseComponent } from "@well-known-components/interfaces";
 
 export type RunnerComponentArg = {

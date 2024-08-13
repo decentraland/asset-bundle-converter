@@ -1,5 +1,5 @@
 import { Entity } from "@dcl/schemas"
-import { IFetchComponent } from "@well-known-components/http-server"
+import { IFetchComponent } from "@well-known-components/interfaces"
 
 export async function getEntities(fetcher: IFetchComponent, pointers: string[], sourceServer: string): Promise<Entity[]> {
   const url = `${sourceServer}/entities/active`
