@@ -11,18 +11,25 @@ jobs:
         with:
           submodules: recursive
           lfs: true
+
       - name: Use Node.js 18.x
         uses: actions/setup-node@v4
         with:
           node-version: 18.x
           cache: yarn
           cache-dependency-path: consumer-server/yarn.lock
+
       - name: install
         run: yarn --frozen-lockfile
         working-directory: consumer-server
+
+      - name: lint
+        run: yarn lint:check
+
       - name: build
         run: yarn build
         working-directory: consumer-server
+
       - name: test
         run: yarn test
         working-directory: consumer-server
