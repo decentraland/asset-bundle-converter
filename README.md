@@ -14,28 +14,27 @@ The intent of this repository is to decouple the conversion tool to have fewer d
 
 ---
 
-## What does this tool does?
+## What does this tool do?
 
 To improve the performance of the WebGL build, in the past, we decided to convert all scenes into Asset Bundles.
 So this tool loads every scene asset, loads and re-imports all gltf's to turn them into AssetBundles just for the CI to upload them into the content servers.
 
 ## How do I manually run this tool?
 
-- Initialize and update the git submodules (`git submodule update --init`
-and `git submodule update .`) 
-- Open this project using `Unity 2021.3.20f1`
+- Initialize and update the git submodules (`git submodule update --init` and `git submodule update .`) 
+- Open this project using `Unity 2021.3.20f1`.
 - Go to `Decentraland > Convert Scene` menu.
-- Fill in the scene info and press `Start`
-- Once the conversion is done, you will see the assets loaded in the current scene
-- You can find the converted asset at the `AssetBundles` folder located at the root of this repository
+- Fill in the scene info and press `Start`.
+- Once the conversion is done, you will see the assets loaded in the current scene.
+- You can find the converted asset at the `AssetBundles` folder located at the root of this repository.
 
 ---
 
 # The conversion server
 
-This tool is exposed as a standalone project and as a Docker based service. The code of the service lives in the `consumer-server` folder, and runs commands locally calling the project `asset-bundle-converter` of this same repository.
+This tool is exposed as a standalone project and as a Docker-based service. The code of the service lives in the `consumer-server` folder, and runs commands locally by calling the project `asset-bundle-converter` of this same repository.
 
-To build the image locally, docker must be used. The recommended command is:
+To build the image locally, Docker must be used. The recommended command is:
 
 ```
 docker build -t ab-converter .
