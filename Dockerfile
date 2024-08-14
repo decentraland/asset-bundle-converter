@@ -1,7 +1,6 @@
-ARG RUN
-ARG UNITY_DOCKER_IMAGE
+ARG UNITY_DOCKER_IMAGE=unityci/editor:2022.3.12f1-webgl-3.0.0
 
-FROM node:18 as builderenv
+FROM node:18 AS builderenv
 
 WORKDIR /consumer-server
 
@@ -10,7 +9,7 @@ RUN apt-get update
 RUN apt-get -y -qq install build-essential
 
 # We use Tini to handle signals and PID1 (https://github.com/krallin/tini, read why here https://github.com/krallin/tini/issues/8)
-ENV TINI_VERSION v0.19.0
+ENV TINI_VERSION=v0.19.0
 ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
 RUN chmod +x /tini
 
@@ -20,7 +19,7 @@ COPY consumer-server/package-lock.json /consumer-server/package-lock.json
 RUN npm ci
 
 # Make commit hash available to application
-ARG COMMIT_HASH
+ARG COMMIT_HASH=Unknown
 RUN echo "COMMIT_HASH=$COMMIT_HASH" >> .env
 
 # build the consumer-server
@@ -40,25 +39,25 @@ RUN    apt-get update -y \
          xvfb \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
-ENV NVM_DIR /root/.nvm
-ENV NODE_VERSION v16.18.0
+ENV NVM_DIR=/root/.nvm
+ENV NODE_VERSION=v16.18.0
 
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.2/install.sh | bash
 RUN /bin/bash -c "source $NVM_DIR/nvm.sh && nvm install $NODE_VERSION && nvm use --delete-prefix $NODE_VERSION"
 
-ENV NODE_PATH $NVM_DIR/versions/node/$NODE_VERSION/lib/node_modules
-ENV PATH $NVM_DIR/versions/node/$NODE_VERSION/bin:$PATH
+ENV NODE_PATH=$NVM_DIR/versions/node/$NODE_VERSION/lib/node_modules
+ENV PATH=$NVM_DIR/versions/node/$NODE_VERSION/bin:$PATH
 
 # Change this value ONLY if we have done breaking changes for every material, doing so is VERY costly
-ENV AB_VERSION v13
-ENV AB_VERSION_WINDOWS v22
-ENV AB_VERSION_MAC v22
+ENV AB_VERSION=v13
+ENV AB_VERSION_WINDOWS=v22
+ENV AB_VERSION_MAC=v22
 
 # NODE_ENV is used to configure some runtime options, like JSON logger
-ENV NODE_ENV production
-ENV PROJECT_PATH /asset-bundle-converter
+ENV NODE_ENV=production
+ENV PROJECT_PATH=/asset-bundle-converter
 
-ARG PLATFORM_TARGET
+ARG PLATFORM_TARGET=webgl
 ENV BUILD_TARGET=$PLATFORM_TARGET
 ENV DEBIAN_FRONTEND=noninteractive
 
