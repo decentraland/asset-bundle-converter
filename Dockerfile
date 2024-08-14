@@ -15,7 +15,7 @@ RUN chmod +x /tini
 
 # install dependencies
 COPY consumer-server/package.json /consumer-server/package.json
-COPY consumer-server/package-lock.json /consumer-server/package-lock.json
+COPY consumer-server/yarn.lock /consumer-server/yarn.lock
 RUN npm ci
 
 # Make commit hash available to application
