@@ -60,7 +60,7 @@ namespace AssetBundleConverter
             public bool createAssetBundle = true;
             public int downloadBatchSize = 20;
             public float failingConversionTolerance = 0.05f;
-            public bool placeOnScene = true;
+            public bool placeOnScene = false;
             public string importOnlyEntity;
 
             public ShaderType shaderType = ShaderType.Dcl;

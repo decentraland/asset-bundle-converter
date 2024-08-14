@@ -10,6 +10,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Cysharp.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -420,6 +421,10 @@ namespace DCL.ABConverter
                     errorReporter.ReportException(new ConversionException(ConversionStep.Import, settings, e));
                     SetExitState(ErrorCodes.GLTFAST_CRITICAL_ERROR);
                     continue;
+                }
+                finally
+                {
+                    await Resources.UnloadUnusedAssets();
                 }
 
                 totalGltfsProcessed++;
