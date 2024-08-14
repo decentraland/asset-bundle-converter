@@ -16,7 +16,7 @@ export function execCommand(
   const child = spawn(command, args, { env, cwd })
     .on('exit', (code, signal) => {
       logger.info('Command exited', { code, signal } as any)
-      if (signal === 'SIGTERM' || signal == 'SIGKILL') {
+      if (signal === 'SIGTERM' || signal === 'SIGKILL') {
         exitFuture.reject(new Error('SIGTERM sent to the process'))
       } else {
         exitFuture.resolve(code ?? -1)

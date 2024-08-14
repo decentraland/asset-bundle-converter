@@ -72,7 +72,7 @@ export async function runLodsConversion(
     unityBuildTarget: string
   }
 ) {
-  setupStartDirectories(options)
+  await setupStartDirectories(options)
 
   const childArg0 = `${options.unityPath}/Editor/Unity`
 
@@ -119,7 +119,7 @@ export async function runConversion(
     unityBuildTarget: string
   }
 ) {
-  setupStartDirectories(options)
+  await setupStartDirectories(options)
 
   // normalize content server URL
   let contentServerUrl = options.contentServerUrl

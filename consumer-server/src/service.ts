@@ -33,7 +33,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
         return
       }
 
-      await components.taskQueue.consumeAndProcessJob(async (job, message) => {
+      await components.taskQueue.consumeAndProcessJob(async (job, _message) => {
         try {
           components.metrics.increment('ab_converter_running_conversion')
           if (job.lods) {

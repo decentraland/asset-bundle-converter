@@ -6,4 +6,4 @@ import { main } from './service'
 ensureUlf()
 
 // This file is the program entry point, it only calls the Lifecycle function
-Lifecycle.run({ main, initComponents })
+void Lifecycle.run({ main, initComponents })

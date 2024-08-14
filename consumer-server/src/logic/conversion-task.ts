@@ -121,7 +121,7 @@ export async function executeLODConversion(
 
     const generatedFiles = await promises.readdir(outDirectory)
 
-    if (generatedFiles.length == 0) {
+    if (generatedFiles.length === 0) {
       // this is an error, if succeeded, we should see at least a manifest file
       components.metrics.increment('ab_converter_empty_conversion', { ab_version: $AB_VERSION })
       logger.error('Empty conversion', { ...defaultLoggerMetadata } as any)
@@ -258,7 +258,7 @@ export async function executeConversion(
 
     logger.debug('Manifest', { ...defaultLoggerMetadata, manifest } as any)
 
-    if (manifest.files.length == 0) {
+    if (manifest.files.length === 0) {
       // this is an error, if succeeded, we should see at least a manifest file
       components.metrics.increment('ab_converter_empty_conversion', { ab_version: $AB_VERSION })
       logger.error('Empty conversion', { ...defaultLoggerMetadata, manifest } as any)
@@ -300,7 +300,7 @@ export async function executeConversion(
       })
       .promise()
 
-    if (exitCode !== 0 || manifest.files.length == 0) {
+    if (exitCode !== 0 || manifest.files.length === 0) {
       const log = await promises.readFile(logFile, 'utf8')
 
       logger.debug(log, defaultLoggerMetadata)

@@ -47,7 +47,7 @@ export function createMemoryQueueAdapter<T>(
   options: { queueName: string }
 ): ITaskQueue<T> & IBaseComponent {
   type InternalElement = { message: TaskQueueMessage; job: T }
-  const q = new AsyncQueue<InternalElement>((action) => void 0)
+  const q = new AsyncQueue<InternalElement>((_action) => void 0)
   let lastJobId = 0
 
   const logger = components.logs.getLogger(options.queueName)
