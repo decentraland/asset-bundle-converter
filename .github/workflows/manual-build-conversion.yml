@@ -35,7 +35,7 @@ jobs:
 
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
           lfs: true
@@ -78,7 +78,7 @@ jobs:
                 --outDir /artifact \
                 --logFile /artifact/log.txt
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.pointer }}
           path: |
