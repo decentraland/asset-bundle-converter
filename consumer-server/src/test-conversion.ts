@@ -23,7 +23,7 @@ const args = arg({
   '--pointer': String,
   '--baseUrl': String,
   '--outDir': String,
-  '--logFile': String,
+  '--logFile': String
 })
 
 const BASE_URL = args['--baseUrl'] || 'https://peer.decentraland.org/content'
@@ -66,26 +66,30 @@ async function main() {
   // touch
   closeSync(openSync(LOG_FILE, 'w'))
 
-  const child = spawn('tail', ['-f', LOG_FILE]);
+  const child = spawn('tail', ['-f', LOG_FILE])
   child.stdout.pipe(process.stdout)
 
   const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
   if (!unityBuildTarget) {
-    logger.info("Invalid build target " + $BUILD_TARGET)
-    return    
+    logger.info('Invalid build target ' + $BUILD_TARGET)
+    return
   }
 
   try {
-    const exitCode = await runConversion(logger, { metrics }, {
-      logFile: LOG_FILE,
-      contentServerUrl: BASE_URL,
-      entityId,
-      outDirectory: OUT_DIRECTORY,
-      unityPath: $UNITY_PATH,
-      projectPath: $PROJECT_PATH,
-      timeout: 30 * 60 * 1000, // 30min
-      unityBuildTarget: unityBuildTarget
-    })
+    const exitCode = await runConversion(
+      logger,
+      { metrics },
+      {
+        logFile: LOG_FILE,
+        contentServerUrl: BASE_URL,
+        entityId,
+        outDirectory: OUT_DIRECTORY,
+        unityPath: $UNITY_PATH,
+        projectPath: $PROJECT_PATH,
+        timeout: 30 * 60 * 1000, // 30min
+        unityBuildTarget: unityBuildTarget
+      }
+    )
 
     if (exitCode) throw new Error('ExitCode=' + exitCode)
   } finally {
@@ -98,7 +102,7 @@ async function main() {
   process.exit()
 }
 
-main().catch(err => {
+main().catch((err) => {
   process.exitCode = 1
   console.error(err)
 })

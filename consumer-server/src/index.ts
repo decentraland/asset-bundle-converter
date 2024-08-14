@@ -1,7 +1,7 @@
-import { Lifecycle } from "@well-known-components/interfaces"
-import { initComponents } from "./components"
-import { ensureUlf } from "./logic/ensure-ulf"
-import { main } from "./service"
+import { Lifecycle } from '@well-known-components/interfaces'
+import { initComponents } from './components'
+import { ensureUlf } from './logic/ensure-ulf'
+import { main } from './service'
 
 ensureUlf()
 

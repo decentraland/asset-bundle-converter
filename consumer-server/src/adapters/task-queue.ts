@@ -14,35 +14,39 @@ export interface ITaskQueue<T> {
   publish(job: T, prioritize?: boolean): Promise<TaskQueueMessage>
   // awaits for a job. then calls and waits for the taskRunner argument.
   // the result is then returned to the wrapper function.
-  consumeAndProcessJob<R>(taskRunner: (job: T, message: TaskQueueMessage) => Promise<R>): Promise<{ result: R | undefined }>
+  consumeAndProcessJob<R>(
+    taskRunner: (job: T, message: TaskQueueMessage) => Promise<R>
+  ): Promise<{ result: R | undefined }>
 }
 
 export const queueMetrics = validateMetricsDeclaration({
   job_queue_duration_seconds: {
     type: IMetricsComponent.HistogramType,
     help: 'Duration of each job in seconds',
-    labelNames: ["queue_name"],
+    labelNames: ['queue_name'],
     buckets: [1, 10, 100, 200, 300, 400, 500, 600, 700, 1000, 1200, 1600, 1800, 3600]
   },
   job_queue_enqueue_total: {
     type: IMetricsComponent.CounterType,
-    help: "Total amount of enqueued jobs",
-    labelNames: ["queue_name"],
+    help: 'Total amount of enqueued jobs',
+    labelNames: ['queue_name']
   },
   job_queue_failures_total: {
     type: IMetricsComponent.CounterType,
-    help: "Total amount of failed tasks",
-    labelNames: ["queue_name"],
-  },
+    help: 'Total amount of failed tasks',
+    labelNames: ['queue_name']
+  }
 })
 
 type SNSOverSQSMessage = {
   Message: string
 }
 
-
-export function createMemoryQueueAdapter<T>(components: Pick<AppComponents, "logs" | 'metrics'>, options: { queueName: string }): ITaskQueue<T> & IBaseComponent {
-  type InternalElement = { message: TaskQueueMessage, job: T }
+export function createMemoryQueueAdapter<T>(
+  components: Pick<AppComponents, 'logs' | 'metrics'>,
+  options: { queueName: string }
+): ITaskQueue<T> & IBaseComponent {
+  type InternalElement = { message: TaskQueueMessage; job: T }
   const q = new AsyncQueue<InternalElement>((action) => void 0)
   let lastJobId = 0
 
@@ -78,29 +82,36 @@ export function createMemoryQueueAdapter<T>(components: Pick<AppComponents, "log
         }
       }
       return { result: undefined }
-    },
+    }
   }
 }
 
-export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'metrics'>, options: { queueUrl: string, priorityQueueUrl?: string, queueRegion?: string }): ITaskQueue<T> {
+export function createSqsAdapter<T>(
+  components: Pick<AppComponents, 'logs' | 'metrics'>,
+  options: { queueUrl: string; priorityQueueUrl?: string; queueRegion?: string }
+): ITaskQueue<T> {
   const logger = components.logs.getLogger(options.queueUrl)
 
   const sqs = new SQS({ apiVersion: 'latest', region: options.queueRegion })
 
-  async function receiveMessage(quantityOfMessages: number): Promise<{ response: SQS.ReceiveMessageResult & { $response: any } | undefined, queueUsed: string }> {
+  async function receiveMessage(
+    quantityOfMessages: number
+  ): Promise<{ response: (SQS.ReceiveMessageResult & { $response: any }) | undefined; queueUsed: string }> {
     let response
     let queueUsed = ''
 
     if (options.priorityQueueUrl) {
       response = await Promise.race([
-        sqs.receiveMessage({
-          AttributeNames: ['SentTimestamp'],
-          MaxNumberOfMessages: quantityOfMessages,
-          MessageAttributeNames: ['All'],
-          QueueUrl: options.priorityQueueUrl,
-          WaitTimeSeconds: 15,
-          VisibilityTimeout: 3 * 3600 // 3 hours
-        }).promise(),
+        sqs
+          .receiveMessage({
+            AttributeNames: ['SentTimestamp'],
+            MaxNumberOfMessages: quantityOfMessages,
+            MessageAttributeNames: ['All'],
+            QueueUrl: options.priorityQueueUrl,
+            WaitTimeSeconds: 15,
+            VisibilityTimeout: 3 * 3600 // 3 hours
+          })
+          .promise(),
         timeout(30 * 60 * 1000, 'Timed out sqs.receiveMessage')
       ])
       queueUsed = options.priorityQueueUrl
@@ -108,14 +119,16 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
 
     if (!response || !response?.Messages || response?.Messages?.length < 1) {
       response = await Promise.race([
-        sqs.receiveMessage({
-          AttributeNames: ['SentTimestamp'],
-          MaxNumberOfMessages: quantityOfMessages,
-          MessageAttributeNames: ['All'],
-          QueueUrl: options.queueUrl,
-          WaitTimeSeconds: 15,
-          VisibilityTimeout: 3 * 3600 // 3 hours
-        }).promise(),
+        sqs
+          .receiveMessage({
+            AttributeNames: ['SentTimestamp'],
+            MaxNumberOfMessages: quantityOfMessages,
+            MessageAttributeNames: ['All'],
+            QueueUrl: options.queueUrl,
+            WaitTimeSeconds: 15,
+            VisibilityTimeout: 3 * 3600 // 3 hours
+          })
+          .promise(),
         timeout(30 * 60 * 1000, 'Timed out sqs.receiveMessage')
       ])
       queueUsed = options.queueUrl
@@ -130,11 +143,12 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
         Message: JSON.stringify(job)
       }
 
-      const published = await sqs.sendMessage(
-        {
+      const published = await sqs
+        .sendMessage({
           QueueUrl: prioritize && options.priorityQueueUrl ? options.priorityQueueUrl : options.queueUrl,
-          MessageBody: JSON.stringify(snsOverSqs),
-        }).promise()
+          MessageBody: JSON.stringify(snsOverSqs)
+        })
+        .promise()
 
       const m: TaskQueueMessage = { id: published.MessageId! }
 
@@ -146,12 +160,14 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
     async consumeAndProcessJob(taskRunner) {
       while (true) {
         try {
-          let { response, queueUsed } = await receiveMessage(1)
+          const { response, queueUsed } = await receiveMessage(1)
 
           if (!!response && response.Messages && response.Messages.length > 0) {
             for (const it of response.Messages) {
               const message: TaskQueueMessage = { id: it.MessageId! }
-              const { end } = components.metrics.startTimer('job_queue_duration_seconds', { queue_name: options.queueUrl })
+              const { end } = components.metrics.startTimer('job_queue_duration_seconds', {
+                queue_name: options.queueUrl
+              })
               try {
                 const snsOverSqs: SNSOverSQSMessage = JSON.parse(it.Body!)
                 logger.info(`Processing job`, { id: message.id, message: snsOverSqs.Message })
@@ -176,6 +192,6 @@ export function createSqsAdapter<T>(components: Pick<AppComponents, "logs" | 'me
           await sleep(1000)
         }
       }
-    },
+    }
   }
 }

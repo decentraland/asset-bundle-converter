@@ -6,22 +6,25 @@ import { AppComponents } from '../types'
 import { execCommand } from './run-command'
 import syncFs from 'fs'
 
-async function setupStartDirectories(options: {
-  logFile: string,
-  outDirectory: string,
-  projectPath : string
-}) {
+async function setupStartDirectories(options: { logFile: string; outDirectory: string; projectPath: string }) {
   // touch logfile and create folders
   await fs.mkdir(dirname(options.logFile), { recursive: true })
   await fs.mkdir(options.outDirectory, { recursive: true })
-  var downloadedPath = options.projectPath + "/Assets/_Downloaded";
+  const downloadedPath = options.projectPath + '/Assets/_Downloaded'
   if (syncFs.existsSync(downloadedPath)) {
-    await fs.rmdir(downloadedPath, { recursive: true });
+    await fs.rmdir(downloadedPath, { recursive: true })
   }
   closeSync(openSync(options.logFile, 'w'))
 }
 
-async function executeProgram(options: { logger: ILoggerComponent.ILogger, components: Pick<AppComponents, 'metrics'>, childArg0: string, childArguments: string[], projectPath: string, timeout: number }) {
+async function executeProgram(options: {
+  logger: ILoggerComponent.ILogger
+  components: Pick<AppComponents, 'metrics'>
+  childArg0: string
+  childArguments: string[]
+  projectPath: string
+  timeout: number
+}) {
   const { logger, components, childArg0, childArguments, projectPath, timeout } = options
   const { exitPromise, child } = execCommand(logger, childArg0, childArguments, process.env as any, projectPath)
 
@@ -30,11 +33,19 @@ async function executeProgram(options: { logger: ILoggerComponent.ILogger, compo
       if (exitPromise.isPending) {
         try {
           if (!child.killed) {
-            logger.warn('Process did not finish', { pid: child.pid?.toString() || '?', command: childArg0, args: childArguments.join(' ') } as any)
+            logger.warn('Process did not finish', {
+              pid: child.pid?.toString() || '?',
+              command: childArg0,
+              args: childArguments.join(' ')
+            } as any)
             components.metrics.increment('ab_converter_timeout')
             exitPromise.reject(new Error('Process did not finish'))
             if (!child.kill('SIGKILL')) {
-              logger.error('Error trying to kill child process', { pid: child.pid?.toString() || '?', command: childArg0, args: childArguments.join(' ') } as any)
+              logger.error('Error trying to kill child process', {
+                pid: child.pid?.toString() || '?',
+                command: childArg0,
+                args: childArguments.join(' ')
+              } as any)
             }
           }
         } catch (err: any) {
@@ -47,47 +58,65 @@ async function executeProgram(options: { logger: ILoggerComponent.ILogger, compo
   return await exitPromise
 }
 
-export async function runLodsConversion(logger: ILoggerComponent.ILogger, components: Pick<AppComponents, 'metrics'>, options: {
-  logFile: string,
-  outDirectory: string,
-  entityId: string,
-  lods: string[],
-  unityPath: string,
-  projectPath: string,
-  timeout: number,
-  unityBuildTarget: string,
-}) {
+export async function runLodsConversion(
+  logger: ILoggerComponent.ILogger,
+  components: Pick<AppComponents, 'metrics'>,
+  options: {
+    logFile: string
+    outDirectory: string
+    entityId: string
+    lods: string[]
+    unityPath: string
+    projectPath: string
+    timeout: number
+    unityBuildTarget: string
+  }
+) {
   setupStartDirectories(options)
 
   const childArg0 = `${options.unityPath}/Editor/Unity`
 
   const childArguments: string[] = [
-    '-projectPath', options.projectPath,
+    '-projectPath',
+    options.projectPath,
     '-batchmode',
-    '-executeMethod', 'DCL.ABConverter.LODClient.ExportURLLODsToAssetBundles',
-    '-sceneCid', options.entityId,
-    '-logFile', options.logFile,
-    '-lods', options.lods.join(';'),
-    '-output', options.outDirectory,
-    '-buildTarget', options.unityBuildTarget,
-    '-deleteDownloadPathAfterFinished'  
+    '-executeMethod',
+    'DCL.ABConverter.LODClient.ExportURLLODsToAssetBundles',
+    '-sceneCid',
+    options.entityId,
+    '-logFile',
+    options.logFile,
+    '-lods',
+    options.lods.join(';'),
+    '-output',
+    options.outDirectory,
+    '-buildTarget',
+    options.unityBuildTarget,
+    '-deleteDownloadPathAfterFinished'
   ]
 
-  return await executeProgram({ logger, components, childArg0, childArguments, projectPath: options.projectPath, timeout: options.timeout })
+  return await executeProgram({
+    logger,
+    components,
+    childArg0,
+    childArguments,
+    projectPath: options.projectPath,
+    timeout: options.timeout
+  })
 }
 
 export async function runConversion(
   logger: ILoggerComponent.ILogger,
   components: Pick<AppComponents, 'metrics'>,
   options: {
-    logFile: string,
-    outDirectory: string,
-    entityId: string,
-    contentServerUrl: string,
-    unityPath: string,
-    projectPath: string,
-    timeout: number,
-    unityBuildTarget: string,
+    logFile: string
+    outDirectory: string
+    entityId: string
+    contentServerUrl: string
+    unityPath: string
+    projectPath: string
+    timeout: number
+    unityBuildTarget: string
   }
 ) {
   setupStartDirectories(options)
@@ -97,23 +126,36 @@ export async function runConversion(
   if (!contentServerUrl.endsWith('/')) contentServerUrl += '/'
 
   // TODO: Temporal hack, we need to standardize this
-  if (contentServerUrl !== 'https://sdk-team-cdn.decentraland.org/ipfs/' &&
-      !contentServerUrl.endsWith('contents/')) {
+  if (contentServerUrl !== 'https://sdk-team-cdn.decentraland.org/ipfs/' && !contentServerUrl.endsWith('contents/')) {
     contentServerUrl += 'contents/'
   }
 
   const childArg0 = `${options.unityPath}/Editor/Unity`
 
   const childArguments: string[] = [
-    '-projectPath', options.projectPath,
+    '-projectPath',
+    options.projectPath,
     '-batchmode',
-    '-executeMethod', 'DCL.ABConverter.SceneClient.ExportSceneToAssetBundles',
-    '-sceneCid', options.entityId,
-    '-logFile', options.logFile,
-    '-baseUrl', contentServerUrl,
-    '-output', options.outDirectory,
-    '-buildTarget', options.unityBuildTarget
+    '-executeMethod',
+    'DCL.ABConverter.SceneClient.ExportSceneToAssetBundles',
+    '-sceneCid',
+    options.entityId,
+    '-logFile',
+    options.logFile,
+    '-baseUrl',
+    contentServerUrl,
+    '-output',
+    options.outDirectory,
+    '-buildTarget',
+    options.unityBuildTarget
   ]
 
-  return await executeProgram({ logger, components, childArg0, childArguments, projectPath: options.projectPath, timeout: options.timeout })
+  return await executeProgram({
+    logger,
+    components,
+    childArg0,
+    childArguments,
+    projectPath: options.projectPath,
+    timeout: options.timeout
+  })
 }
