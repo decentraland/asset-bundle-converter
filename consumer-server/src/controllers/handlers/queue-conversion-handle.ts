@@ -2,9 +2,8 @@ import { HandlerContextWithPath } from '../../types'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 
-// handlers arguments only type what they need, to make unit testing easier
 export async function queueTaskHandler(
-  context: HandlerContextWithPath<'metrics' | 'taskQueue' | 'config', '/queue-task'>
+  context: HandlerContextWithPath<'taskQueue' | 'config', '/queue-task'>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
     components: { taskQueue, config },
