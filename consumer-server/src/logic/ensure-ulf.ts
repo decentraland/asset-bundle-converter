@@ -15,7 +15,7 @@ export function ensureUlf() {
       fs.mkdirSync(dirname(path), { recursive: true })
       try {
         fs.unlinkSync(path)
-      } catch { }
+      } catch {}
       fs.writeFileSync(path, envVarValue)
     }
   } else {

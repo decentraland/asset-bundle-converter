@@ -4,13 +4,13 @@ import type {
   IHttpServerComponent,
   IBaseComponent,
   IMetricsComponent,
-  IFetchComponent,
-} from "@well-known-components/interfaces"
-import { metricDeclarations } from "./metrics"
-import { ITaskQueue } from "./adapters/task-queue"
-import { DeploymentToSqs } from "@dcl/schemas/dist/misc/deployments-to-sqs"
-import { S3 } from "aws-sdk"
-import { IRunnerComponent } from "./adapters/runner"
+  IFetchComponent
+} from '@well-known-components/interfaces'
+import { metricDeclarations } from './metrics'
+import { ITaskQueue } from './adapters/task-queue'
+import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
+import { S3 } from 'aws-sdk'
+import { IRunnerComponent } from './adapters/runner'
 
 export type GlobalContext = {
   components: BaseComponents

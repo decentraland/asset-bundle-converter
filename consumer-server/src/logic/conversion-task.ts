@@ -14,7 +14,7 @@ type Manifest = {
 }
 
 async function getCdnBucket(components: Pick<AppComponents, 'config'>) {
-  return await components.config.getString('CDN_BUCKET') || 'CDN_BUCKET'
+  return (await components.config.getString('CDN_BUCKET')) || 'CDN_BUCKET'
 }
 
 function manifestKeyForEntity(entityId: string, target: string | undefined) {
@@ -26,12 +26,17 @@ function manifestKeyForEntity(entityId: string, target: string | undefined) {
 }
 
 // returns true if the asset was converted and uploaded with the same version of the converter
-async function shouldIgnoreConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, $AB_VERSION: string, entityId: string, target: string | undefined): Promise<boolean> {
+async function shouldIgnoreConversion(
+  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>,
+  $AB_VERSION: string,
+  entityId: string,
+  target: string | undefined
+): Promise<boolean> {
   const cdnBucket = await getCdnBucket(components)
   const manifestFile = manifestKeyForEntity(entityId, target)
 
   try {
-    const obj = await (components.cdnS3.getObject({ Bucket: cdnBucket, Key: manifestFile, }).promise())
+    const obj = await components.cdnS3.getObject({ Bucket: cdnBucket, Key: manifestFile }).promise()
     if (!obj.Body) return false
     const json: Manifest = JSON.parse(obj.Body?.toString())
 
@@ -40,13 +45,12 @@ async function shouldIgnoreConversion(components: Pick<AppComponents, 'logs' | '
 
     // ignored only when previous version is the same as current version
     if (json.version === $AB_VERSION) return true
-  } catch { }
+  } catch {}
 
   return false
 }
 
-export function getUnityBuildTarget(target: string): string | undefined
-{
+export function getUnityBuildTarget(target: string): string | undefined {
   switch (target) {
     case 'webgl':
       return 'WebGL'
@@ -59,8 +63,7 @@ export function getUnityBuildTarget(target: string): string | undefined
   }
 }
 
-function getAbVersionEnvName(buildTarget: string)
-{
+function getAbVersionEnvName(buildTarget: string) {
   switch (buildTarget) {
     case 'webgl':
       return 'AB_VERSION'
@@ -69,11 +72,15 @@ function getAbVersionEnvName(buildTarget: string)
     case 'mac':
       return 'AB_VERSION_MAC'
     default:
-      throw "Invalid buildTarget"
+      throw 'Invalid buildTarget'
   }
 }
 
-export async function executeLODConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, entityId: string, lods: string[]) { 
+export async function executeLODConversion(
+  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>,
+  entityId: string,
+  lods: string[]
+) {
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
   const $PROJECT_PATH = await components.config.requireString('PROJECT_PATH')
@@ -81,7 +88,7 @@ export async function executeLODConversion(components: Pick<AppComponents, 'logs
 
   const abVersionEnvName = getAbVersionEnvName($BUILD_TARGET)
   const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
-  
+
   const $AB_VERSION = await components.config.requireString(abVersionEnvName)
   const logger = components.logs.getLogger(`ExecuteConversion`)
 
@@ -89,9 +96,9 @@ export async function executeLODConversion(components: Pick<AppComponents, 'logs
   const logFile = `/tmp/lods_logs/export_log_${entityId}_${Date.now()}.txt`
   const s3LogKey = `logs/lods/${$AB_VERSION}/${entityId}/${new Date().toISOString()}.txt`
   const outDirectory = `/tmp/lods_contents/entity_${entityId}`
-  let defaultLoggerMetadata = { entityId, lods, version: $AB_VERSION, logFile } as any
+  const defaultLoggerMetadata = { entityId, lods, version: $AB_VERSION, logFile } as any
 
-  logger.info("Starting conversion for " + $BUILD_TARGET, defaultLoggerMetadata)
+  logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
 
   if (!unityBuildTarget) {
     logger.error('Could not find a build target', { ...defaultLoggerMetadata } as any)
@@ -114,7 +121,7 @@ export async function executeLODConversion(components: Pick<AppComponents, 'logs
 
     const generatedFiles = await promises.readdir(outDirectory)
 
-    if (generatedFiles.length == 0) {
+    if (generatedFiles.length === 0) {
       // this is an error, if succeeded, we should see at least a manifest file
       components.metrics.increment('ab_converter_empty_conversion', { ab_version: $AB_VERSION })
       logger.error('Empty conversion', { ...defaultLoggerMetadata } as any)
@@ -127,8 +134,8 @@ export async function executeLODConversion(components: Pick<AppComponents, 'logs
         {
           // the rest of the elements will be uploaded as application/wasm
           // to be compressed and cached by cloudflare
-          match: "**/*",
-          contentType: "application/wasm",
+          match: '**/*',
+          contentType: 'application/wasm',
           immutable: true,
           variants: [FileVariant.Brotli, FileVariant.Uncompressed],
           skipRepeated: true
@@ -156,7 +163,7 @@ export async function executeLODConversion(components: Pick<AppComponents, 'logs
           Bucket: $LOGS_BUCKET,
           Key: s3LogKey,
           Body: await promises.readFile(logFile),
-          ACL: 'public-read',
+          ACL: 'public-read'
         })
         .promise()
     } else {
@@ -182,10 +189,15 @@ export async function executeLODConversion(components: Pick<AppComponents, 'logs
     }
   }
 
-  logger.debug("LOD Conversion finished", defaultLoggerMetadata)
+  logger.debug('LOD Conversion finished', defaultLoggerMetadata)
 }
 
-export async function executeConversion(components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>, entityId: string, contentServerUrl: string, force: boolean | undefined) {
+export async function executeConversion(
+  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>,
+  entityId: string,
+  contentServerUrl: string,
+  force: boolean | undefined
+) {
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
   const $PROJECT_PATH = await components.config.requireString('PROJECT_PATH')
@@ -197,17 +209,17 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
 
   const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
   if (!unityBuildTarget) {
-    logger.info("Invalid build target " + $BUILD_TARGET)
-    return    
+    logger.info('Invalid build target ' + $BUILD_TARGET)
+    return
   }
 
   if (!force) {
     if (await shouldIgnoreConversion(components, entityId, $AB_VERSION, $BUILD_TARGET)) {
-      logger.info("Ignoring conversion", { entityId, contentServerUrl, $AB_VERSION })
+      logger.info('Ignoring conversion', { entityId, contentServerUrl, $AB_VERSION })
       return
     }
   } else {
-    logger.info("Forcing conversion", { entityId, contentServerUrl, $AB_VERSION })
+    logger.info('Forcing conversion', { entityId, contentServerUrl, $AB_VERSION })
   }
 
   const cdnBucket = await getCdnBucket(components)
@@ -220,7 +232,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
 
   const defaultLoggerMetadata = { entityId, contentServerUrl, version: $AB_VERSION, logFile: s3LogKey }
 
-  logger.info("Starting conversion for " + $BUILD_TARGET, defaultLoggerMetadata)
+  logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
 
   try {
     const exitCode = await runConversion(logger, components, {
@@ -231,7 +243,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
       projectPath: $PROJECT_PATH,
       unityPath: $UNITY_PATH,
       timeout: 120 * 60 * 1000, // 120min temporarily doubled
-      unityBuildTarget: unityBuildTarget,
+      unityBuildTarget: unityBuildTarget
     })
 
     components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })
@@ -246,7 +258,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
 
     logger.debug('Manifest', { ...defaultLoggerMetadata, manifest } as any)
 
-    if (manifest.files.length == 0) {
+    if (manifest.files.length === 0) {
       // this is an error, if succeeded, we should see at least a manifest file
       components.metrics.increment('ab_converter_empty_conversion', { ab_version: $AB_VERSION })
       logger.error('Empty conversion', { ...defaultLoggerMetadata, manifest } as any)
@@ -257,16 +269,16 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
       concurrency: 10,
       matches: [
         {
-          match: "**/*.manifest",
-          contentType: "text/cache-manifest",
+          match: '**/*.manifest',
+          contentType: 'text/cache-manifest',
           immutable: true,
-          variants: [FileVariant.Brotli, FileVariant.Uncompressed],
+          variants: [FileVariant.Brotli, FileVariant.Uncompressed]
         },
         {
           // the rest of the elements will be uploaded as application/wasm
           // to be compressed and cached by cloudflare
-          match: "**/*",
-          contentType: "application/wasm",
+          match: '**/*',
+          contentType: 'application/wasm',
           immutable: true,
           variants: [FileVariant.Brotli, FileVariant.Uncompressed],
           skipRepeated: true
@@ -277,18 +289,19 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
     logger.debug('Content files uploaded', defaultLoggerMetadata)
 
     // and then replace the manifest
-    await components.cdnS3.upload({
-      Bucket: cdnBucket,
-      Key: manifestFile,
-      ContentType: 'application/json',
-      Body: JSON.stringify(manifest),
-      CacheControl: 'private, max-age=0, no-cache',
-      ACL: 'public-read',
-    }).promise()
+    await components.cdnS3
+      .upload({
+        Bucket: cdnBucket,
+        Key: manifestFile,
+        ContentType: 'application/json',
+        Body: JSON.stringify(manifest),
+        CacheControl: 'private, max-age=0, no-cache',
+        ACL: 'public-read'
+      })
+      .promise()
 
-    if (exitCode !== 0 || manifest.files.length == 0) {
-      const log =
-        await promises.readFile(logFile, 'utf8')
+    if (exitCode !== 0 || manifest.files.length === 0) {
+      const log = await promises.readFile(logFile, 'utf8')
 
       logger.debug(log, defaultLoggerMetadata)
 
@@ -306,15 +319,23 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
 
     try {
       // and then replace the manifest
-      await components.cdnS3.upload({
-        Bucket: cdnBucket,
-        Key: failedManifestFile,
-        ContentType: 'application/json',
-        Body: JSON.stringify({ entityId, contentServerUrl, version: $AB_VERSION, log: s3LogKey, date: new Date().toISOString() }),
-        CacheControl: 'max-age=3600,s-maxage=3600',
-        ACL: 'public-read',
-      }).promise()
-    } catch { }
+      await components.cdnS3
+        .upload({
+          Bucket: cdnBucket,
+          Key: failedManifestFile,
+          ContentType: 'application/json',
+          Body: JSON.stringify({
+            entityId,
+            contentServerUrl,
+            version: $AB_VERSION,
+            log: s3LogKey,
+            date: new Date().toISOString()
+          }),
+          CacheControl: 'max-age=3600,s-maxage=3600',
+          ACL: 'public-read'
+        })
+        .promise()
+    } catch {}
 
     setTimeout(() => {
       // kill the process in one minute, enough time to allow prometheus to collect the metrics
@@ -332,7 +353,7 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
           Bucket: $LOGS_BUCKET,
           Key: s3LogKey,
           Body: await promises.readFile(logFile),
-          ACL: 'public-read',
+          ACL: 'public-read'
         })
         .promise()
     } else {
@@ -358,5 +379,5 @@ export async function executeConversion(components: Pick<AppComponents, 'logs' |
     }
   }
 
-  logger.debug("Conversion finished", defaultLoggerMetadata)
+  logger.debug('Conversion finished', defaultLoggerMetadata)
 }

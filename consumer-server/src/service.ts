@@ -1,14 +1,14 @@
-import { Lifecycle } from "@well-known-components/interfaces"
-import { setupRouter } from "./controllers/routes"
-import { executeConversion, executeLODConversion } from "./logic/conversion-task"
+import { Lifecycle } from '@well-known-components/interfaces'
+import { setupRouter } from './controllers/routes'
+import { executeConversion, executeLODConversion } from './logic/conversion-task'
 import checkDiskSpace from 'check-disk-space'
-import { AppComponents, GlobalContext, TestComponents } from "./types"
+import { AppComponents, GlobalContext, TestComponents } from './types'
 
 // this function wires the business logic (adapters & controllers) with the components (ports)
 export async function main(program: Lifecycle.EntryPointParameters<AppComponents | TestComponents>) {
   const { components, startComponents } = program
   const globalContext: GlobalContext = {
-    components,
+    components
   }
 
   // wire the HTTP router (make it automatic? TBD)
@@ -33,7 +33,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
         return
       }
 
-      await components.taskQueue.consumeAndProcessJob(async (job, message) => {
+      await components.taskQueue.consumeAndProcessJob(async (job, _message) => {
         try {
           components.metrics.increment('ab_converter_running_conversion')
           if (job.lods) {
