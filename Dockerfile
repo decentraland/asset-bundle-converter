@@ -40,7 +40,7 @@ RUN    apt-get update -y \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
 ENV NVM_DIR=/root/.nvm
-ENV NODE_VERSION=v16.18.0
+ENV NODE_VERSION=v18
 
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.2/install.sh | bash
 RUN /bin/bash -c "source $NVM_DIR/nvm.sh && nvm install $NODE_VERSION && nvm use --delete-prefix $NODE_VERSION"
