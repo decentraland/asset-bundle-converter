@@ -25,6 +25,7 @@ jobs:
 
       - name: lint
         run: yarn lint:check
+        working-directory: consumer-server
 
       - name: build
         run: yarn build
