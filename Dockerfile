@@ -15,8 +15,8 @@ RUN chmod +x /tini
 
 # install dependencies
 COPY consumer-server/package.json /consumer-server/package.json
-COPY consumer-server/package-lock.json /consumer-server/package-lock.json
-RUN npm ci
+COPY consumer-server/yarn.lock /consumer-server/yarn.lock
+RUN yarn --frozen-lockfile
 
 # Make commit hash available to application
 ARG COMMIT_HASH=Unknown
@@ -24,11 +24,11 @@ RUN echo "COMMIT_HASH=$COMMIT_HASH" >> .env
 
 # build the consumer-server
 COPY consumer-server /consumer-server
-RUN npm run build
-RUN npm run test
+RUN yarn build
+RUN yarn test
 
 # remove devDependencies, keep only used dependencies
-RUN npm ci --only=production
+RUN yarn --prod --frozen-lockfile
 
 ########################## END OF BUILD STAGE ##########################
 

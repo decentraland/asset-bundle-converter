@@ -1,4 +1,4 @@
-name: node
+name: Consumer Server
 
 on:
   push:
@@ -7,22 +7,22 @@ jobs:
   install:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@master
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
           lfs: true
       - name: Use Node.js 18.x
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 18.x
-          cache: npm
-          cache-dependency-path: consumer-server/package-lock.json
+          cache: yarn
+          cache-dependency-path: consumer-server/yarn.lock
       - name: install
-        run: npm ci
+        run: yarn --frozen-lockfile
         working-directory: consumer-server
       - name: build
-        run: npm run build
+        run: yarn build
         working-directory: consumer-server
       - name: test
-        run: npm run test
+        run: yarn test
         working-directory: consumer-server
