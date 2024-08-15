@@ -25,6 +25,9 @@ jobs:
           submodules: recursive
           lfs: true
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Build Image
         id: build-image
         uses: redhat-actions/buildah-build@v2
