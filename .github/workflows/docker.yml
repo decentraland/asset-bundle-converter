@@ -20,6 +20,14 @@ jobs:
 
     runs-on: ubuntu-latest
     steps:
+      - name: Remove unused Haskell GHC CodeQL
+        run: |
+          sudo apt-get remove -y ghc haskell-platform
+          sudo apt-get autoremove -y
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/local/bin/ghcup
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+
       - uses: actions/checkout@v4
         with:
           submodules: recursive
@@ -52,7 +60,6 @@ jobs:
             COMMIT_HASH=${{ github.sha }}
             UNITY_DOCKER_IMAGE=${{ matrix.unity_docker_image }}
             PLATFORM_TARGET=${{ matrix.platform_target }}
-
 
       - name: Create $(pwd)/tmp/Unity/Unity_lic.ulf
         run: mkdir -p $(pwd)/tmp/Unity && echo "$UNITY_2021_ULF" > $(pwd)/tmp/Unity/Unity_lic.ulf
