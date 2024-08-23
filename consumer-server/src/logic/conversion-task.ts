@@ -4,8 +4,8 @@ import * as promises from 'fs/promises'
 import { rimraf } from 'rimraf'
 import { AppComponents } from '../types'
 import { runConversion, runLodsConversion } from './run-conversion'
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from 'fs'
+import * as path from 'path'
 
 type Manifest = {
   version: string
@@ -382,7 +382,7 @@ export async function executeConversion(
   }
 
   logger.debug('Conversion finished', defaultLoggerMetadata)
-  logger.debug('Unity project size', getFolderSize($PROJECT_PATH))
+  printFolderSizes($PROJECT_PATH)
 }
 
 /**
@@ -391,21 +391,21 @@ export async function executeConversion(
  * @returns The size of the directory in bytes.
  */
 function getFolderSize(dirPath: string): number {
-  let totalSize = 0;
+  let totalSize = 0
 
-  const files = fs.readdirSync(dirPath);
+  const files = fs.readdirSync(dirPath)
   for (const file of files) {
-    const filePath = path.join(dirPath, file);
-    const stats = fs.statSync(filePath);
+    const filePath = path.join(dirPath, file)
+    const stats = fs.statSync(filePath)
 
     if (stats.isDirectory()) {
-      totalSize += getFolderSize(filePath); // Recursively add the size of subdirectories
+      totalSize += getFolderSize(filePath) // Recursively add the size of subdirectories
     } else {
-      totalSize += stats.size;
+      totalSize += stats.size
     }
   }
 
-  return totalSize;
+  return totalSize
 }
 
 /**
@@ -417,19 +417,14 @@ function printFolderSizes(dirPath: string): void {
 
   if (stats.isDirectory()) {
     const folderSize = getFolderSize(dirPath);
-    logger.debug(`Folder: ${dirPath} - Size: ${(folderSize / (1024 * 1024)).toFixed(2)} MB`);
+    logger.debug(`Unity Folder: ${dirPath} - Size: ${(folderSize / (1024 * 1024)).toFixed(2)} MB`)
 
-    const files = fs.readdirSync(dirPath);
+    const files = fs.readdirSync(dirPath)
     for (const file of files) {
-      const filePath = path.join(dirPath, file);
+      const filePath = path.join(dirPath, file)
       if (fs.statSync(filePath).isDirectory()) {
         printFolderSizes(filePath); // Recursively print sizes of subdirectories
       }
     }
   }
 }
-
-// Replace with your directory path
-const directoryPath = '/path/to/your/my-directory';
-
-printFolderSizes(directoryPath);
