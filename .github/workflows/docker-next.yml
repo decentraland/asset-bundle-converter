@@ -20,7 +20,7 @@ jobs:
             service-name: asset-bundle-converter-mac
             platform-target: mac
 
-    uses: ./docker-common.yml
+    uses: ./.github/workflows/docker-common.yml
     with:
       service-name: ${{ matrix.service-name }}
       unity-docker-image: ${{ matrix.unity-docker-image }}
