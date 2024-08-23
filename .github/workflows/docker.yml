@@ -51,7 +51,6 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: "${{ github.ref == 'refs/heads/main' }}"
           tags: quay.io/decentraland/${{ matrix.service_name }}:next,quay.io/decentraland/${{ matrix.service_name }}:${{ github.sha }}
           load: true
           build-args: |
@@ -85,14 +84,18 @@ jobs:
                 --outDir /tmp-ab \
                 --logFile /tmp-ab/log.txt
 
-      - name: Build and push
+      - name: Push image
         uses: docker/build-push-action@v6
 #        if: ${{ github.ref == 'refs/heads/main' }}
         with:
-          push: "true"
+          context: .
           tags: quay.io/decentraland/${{ matrix.service_name }}:${{ github.sha }}
-#          tags: quay.io/decentraland/${{ matrix.service_name }}:next,quay.io/decentraland/${{ matrix.service_name }}:${{ github.sha }}
-
+#          push: "${{ github.ref == 'refs/heads/main' }}"
+          push: "true"
+          build-args: |
+            COMMIT_HASH=${{ github.sha }}
+            UNITY_DOCKER_IMAGE=${{ matrix.unity_docker_image }}
+            PLATFORM_TARGET=${{ matrix.platform_target }}
 
       - name: Print image url
         run: echo "Image pushed to ${{ steps.push-to-quay.outputs.registry-paths }}"
