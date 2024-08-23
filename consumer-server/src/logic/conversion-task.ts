@@ -417,7 +417,7 @@ function printFolderSizes(dirPath: string): void {
 
   if (stats.isDirectory()) {
     const folderSize = getFolderSize(dirPath);
-    console.log(`Folder: ${dirPath} - Size: ${(folderSize / (1024 * 1024)).toFixed(2)} MB`);
+    logger.debug(`Folder: ${dirPath} - Size: ${(folderSize / (1024 * 1024)).toFixed(2)} MB`);
 
     const files = fs.readdirSync(dirPath);
     for (const file of files) {
