@@ -381,7 +381,7 @@ export async function executeConversion(
     }
     //delete _Download folder
     try {
-      await rimraf(`$PROJECT_PATH/Assets/_Download`, { maxRetries: 3 })
+      await rimraf(`$PROJECT_PATH/Assets/_Downloaded`, { maxRetries: 3 })
     } catch (err: any) {
       logger.error(err, defaultLoggerMetadata)
     }
