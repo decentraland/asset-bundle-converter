@@ -381,14 +381,14 @@ export async function executeConversion(
     }
     //delete _Download folder
     try {
-        await rimraf(`$PROJECT_PATH/Assets/_Download`, { maxRetries: 3 })
+      await rimraf(`$PROJECT_PATH/Assets/_Download`, { maxRetries: 3 })
     } catch (err: any) {
       logger.error(err, defaultLoggerMetadata)
     }
   }
 
   logger.debug('Conversion finished', defaultLoggerMetadata)
-  printFolderSizes($PROJECT_PATH, logger)
+  printFolderSizes($PROJECT_PATH)
 }
 
 /**
@@ -418,18 +418,18 @@ function getFolderSize(dirPath: string): number {
  * Recursively iterates through each folder and subfolder, printing its size.
  * @param dirPath - The path to the directory.
  */
-function printFolderSizes(dirPath: string, logger: any): void {
-  const stats = fs.statSync(dirPath);
+function printFolderSizes(dirPath: string): void {
+  const stats = fs.statSync(dirPath)
 
   if (stats.isDirectory()) {
-    const folderSize = getFolderSize(dirPath);
+    const folderSize = getFolderSize(dirPath)
     logger.debug(`Unity Folder: ${dirPath} - Size: ${(folderSize / (1024 * 1024)).toFixed(2)} MB`)
 
     const files = fs.readdirSync(dirPath)
     for (const file of files) {
       const filePath = path.join(dirPath, file)
       if (fs.statSync(filePath).isDirectory()) {
-        printFolderSizes(filePath, logger); // Recursively print sizes of subdirectories
+        printFolderSizes(filePath) // Recursively print sizes of subdirectories
       }
     }
   }
