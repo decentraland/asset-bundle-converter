@@ -60,14 +60,14 @@ jobs:
           docker run \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
             -v $(pwd):/app \
-            quay.io/decentraland/${{ matrix.service_name }}:next \
+            ${{ matrix.service_name }}@${{ steps.docker_build.outputs.digest }} \
               sh -c "cd /app ; ls -la ; chmod +x ci-editmode-test.sh ; ./ci-editmode-test.sh"
 
       - name: Run test conversion of urn:decentraland:off-chain:base-avatars:brown_pants
         run: |
           docker run \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
-            quay.io/decentraland/${{ matrix.service_name }}:next \
+            ${{ matrix.service_name }}@${{ steps.docker_build.outputs.digest }} \
               node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js \
                 --baseUrl https://peer.decentraland.org/content \
                 --pointer urn:decentraland:off-chain:base-avatars:brown_pants \
