@@ -8,11 +8,6 @@ export const metricDeclarations = {
   ...getDefaultHttpMetrics(),
   ...logsMetricsDeclarations,
   ...queueMetrics,
-  test_ping_counter: {
-    help: 'Count calls to ping',
-    type: IMetricsComponent.CounterType,
-    labelNames: ['pathname']
-  },
   ab_converter_exit_codes: {
     help: 'Counter of exit codes of asset bundle conversions',
     type: IMetricsComponent.CounterType,
