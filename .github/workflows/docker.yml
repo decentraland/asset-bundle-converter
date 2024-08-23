@@ -87,9 +87,12 @@ jobs:
 
       - name: Build and push
         uses: docker/build-push-action@v6
+#        if: ${{ github.ref == 'refs/heads/main' }}
         with:
           push: "true"
-          tags: ${{ env.LATEST_TAG }}
+          tags: quay.io/decentraland/${{ matrix.service_name }}:${{ github.sha }}
+#          tags: quay.io/decentraland/${{ matrix.service_name }}:next,quay.io/decentraland/${{ matrix.service_name }}:${{ github.sha }}
+
 
       - name: Print image url
         run: echo "Image pushed to ${{ steps.push-to-quay.outputs.registry-paths }}"
