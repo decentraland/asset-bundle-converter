@@ -4,6 +4,8 @@ import * as promises from 'fs/promises'
 import { rimraf } from 'rimraf'
 import { AppComponents } from '../types'
 import { runConversion, runLodsConversion } from './run-conversion'
+import * as fs from 'fs';
+import * as path from 'path';
 
 type Manifest = {
   version: string
@@ -380,4 +382,54 @@ export async function executeConversion(
   }
 
   logger.debug('Conversion finished', defaultLoggerMetadata)
+  logger.debug('Unity project size', getFolderSize($PROJECT_PATH))
 }
+
+/**
+ * Recursively calculates the size of a directory in bytes.
+ * @param dirPath - The path to the directory.
+ * @returns The size of the directory in bytes.
+ */
+function getFolderSize(dirPath: string): number {
+  let totalSize = 0;
+
+  const files = fs.readdirSync(dirPath);
+  for (const file of files) {
+    const filePath = path.join(dirPath, file);
+    const stats = fs.statSync(filePath);
+
+    if (stats.isDirectory()) {
+      totalSize += getFolderSize(filePath); // Recursively add the size of subdirectories
+    } else {
+      totalSize += stats.size;
+    }
+  }
+
+  return totalSize;
+}
+
+/**
+ * Recursively iterates through each folder and subfolder, printing its size.
+ * @param dirPath - The path to the directory.
+ */
+function printFolderSizes(dirPath: string): void {
+  const stats = fs.statSync(dirPath);
+
+  if (stats.isDirectory()) {
+    const folderSize = getFolderSize(dirPath);
+    console.log(`Folder: ${dirPath} - Size: ${(folderSize / (1024 * 1024)).toFixed(2)} MB`);
+
+    const files = fs.readdirSync(dirPath);
+    for (const file of files) {
+      const filePath = path.join(dirPath, file);
+      if (fs.statSync(filePath).isDirectory()) {
+        printFolderSizes(filePath); // Recursively print sizes of subdirectories
+      }
+    }
+  }
+}
+
+// Replace with your directory path
+const directoryPath = '/path/to/your/my-directory';
+
+printFolderSizes(directoryPath);
