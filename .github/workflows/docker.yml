@@ -20,13 +20,17 @@ jobs:
 
     runs-on: ubuntu-latest
     steps:
-      - name: Remove unused Haskell GHC CodeQL
+      - name: Remove unused Haskell GHC CodeQL Julia Chromium Swift Chrome Edge
         run: |
-          sudo apt-get remove -y ghc haskell-platform
+          sudo apt-get remove -y ghc haskell-platform julia
           sudo apt-get autoremove -y
           sudo rm -rf /usr/local/.ghcup
           sudo rm -rf /usr/local/bin/ghcup
           sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/julia1.10.4
+          sudo rm -rf /usr/local/share/chromium
+          sudo rm -rf /usr/share/swift
+          sudo apt-get purge google-chrome-stable microsoft-edge-stable -y && sudo apt-get autoremove -y
 
       - uses: actions/checkout@v4
         with:
@@ -41,7 +45,7 @@ jobs:
         uses: redhat-actions/buildah-build@v2
         with:
           image: ${{ matrix.service_name }}
-          layers: true
+          # layers: true
           tags: next ${{ github.sha }} ${{ inputs.docker-tag }}
           dockerfiles: |
             ./Dockerfile
@@ -50,13 +54,17 @@ jobs:
             UNITY_DOCKER_IMAGE=${{ matrix.unity_docker_image }}
             PLATFORM_TARGET=${{ matrix.platform_target }}
 
-      - name: Debugging
+      - name: Test preparations and clean-up
         run: |
-          echo "Image: ${{ matrix.service_name }}"
-          echo "Tags: next ${{ github.sha }} ${{ inputs.docker-tag }}"
-          echo "Build Args: COMMIT_HASH=${{ github.sha }} UNITY_DOCKER_IMAGE=${{ matrix.unity_docker_image }} PLATFORM_TARGET=${{ matrix.platform_target }}"
-          docker images
-          docker inspect ${{ matrix.service_name }}:next
+          docker system df
+          for img in $(buildah images -q --filter=reference=docker.io/unityci/editor) $(buildah images -q --filter=reference=docker.io/library/node); do
+            buildah rmi $img
+          done
+          docker image prune -af
+          buildah push localhost/${{ matrix.service_name }}:${{ github.sha }} docker-archive:temp.tar
+          gzip temp.tar
+          docker load -i temp.tar.gz
+          rm -f temp.tar.gz
 
       - name: Create $(pwd)/tmp/Unity/Unity_lic.ulf
         run: mkdir -p $(pwd)/tmp/Unity && echo "$UNITY_2021_ULF" > $(pwd)/tmp/Unity/Unity_lic.ulf
@@ -65,17 +73,17 @@ jobs:
 
       - name: Run tests
         run: |
-          docker run \
+          docker run --rm \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
             -v $(pwd):/app \
-            ${{ matrix.service_name }}:next \
+            localhost/${{ matrix.service_name }}:${{ github.sha }} \
               sh -c "cd /app ; ls -la ; chmod +x ci-editmode-test.sh ; ./ci-editmode-test.sh"
 
       - name: Run test conversion of urn:decentraland:off-chain:base-avatars:brown_pants
         run: |
-          docker run \
+          docker run --rm \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
-            ${{ matrix.service_name }}:next \
+            localhost/${{ matrix.service_name }}:${{ github.sha }} \
               node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js \
                 --baseUrl https://peer.decentraland.org/content \
                 --pointer urn:decentraland:off-chain:base-avatars:brown_pants \
@@ -85,17 +93,18 @@ jobs:
       - name: Push To quay.io
         id: push-to-quay
         uses: redhat-actions/push-to-registry@v2
-        if: ${{ github.ref == 'refs/heads/main' }}
+        # if: ${{ github.ref == 'refs/heads/main' }}
         with:
           image: ${{ steps.build-image.outputs.image }}
-          tags: ${{ steps.build-image.outputs.tags }}
+          # tags: ${{ steps.build-image.outputs.tags }}
+          tags: ${{ github.sha }}
           registry: quay.io/decentraland
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_TOKEN }}
 
       - name: Print image url
         run: echo "Image pushed to ${{ steps.push-to-quay.outputs.registry-paths }}"
-        if: ${{ github.ref == 'refs/heads/main' }}
+        # if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Trigger deployment
         id: deploy
