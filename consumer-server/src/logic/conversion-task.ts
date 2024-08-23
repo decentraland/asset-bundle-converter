@@ -379,6 +379,12 @@ export async function executeConversion(
     } catch (err: any) {
       logger.error(err, defaultLoggerMetadata)
     }
+    //delete _Download folder
+    try {
+        await rimraf(`$PROJECT_PATH/Assets/_Download`, { maxRetries: 3 })
+    } catch (err: any) {
+      logger.error(err, defaultLoggerMetadata)
+    }
   }
 
   logger.debug('Conversion finished', defaultLoggerMetadata)
