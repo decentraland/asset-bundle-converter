@@ -1,0 +1,138 @@
+name: Docker
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        required: true
+        type: string
+      unity-docker-image:
+        required: true
+        type: string
+      platform-target:
+        required: true
+        type: string
+      image-name:
+        required: false
+        type: string
+      deployment-environment:
+        required: false
+        type: string
+      docker-tag:
+        required: false
+        type: string
+        default: next
+      build-args:
+        required: false
+        type: string
+      layers:
+        required: false
+        type: boolean
+        default: true
+      dockerfile-url:
+        required: false
+        type: string
+    secrets:
+      QUAY_USERNAME:
+        required: true
+      QUAY_TOKEN:
+        required: true
+    outputs:
+      registry-path:
+        description: "Registry path"
+        value: ${{ jobs.quay-build-push.registry-path }}
+      registry-paths:
+        description: "Registry paths (JSON)"
+        value: ${{ jobs.quay-build-push.registry-paths }}
+
+jobs:
+  quay-build-push:
+    runs-on: ubuntu-latest
+
+    outputs:
+      registry-path: ${{ steps.push-to-quay.outputs.registry-path }}
+      registry-paths: ${{ steps.push-to-quay.outputs.registry-paths }}
+
+    steps:
+      - name: Remove unused Haskell GHC CodeQL
+        run: |
+          sudo apt-get remove -y ghc haskell-platform
+          sudo apt-get autoremove -y
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/local/bin/ghcup
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build Image
+        id: build-image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: ${{ inputs.service-name }}
+          layers: ${{ inputs.layers }}
+          tags: ${{ github.sha }} ${{ inputs.docker-tag }}
+          dockerfiles: |
+            ./Dockerfile
+          build-args: |
+            ${{ inputs.build-args }}
+            COMMIT_HASH=${{ github.sha }}
+            UNITY_DOCKER_IMAGE=${{ inputs.unity-docker-image }}
+            PLATFORM_TARGET=${{ inputs.platform-target }}
+
+      - name: Create $(pwd)/tmp/Unity/Unity_lic.ulf
+        run: mkdir -p $(pwd)/tmp/Unity && echo "$UNITY_2021_ULF" > $(pwd)/tmp/Unity/Unity_lic.ulf
+        env:
+          UNITY_2021_ULF: ${{ secrets.UNITY_2021_ULF }}
+
+      - name: Run tests
+        run: |
+          docker run --rm \
+            -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
+            -v $(pwd):/app \
+            localhost/${{ inputs.service-name }}:${{ github.sha }} \
+              sh -c "cd /app ; ls -la ; chmod +x ci-editmode-test.sh ; ./ci-editmode-test.sh"
+
+#      - name: Run test conversion of urn:decentraland:off-chain:base-avatars:brown_pants
+#        run: |
+#          docker run --rm \
+#            -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
+#            localhost/${{ inputs.service-name }}:${{ github.sha }} \
+#              node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js \
+#                --baseUrl https://peer.decentraland.org/content \
+#                --pointer urn:decentraland:off-chain:base-avatars:brown_pants \
+#                --outDir /tmp-ab \
+#                --logFile /tmp-ab/log.txt
+
+      - name: Push To quay.io
+        id: push-to-quay
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ${{ steps.build-image.outputs.image }}
+          tags: ${{ steps.build-image.outputs.tags }}
+          registry: quay.io/decentraland
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_TOKEN }}
+
+      - name: Print image url
+        run: echo "Image pushed to ${{ steps.push-to-quay.outputs.registry-paths }}"
+
+  deployment:
+    if: ${{ inputs.deployment-environment }}
+    needs: [quay-build-push]
+    name: "Deploy to: ${{ inputs.deployment-environment }}"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger deployment
+        id: deploy
+        uses: decentraland/dcl-deploy-action@main
+        with:
+          dockerImage: "${{ needs.quay-build-push.outputs.registry-path }}"
+          serviceName: ${{ inputs.service-name }}
+          env: ${{ inputs.deployment-environment }}
+          token: ${{ secrets.GITHUB_TOKEN }}
