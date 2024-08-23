@@ -1,0 +1,29 @@
+name: Docker
+
+on:
+  release:
+    types:
+      - "created"
+
+jobs:
+  cd:
+    strategy:
+      matrix:
+        include:
+          - unity-docker-image: unityci/editor:2022.3.12f1-webgl-3.0.0
+            service-name: asset-bundle-converter
+            platform-target: webgl
+          - unity-docker-image: unityci/editor:2022.3.12f1-windows-mono-3.0.0
+            service-name: asset-bundle-converter-windows
+            platform-target: windows
+          - unity-docker-image: unityci/editor:2022.3.12f1-mac-mono-3.0.0
+            service-name: asset-bundle-converter-mac
+            platform-target: mac
+
+    uses: ./docker-common.yml
+    with:
+      service-name: ${{ matrix.service-name }}
+      unity-docker-image: ${{ matrix.unity-docker-image }}
+      platform-target: ${{ matrix.platform-target }}
+      deployment-environment: prd
+    secrets: inherit
