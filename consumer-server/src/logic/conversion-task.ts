@@ -388,7 +388,7 @@ export async function executeConversion(
   }
 
   logger.debug('Conversion finished', defaultLoggerMetadata)
-  printFolderSizes($PROJECT_PATH)
+  printFolderSizes($PROJECT_PATH, logger)
 }
 
 /**
@@ -418,7 +418,7 @@ function getFolderSize(dirPath: string): number {
  * Recursively iterates through each folder and subfolder, printing its size.
  * @param dirPath - The path to the directory.
  */
-function printFolderSizes(dirPath: string): void {
+function printFolderSizes(dirPath: string, logger: any): void {
   const stats = fs.statSync(dirPath)
 
   if (stats.isDirectory()) {
@@ -429,7 +429,7 @@ function printFolderSizes(dirPath: string): void {
     for (const file of files) {
       const filePath = path.join(dirPath, file)
       if (fs.statSync(filePath).isDirectory()) {
-        printFolderSizes(filePath) // Recursively print sizes of subdirectories
+        printFolderSizes(filePath, logger) // Recursively print sizes of subdirectories
       }
     }
   }
