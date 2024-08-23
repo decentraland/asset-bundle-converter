@@ -50,6 +50,14 @@ jobs:
             UNITY_DOCKER_IMAGE=${{ matrix.unity_docker_image }}
             PLATFORM_TARGET=${{ matrix.platform_target }}
 
+      - name: Debugging
+        run: |
+          echo "Image: ${{ matrix.service_name }}"
+          echo "Tags: next ${{ github.sha }} ${{ inputs.docker-tag }}"
+          echo "Build Args: COMMIT_HASH=${{ github.sha }} UNITY_DOCKER_IMAGE=${{ matrix.unity_docker_image }} PLATFORM_TARGET=${{ matrix.platform_target }}"
+          docker images
+          docker inspect ${{ matrix.service_name }}:next
+
       - name: Create $(pwd)/tmp/Unity/Unity_lic.ulf
         run: mkdir -p $(pwd)/tmp/Unity && echo "$UNITY_2021_ULF" > $(pwd)/tmp/Unity/Unity_lic.ulf
         env:
