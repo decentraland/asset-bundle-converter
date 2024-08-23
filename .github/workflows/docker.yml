@@ -69,7 +69,7 @@ jobs:
           docker run \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
             -v $(pwd):/app \
-            --rm
+            --rm \
             quay.io/decentraland/${{ matrix.service_name }}:next \
               sh -c "cd /app ; ls -la ; chmod +x ci-editmode-test.sh ; ./ci-editmode-test.sh"
 
@@ -77,7 +77,7 @@ jobs:
         run: |
           docker run \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
-            --rm
+            --rm \
             quay.io/decentraland/${{ matrix.service_name }}:next \
               node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js \
                 --baseUrl https://peer.decentraland.org/content \
