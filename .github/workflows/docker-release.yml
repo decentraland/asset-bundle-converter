@@ -26,5 +26,6 @@ jobs:
       unity-docker-image: ${{ matrix.unity-docker-image }}
       platform-target: ${{ matrix.platform-target }}
       deployment-environment: prd
+      docker-tag: latest
       upload-image: true
     secrets: inherit

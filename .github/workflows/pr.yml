@@ -24,4 +24,5 @@ jobs:
       unity-docker-image: ${{ matrix.unity-docker-image }}
       platform-target: ${{ matrix.platform-target }}
       upload-image: false
+      docker-tag: pr-${{ github.event.pull_request.head.ref }}
     secrets: inherit
