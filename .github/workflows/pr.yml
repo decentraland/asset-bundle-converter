@@ -1,12 +1,10 @@
-name: CI/CD on main branch
+name: CI/CD on PR
 
 on:
-  push:
-    branches:
-      - "main"
+  pull_request:
 
 jobs:
-  cd:
+  pr:
     strategy:
       matrix:
         include:
@@ -25,5 +23,4 @@ jobs:
       service-name: ${{ matrix.service-name }}
       unity-docker-image: ${{ matrix.unity-docker-image }}
       platform-target: ${{ matrix.platform-target }}
-      deployment-environment: dev
     secrets: inherit
