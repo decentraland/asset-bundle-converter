@@ -23,4 +23,5 @@ jobs:
       service-name: ${{ matrix.service-name }}
       unity-docker-image: ${{ matrix.unity-docker-image }}
       platform-target: ${{ matrix.platform-target }}
+      upload-image: false
     secrets: inherit

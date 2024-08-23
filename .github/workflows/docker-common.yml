@@ -32,6 +32,10 @@ on:
       dockerfile-url:
         required: false
         type: string
+      upload-image:
+        required: false
+        type: string
+        default: false
     secrets:
       QUAY_USERNAME:
         required: true
@@ -112,6 +116,7 @@ jobs:
       - name: Push To quay.io
         id: push-to-quay
         uses: redhat-actions/push-to-registry@v2
+        if: ${{ inputs.upload-image }}
         with:
           image: ${{ steps.build-image.outputs.image }}
           tags: ${{ steps.build-image.outputs.tags }}
@@ -123,7 +128,7 @@ jobs:
         run: echo "Image pushed to ${{ steps.push-to-quay.outputs.registry-paths }}"
 
   deployment:
-    if: ${{ inputs.deployment-environment }}
+    if: ${{ inputs.upload-image && inputs.deployment-environment }}
     needs: [quay-build-push]
     name: "Deploy to: ${{ inputs.deployment-environment }}"
     runs-on: ubuntu-latest
