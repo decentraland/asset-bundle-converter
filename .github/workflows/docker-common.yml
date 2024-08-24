@@ -40,21 +40,10 @@ on:
         required: true
       QUAY_TOKEN:
         required: true
-    outputs:
-      registry-path:
-        description: "Registry path"
-        value: ${{ jobs.quay-build-push.registry-path }}
-      registry-paths:
-        description: "Registry paths (JSON)"
-        value: ${{ jobs.quay-build-push.registry-paths }}
 
 jobs:
   quay-build-push:
     runs-on: ubuntu-latest
-
-    outputs:
-      registry-path: ${{ steps.push-to-quay.outputs.registry-path }}
-      registry-paths: ${{ steps.push-to-quay.outputs.registry-paths }}
 
     steps:
       - name: Remove unused Haskell GHC CodeQL
@@ -152,7 +141,7 @@ jobs:
         id: deploy
         uses: decentraland/dcl-deploy-action@main
         with:
-          dockerImage: "${{ needs.quay-build-push.outputs.registry-path }}"
+          dockerImage: "quay.io/decentraland/${{ inputs.service-name }}:${{ inputs.docker-tag }}"
           serviceName: ${{ inputs.service-name }}
           env: ${{ inputs.deployment-environment }}
           token: ${{ secrets.GITHUB_TOKEN }}
