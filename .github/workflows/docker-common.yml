@@ -96,6 +96,7 @@ jobs:
           push: "false"
           build-args: |
             COMMIT_HASH=${{ github.event.pull_request.head.sha || github.sha }}
+            VERSION_TAG=${{ github.event.pull_request.head.ref || github.event.release.tag_name || inputs.docker-tag ||  'unknown' }}
             UNITY_DOCKER_IMAGE=${{ inputs.unity-docker-image }}
             PLATFORM_TARGET=${{ inputs.platform-target }}
 
