@@ -1,0 +1,28 @@
+name: CI/CD on PR
+
+on:
+  pull_request:
+
+jobs:
+  pr:
+    strategy:
+      matrix:
+        include:
+          - unity-docker-image: unityci/editor:2022.3.12f1-webgl-3.0.0
+            service-name: asset-bundle-converter
+            platform-target: webgl
+          - unity-docker-image: unityci/editor:2022.3.12f1-windows-mono-3.0.0
+            service-name: asset-bundle-converter-windows
+            platform-target: windows
+          - unity-docker-image: unityci/editor:2022.3.12f1-mac-mono-3.0.0
+            service-name: asset-bundle-converter-mac
+            platform-target: mac
+
+    uses: ./.github/workflows/docker-common.yml
+    with:
+      service-name: ${{ matrix.service-name }}
+      unity-docker-image: ${{ matrix.unity-docker-image }}
+      platform-target: ${{ matrix.platform-target }}
+      upload-image: false
+      docker-tag: pr-${{ github.event.pull_request.head.ref }}
+    secrets: inherit
