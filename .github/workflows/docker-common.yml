@@ -33,7 +33,7 @@ on:
         type: string
       upload-image:
         required: false
-        type: string
+        type: boolean
         default: false
     secrets:
       QUAY_USERNAME:
