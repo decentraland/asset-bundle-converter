@@ -19,9 +19,8 @@ on:
         required: false
         type: string
       docker-tag:
-        required: false
+        required: true
         type: string
-        default: next
       build-args:
         required: false
         type: string
@@ -105,14 +104,6 @@ jobs:
         env:
           UNITY_2021_ULF: ${{ secrets.UNITY_2021_ULF }}
 
-      - name: Debug
-        run: |
-          docker run --rm \
-            -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
-            -v $(pwd):/app \
-            quay.io/decentraland/${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
-              sh -c "cat /consumer-server/.env"
-
       - name: Run tests
         run: |
           docker run --rm \
@@ -134,7 +125,7 @@ jobs:
 
       - name: Push To quay.io
         uses: docker/build-push-action@v6
-        if: ${{ inputs.docker-tag == 'next' || inputs.docker-tag == 'latest' }}
+        if: ${{ inputs.upload-image }}
         with:
           context: .
           tags: ${{ steps.build-image.outputs.tags }}
@@ -146,7 +137,7 @@ jobs:
             PLATFORM_TARGET=${{ inputs.platform-target }}
 
       - name: Print image url
-        if: ${{ inputs.docker-tag == 'next' || inputs.docker-tag == 'latest' }}
+        if: ${{ inputs.upload-image }}
         run: |
           echo "Image pushed to quay.io/decentraland/${{ inputs.service-name }}:${{ inputs.docker-tag }}"
           echo "Other tags for the image ${{ steps.build-image.outputs.tags }}"
