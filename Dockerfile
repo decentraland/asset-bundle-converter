@@ -36,9 +36,9 @@ RUN yarn --prod --frozen-lockfile
 
 FROM $UNITY_DOCKER_IMAGE
 
-RUN    apt-get update -y \
-    && apt-get -y install \
-         xvfb \
+RUN apt-get update -y && \
+    apt-get upgrade -y && \
+    apt-get -y install xvfb \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
 ENV NVM_DIR=/root/.nvm
