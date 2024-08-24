@@ -19,8 +19,10 @@ COPY consumer-server/yarn.lock /consumer-server/yarn.lock
 RUN yarn --frozen-lockfile
 
 # Make commit hash available to application
-ARG COMMIT_HASH=Unknown
-RUN echo "COMMIT_HASH=$COMMIT_HASH" >> .env
+ARG COMMIT_HASH="Unknown"
+RUN echo "COMMIT_HASH=$COMMIT_HASH" >> /consumer-server/.env
+ARG VERSION_TAG="No version"
+RUN echo "VERSION_TAG=$VERSION_TAG" >> /consumer-server/.env
 
 # build the consumer-server
 COPY consumer-server /consumer-server
@@ -34,9 +36,9 @@ RUN yarn --prod --frozen-lockfile
 
 FROM $UNITY_DOCKER_IMAGE
 
-RUN    apt-get update -y \
-    && apt-get -y install \
-         xvfb \
+RUN apt-get update -y && \
+    apt-get upgrade -y && \
+    apt-get -y install xvfb \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
 ENV NVM_DIR=/root/.nvm

@@ -1,7 +1,7 @@
 name: Docker
 
 on:
-  push:
+  workflow_call:
 
 jobs:
   main:
@@ -74,27 +74,3 @@ jobs:
                 --outDir /tmp-ab \
                 --logFile /tmp-ab/log.txt
 
-      - name: Push To quay.io
-        id: push-to-quay
-        uses: redhat-actions/push-to-registry@v2
-        if: ${{ github.ref == 'refs/heads/main' }}
-        with:
-          image: ${{ steps.build-image.outputs.image }}
-          tags: ${{ steps.build-image.outputs.tags }}
-          registry: quay.io/decentraland
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_TOKEN }}
-
-      - name: Print image url
-        run: echo "Image pushed to ${{ steps.push-to-quay.outputs.registry-paths }}"
-        if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: Trigger deployment
-        id: deploy
-        uses: decentraland/dcl-deploy-action@main
-        if: ${{ github.ref == 'refs/heads/main' }}
-        with:
-          dockerImage: quay.io/decentraland/${{ matrix.service_name }}:${{ github.sha }}
-          serviceName: ${{ matrix.service_name }}
-          env: dev prd
-          token: ${{ secrets.GITHUB_TOKEN }}
