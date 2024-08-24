@@ -91,12 +91,11 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          tags: quay.io/decentraland/${{ inputs.service-name }}:${{ github.sha }},quay.io/decentraland/${{ inputs.service-name }}:${{ inputs.docker-tag || github.sha }}
+          tags: quay.io/decentraland/${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }},quay.io/decentraland/${{ inputs.service-name }}:${{ inputs.docker-tag || github.sha }}
           load: true
           push: "false"
           build-args: |
-            COMMIT_HASH=${{ github.sha }}
-            VERSION_TAG=${{ github.event.pull_request.head.ref || github.event.release.tag_name || inputs.docker-tag ||  'unknown' }}
+            COMMIT_HASH=${{ github.event.pull_request.head.sha || github.sha }}
             UNITY_DOCKER_IMAGE=${{ inputs.unity-docker-image }}
             PLATFORM_TARGET=${{ inputs.platform-target }}
 
@@ -110,7 +109,7 @@ jobs:
           docker run --rm \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
             -v $(pwd):/app \
-            quay.io/decentraland/${{ inputs.service-name }}:${{ github.sha }} \
+            quay.io/decentraland/${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
               sh -c "cat /consumer-server/.env"
 
       - name: Run tests
@@ -118,14 +117,14 @@ jobs:
           docker run --rm \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
             -v $(pwd):/app \
-            quay.io/decentraland/${{ inputs.service-name }}:${{ github.sha }} \
+            quay.io/decentraland/${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
               sh -c "cd /app ; ls -la ; chmod +x ci-editmode-test.sh ; ./ci-editmode-test.sh"
 
       - name: Run test conversion of urn:decentraland:off-chain:base-avatars:brown_pants
         run: |
           docker run --rm \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
-            quay.io/decentraland/${{ inputs.service-name }}:${{ github.sha }} \
+            quay.io/decentraland/${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
               node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js \
                 --baseUrl https://peer.decentraland.org/content \
                 --pointer urn:decentraland:off-chain:base-avatars:brown_pants \
@@ -140,7 +139,8 @@ jobs:
           tags: ${{ steps.build-image.outputs.tags }}
           push: "true"
           build-args: |
-            COMMIT_HASH=${{ github.sha }}
+            COMMIT_HASH=${{ github.event.pull_request.head.sha || github.sha }}
+            VERSION_TAG=${{ github.event.pull_request.head.ref || github.event.release.tag_name || inputs.docker-tag ||  'unknown' }}
             UNITY_DOCKER_IMAGE=${{ inputs.unity-docker-image }}
             PLATFORM_TARGET=${{ inputs.platform-target }}
 
