@@ -9,7 +9,8 @@ test('consume status endpoint', function ({ components }) {
 
       expect(r.status).toEqual(200)
       expect(await r.json()).toMatchObject({
-        commitHash: expect.any(String)
+        commitHash: expect.any(String),
+        version: expect.any(String)
       })
     }
   })
