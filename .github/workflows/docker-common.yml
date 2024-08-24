@@ -128,7 +128,7 @@ jobs:
         if: ${{ inputs.upload-image }}
         with:
           context: .
-          tags: ${{ steps.build-image.outputs.tags }}
+          tags: quay.io/decentraland/${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }},quay.io/decentraland/${{ inputs.service-name }}:${{ inputs.docker-tag || github.sha }}
           push: "true"
           build-args: |
             COMMIT_HASH=${{ github.event.pull_request.head.sha || github.sha }}
@@ -140,7 +140,7 @@ jobs:
         if: ${{ inputs.upload-image }}
         run: |
           echo "Image pushed to quay.io/decentraland/${{ inputs.service-name }}:${{ inputs.docker-tag }}"
-          echo "Other tags for the image ${{ steps.build-image.outputs.tags }}"
+          echo "Other tags for the image quay.io/decentraland/${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }},quay.io/decentraland/${{ inputs.service-name }}:${{ inputs.docker-tag || github.sha }}"
 
   deployment:
     if: ${{ inputs.upload-image && inputs.deployment-environment }}
