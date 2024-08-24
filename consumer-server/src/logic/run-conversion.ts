@@ -4,16 +4,11 @@ import * as fs from 'fs/promises'
 import { dirname } from 'path'
 import { AppComponents } from '../types'
 import { execCommand } from './run-command'
-import syncFs from 'fs'
 
 async function setupStartDirectories(options: { logFile: string; outDirectory: string; projectPath: string }) {
   // touch logfile and create folders
   await fs.mkdir(dirname(options.logFile), { recursive: true })
   await fs.mkdir(options.outDirectory, { recursive: true })
-  const downloadedPath = options.projectPath + '/Assets/_Downloaded'
-  if (syncFs.existsSync(downloadedPath)) {
-    await fs.rmdir(downloadedPath, { recursive: true })
-  }
   closeSync(openSync(options.logFile, 'w'))
 }
 
