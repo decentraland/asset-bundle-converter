@@ -11,10 +11,7 @@ export async function statusHandler(
 ): Promise<IHttpServerComponent.IResponse> {
   const { config } = context.components
 
-  const [commitHash, version] = await Promise.all([
-    config.getString('COMMIT_HASH'),
-    config.getString('CURRENT_VERSION')
-  ])
+  const [commitHash, version] = await Promise.all([config.getString('COMMIT_HASH'), config.getString('VERSION_TAG')])
 
   const status: StatusResponse = {
     commitHash: commitHash || 'unknown',
