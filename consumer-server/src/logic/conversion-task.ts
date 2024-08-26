@@ -418,18 +418,20 @@ function getFolderSize(dirPath: string): number {
  * Recursively iterates through each folder and subfolder, printing its size.
  * @param dirPath - The path to the directory.
  */
-function printFolderSizes(dirPath: string, logger: any): void {
+function printFolderSizes(dirPath: string, logger: any, depth: number = 0): void {
   const stats = fs.statSync(dirPath)
 
   if (stats.isDirectory()) {
     const folderSize = getFolderSize(dirPath)
     logger.debug(`Unity Folder: ${dirPath} - Size: ${(folderSize / (1024 * 1024)).toFixed(2)} MB`)
 
-    const files = fs.readdirSync(dirPath)
-    for (const file of files) {
-      const filePath = path.join(dirPath, file)
-      if (fs.statSync(filePath).isDirectory()) {
-        printFolderSizes(filePath, logger) // Recursively print sizes of subdirectories
+    if (depth < 2) {
+      const files = fs.readdirSync(dirPath)
+      for (const file of files) {
+        const filePath = path.join(dirPath, file)
+        if (fs.statSync(filePath).isDirectory()) {
+          printFolderSizes(filePath, logger, depth + 1) // Increment depth by 1 for the next level
+        }
       }
     }
   }
