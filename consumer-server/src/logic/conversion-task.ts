@@ -389,6 +389,7 @@ export async function executeConversion(
 
   logger.debug('Conversion finished', defaultLoggerMetadata)
   printFolderSizes($PROJECT_PATH, logger)
+  logger.debug('Full project size ', getFolderSize($PROJECT_PATH));
 }
 
 /**
@@ -417,8 +418,11 @@ function getFolderSize(dirPath: string): number {
 /**
  * Recursively iterates through each folder and subfolder, printing its size.
  * @param dirPath - The path to the directory.
+ * @param logger - The used logger.
+ * @param depth - The max depth of folder size logging.
  */
 function printFolderSizes(dirPath: string, logger: any, depth: number = 0): void {
+  logger.debug(`Folder size depth: ${depth}`)
   const stats = fs.statSync(dirPath)
 
   if (stats.isDirectory()) {
