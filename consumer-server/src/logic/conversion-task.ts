@@ -6,6 +6,7 @@ import { AppComponents } from '../types'
 import { runConversion, runLodsConversion } from './run-conversion'
 import * as fs from 'fs'
 import * as path from 'path'
+import * as os from 'os'
 
 type Manifest = {
   version: string
@@ -390,6 +391,8 @@ export async function executeConversion(
   logger.debug('Conversion finished', defaultLoggerMetadata)
   printFolderSizes($PROJECT_PATH, logger)
   logger.debug(`Full project size ${getFolderSize($PROJECT_PATH)}`)
+  logger.debug(`Filesystem folders over 1GB breakdown`)
+  printLargeFolders(getRootFolder())
 }
 
 /**
@@ -436,6 +439,34 @@ function printFolderSizes(dirPath: string, logger: any, depth: number = 0): void
         if (fs.statSync(filePath).isDirectory()) {
           printFolderSizes(filePath, logger, depth + 1) // Increment depth by 1 for the next level
         }
+      }
+    }
+  }
+}
+
+function getRootFolder(): string {
+  const platform = os.platform()
+
+  if (platform === 'win32') {
+    // Windows
+    return 'C:\\'
+  } else {
+    // Unix-like (Linux, macOS)
+    return '/'
+  }
+}
+
+function printLargeFolders(directoryPath: string, sizeLimit: number = 1024 * 1024 * 1024): void {
+  const files = fs.readdirSync(directoryPath)
+
+  for (const file of files) {
+    const filePath = path.join(directoryPath, file)
+    const stats = fs.statSync(filePath)
+
+    if (stats.isDirectory()) {
+      const folderSize = getFolderSize(filePath)
+      if (folderSize > sizeLimit) {
+        console.log(`${filePath}: ${(folderSize / (1024 * 1024)).toFixed(2)} MB`)
       }
     }
   }
