@@ -389,7 +389,7 @@ export async function executeConversion(
 
   logger.debug('Conversion finished', defaultLoggerMetadata)
   printFolderSizes($PROJECT_PATH, logger)
-  logger.debug('Full project size ', getFolderSize($PROJECT_PATH));
+  logger.debug('Full project size ', getFolderSize($PROJECT_PATH))
 }
 
 /**
