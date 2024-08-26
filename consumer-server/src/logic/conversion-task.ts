@@ -393,6 +393,7 @@ export async function executeConversion(
   logger.debug(`Full project size ${getFolderSize($PROJECT_PATH)}`)
   logger.debug(`Filesystem folders over 1GB breakdown`)
   printLargeFolders(getRootFolder())
+  printFolderSizes('/root/.cache/unity3d', logger)
 }
 
 /**
@@ -425,7 +426,6 @@ function getFolderSize(dirPath: string): number {
  * @param depth - The max depth of folder size logging.
  */
 function printFolderSizes(dirPath: string, logger: any, depth: number = 0): void {
-  logger.debug(`Folder size depth: ${depth}`)
   const stats = fs.statSync(dirPath)
 
   if (stats.isDirectory()) {
