@@ -1,0 +1,55 @@
+# Ignore node_modules directory to avoid copying it during the build
+node_modules/
+consumer-server/node_modules/
+
+# Ignore any logs or temp files
+*.log
+*.tmp
+tmp/
+
+# Ignore any test-related files or directories
+test/
+tests/
+__tests__/
+*.spec.js
+*.test.js
+
+# Ignore environment and config files that should not be in the Docker image
+.env
+.env.local
+.env.test
+.env.production
+
+# Ignore local development files
+.vscode/
+*.swp
+.DS_Store
+
+# Ignore any build or dist directories (will be created during the build process)
+dist/
+build/
+
+# Ignore Unity-specific cache and temporary files
+/root/.cache/
+root/.local/share/unity3d/
+
+# Ignore the Dockerfile itself and docker-compose files if they exist
+Dockerfile
+docker-compose.yml
+docker-compose.override.yml
+
+# Ignore any README or documentation files
+README.md
+*.md
+
+# Ignore Git-related files
+.git/
+.gitignore
+.gitattributes
+.gitmodules
+
+# Ignore DevContainer configuration files
+.devcontainer/
+
+# Ignore GitHub Actions workflows and configs
+.github/

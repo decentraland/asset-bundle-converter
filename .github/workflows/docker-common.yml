@@ -41,6 +41,9 @@ on:
       QUAY_TOKEN:
         required: true
 
+env:
+  QUAY_URL: "quay.io/decentraland/"
+
 jobs:
   quay-build-push:
     runs-on: ubuntu-latest
@@ -74,14 +77,21 @@ jobs:
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_TOKEN }}
 
+      - name: Set up tags variable
+        run: |
+            TAGS="${{ env.QUAY_URL }}${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }},${{ env.QUAY_URL }}${{ inputs.service-name }}:${{ inputs.docker-tag || github.sha }}"
+            if [ -n "${{ github.event.release.tag_name }}" ]; then
+              TAGS="$TAGS,${{ env.QUAY_URL }}${{ inputs.service-name }}:${{ github.event.release.tag_name }}"
+            fi
+            echo "TAGS=$TAGS" >> $GITHUB_ENV
+
       - name: Build image
         id: build-image
         uses: docker/build-push-action@v6
         with:
           context: .
-          tags: quay.io/decentraland/${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }},quay.io/decentraland/${{ inputs.service-name }}:${{ inputs.docker-tag || github.sha }}
+          tags: ${{ env.TAGS }}
           load: true
-          push: "false"
           build-args: |
             COMMIT_HASH=${{ github.event.pull_request.head.sha || github.sha }}
             VERSION_TAG=${{ github.event.pull_request.head.ref || github.event.release.tag_name || inputs.docker-tag ||  'unknown' }}
@@ -98,38 +108,29 @@ jobs:
           docker run --rm \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
             -v $(pwd):/app \
-            quay.io/decentraland/${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
+            ${{ env.QUAY_URL }}${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
               sh -c "cd /app ; ls -la ; chmod +x ci-editmode-test.sh ; ./ci-editmode-test.sh"
 
       - name: Run test conversion of urn:decentraland:off-chain:base-avatars:brown_pants
         run: |
           docker run --rm \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
-            quay.io/decentraland/${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
+            ${{ env.QUAY_URL }}${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
               node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js \
                 --baseUrl https://peer.decentraland.org/content \
                 --pointer urn:decentraland:off-chain:base-avatars:brown_pants \
                 --outDir /tmp-ab \
                 --logFile /tmp-ab/log.txt
 
-      - name: Push To quay.io
-        uses: docker/build-push-action@v6
+      - name: Push Docker image to Quay.io
         if: ${{ inputs.upload-image }}
-        with:
-          context: .
-          tags: quay.io/decentraland/${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }},quay.io/decentraland/${{ inputs.service-name }}:${{ inputs.docker-tag || github.sha }}
-          push: "true"
-          build-args: |
-            COMMIT_HASH=${{ github.event.pull_request.head.sha || github.sha }}
-            VERSION_TAG=${{ github.event.pull_request.head.ref || github.event.release.tag_name || inputs.docker-tag ||  'unknown' }}
-            UNITY_DOCKER_IMAGE=${{ inputs.unity-docker-image }}
-            PLATFORM_TARGET=${{ inputs.platform-target }}
+        run: docker push --all-tags ${{ env.QUAY_URL }}${{ inputs.service-name }}
 
       - name: Print image url
         if: ${{ inputs.upload-image }}
         run: |
-          echo "Image pushed to quay.io/decentraland/${{ inputs.service-name }}:${{ inputs.docker-tag }}"
-          echo "Other tags for the image quay.io/decentraland/${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }},quay.io/decentraland/${{ inputs.service-name }}:${{ inputs.docker-tag || github.sha }}"
+          echo "Image and tags pushed:"
+          docker images ${{ env.QUAY_URL }}${{ inputs.service-name }}
 
   deployment:
     if: ${{ inputs.upload-image && inputs.deployment-environment }}
@@ -141,7 +142,7 @@ jobs:
         id: deploy
         uses: decentraland/dcl-deploy-action@main
         with:
-          dockerImage: "quay.io/decentraland/${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }}"
+          dockerImage: "${{ env.QUAY_URL }}${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }}"
           serviceName: ${{ inputs.service-name }}
           env: ${{ inputs.deployment-environment }}
           token: ${{ secrets.GITHUB_TOKEN }}
