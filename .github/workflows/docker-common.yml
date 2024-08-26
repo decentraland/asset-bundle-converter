@@ -141,7 +141,7 @@ jobs:
         id: deploy
         uses: decentraland/dcl-deploy-action@main
         with:
-          dockerImage: "quay.io/decentraland/${{ inputs.service-name }}:${{ inputs.docker-tag }}"
+          dockerImage: "quay.io/decentraland/${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }}"
           serviceName: ${{ inputs.service-name }}
           env: ${{ inputs.deployment-environment }}
           token: ${{ secrets.GITHUB_TOKEN }}
