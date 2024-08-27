@@ -211,9 +211,9 @@ namespace DCL.ABConverter
                 long totalSize = driveInfo.TotalSize;
 
                 Debug.Log($"Size Step: {step}");
-                Debug.Log($"Available Free Space: {availableFreeSpace / (1024 * 1024)} MB");
-                Debug.Log($"Total Free Space: {totalFreeSpace / (1024 * 1024)} MB");
-                Debug.Log($"Total Size: {totalSize / (1024 * 1024)} MB");
+                Debug.Log($"Size Step Available Free Space: {availableFreeSpace / (1024 * 1024)} MB");
+                Debug.Log($"Size Step Total Free Space: {totalFreeSpace / (1024 * 1024)} MB");
+                Debug.Log($"Size Step Total Size: {totalSize / (1024 * 1024)} MB");
             }
             else
             {
