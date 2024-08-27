@@ -187,7 +187,7 @@ export async function executeLODConversion(
     }
     // delete library folder
     try {
-      await rimraf(`$PROJECT_PATH/Library`, { maxRetries: 3 })
+      await rimraf(`${$PROJECT_PATH}/Library`, { maxRetries: 3 })
     } catch (err: any) {
       logger.error(err, defaultLoggerMetadata)
     }
@@ -377,13 +377,13 @@ export async function executeConversion(
     }
     // delete library folder
     try {
-      await rimraf(`$PROJECT_PATH/Library`, { maxRetries: 3 })
+      await rimraf(`${$PROJECT_PATH}/Library`, { maxRetries: 3 })
     } catch (err: any) {
       logger.error(`Error deleting library folder: ${err}`, defaultLoggerMetadata)
     }
     //delete _Download folder
     try {
-      await rimraf(`$PROJECT_PATH/Assets/_Downloaded`, { maxRetries: 3 })
+      await rimraf(`${$PROJECT_PATH}/Assets/_Downloaded`, { maxRetries: 3 })
     } catch (err: any) {
       logger.error(err, defaultLoggerMetadata)
     }
@@ -482,7 +482,7 @@ function printLargeFolders(
         }
       }
     } catch (err: any) {
-      logger.warn(`Could not printLargeFolder size. Error for ${filePath}: ${err.message}`)
+      logger.warn(`Could not printLargeFolder size. Error for ${filePath}: ${err.getMessage()}`)
     }
   }
 }
