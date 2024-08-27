@@ -482,7 +482,7 @@ function printLargeFolders(
         }
       }
     } catch (err: any) {
-      logger.warn(`Could not printLargeFolder size. Error for ${filePath}: ${err.getMessage()}`)
+      logger.warn(`Could not printLargeFolder size. Error for ${filePath}: ${err.message}`)
     }
   }
 }
