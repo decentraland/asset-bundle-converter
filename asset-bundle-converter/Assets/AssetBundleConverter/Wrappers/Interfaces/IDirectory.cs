@@ -6,7 +6,7 @@ namespace DCL
     {
         void CreateDirectory(string path);
         void InitializeDirectory(string path, bool deleteIfExists);
-        void Delete(string path, bool recursive = true);
+        void Delete(string path);
         bool Exists(string path);
         void CleanAssetBundleFolder(IFile envFile, string settingsFinalAssetBundlePath, string[] assetBundles, Dictionary<string,string> lowerCaseHashes);
 

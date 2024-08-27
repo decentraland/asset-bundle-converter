@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using System.IO;
 
 namespace DCL
 {
@@ -18,7 +19,7 @@ namespace DCL
                     if (deleteIfExists)
                     {
                         if (Exists(path))
-                            Delete(path, true);
+                            Delete(path);
                     }
 
                     if (!Exists(path))
@@ -30,17 +31,38 @@ namespace DCL
                 }
             }
 
-            public void Delete(string path, bool recursive)
+            public void Delete(string path)
             {
                 try
                 {
                     if (Exists(path))
-                        System.IO.Directory.Delete(path, recursive);
+                        DeleteDirectory(path);
                 }
                 catch (Exception e)
                 {
                     Debug.LogError($"Error trying to delete directory {path}!\n{e.Message}");
                 }
+            }
+
+            private static void DeleteDirectory(string targetDir)
+            {
+                // Delete all files in the directory
+                string[] files = System.IO.Directory.GetFiles(targetDir);
+                foreach (string file in files)
+                {
+                    File.SetAttributes(file, FileAttributes.Normal); // Ensure the file is not read-only
+                    File.Delete(file);
+                }
+
+                // Delete all subdirectories in the directory
+                string[] subDirs = System.IO.Directory.GetDirectories(targetDir);
+                foreach (string subDir in subDirs)
+                {
+                    DeleteDirectory(subDir); // Recursively delete subdirectories
+                }
+
+                // Delete the empty directory
+                System.IO.Directory.Delete(targetDir, false);
             }
 
             public bool Exists(string path) { return System.IO.Directory.Exists(path); }
