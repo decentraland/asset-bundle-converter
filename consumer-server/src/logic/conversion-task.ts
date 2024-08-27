@@ -461,6 +461,12 @@ function printLargeFolders(directoryPath: string, sizeLimit: number = 1024 * 102
 
   for (const file of files) {
     const filePath = path.join(directoryPath, file)
+
+    // Skip symbolic links to prevent infinite loops
+    if (isSymbolicLink(filePath)) {
+      continue
+    }
+
     const stats = fs.statSync(filePath)
 
     if (stats.isDirectory()) {
@@ -470,4 +476,9 @@ function printLargeFolders(directoryPath: string, sizeLimit: number = 1024 * 102
       }
     }
   }
+}
+
+function isSymbolicLink(filePath: string): boolean {
+  const stats = fs.lstatSync(filePath)
+  return stats.isSymbolicLink()
 }
