@@ -198,26 +198,32 @@ namespace DCL.ABConverter
     {
         public static void PrintDiskSize(string step)
         {
-            string driveLetter = "/";
-            if (PlatformUtils.currentTarget == BuildTarget.StandaloneWindows64)
-                driveLetter = "C:\\";
+            var defaultDrive = DriveInfo.GetDrives()
+                .FirstOrDefault();
 
-            var driveInfo = new DriveInfo(driveLetter);
-
-            if (driveInfo.IsReady)
+            if (defaultDrive != null)
             {
-                long availableFreeSpace = driveInfo.AvailableFreeSpace;
-                long totalFreeSpace = driveInfo.TotalFreeSpace;
-                long totalSize = driveInfo.TotalSize;
+                Debug.Log($"Size Step Drive Name: {defaultDrive.Name}");
 
-                Debug.Log($"Size Step: {step}");
-                Debug.Log($"Size Step Available Free Space: {availableFreeSpace / (1024 * 1024)} MB");
-                Debug.Log($"Size Step Total Free Space: {totalFreeSpace / (1024 * 1024)} MB");
-                Debug.Log($"Size Step Total Size: {totalSize / (1024 * 1024)} MB");
+                if (defaultDrive is { IsReady: true })
+                {
+                    long availableFreeSpace = defaultDrive.AvailableFreeSpace;
+                    long totalFreeSpace = defaultDrive.TotalFreeSpace;
+                    long totalSize = defaultDrive.TotalSize;
+
+                    Debug.Log($"Size Step: {step}");
+                    Debug.Log($"Size Step Available Free Space: {availableFreeSpace / (1024 * 1024)} MB");
+                    Debug.Log($"Size Step Total Free Space: {totalFreeSpace / (1024 * 1024)} MB");
+                    Debug.Log($"Size Step Total Size: {totalSize / (1024 * 1024)} MB");
+                }
+                else
+                {
+                    Debug.Log($"Size Step: Drive {defaultDrive.Name} is not ready.");
+                }
             }
             else
             {
-                Debug.LogError($"Drive {driveLetter} is not ready.");
+                Debug.Log("Size Step: No Drive available");
             }
         }
         
