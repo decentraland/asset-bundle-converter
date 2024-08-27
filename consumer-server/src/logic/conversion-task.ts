@@ -392,7 +392,7 @@ export async function executeConversion(
   printFolderSizes($PROJECT_PATH, logger)
   logger.debug(`Full project size ${getFolderSize($PROJECT_PATH)}`)
   logger.debug(`Filesystem folders over 1GB breakdown`)
-  printLargeFolders(getRootFolder())
+  printLargeFolders(getRootFolder(), logger)
   printFolderSizes('/root/.cache/unity3d', logger)
 }
 
@@ -456,7 +456,7 @@ function getRootFolder(): string {
   }
 }
 
-function printLargeFolders(directoryPath: string, sizeLimit: number = 1024 * 1024 * 1024): void {
+function printLargeFolders(directoryPath: string, logger: any, sizeLimit: number = 1024 * 1024 * 1024): void {
   const files = fs.readdirSync(directoryPath)
 
   for (const file of files) {
@@ -472,7 +472,7 @@ function printLargeFolders(directoryPath: string, sizeLimit: number = 1024 * 102
     if (stats.isDirectory()) {
       const folderSize = getFolderSize(filePath)
       if (folderSize > sizeLimit) {
-        console.log(`${filePath}: ${(folderSize / (1024 * 1024)).toFixed(2)} MB`)
+        logger.debug(`filesystem folder at ${filePath}: ${(folderSize / (1024 * 1024)).toFixed(2)} MB`)
       }
     }
   }
