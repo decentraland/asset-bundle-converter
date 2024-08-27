@@ -461,7 +461,7 @@ function printLargeFolders(directoryPath: string, logger: any, sizeLimit: number
 
   for (const file of files) {
     const filePath = path.join(directoryPath, file)
-
+    logger.debug(`filepath is ${filePath}`);
     // Skip symbolic links to prevent infinite loops
     if (isSymbolicLink(filePath)) {
       continue
