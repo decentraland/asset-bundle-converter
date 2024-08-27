@@ -196,6 +196,32 @@ namespace DCL.ABConverter
 
     public static class Utils
     {
+        public static void PrintDiskSize(string step)
+        {
+            string driveLetter = "/";
+            if (PlatformUtils.currentTarget == BuildTarget.StandaloneWindows64)
+                driveLetter = "C:\\";
+
+            var driveInfo = new DriveInfo(driveLetter);
+
+            if (driveInfo.IsReady)
+            {
+                long availableFreeSpace = driveInfo.AvailableFreeSpace;
+                long totalFreeSpace = driveInfo.TotalFreeSpace;
+                long totalSize = driveInfo.TotalSize;
+
+                Debug.Log($"Size Step: {step}");
+                Debug.Log($"Available Free Space: {availableFreeSpace / (1024 * 1024)} MB");
+                Debug.Log($"Total Free Space: {totalFreeSpace / (1024 * 1024)} MB");
+                Debug.Log($"Total Size: {totalSize / (1024 * 1024)} MB");
+            }
+            else
+            {
+                Debug.LogError($"Drive {driveLetter} is not ready.");
+            }
+        }
+        
+        
         [Serializable]
         private class PointersData
         {
