@@ -379,7 +379,7 @@ export async function executeConversion(
     try {
       await rimraf(`$PROJECT_PATH/Library`, { maxRetries: 3 })
     } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
+      logger.error(`Error deleting library folder: ${err}`, defaultLoggerMetadata)
     }
     //delete _Download folder
     try {
