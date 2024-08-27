@@ -7,6 +7,7 @@ import { runConversion, runLodsConversion } from './run-conversion'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { ILoggerComponent } from '@well-known-components/interfaces'
 
 type Manifest = {
   version: string
@@ -392,8 +393,8 @@ export async function executeConversion(
   printFolderSizes($PROJECT_PATH, logger)
   logger.debug(`Full project size ${getFolderSize($PROJECT_PATH)}`)
   logger.debug(`Filesystem folders over 1GB breakdown`)
-  printLargeFolders(getRootFolder(), logger)
   printFolderSizes('/root/.cache/unity3d', logger)
+  printLargeFolders(getRootFolder(), logger)
 }
 
 /**
@@ -456,24 +457,32 @@ function getRootFolder(): string {
   }
 }
 
-function printLargeFolders(directoryPath: string, logger: any, sizeLimit: number = 1024 * 1024 * 1024): void {
+function printLargeFolders(
+  directoryPath: string,
+  logger: ILoggerComponent.ILogger,
+  sizeLimit: number = 1024 * 1024 * 1024
+): void {
   const files = fs.readdirSync(directoryPath)
 
   for (const file of files) {
     const filePath = path.join(directoryPath, file)
-    logger.debug(`filepath is ${filePath}`);
+    logger.debug(`filepath is ${filePath}`)
     // Skip symbolic links to prevent infinite loops
     if (isSymbolicLink(filePath)) {
       continue
     }
 
-    const stats = fs.statSync(filePath)
+    try {
+      const stats = fs.statSync(filePath)
 
-    if (stats.isDirectory()) {
-      const folderSize = getFolderSize(filePath)
-      if (folderSize > sizeLimit) {
-        logger.debug(`filesystem folder at ${filePath}: ${(folderSize / (1024 * 1024)).toFixed(2)} MB`)
+      if (stats.isDirectory()) {
+        const folderSize = getFolderSize(filePath)
+        if (folderSize > sizeLimit) {
+          logger.debug(`filesystem folder at ${filePath}: ${(folderSize / (1024 * 1024)).toFixed(2)} MB`)
+        }
       }
+    } catch (err: any) {
+      logger.warn(`Could not printLargeFolder size. Error for ${filePath}: ${err.getMessage()}`)
     }
   }
 }
