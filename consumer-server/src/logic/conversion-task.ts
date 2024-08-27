@@ -393,7 +393,7 @@ export async function executeConversion(
   printFolderSizes($PROJECT_PATH, logger)
   logger.debug(`Full project size ${getFolderSize($PROJECT_PATH)}`)
   logger.debug(`Filesystem folders over 1GB breakdown`)
-  printFolderSizes('/root/.cache/unity3d', logger)
+  logger.debug(`/root/.cache/unity3d: ${(getFolderSize('/root/.cache/unity3d') / (1024 * 1024)).toFixed(2)} MB.`)
   printLargeFolders(getRootFolder(), logger)
 }
 
