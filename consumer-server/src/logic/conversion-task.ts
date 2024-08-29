@@ -8,7 +8,6 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import { ILoggerComponent } from '@well-known-components/interfaces'
-import { captureMessage } from '@sentry/node'
 
 type Manifest = {
   version: string
@@ -198,7 +197,7 @@ export async function executeLODConversion(
 }
 
 export async function executeConversion(
-  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>,
+  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry'>,
   entityId: string,
   contentServerUrl: string,
   force: boolean | undefined
@@ -323,7 +322,7 @@ export async function executeConversion(
     components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
     logger.error(err)
 
-    captureMessage(`Error during ab conversion`, {
+    components.sentry.captureMessage(`Error during ab conversion`, {
       level: 'error',
       tags: {
         entityId,
