@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/node'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
 import {
   createServerComponent,
@@ -18,6 +19,10 @@ import { createRunnerComponent } from './adapters/runner'
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
   const config = await createDotEnvConfigComponent({ path: ['.env.default', '.env'] })
+
+  Sentry.init({
+    dsn: await config.requireString('SENTRY_DSN')
+  })
 
   const AWS_REGION = await config.getString('AWS_REGION')
   if (AWS_REGION) {

@@ -8,6 +8,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import { ILoggerComponent } from '@well-known-components/interfaces'
+import { captureMessage } from '@sentry/node'
 
 type Manifest = {
   version: string
@@ -238,8 +239,9 @@ export async function executeConversion(
 
   logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
 
+  let exitCode
   try {
-    const exitCode = await runConversion(logger, components, {
+    exitCode = await runConversion(logger, components, {
       contentServerUrl,
       entityId,
       logFile,
@@ -320,6 +322,19 @@ export async function executeConversion(
     logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
     components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
     logger.error(err)
+
+    captureMessage(`Error during ab conversion`, {
+      level: 'error',
+      tags: {
+        entityId,
+        contentServerUrl,
+        unityBuildTarget,
+        unityExitCode: exitCode || 'unknown',
+        version: $AB_VERSION,
+        log: s3LogKey,
+        date: new Date().toISOString()
+      }
+    })
 
     try {
       // and then replace the manifest
