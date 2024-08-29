@@ -11,6 +11,7 @@ import { ITaskQueue } from './adapters/task-queue'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { S3 } from 'aws-sdk'
 import { IRunnerComponent } from './adapters/runner'
+import { SentryComponent } from './adapters/sentry'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -26,6 +27,7 @@ export type BaseComponents = {
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
   cdnS3: S3
   runner: IRunnerComponent
+  sentry: SentryComponent
 }
 
 // components used in runtime
