@@ -14,10 +14,13 @@ import MockAws from 'mock-aws-s3'
 import { createMemoryQueueAdapter, createSqsAdapter } from './adapters/task-queue'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { createRunnerComponent } from './adapters/runner'
+import { createSentryComponent } from './adapters/sentry'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
   const config = await createDotEnvConfigComponent({ path: ['.env.default', '.env'] })
+
+  const sentry = await createSentryComponent({ config })
 
   const AWS_REGION = await config.getString('AWS_REGION')
   if (AWS_REGION) {
@@ -63,6 +66,7 @@ export async function initComponents(): Promise<AppComponents> {
     metrics,
     taskQueue,
     cdnS3,
-    runner
+    runner,
+    sentry
   }
 }

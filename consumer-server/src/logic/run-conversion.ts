@@ -50,7 +50,7 @@ async function executeProgram(options: {
     }, timeout)
   }
 
-  return await exitPromise
+  return exitPromise
 }
 
 export async function runLodsConversion(

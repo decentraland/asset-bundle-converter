@@ -197,7 +197,7 @@ export async function executeLODConversion(
 }
 
 export async function executeConversion(
-  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>,
+  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry'>,
   entityId: string,
   contentServerUrl: string,
   force: boolean | undefined
@@ -238,8 +238,9 @@ export async function executeConversion(
 
   logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
 
+  let exitCode
   try {
-    const exitCode = await runConversion(logger, components, {
+    exitCode = await runConversion(logger, components, {
       contentServerUrl,
       entityId,
       logFile,
@@ -320,6 +321,19 @@ export async function executeConversion(
     logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
     components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
     logger.error(err)
+
+    components.sentry.captureMessage(`Error during ab conversion`, {
+      level: 'error',
+      tags: {
+        entityId,
+        contentServerUrl,
+        unityBuildTarget,
+        unityExitCode: exitCode || 'unknown',
+        version: $AB_VERSION,
+        log: s3LogKey,
+        date: new Date().toISOString()
+      }
+    })
 
     try {
       // and then replace the manifest
