@@ -404,11 +404,8 @@ export async function executeConversion(
   }
 
   logger.debug('Conversion finished', defaultLoggerMetadata)
-  printFolderSizes($PROJECT_PATH, logger)
   logger.debug(`Full project size ${getFolderSize($PROJECT_PATH)}`)
-  logger.debug(`Filesystem folders over 1GB breakdown`)
-  logger.debug(`/root/.cache/unity3d: ${(getFolderSize('/root/.cache/unity3d') / (1024 * 1024)).toFixed(2)} MB.`)
-  printLargeFolders(getRootFolder(), logger)
+  printFolderSizes($PROJECT_PATH, logger)
 }
 
 /**
@@ -457,51 +454,4 @@ function printFolderSizes(dirPath: string, logger: any, depth: number = 0): void
       }
     }
   }
-}
-
-function getRootFolder(): string {
-  const platform = os.platform()
-
-  if (platform === 'win32') {
-    // Windows
-    return 'C:\\'
-  } else {
-    // Unix-like (Linux, macOS)
-    return '/'
-  }
-}
-
-function printLargeFolders(
-  directoryPath: string,
-  logger: ILoggerComponent.ILogger,
-  sizeLimit: number = 1024 * 1024 * 1024
-): void {
-  const files = fs.readdirSync(directoryPath)
-
-  for (const file of files) {
-    const filePath = path.join(directoryPath, file)
-    logger.debug(`filepath is ${filePath}`)
-    // Skip symbolic links to prevent infinite loops
-    if (isSymbolicLink(filePath)) {
-      continue
-    }
-
-    try {
-      const stats = fs.statSync(filePath)
-
-      if (stats.isDirectory()) {
-        const folderSize = getFolderSize(filePath)
-        if (folderSize > sizeLimit) {
-          logger.debug(`filesystem folder at ${filePath}: ${(folderSize / (1024 * 1024)).toFixed(2)} MB`)
-        }
-      }
-    } catch (err: any) {
-      logger.warn(`Could not printLargeFolder size. Error for ${filePath}: ${err.message}`)
-    }
-  }
-}
-
-function isSymbolicLink(filePath: string): boolean {
-  const stats = fs.lstatSync(filePath)
-  return stats.isSymbolicLink()
 }
