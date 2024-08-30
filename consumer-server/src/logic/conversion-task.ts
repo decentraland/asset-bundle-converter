@@ -6,8 +6,6 @@ import { AppComponents } from '../types'
 import { runConversion, runLodsConversion } from './run-conversion'
 import * as fs from 'fs'
 import * as path from 'path'
-import * as os from 'os'
-import { ILoggerComponent } from '@well-known-components/interfaces'
 
 type Manifest = {
   version: string
