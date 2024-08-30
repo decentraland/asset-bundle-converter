@@ -55,7 +55,7 @@ namespace AssetBundleConverter
             /// </summary>
             public string baseUrl;
 
-            public bool cleanAndExitOnFinish = true;
+            public bool cleanAndExitOnFinish = false;
             public bool visualTest = false;
             public bool createAssetBundle = true;
             public int downloadBatchSize = 20;

@@ -47,6 +47,7 @@ namespace AssetBundleConverter
         private string baseUrl;
         private bool placeOnScene = true;
         private bool visualTest = false;
+        private bool cleanAndExitOnFinish = false;
         private bool clearDownloads = true;
         private PersistentSetting<int> downloadBatchSize;
         private PersistentSetting<float> failingConversionTolerance;
@@ -97,6 +98,7 @@ namespace AssetBundleConverter
             buildPipelineType.Value = (BuildPipelineType)EditorGUILayout.EnumPopup("Build Pipeline", buildPipelineType);
             buildTarget.Value = (SupportedBuildTarget)EditorGUILayout.EnumPopup("Build Target", buildTarget);
 
+            cleanAndExitOnFinish = EditorGUILayout.Toggle("Clean and exit on finish", cleanAndExitOnFinish);
             visualTest = EditorGUILayout.Toggle("Visual Test", visualTest);
             placeOnScene = EditorGUILayout.Toggle("Place on Scene", placeOnScene);
             createAssetBundle.Value = EditorGUILayout.Toggle("Create Asset Bundle", createAssetBundle);
@@ -327,7 +329,7 @@ namespace AssetBundleConverter
             {
                 visualTest = visualTest,
                 baseUrl = baseUrl,
-                cleanAndExitOnFinish = false,
+                cleanAndExitOnFinish = cleanAndExitOnFinish,
                 createAssetBundle = createAssetBundle,
                 downloadBatchSize = ClampDownloadBatchSize(downloadBatchSize),
                 failingConversionTolerance = ClampConversionTolerance(failingConversionTolerance),
