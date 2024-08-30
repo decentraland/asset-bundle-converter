@@ -132,8 +132,6 @@ namespace DCL.ABConverter
             if (!env.editor.SwitchBuildTarget(settings.buildTarget))
                 return;
 
-            Utils.PrintDiskSize("STARTED");
-
             log.verboseEnabled = settings.verbose;
             await env.editor.LoadVisualTestSceneAsync();
 
@@ -144,8 +142,6 @@ namespace DCL.ABConverter
             InitializeDirectoryPaths(settings.clearDirectoriesOnStart, settings.clearDirectoriesOnStart);
             AdjustRenderingMode(settings.buildTarget);
             env.assetDatabase.Refresh();
-
-            Utils.PrintDiskSize("INITIALIZED_DIRECTORIES");
 
             await env.editor.Delay(TimeSpan.FromSeconds(0.1f));
 
@@ -163,9 +159,6 @@ namespace DCL.ABConverter
                 }
             }
 
-            Utils.PrintDiskSize("DOWNLOADED_GLTFS");
-
-
             // Third step: we import gltfs
             importStartupTime = EditorApplication.timeSinceStartup;
 
@@ -173,8 +166,6 @@ namespace DCL.ABConverter
                 return;
 
             await ProcessAllGltfs();
-
-            Utils.PrintDiskSize("PROCESSED_GLTFS");
 
             importEndTime = EditorApplication.timeSinceStartup;
 
@@ -194,8 +185,6 @@ namespace DCL.ABConverter
                 bundlesEndTime = EditorApplication.timeSinceStartup;
             }
 
-            Utils.PrintDiskSize("ASSET_BUNDLES_BUILT");
-
             if (isExitForced)
                 return;
 
@@ -205,8 +194,6 @@ namespace DCL.ABConverter
                 await env.editor.TestConvertedAssetsAsync(env, settings, assetsToMark, errorReporter);
                 visualTestEndTime = EditorApplication.timeSinceStartup;
             }
-
-            Utils.PrintDiskSize("FINISHED_TESTING");
 
             OnFinish();
         }
@@ -414,8 +401,6 @@ namespace DCL.ABConverter
                                 // we dont crash here since we dont do this on batch mode
                             }
                     }
-
-                    Utils.PrintDiskSize("PROCESSED_SINGLE_GLTF");
 
                     log.Verbose($"<color={color}>Ended loading gltf {gltfUrl} with result <b>{loadingSuccess}</b></color>");
                 }
