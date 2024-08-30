@@ -47,7 +47,7 @@ namespace AssetBundleConverter
         private string baseUrl;
         private bool placeOnScene = true;
         private bool visualTest = false;
-        private bool cleanAndExitOnFinish = false;
+        private bool cleanAndExitOnFinish = true;
         private bool clearDownloads = true;
         private PersistentSetting<int> downloadBatchSize;
         private PersistentSetting<float> failingConversionTolerance;
