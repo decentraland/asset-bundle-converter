@@ -333,7 +333,7 @@ namespace DCL.ABConverter
 
                     string directory = Path.GetDirectoryName(relativePath);
 
-                    if (textures.Count > 0) { textures = ExtractEmbedTexturesFromGltf(textures, directory); }
+                    if (textures.Count > 0) { textures = ExtractEmbedTexturesFromGltf(textures, gltfImport, directory); }
 
                     embedExtractTextureTime.Stop();
 
@@ -729,9 +729,29 @@ namespace DCL.ABConverter
             Debug.unityLogger.logEnabled = true;
         }
 
-        private List<Texture2D> ExtractEmbedTexturesFromGltf(List<Texture2D> textures, string folderName)
+
+
+        private List<Texture2D> ExtractEmbedTexturesFromGltf(List<Texture2D> textures, IGltfImport gltfImport, string folderName)
         {
             var newTextures = new List<Texture2D>();
+
+            TextureTypeManager textTypeMan = new TextureTypeManager();
+
+            for (var t = 0; t < gltfImport.MaterialCount; t++)
+            {
+
+                var originalMaterial = gltfImport.GetMaterial(t);
+                var textureProperties = originalMaterial.GetTexturePropertyNameIDs();
+                var texturePropertiesNames = originalMaterial.GetTexturePropertyNames();
+
+                for (int i = 0; i < textureProperties.Count(); i++)
+                {
+                    int propertyId = textureProperties[i];
+                    Texture currentTexture = originalMaterial.GetTexture(propertyId);
+                    if (currentTexture)
+                        textTypeMan.AddTextureType(currentTexture.name, TextureInfoExtensions.GetTextureTypeFromString(texturePropertiesNames[i]));
+                }
+            }
 
             if (textures.Count > 0)
             {
@@ -788,12 +808,14 @@ namespace DCL.ABConverter
                     }
                     else
                     {
+                        TextureInfo texInfo = textTypeMan.GetTextureInfo(tex.name);
+
                         RenderTexture tmp = RenderTexture.GetTemporary(
                             tex.width,
                             tex.height,
                             0,
-                            RenderTextureFormat.Default,
-                            RenderTextureReadWrite.Default);
+                            TextureInfoExtensions.HasAnyType(texInfo, TextureType.BumpMap) ? RenderTextureFormat.RGHalf : RenderTextureFormat.Default,
+                            TextureInfoExtensions.HasAnyType(texInfo, TextureType.BumpMap | TextureType.MetallicGlossMap | TextureType.OcclusionMap | TextureType.ParallaxMap | TextureType.SpecGlossMap) ? RenderTextureReadWrite.Linear : RenderTextureReadWrite.Default );
 
                         Graphics.Blit(tex, tmp);
                         RenderTexture previous = RenderTexture.active;
