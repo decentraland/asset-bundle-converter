@@ -814,8 +814,8 @@ namespace DCL.ABConverter
                             tex.width,
                             tex.height,
                             0,
-                            TextureInfoExtensions.HasAnyType(texInfo, TextureType.BumpMap) ? RenderTextureFormat.RGHalf : RenderTextureFormat.Default,
-                            TextureInfoExtensions.HasAnyType(texInfo, TextureType.BumpMap | TextureType.MetallicGlossMap | TextureType.OcclusionMap | TextureType.ParallaxMap | TextureType.SpecGlossMap) ? RenderTextureReadWrite.Linear : RenderTextureReadWrite.Default );
+                            texInfo.HasAnyType(TextureType.BumpMap) ? RenderTextureFormat.RGHalf : RenderTextureFormat.Default,
+                            texInfo.HasAnyType( TextureType.BumpMap | TextureType.MetallicGlossMap | TextureType.OcclusionMap | TextureType.ParallaxMap | TextureType.SpecGlossMap) ? RenderTextureReadWrite.Linear : RenderTextureReadWrite.Default );
 
                         Graphics.Blit(tex, tmp);
                         RenderTexture previous = RenderTexture.active;
