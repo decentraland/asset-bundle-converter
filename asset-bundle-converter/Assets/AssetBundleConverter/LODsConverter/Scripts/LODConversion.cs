@@ -97,7 +97,7 @@ public class LODConversion
 
         Vector4 scenePlane
             = SceneCircumscribedPlanesCalculator.CalculateScenePlane(parcel.GetDecodedParcels());
-        float sceneHeight = SceneCircumscribedPlanesCalculator.CalculateSceneHeight(parcel.GetDecodedParcels());
+        float sceneHeight = SceneCircumscribedPlanesCalculator.CalculateSceneHeight(parcel.GetDecodedParcels().Count);
 
         if (lodPathHandler.filePath.Contains("_0"))
         {
