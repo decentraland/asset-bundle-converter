@@ -16,6 +16,7 @@ using SystemWrappers = AssetBundleConverter.Wrappers.Implementations.Default.Sys
 
 public class LODConversion
 {
+    private static readonly int VERTICAL_CLIPPING_ID = Shader.PropertyToID("_VerticalClipping");
     private readonly LODPathHandler lodPathHandler;
     private readonly string[] urlsToConvert;
     private readonly Shader usedLODShader;
@@ -37,7 +38,7 @@ public class LODConversion
         PlatformUtils.currentTarget = EditorUserBuildSettings.activeBuildTarget;
 
         IAssetDatabase assetDatabase = new UnityEditorWrappers.AssetDatabase();
-        IWebRequestManager webRequestManager = new WebRequestManager(); 
+        IWebRequestManager webRequestManager = new WebRequestManager();
         string[] downloadedFilePaths;
         try
         {
@@ -93,26 +94,27 @@ public class LODConversion
         AssetDatabase.ImportAsset(lodPathHandler.filePathRelativeToDataPath, ImportAssetOptions.ForceUpdate);
 
         var instantiatedLOD = GameObject.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(lodPathHandler.filePathRelativeToDataPath));
-        
-        Vector4 scenePlane 
+
+        Vector4 scenePlane
             = SceneCircumscribedPlanesCalculator.CalculateScenePlane(parcel.GetDecodedParcels());
-        
+        float sceneHeight = SceneCircumscribedPlanesCalculator.CalculateSceneHeight(parcel.GetDecodedParcels());
+
         if (lodPathHandler.filePath.Contains("_0"))
         {
-            SetDCLShaderMaterial(lodPathHandler, instantiatedLOD, false, usedLOD0Shader, scenePlane);
+            SetDCLShaderMaterial(lodPathHandler, instantiatedLOD, false, usedLOD0Shader, scenePlane, sceneHeight);
             ColliderGenerator.GenerateColliders(instantiatedLOD);
             SkinnedMeshRendererValidator.ValidateSkinnedMeshRenderer(instantiatedLOD);
         }
         else
         {
             EnsureTextureFormat();
-            SetDCLShaderMaterial(lodPathHandler, instantiatedLOD, true, usedLODShader, scenePlane);
+            SetDCLShaderMaterial(lodPathHandler, instantiatedLOD, true, usedLODShader, scenePlane, sceneHeight);
         }
 
         importer.SearchAndRemapMaterials(ModelImporterMaterialName.BasedOnMaterialName, ModelImporterMaterialSearch.Local);
         AssetDatabase.WriteImportSettingsIfDirty(lodPathHandler.filePathRelativeToDataPath);
         AssetDatabase.ImportAsset(lodPathHandler.filePath, ImportAssetOptions.ForceUpdate);
-        
+
         SceneCircumscribedPlanesCalculator.DisableObjectsOutsideBounds(parcel, instantiatedLOD);
 
         PrefabUtility.SaveAsPrefabAsset(instantiatedLOD,  $"{lodPathHandler.fileDirectoryRelativeToDataPath}/{lodPathHandler.fileNameWithoutExtension}.prefab");
@@ -156,7 +158,7 @@ public class LODConversion
         }
     }
 
-    private void SetDCLShaderMaterial(LODPathHandler lodPathHandler, GameObject transform, bool setDefaultTransparency, Shader shader, Vector4 scenePlane)
+    private void SetDCLShaderMaterial(LODPathHandler lodPathHandler, GameObject transform, bool setDefaultTransparency, Shader shader, Vector4 scenePlane, float sceneHeight)
     {
         var childrenRenderers = transform.GetComponentsInChildren<Renderer>();
         var materialsDictionary = new Dictionary<string, Material>();
@@ -169,11 +171,12 @@ public class LODConversion
                 var duplicatedMaterial = new Material(material);
                 duplicatedMaterial.shader = shader;
                 duplicatedMaterial.SetVector(Shader.PropertyToID("_PlaneClipping"), scenePlane);
-                
+                duplicatedMaterial.SetVector(VERTICAL_CLIPPING_ID, new Vector4(0.0f, sceneHeight, 0.0f, 0.0f));
+
                 if (duplicatedMaterial.name.Contains("FORCED_TRANSPARENT"))
                     ApplyTransparency(duplicatedMaterial, setDefaultTransparency);
 
-                
+
                 if (duplicatedMaterial.GetTexture("_BumpMap") != null)
                     SetNormalTextureFormat(duplicatedMaterial.GetTexture("_BumpMap").name);
 
@@ -215,7 +218,7 @@ public class LODConversion
         AssetDatabase.SaveAssets();
 
         IBuildPipeline buildPipeline = new ScriptableBuildPipeline();
-        
+
         // 1. Convert flagged folders to asset bundles only to automatically get dependencies for the metadata
         var manifest = buildPipeline.BuildAssetBundles(lodPathHandler.outputPath,
             BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
@@ -226,7 +229,7 @@ public class LODConversion
             string message = "Error generating asset bundle!";
             Utils.Exit(1);
         }
-        
+
         string[] lodAssetBundles = manifest.GetAllAssetBundles();
         foreach (string assetBundle in lodAssetBundles)
         {
@@ -238,7 +241,7 @@ public class LODConversion
             AssetBundleMetadataBuilder.GenerateLODMetadata(lodPathHandler.tempPath,
                 manifest.GetAllDependencies(assetBundle), $"{lodName}.prefab", lodName);
         }
-        
+
 
         AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
         AssetDatabase.SaveAssets();
@@ -248,6 +251,6 @@ public class LODConversion
             BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
             target);
     }
-    
-    
+
+
 }
