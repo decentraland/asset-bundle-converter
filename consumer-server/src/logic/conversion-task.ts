@@ -267,11 +267,11 @@ export async function executeConversion(
       logger.error('Empty conversion', { ...defaultLoggerMetadata, manifest } as any)
     }
 
-    let uploadPath = ""
-    if($BUILD_TARGET === "webgl") {
+    let uploadPath: string = ''
+    if ($BUILD_TARGET === 'webgl') {
       uploadPath = $AB_VERSION
-    }else{
-      uploadPath = $AB_VERSION + "/" + entityId
+    } else {
+      uploadPath = $AB_VERSION + '/' + entityId
     }
 
     // first upload the content
