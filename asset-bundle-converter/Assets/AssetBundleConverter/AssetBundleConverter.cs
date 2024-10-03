@@ -465,9 +465,9 @@ namespace DCL.ABConverter
                 string animationClipName = clip.name;
 
                 // Configure parameters
-                var triggerParameterName = $"{animationClipName}_Trigger";
-                var loopParameterName = $"{animationClipName}_{LOOP_PARAMETER}";
-                var enabledParameterName = $"{animationClipName}_Enabled";
+                var triggerParameterName = $"State_{i}_Trigger";
+                var loopParameterName = $"State_{i}_{LOOP_PARAMETER}";
+                var enabledParameterName = $"State_{i}_Enabled";
 
                 controller.AddParameter(triggerParameterName, AnimatorControllerParameterType.Trigger);
 
@@ -486,17 +486,19 @@ namespace DCL.ABConverter
                 });
 
                 // Configure layers
-                string layerName = controller.MakeUniqueLayerName(animationClipName);
+                string layerName = controller.MakeUniqueLayerName($"State_{i}_Layer");
                 controller.AddLayer(new AnimatorControllerLayer
                 {
-                    name = animationClipName,
+                    name = layerName,
                     defaultWeight = isDefaultState ? 1f : 0f,
                     stateMachine = new AnimatorStateMachine(),
                     iKPass = false,
                     blendingMode = AnimatorLayerBlendingMode.Override,
                     avatarMask = null,
                 });
-                int layerIndex = GetLayerIndex();
+
+                // We have to add one since 0 is the base layer
+                int layerIndex = i + 1;
                 AnimatorControllerLayer layer = controller.layers[layerIndex];
                 AnimatorStateMachine layerStateMachine = layer.stateMachine;
 
@@ -538,17 +540,6 @@ namespace DCL.ABConverter
                     toEmptyTransition.exitTime = 1;
                     toEmptyTransition.duration = 0;
                     toEmptyTransition.hasExitTime = true;
-                }
-
-                continue;
-
-                int GetLayerIndex()
-                {
-                    for (var i = 0; i < controller.layers.Length; i++)
-                        if (controller.layers[i].name == layerName)
-                            return i;
-
-                    return -1;
                 }
             }
 
