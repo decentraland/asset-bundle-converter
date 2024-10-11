@@ -15,6 +15,7 @@ import { createMemoryQueueAdapter, createSqsAdapter } from './adapters/task-queu
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { createRunnerComponent } from './adapters/runner'
 import { createSentryComponent } from './adapters/sentry'
+import { CatalystDeploymentEvent } from '@dcl/schemas'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -46,7 +47,7 @@ export async function initComponents(): Promise<AppComponents> {
   const sqsQueue = await config.getString('TASK_QUEUE')
   const priorityQueue = await config.getString('PRIORITY_TASK_QUEUE')
   const taskQueue = sqsQueue
-    ? createSqsAdapter<DeploymentToSqs>(
+    ? createSqsAdapter<CatalystDeploymentEvent>(
         { logs, metrics },
         { queueUrl: sqsQueue, priorityQueueUrl: priorityQueue, queueRegion: AWS_REGION }
       )

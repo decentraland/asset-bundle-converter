@@ -37,9 +37,9 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
         try {
           components.metrics.increment('ab_converter_running_conversion')
           if (job.lods) {
-            await executeLODConversion(components, job.entity.entityId, job.lods)
+            await executeLODConversion(components, job.entity.id, job.lods)
           } else {
-            await executeConversion(components, job.entity.entityId, job.contentServerUrls![0], job.force)
+            await executeConversion(components, job.entity.id, job.contentServerUrls![0], job.force || false)
           }
         } finally {
           components.metrics.decrement('ab_converter_running_conversion')
