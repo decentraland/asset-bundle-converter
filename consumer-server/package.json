@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@dcl/cdn-uploader": "^1.4.1-20230208155013.commit-f75a6ee",
-    "@dcl/schemas": "^10.4.0",
+    "@dcl/schemas": "https://sdk-team-cdn.decentraland.org/@dcl/schemas/branch/feat/catalystdeployment-event-enhance/dcl-schemas-14.1.1-11298454068.commit-73ae2fb.tgz",
     "@sentry/node": "^8.27.0",
     "@well-known-components/env-config-provider": "^1.2.0",
     "@well-known-components/http-server": "^2.1.0",

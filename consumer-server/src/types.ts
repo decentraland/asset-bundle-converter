@@ -12,6 +12,7 @@ import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { S3 } from 'aws-sdk'
 import { IRunnerComponent } from './adapters/runner'
 import { SentryComponent } from './adapters/sentry'
+import { CatalystDeploymentEvent } from '@dcl/schemas'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -23,7 +24,7 @@ export type BaseComponents = {
   logs: ILoggerComponent
   server: IHttpServerComponent<GlobalContext>
   fetch: IFetchComponent
-  taskQueue: ITaskQueue<DeploymentToSqs>
+  taskQueue: ITaskQueue<CatalystDeploymentEvent>
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
   cdnS3: S3
   runner: IRunnerComponent

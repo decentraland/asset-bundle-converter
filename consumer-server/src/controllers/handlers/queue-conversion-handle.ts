@@ -1,3 +1,4 @@
+import { CatalystDeploymentEvent } from '@dcl/schemas'
 import { HandlerContextWithPath } from '../../types'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
@@ -15,10 +16,10 @@ export async function queueTaskHandler(
 
   const body = await request.json()
 
-  if (!DeploymentToSqs.validate(body)) return { status: 403, body: { errors: DeploymentToSqs.validate.errors } }
+  if (!CatalystDeploymentEvent.validate(body)) return { status: 403, body: { errors: DeploymentToSqs.validate.errors } }
 
   const shouldPrioritize = !!(body as any)?.prioritize
-  const message = await taskQueue.publish(body as DeploymentToSqs, shouldPrioritize)
+  const message = await taskQueue.publish(body as CatalystDeploymentEvent, shouldPrioritize)
 
   return {
     status: 201,
