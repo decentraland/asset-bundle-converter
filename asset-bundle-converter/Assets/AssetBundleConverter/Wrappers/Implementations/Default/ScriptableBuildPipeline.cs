@@ -39,12 +39,6 @@ namespace DCL
             EditorSceneManager.SaveOpenScenes();
 
             var buildInput = ContentBuildInterface.GenerateAssetBundleBuilds();
-
-            //Filter out the DCL asset bundles, as they are not needed for the build.
-            List<AssetBundleBuild> buildInputList = new List<AssetBundleBuild>(buildInput);
-            buildInputList.RemoveAll(item => item.assetBundleName.StartsWith("dcl/"));
-            buildInput = buildInputList.ToArray();
-
             // Address by names instead of paths for backwards compatibility.
             for (var i = 0; i < buildInput.Length; i++)
                 buildInput[i].addressableNames = buildInput[i].assetNames.Select(Path.GetFileName).ToArray();
