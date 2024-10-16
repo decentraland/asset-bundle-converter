@@ -349,9 +349,13 @@ namespace DCL.ABConverter
                             material.shader = Shader.Find("Shader Graphs/glTF-pbrMetallicRoughness");
                         }
 
-
-                        SRPBatchingHelper.OptimizeMaterial(material);
-
+                        #if UNITY_EDITOR
+                            if (UnityEditor.EditorUserBuildSettings.selectedBuildTargetGroup == UnityEditor.BuildTargetGroup.WebGL)
+                                SRPBatchingHelper.OptimizeMaterial(material);
+                        #else
+                            if (Application.platform == RuntimePlatform.WebGLPlayer)
+                                SRPBatchingHelper.OptimizeMaterial(material);
+                        #endif
                     }
 
                     if (asset is GameObject assetAsGameObject)
