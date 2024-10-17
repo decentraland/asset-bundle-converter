@@ -74,7 +74,7 @@ namespace AssetBundleConverter.Editor
             }
 
             if (!useOriginalMaterials)
-                SetupCustomMaterialGenerator(new AssetBundleConverterMaterialGenerator(AssetBundleConverterMaterialGenerator.UseNewShader(EditorUserBuildSettings.activeBuildTarget)));
+                SetupCustomMaterialGenerator(new AssetBundleConverterMaterialGenerator(AssetBundleConverterMaterialGenerator.UseNewShader(EditorUserBuildSettings.activeBuildTarget), EditorUserBuildSettings.activeBuildTarget == BuildTarget.WebGL));
 
             try
             {
