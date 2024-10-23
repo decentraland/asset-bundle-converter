@@ -448,6 +448,10 @@ namespace DCL.ABConverter
             var filePath = $"{animatorRoot}animatorController.controller";
             var controller = AnimatorController.CreateAnimatorControllerAtPath(filePath);
 
+            List<string> layerNames = new List<string>();
+            foreach (AnimatorControllerLayer animatorControllerLayer in controller.layers)
+                layerNames.Add(animatorControllerLayer.name);
+
             for (var i = 0; i < clips.Count; i++)
             {
                 AnimationClip originalClip = clips[i];
@@ -487,9 +491,10 @@ namespace DCL.ABConverter
 
                 // Configure layers
                 string layerName = controller.MakeUniqueLayerName(animationClipName);
+                layerNames.Add(layerName);
                 controller.AddLayer(new AnimatorControllerLayer
                 {
-                    name = animationClipName,
+                    name = layerName,
                     defaultWeight = isDefaultState ? 1f : 0f,
                     stateMachine = new AnimatorStateMachine(),
                     iKPass = false,
@@ -544,8 +549,8 @@ namespace DCL.ABConverter
 
                 int GetLayerIndex()
                 {
-                    for (var i = 0; i < controller.layers.Length; i++)
-                        if (controller.layers[i].name == layerName)
+                    for (var i = 0; i < layerNames.Count; i++)
+                        if (layerNames[i] == layerName)
                             return i;
 
                     return -1;
