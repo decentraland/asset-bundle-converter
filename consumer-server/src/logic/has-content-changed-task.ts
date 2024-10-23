@@ -127,6 +127,20 @@ async function downloadFilesFromManifestSuccesfully(manifest: any, outputFolder:
 }
 
 
+// Helper function to delete all files in the output folder
+async function DeleteFilesInOutputFolder(outputFolder: string): Promise<void> {
+    if (fs.existsSync(outputFolder)) {
+        const files = fs.readdirSync(outputFolder);
+
+        for (const file of files) {
+            const filePath = path.join(outputFolder, file);
+            fs.unlinkSync(filePath);  // Delete each file
+        }
+
+        console.log(`Deleted all files in ${outputFolder}`);
+    }
+}
+
 export async function HasContentChange(entityId : string, contentServerUrl : string, buildTarget : string, outputFolder : string) : Promise<boolean>{
     const entity = await getActiveEntity(entityId, contentServerUrl)
     if (entity.type === 'scene') {
@@ -138,7 +152,14 @@ export async function HasContentChange(entityId : string, contentServerUrl : str
                 if(doesEntityMatchHashes){
                     const allFilesDownloadSuccesfully = await downloadFilesFromManifestSuccesfully(manifest, outputFolder)
                     //If all files download successfully, content has not changed
-                    return !allFilesDownloadSuccesfully
+                    if(allFilesDownloadSuccesfully){
+                        return false
+                    }
+                    else
+                    {
+                        //In case we downloaded some file, remove the corrupt state
+                        DeleteFilesInOutputFolder(outputFolder)
+                    }
                 }
             }
         }
