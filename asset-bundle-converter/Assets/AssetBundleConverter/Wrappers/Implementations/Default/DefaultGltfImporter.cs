@@ -36,7 +36,7 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
         private static IMaterialGenerator GetNewMaterialGenerator(ShaderType shaderType, BuildTarget buildTarget) =>
             shaderType == ShaderType.Dcl
-                ? new AssetBundleConverterMaterialGenerator(AssetBundleConverterMaterialGenerator.UseNewShader(buildTarget))
+                ? new AssetBundleConverterMaterialGenerator(AssetBundleConverterMaterialGenerator.UseNewShader(buildTarget), buildTarget == BuildTarget.WebGL)
                 : null;
 
         public bool ConfigureImporter(string relativePath, ContentMap[] contentMap, string fileRootPath, string hash, ShaderType shaderType,
