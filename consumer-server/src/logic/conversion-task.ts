@@ -6,6 +6,7 @@ import { AppComponents } from '../types'
 import { runConversion, runLodsConversion } from './run-conversion'
 import * as fs from 'fs'
 import * as path from 'path'
+import {HasContentChange} from "./has-content-changed-task";
 
 type Manifest = {
   version: string
@@ -235,19 +236,28 @@ export async function executeConversion(
   const defaultLoggerMetadata = { entityId, contentServerUrl, version: $AB_VERSION, logFile: s3LogKey }
 
   logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
+  let hasContentChanged = true;
+  
+  if ($BUILD_TARGET !== 'webgl') {
+    hasContentChanged = await HasContentChange(entityId, contentServerUrl, $BUILD_TARGET, outDirectory)
+  }
 
   let exitCode
   try {
-    exitCode = await runConversion(logger, components, {
-      contentServerUrl,
-      entityId,
-      logFile,
-      outDirectory,
-      projectPath: $PROJECT_PATH,
-      unityPath: $UNITY_PATH,
-      timeout: 120 * 60 * 1000, // 120min temporarily doubled
-      unityBuildTarget: unityBuildTarget
-    })
+    if(hasContentChanged){
+      exitCode = await runConversion(logger, components, {
+        contentServerUrl,
+        entityId,
+        logFile,
+        outDirectory,
+        projectPath: $PROJECT_PATH,
+        unityPath: $UNITY_PATH,
+        timeout: 120 * 60 * 1000, // 120min temporarily doubled
+        unityBuildTarget: unityBuildTarget
+      })
+    }else{
+      exitCode = 0
+    }
 
     components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })
 
