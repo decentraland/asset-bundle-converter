@@ -92,12 +92,12 @@ function isHashInManifest(hash: string, manifestFiles: string[]): boolean {
 }
 
 // Function to check if all filtered content hashes are in the manifest
-function areAllContentHashesInManifest(content: { file: string, hash: string }[], manifestFiles: string[]): boolean {
+function AreAllContentHashesInManifest(content: { file: string, hash: string }[], manifestFiles: string[]): boolean {
     const validHashes = extractValidHashesFromEntity(content);
     return validHashes.every(hash => isHashInManifest(hash, manifestFiles));
 }
 
-async function downloadFilesFromManifestSuccesfully(manifest: any, outputFolder: string): Promise<bool> {
+async function downloadFilesFromManifestSuccesfully(manifest: any, outputFolder: string): Promise<boolean> {
     const baseUrl = `https://ab-cdn.decentraland.org/${manifest.version}/`;
 
     for (const file of manifest.files) {
@@ -134,9 +134,11 @@ export async function HasContentChange(entityId : string, contentServerUrl : str
         if (previousHash != null) {
             const manifest = await getManifestFiles(previousHash, buildTarget)
             if(manifest != null) {
-                const doesEntityMatchHashes = areAllContentHashesInManifest(entity.content, manifest.files);
+                const doesEntityMatchHashes = AreAllContentHashesInManifest(entity.content, manifest.files);
                 if(doesEntityMatchHashes){
-                    return await downloadFilesFromManifestSuccesfully(manifest, outputFolder)
+                    const allFilesDownloadSuccesfully = await downloadFilesFromManifestSuccesfully(manifest, outputFolder)
+                    //If all files download successfully, content has not changed
+                    return !allFilesDownloadSuccesfully
                 }
             }
         }
