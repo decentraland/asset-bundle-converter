@@ -6,7 +6,7 @@ import { AppComponents } from '../types'
 import { runConversion, runLodsConversion } from './run-conversion'
 import * as fs from 'fs'
 import * as path from 'path'
-import { HasContentChange } from './has-content-changed-task'
+import { hasContentChange } from './has-content-changed-task'
 
 type Manifest = {
   version: string
