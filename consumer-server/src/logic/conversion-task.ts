@@ -247,7 +247,7 @@ export async function executeConversion(
   }
 
   console.log(`HasContentChanged for ${entityId} result was ${hasContentChanged}`)
-  
+
   let exitCode
   try {
     if (hasContentChanged) {

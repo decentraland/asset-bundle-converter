@@ -38,13 +38,11 @@ async function getManifestFiles(entityID: string, buildTarget: string): Promise<
   }
 }
 
-async function getLastEntityIdByBase(base: string, contentServer : string): Promise<string | null> {
+async function getLastEntityIdByBase(base: string, contentServer: string): Promise<string | null> {
   const url = `${contentServer}/pointer-changes?entityType=scene&sortingField=localTimestamp`
 
   const res = await fetch(url)
   const response = await res.json()
-  
-  console.log("JUANI " + url)
 
   if (!res.ok) {
     throw new Error('Error fetching pointer changes: ' + JSON.stringify(response))
@@ -140,7 +138,6 @@ async function DeleteFilesInOutputFolder(outputFolder: string): Promise<void> {
     console.log(`Deleted all files in ${outputFolder}`)
   }
 }
-
 
 //Checks if the new content is all built in a previous version. If all the content is present, then it wont convert,
 //it will just download it from the old one
