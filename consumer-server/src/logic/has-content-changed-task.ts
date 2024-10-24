@@ -39,7 +39,7 @@ async function getManifestFiles(entityID: string, buildTarget: string): Promise<
   }
 }
 
-async function getLastEntityIdByBase(base: string, contentServer: string): Promise<string | null> {
+async function getLastEntityIdByBase(currentEntityId: string, base: string, contentServer: string): Promise<string | null> {
   const url = `${contentServer}/pointer-changes?entityType=scene&sortingField=localTimestamp`
 
   const res = await fetch(url)
@@ -52,7 +52,7 @@ async function getLastEntityIdByBase(base: string, contentServer: string): Promi
   // Iterate through the deltas array to find the first matching base, since order is DESC in the endpoint
   for (const delta of response.deltas) {
     const deltaBase = delta.metadata.scene?.base
-    if (deltaBase && deltaBase === base) {
+    if (deltaBase && deltaBase === base && delta.entityId !== currentEntityId) {
       return delta.entityId
     }
   }
@@ -153,7 +153,7 @@ export async function hasContentChange(
   const entity = await getActiveEntity(entityId, contentServerUrl)
   if (entity.type === 'scene') {
     logger.info(`HasContentChanged: Entity ${entityId} is a scene`)
-    const previousHash = await getLastEntityIdByBase(entity.metadata.scene.base, contentServerUrl)
+    const previousHash = await getLastEntityIdByBase(entityId, entity.metadata.scene.base, contentServerUrl)
     if (previousHash !== null) {
       logger.info(`HasContentChanged: Previous hash is ${previousHash}`)
       const manifest = await getManifestFiles(previousHash, buildTarget)
