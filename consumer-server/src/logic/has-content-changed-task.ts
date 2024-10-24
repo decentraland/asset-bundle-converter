@@ -39,7 +39,11 @@ async function getManifestFiles(entityID: string, buildTarget: string): Promise<
   }
 }
 
-async function getLastEntityIdByBase(currentEntityId: string, base: string, contentServer: string): Promise<string | null> {
+async function getLastEntityIdByBase(
+  currentEntityId: string,
+  base: string,
+  contentServer: string
+): Promise<string | null> {
   const url = `${contentServer}/pointer-changes?entityType=scene&sortingField=localTimestamp`
 
   const res = await fetch(url)
