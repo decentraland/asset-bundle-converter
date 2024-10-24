@@ -142,7 +142,7 @@ async function DeleteFilesInOutputFolder(outputFolder: string): Promise<void> {
 //Checks if the new content is all built in a previous version. If all the content is present, then it wont convert,
 //it will just download it from the old one
 //Note: ALL OF THE CONTENT NEEDS TO BE PRESENT. Just one change forces a reconversion
-export async function HasContentChange(
+export async function hasContentChange(
   entityId: string,
   contentServerUrl: string,
   buildTarget: string,
