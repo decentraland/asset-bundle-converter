@@ -1,7 +1,8 @@
 import { Entity } from '@dcl/schemas'
 import * as fs from 'fs'
 import * as path from 'path'
-import fetch from 'node-fetch' // Assuming you're using the node-fetch package
+import fetch from 'node-fetch'
+import { ILoggerComponent } from '@well-known-components/interfaces' // Assuming you're using the node-fetch package
 async function getActiveEntity(ids: string, contentServer: string): Promise<Entity> {
   const url = `${contentServer}/entities/active`
 
@@ -146,17 +147,22 @@ export async function hasContentChange(
   entityId: string,
   contentServerUrl: string,
   buildTarget: string,
-  outputFolder: string
+  outputFolder: string,
+  logger: ILoggerComponent.ILogger
 ): Promise<boolean> {
   const entity = await getActiveEntity(entityId, contentServerUrl)
   if (entity.type === 'scene') {
+    logger.info(`HasContentChanged: Entity ${entityId} is a scene`)
     const previousHash = await getLastEntityIdByBase(entity.metadata.scene.base, contentServerUrl)
     if (previousHash !== null) {
+      logger.info(`HasContentChanged: Previous hash is ${previousHash}`)
       const manifest = await getManifestFiles(previousHash, buildTarget)
       if (manifest !== null) {
+        logger.info(`HasContentChanged: Manifest exists for hash ${previousHash}`)
         const hashes = extractValidHashesFromEntity(entity.content)
         const doesEntityMatchHashes = AreAllContentHashesInManifest(hashes, manifest.files)
         if (doesEntityMatchHashes) {
+          logger.info(`HasContentChanged: All entities contained in old manifest`)
           const allFilesDownloadSuccesfully = await downloadFilesFromManifestSuccesfully(
             hashes,
             manifest.version,
@@ -168,6 +174,7 @@ export async function hasContentChange(
           if (allFilesDownloadSuccesfully) {
             return false
           } else {
+            logger.info(`HasContentChanged: Some downloads failed`)
             //In case we downloaded some file, remove the corrupt state
             await DeleteFilesInOutputFolder(outputFolder)
           }
