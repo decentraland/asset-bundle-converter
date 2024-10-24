@@ -2,11 +2,12 @@ import { Entity } from '@dcl/schemas'
 import * as fs from 'fs'
 import * as path from 'path'
 import fetch from 'node-fetch' // Assuming you're using the node-fetch package
-async function getActiveEntity(pointers: string, sourceServer: string): Promise<Entity> {
+async function getActiveEntity(ids: string, sourceServer: string): Promise<Entity> {
   const url = `${sourceServer}/entities/active`
+
   const res = await fetch(url, {
     method: 'post',
-    body: JSON.stringify({ pointers }),
+    body: JSON.stringify({ ids: [ids] }),
     headers: { 'content-type': 'application/json' }
   })
 
@@ -30,15 +31,15 @@ async function getManifestFiles(entityID: string, buildTarget: string): Promise<
   }
 
   if (response.exitCode === 0) {
-    return response // Return the full manifest as regular JSON
+    return response
   } else {
     console.error(`Error: exitCode is ${response.exitCode}`)
     return null
   }
 }
 
-async function getLastEntityIdByBase(base: string): Promise<Entity | null> {
-  const url = `https://peer-ap1.decentraland.org/content/pointer-changes?entityType=scene`
+async function getLastEntityIdByBase(base: string): Promise<string | null> {
+  const url = `https://peer-ap1.decentraland.org/content/pointer-changes?entityType=scene&sortingField=localTimestamp`
 
   const res = await fetch(url)
   const response = await res.json()
@@ -47,19 +48,16 @@ async function getLastEntityIdByBase(base: string): Promise<Entity | null> {
     throw new Error('Error fetching pointer changes: ' + JSON.stringify(response))
   }
 
-  let lastEntityId: string | null = null
-
-  // Iterate through the deltas array
+  // Iterate through the deltas array to find the first matching base, since order is DESC in the endpoint
   for (const delta of response.deltas) {
     const deltaBase = delta.metadata.scene?.base
     if (deltaBase && deltaBase === base) {
-      // Update the lastEntityId with the latest match
-      lastEntityId = delta.entityId
+      return delta.entityId
     }
   }
 
-  // Return the last matching entityId, or null if none are found
-  return lastEntityId
+  // Return null if no match is found
+  return null
 }
 
 // Extension lists
@@ -89,16 +87,22 @@ function isHashInManifest(hash: string, manifestFiles: string[]): boolean {
 }
 
 // Function to check if all filtered content hashes are in the manifest
-function AreAllContentHashesInManifest(content: { file: string; hash: string }[], manifestFiles: string[]): boolean {
-  const validHashes = extractValidHashesFromEntity(content)
-  return validHashes.every((hash) => isHashInManifest(hash, manifestFiles))
+function AreAllContentHashesInManifest(hashes: string[], manifestFiles: string[]): boolean {
+  return hashes.every((hash) => isHashInManifest(hash, manifestFiles))
 }
 
-async function downloadFilesFromManifestSuccesfully(manifest: any, outputFolder: string): Promise<boolean> {
-  const baseUrl = `https://ab-cdn.decentraland.org/${manifest.version}/`
+async function downloadFilesFromManifestSuccesfully(
+  hashesToDownload: string[],
+  version: string,
+  buildTarget: string,
+  previousHash: string,
+  outputFolder: string
+): Promise<boolean> {
+  const baseUrl = `https://ab-cdn.decentraland.org/${version}/${previousHash}/`
 
-  for (const file of manifest.files) {
-    const fileUrl = `${baseUrl}${file}`
+  for (const file of hashesToDownload) {
+    const fileToDownload = `${file}_${buildTarget}`
+    const fileUrl = `${baseUrl}${fileToDownload}`
     console.log(`Downloading: ${fileUrl}`)
 
     try {
@@ -109,7 +113,7 @@ async function downloadFilesFromManifestSuccesfully(manifest: any, outputFolder:
       }
 
       const buffer = await res.buffer() // Download as buffer
-      const outputPath = path.join(outputFolder, file) // Path to save the file
+      const outputPath = path.join(outputFolder, fileToDownload) // Path to save the file
 
       // Write the file to the output folder
       fs.writeFileSync(outputPath, buffer)
@@ -145,19 +149,26 @@ export async function HasContentChange(
 ): Promise<boolean> {
   const entity = await getActiveEntity(entityId, contentServerUrl)
   if (entity.type === 'scene') {
-    const previousHash = await getLastEntityIdByBase(entityId)
-    if (previousHash != null) {
+    const previousHash = await getLastEntityIdByBase(entity.metadata.scene.base)
+    if (previousHash !== null) {
       const manifest = await getManifestFiles(previousHash, buildTarget)
-      if (manifest != null) {
-        const doesEntityMatchHashes = AreAllContentHashesInManifest(entity.content, manifest.files)
+      if (manifest !== null) {
+        const hashes = extractValidHashesFromEntity(entity.content)
+        const doesEntityMatchHashes = AreAllContentHashesInManifest(hashes, manifest.files)
         if (doesEntityMatchHashes) {
-          const allFilesDownloadSuccesfully = await downloadFilesFromManifestSuccesfully(manifest, outputFolder)
+          const allFilesDownloadSuccesfully = await downloadFilesFromManifestSuccesfully(
+            hashes,
+            manifest.version,
+            buildTarget,
+            previousHash,
+            outputFolder
+          )
           //If all files download successfully, content has not changed
           if (allFilesDownloadSuccesfully) {
             return false
           } else {
             //In case we downloaded some file, remove the corrupt state
-            DeleteFilesInOutputFolder(outputFolder)
+            await DeleteFilesInOutputFolder(outputFolder)
           }
         }
       }
