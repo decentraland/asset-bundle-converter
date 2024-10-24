@@ -2,7 +2,7 @@ import { Entity } from '@dcl/schemas'
 import * as fs from 'fs'
 import * as path from 'path'
 import fetch from 'node-fetch'
-import {ILoggerComponent} from "@well-known-components/interfaces"; // Assuming you're using the node-fetch package
+import { ILoggerComponent } from '@well-known-components/interfaces' // Assuming you're using the node-fetch package
 async function getActiveEntity(ids: string, contentServer: string): Promise<Entity> {
   const url = `${contentServer}/entities/active`
 
@@ -148,7 +148,7 @@ export async function hasContentChange(
   contentServerUrl: string,
   buildTarget: string,
   outputFolder: string,
-  logger : ILoggerComponent.ILogger
+  logger: ILoggerComponent.ILogger
 ): Promise<boolean> {
   const entity = await getActiveEntity(entityId, contentServerUrl)
   if (entity.type === 'scene') {
