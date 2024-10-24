@@ -2,8 +2,8 @@ import { Entity } from '@dcl/schemas'
 import * as fs from 'fs'
 import * as path from 'path'
 import fetch from 'node-fetch' // Assuming you're using the node-fetch package
-async function getActiveEntity(ids: string, sourceServer: string): Promise<Entity> {
-  const url = `${sourceServer}/entities/active`
+async function getActiveEntity(ids: string, contentServer: string): Promise<Entity> {
+  const url = `${contentServer}/entities/active`
 
   const res = await fetch(url, {
     method: 'post',
@@ -38,11 +38,13 @@ async function getManifestFiles(entityID: string, buildTarget: string): Promise<
   }
 }
 
-async function getLastEntityIdByBase(base: string): Promise<string | null> {
-  const url = `https://peer-ap1.decentraland.org/content/pointer-changes?entityType=scene&sortingField=localTimestamp`
+async function getLastEntityIdByBase(base: string, contentServer : string): Promise<string | null> {
+  const url = `${contentServer}/pointer-changes?entityType=scene&sortingField=localTimestamp`
 
   const res = await fetch(url)
   const response = await res.json()
+  
+  console.log("JUANI " + url)
 
   if (!res.ok) {
     throw new Error('Error fetching pointer changes: ' + JSON.stringify(response))
@@ -103,8 +105,6 @@ async function downloadFilesFromManifestSuccesfully(
   for (const file of hashesToDownload) {
     const fileToDownload = `${file}_${buildTarget}`
     const fileUrl = `${baseUrl}${fileToDownload}`
-    console.log(`Downloading: ${fileUrl}`)
-
     try {
       const res = await fetch(fileUrl)
 
@@ -141,6 +141,10 @@ async function DeleteFilesInOutputFolder(outputFolder: string): Promise<void> {
   }
 }
 
+
+//Checks if the new content is all built in a previous version. If all the content is present, then it wont convert,
+//it will just download it from the old one
+//Note: ALL OF THE CONTENT NEEDS TO BE PRESENT. Just one change forces a reconversion
 export async function HasContentChange(
   entityId: string,
   contentServerUrl: string,
@@ -149,7 +153,7 @@ export async function HasContentChange(
 ): Promise<boolean> {
   const entity = await getActiveEntity(entityId, contentServerUrl)
   if (entity.type === 'scene') {
-    const previousHash = await getLastEntityIdByBase(entity.metadata.scene.base)
+    const previousHash = await getLastEntityIdByBase(entity.metadata.scene.base, contentServerUrl)
     if (previousHash !== null) {
       const manifest = await getManifestFiles(previousHash, buildTarget)
       if (manifest !== null) {
