@@ -240,7 +240,7 @@ export async function executeConversion(
 
   if ($BUILD_TARGET !== 'webgl') {
     try {
-      hasContentChanged = await HasContentChange(entityId, contentServerUrl, $BUILD_TARGET, outDirectory)
+      hasContentChanged = await hasContentChange(entityId, contentServerUrl, $BUILD_TARGET, outDirectory)
     } catch (e) {
       console.log('HasContentChanged failed with error ' + e)
     }
