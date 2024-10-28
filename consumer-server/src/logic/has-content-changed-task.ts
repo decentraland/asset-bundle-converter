@@ -146,8 +146,6 @@ async function DeleteFilesInOutputFolder(outputFolder: string): Promise<void> {
       const filePath = path.join(outputFolder, file)
       fs.unlinkSync(filePath) // Delete each file
     }
-
-    console.log(`Deleted all files in ${outputFolder}`)
   }
 }
 
