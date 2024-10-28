@@ -390,7 +390,7 @@ export async function executeConversion(
 
     throw err
   } finally {
-    if ($LOGS_BUCKET) {
+    if ($LOGS_BUCKET && hasContentChanged) {
       const log = `https://${$LOGS_BUCKET}.s3.amazonaws.com/${s3LogKey}`
 
       logger.info(`LogFile=${log}`, defaultLoggerMetadata)
