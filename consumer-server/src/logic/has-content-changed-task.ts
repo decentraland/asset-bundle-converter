@@ -21,7 +21,12 @@ async function getActiveEntity(ids: string, contentServer: string): Promise<Enti
   return JSON.parse(response)[0]
 }
 
-async function getManifestFiles(entityID: string, buildTarget: string, env: string): Promise<any | null> {
+async function getManifestFiles(
+  entityID: string,
+  buildTarget: string,
+  env: string,
+  logger: ILoggerComponent.ILogger
+): Promise<any | null> {
   const url = `https://ab-cdn.decentraland.${env}/manifest/${entityID}_${buildTarget}.json`
 
   const res = await fetch(url)
@@ -34,7 +39,7 @@ async function getManifestFiles(entityID: string, buildTarget: string, env: stri
   if (response.exitCode === 0) {
     return response
   } else {
-    console.error(`Error: exitCode is ${response.exitCode}`)
+    logger.error(`Error: exitCode is ${response.exitCode}`)
     return null
   }
 }
@@ -102,7 +107,8 @@ async function downloadFilesFromManifestSuccesfully(
   buildTarget: string,
   previousHash: string,
   outputFolder: string,
-  env: string
+  env: string,
+  logger: ILoggerComponent.ILogger
 ): Promise<boolean> {
   const baseUrl = `https://ab-cdn.decentraland.${env}/${version}/${previousHash}/`
 
@@ -122,9 +128,9 @@ async function downloadFilesFromManifestSuccesfully(
       // Write the file to the output folder
       fs.writeFileSync(outputPath, buffer)
 
-      console.log(`Downloaded and saved: ${outputPath}`)
+      logger.log(`Downloaded and saved: ${outputPath}`)
     } catch (error) {
-      console.error(`Error downloading file ${file}:`, error)
+      logger.log(`Error downloading file ${file} from ${fileUrl}: ${error}`)
       return false
     }
   }
@@ -157,14 +163,13 @@ export async function hasContentChange(
   logger: ILoggerComponent.ILogger
 ): Promise<boolean> {
   const entity = await getActiveEntity(entityId, contentServerUrl)
-
   if (entity.type === 'scene') {
     logger.info(`HasContentChanged: Entity ${entityId} is a scene`)
     const environemnt = contentServerUrl.includes('org') ? 'org' : 'zone'
     const previousHash = await getLastEntityIdByBase(entityId, entity.metadata.scene.base, contentServerUrl)
     if (previousHash !== null) {
       logger.info(`HasContentChanged: Previous hash is ${previousHash}`)
-      const manifest = await getManifestFiles(previousHash, buildTarget, environemnt)
+      const manifest = await getManifestFiles(previousHash, buildTarget, environemnt, logger)
       if (manifest !== null) {
         logger.info(`HasContentChanged: Manifest exists for hash ${previousHash}`)
         if (manifest.version === abVersion) {
@@ -179,20 +184,30 @@ export async function hasContentChange(
               buildTarget,
               previousHash,
               outputFolder,
-              environemnt
+              environemnt,
+              logger
             )
-            //If all files download successfully, content has not changed
             if (allFilesDownloadSuccesfully) {
+              logger.info(`HasContentChanged: All files downloaded successfully`)
               return false
             } else {
-              logger.info(`HasContentChanged: Some downloads failed`)
-              //In case we downloaded some file, remove the corrupt state
+              logger.info(`HasContentChanged Error: Some files failed to download`)
               await DeleteFilesInOutputFolder(outputFolder)
             }
+          } else {
+            logger.info(`HasContentChanged Error: Not all entities contained in old manifest`)
           }
+        } else {
+          logger.info(`HasContentChanged Error: Manifest versions are different`)
         }
+      } else {
+        logger.info(`HasContentChanged Error: Manifest does not exist for hash ${previousHash}`)
       }
+    } else {
+      logger.info(`HasContentChanged Error: Previous hash is null`)
     }
+  } else {
+    logger.info(`HasContentChanged Error: Entity ${entityId} is not a scene`)
   }
   return true
 }
