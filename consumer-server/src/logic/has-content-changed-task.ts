@@ -21,8 +21,8 @@ async function getActiveEntity(ids: string, contentServer: string): Promise<Enti
   return JSON.parse(response)[0]
 }
 
-async function getManifestFiles(entityID: string, buildTarget: string): Promise<any | null> {
-  const url = `https://ab-cdn.decentraland.org/manifest/${entityID}_${buildTarget}.json`
+async function getManifestFiles(entityID: string, buildTarget: string, env: string): Promise<any | null> {
+  const url = `https://ab-cdn.decentraland.${env}/manifest/${entityID}_${buildTarget}.json`
 
   const res = await fetch(url)
   const response = await res.json()
@@ -101,9 +101,10 @@ async function downloadFilesFromManifestSuccesfully(
   version: string,
   buildTarget: string,
   previousHash: string,
-  outputFolder: string
+  outputFolder: string,
+  env: string
 ): Promise<boolean> {
-  const baseUrl = `https://ab-cdn.decentraland.org/${version}/${previousHash}/`
+  const baseUrl = `https://ab-cdn.decentraland.${env}/${version}/${previousHash}/`
 
   for (const file of hashesToDownload) {
     const fileToDownload = `${file}_${buildTarget}`
@@ -152,35 +153,42 @@ export async function hasContentChange(
   contentServerUrl: string,
   buildTarget: string,
   outputFolder: string,
+  abVersion: string,
   logger: ILoggerComponent.ILogger
 ): Promise<boolean> {
   const entity = await getActiveEntity(entityId, contentServerUrl)
+
   if (entity.type === 'scene') {
     logger.info(`HasContentChanged: Entity ${entityId} is a scene`)
+    const environemnt = contentServerUrl.includes('org') ? 'org' : 'zone'
     const previousHash = await getLastEntityIdByBase(entityId, entity.metadata.scene.base, contentServerUrl)
     if (previousHash !== null) {
       logger.info(`HasContentChanged: Previous hash is ${previousHash}`)
-      const manifest = await getManifestFiles(previousHash, buildTarget)
+      const manifest = await getManifestFiles(previousHash, buildTarget, environemnt)
       if (manifest !== null) {
         logger.info(`HasContentChanged: Manifest exists for hash ${previousHash}`)
-        const hashes = extractValidHashesFromEntity(entity.content)
-        const doesEntityMatchHashes = AreAllContentHashesInManifest(hashes, manifest.files)
-        if (doesEntityMatchHashes) {
-          logger.info(`HasContentChanged: All entities contained in old manifest`)
-          const allFilesDownloadSuccesfully = await downloadFilesFromManifestSuccesfully(
-            hashes,
-            manifest.version,
-            buildTarget,
-            previousHash,
-            outputFolder
-          )
-          //If all files download successfully, content has not changed
-          if (allFilesDownloadSuccesfully) {
-            return false
-          } else {
-            logger.info(`HasContentChanged: Some downloads failed`)
-            //In case we downloaded some file, remove the corrupt state
-            await DeleteFilesInOutputFolder(outputFolder)
+        if (manifest.version === abVersion) {
+          logger.info(`HasContentChanged: Manifest versions are the same`)
+          const hashes = extractValidHashesFromEntity(entity.content)
+          const doesEntityMatchHashes = AreAllContentHashesInManifest(hashes, manifest.files)
+          if (doesEntityMatchHashes) {
+            logger.info(`HasContentChanged: All entities contained in old manifest`)
+            const allFilesDownloadSuccesfully = await downloadFilesFromManifestSuccesfully(
+              hashes,
+              manifest.version,
+              buildTarget,
+              previousHash,
+              outputFolder,
+              environemnt
+            )
+            //If all files download successfully, content has not changed
+            if (allFilesDownloadSuccesfully) {
+              return false
+            } else {
+              logger.info(`HasContentChanged: Some downloads failed`)
+              //In case we downloaded some file, remove the corrupt state
+              await DeleteFilesInOutputFolder(outputFolder)
+            }
           }
         }
       }
