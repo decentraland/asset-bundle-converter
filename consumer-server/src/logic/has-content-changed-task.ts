@@ -2,7 +2,7 @@ import { Entity } from '@dcl/schemas'
 import * as fs from 'fs'
 import * as path from 'path'
 import fetch from 'node-fetch'
-import { ILoggerComponent } from '@well-known-components/interfaces' // Assuming you're using the node-fetch package
+import { ILoggerComponent } from '@well-known-components/interfaces'
 async function getActiveEntity(ids: string, contentServer: string): Promise<Entity> {
   const url = `${contentServer}/entities/active`
 
@@ -110,6 +110,8 @@ async function downloadFilesFromManifestSuccesfully(
   env: string,
   logger: ILoggerComponent.ILogger
 ): Promise<boolean> {
+  fs.mkdirSync(outputFolder, { recursive: true })
+
   const baseUrl = `https://ab-cdn.decentraland.${env}/${version}/${previousHash}/`
 
   for (const file of hashesToDownload) {
@@ -138,14 +140,17 @@ async function downloadFilesFromManifestSuccesfully(
 }
 
 // Helper function to delete all files in the output folder
-async function DeleteFilesInOutputFolder(outputFolder: string): Promise<void> {
+async function DeleteFilesInOutputFolder(outputFolder: string, logger: ILoggerComponent.ILogger): Promise<void> {
   if (fs.existsSync(outputFolder)) {
-    const files = fs.readdirSync(outputFolder)
-
-    for (const file of files) {
-      const filePath = path.join(outputFolder, file)
-      fs.unlinkSync(filePath) // Delete each file
+    // Delete the directory and all of its contents
+    try {
+      fs.rmSync(outputFolder, { recursive: true, force: true })
+      logger.log(`HasContentChanged: Directory ${path} deleted successfully`)
+    } catch (err) {
+      logger.log(`HasContentChanged: Error deleting ${path} ${err}`)
     }
+  } else {
+    logger.log(`HasContentChanged: Directory ${path} does not exist`)
   }
 }
 
@@ -190,7 +195,7 @@ export async function hasContentChange(
               return false
             } else {
               logger.info(`HasContentChanged Error: Some files failed to download`)
-              await DeleteFilesInOutputFolder(outputFolder)
+              await DeleteFilesInOutputFolder(outputFolder, logger)
             }
           } else {
             logger.info(`HasContentChanged Error: Not all entities contained in old manifest`)
