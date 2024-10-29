@@ -10,7 +10,6 @@ namespace AssetBundleConverter.LODsConverter.Utils
     {
         private const float PARCEL_SIZE = 16.0f;
         private const float EXTEND_AMOUNT = 0.05f;
-        private const float MAX_HEIGHT = 200f;
 
         private static ParcelCorners CalculateCorners(Vector2Int parcelPosition)
         {
@@ -58,14 +57,10 @@ namespace AssetBundleConverter.LODsConverter.Utils
         private static Bounds CalculateSceneBoundingBox(Vector4 scenePlane, int parcelCount)
         {
             Vector3 center = new Vector3((scenePlane[0] + scenePlane[1]) / 2, 0, (scenePlane[2] + scenePlane[3]) / 2);
-            
-            //NOTE: I was getting inconsistencies on LOD_1 because weird merging was done underground.
-            //SO, by setting MAX_HEIGHT * 2, the height wont be larger than MAX_HEIGHT going up,
-            //And we'll go until MAX_HEIGHT underground
-            Vector3 size = new Vector3(scenePlane[1] - scenePlane[0]  + EXTEND_AMOUNT, MAX_HEIGHT * 2, scenePlane[3] - scenePlane[2] + EXTEND_AMOUNT);
+            Vector3 size = new Vector3(scenePlane[1] - scenePlane[0]  + EXTEND_AMOUNT, CalculateSceneHeight(parcelCount) * 2, scenePlane[3] - scenePlane[2] + EXTEND_AMOUNT);
             return new Bounds(center, size);
         }
-        
+
         public static void DisableObjectsOutsideBounds(Parcel parcel, GameObject parent)
         {
             parent.transform.position = GetPositionByParcelPosition(parcel.GetDecodedBaseParcel());
@@ -86,7 +81,7 @@ namespace AssetBundleConverter.LODsConverter.Utils
                     new Vector3(meshBounds.max.x, meshBounds.min.y, meshBounds.max.z),
                     meshBounds.max
                 };
-                
+
                 foreach (Vector3 corner in meshCorners) {
                     if (!sceneBoundingBox.Contains(corner)) {
                         isFullyContained = false;
@@ -99,6 +94,9 @@ namespace AssetBundleConverter.LODsConverter.Utils
             }
             parent.transform.position = Vector3.zero;
         }
+
+        public static float CalculateSceneHeight(int parcelCount) =>
+            Mathf.Log(parcelCount + 1, 2) * 20;
 
         public static Vector4 CalculateScenePlane(List<Vector2Int> decodedParcels)
         {
@@ -122,9 +120,6 @@ namespace AssetBundleConverter.LODsConverter.Utils
             }
 
             // to prevent on-boundary flickering (float accuracy) extend the circumscribed planes a little bit
-
-           
-
             circumscribedPlaneMinX -= EXTEND_AMOUNT;
             circumscribedPlaneMaxX += EXTEND_AMOUNT;
             circumscribedPlaneMinZ -= EXTEND_AMOUNT;
