@@ -121,7 +121,7 @@ async function downloadFilesFromManifestSuccesfully(
       const res = await fetch(fileUrl)
 
       if (!res.ok) {
-        throw new Error(`HasContentChanged: Failed to download file: ${fileUrl}`)
+        throw new Error(`Failed to download file: ${fileUrl}`)
       }
 
       const buffer = await res.buffer() // Download as buffer
@@ -130,9 +130,9 @@ async function downloadFilesFromManifestSuccesfully(
       // Write the file to the output folder
       fs.writeFileSync(outputPath, buffer)
 
-      logger.log(`HasContentChanged: Downloaded and saved: ${outputPath}`)
+      logger.log(`Downloaded and saved: ${outputPath}`)
     } catch (error) {
-      logger.log(`HasContentChanged: Error downloading file ${file} from ${fileUrl}: ${error}`)
+      logger.log(`Error downloading file ${file} from ${fileUrl}: ${error}`)
       return false
     }
   }
