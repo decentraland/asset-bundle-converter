@@ -1,16 +1,15 @@
-﻿using AssetBundleConverter;
-using AssetBundleConverter.Editor;
-using AssetBundleConverter.Wrappers.Implementations.Default;
-using AssetBundleConverter.Wrappers.Interfaces;
-using GLTFast;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using AssetBundleConverter;
+using AssetBundleConverter.Editor;
+using AssetBundleConverter.Wrappers.Interfaces;
 using Cysharp.Threading.Tasks;
+using GLTFast;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -953,7 +952,8 @@ namespace DCL.ABConverter
 
             // 1. Convert flagged folders to asset bundles only to automatically get dependencies for the metadata
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
-                BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
+                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
+                BuildAssetBundleOptions.AssetBundleStripUnityVersion,
                 target);
 
             if (manifest == null)
@@ -978,7 +978,8 @@ namespace DCL.ABConverter
 
             // 3. Convert flagged folders to asset bundles again but this time they have the metadata file inside
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
-                BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
+                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
+                BuildAssetBundleOptions.AssetBundleStripUnityVersion,
                 target);
 
             var afterSecondBuild = EditorApplication.timeSinceStartup;
