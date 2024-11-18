@@ -50,9 +50,9 @@ async function main() {
   const logs = await createLogComponent({})
   const config = createConfigComponent({})
   const metrics = await createMetricsComponent(metricDeclarations, { config })
+  const animation = 'mecanim'
 
   let entityId = ''
-  let animation = 'mecanim'
 
   if (IPFSv2.validate(POINTER) || IPFSv1.validate(POINTER)) {
     entityId = POINTER
