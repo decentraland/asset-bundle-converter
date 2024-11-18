@@ -198,9 +198,9 @@ export async function executeLODConversion(
 export async function executeConversion(
   components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry'>,
   entityId: string,
-  animation: string,
   contentServerUrl: string,
-  force: boolean | undefined
+  force: boolean | undefined,
+  animation: string | undefined
 ) {
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
