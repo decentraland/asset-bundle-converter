@@ -40,11 +40,11 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
             await executeLODConversion(components, job.entity.entityId, job.lods)
           } else {
             await executeConversion(
-                components, 
-                job.entity.entityId, 
-                job.contentServerUrls![0], 
-                job.force, 
-                job.animation
+              components,
+              job.entity.entityId,
+              job.contentServerUrls![0],
+              job.force,
+              job.animation
             )
           }
         } finally {
