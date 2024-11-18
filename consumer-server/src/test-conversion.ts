@@ -52,6 +52,7 @@ async function main() {
   const metrics = await createMetricsComponent(metricDeclarations, { config })
 
   let entityId = ''
+  let animation = 'mecanim'
 
   if (IPFSv2.validate(POINTER) || IPFSv1.validate(POINTER)) {
     entityId = POINTER
@@ -87,7 +88,8 @@ async function main() {
         unityPath: $UNITY_PATH,
         projectPath: $PROJECT_PATH,
         timeout: 30 * 60 * 1000, // 30min
-        unityBuildTarget: unityBuildTarget
+        unityBuildTarget: unityBuildTarget,
+        animation: animation
       }
     )
 

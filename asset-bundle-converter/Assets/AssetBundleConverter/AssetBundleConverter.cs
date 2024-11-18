@@ -621,7 +621,7 @@ namespace DCL.ABConverter
 
         private AnimationMethod GetAnimationMethod() =>
             settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX
-                ? AnimationMethod.Mecanim
+                ? settings.AnimationMethod
                 : AnimationMethod.Legacy;
 
         private void ExtractEmbedMaterialsFromGltf(List<Texture2D> textures, GltfImportSettings gltf, IGltfImport gltfImport, string gltfUrl)

@@ -198,6 +198,7 @@ export async function executeLODConversion(
 export async function executeConversion(
   components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry'>,
   entityId: string,
+  animation: string,
   contentServerUrl: string,
   force: boolean | undefined
 ) {
@@ -266,7 +267,8 @@ export async function executeConversion(
         projectPath: $PROJECT_PATH,
         unityPath: $UNITY_PATH,
         timeout: 120 * 60 * 1000, // 120min temporarily doubled
-        unityBuildTarget: unityBuildTarget
+        unityBuildTarget: unityBuildTarget,
+        animation: animation
       })
     } else {
       exitCode = 0
