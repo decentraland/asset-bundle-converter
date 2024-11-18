@@ -50,6 +50,7 @@ async function main() {
   const logs = await createLogComponent({})
   const config = createConfigComponent({})
   const metrics = await createMetricsComponent(metricDeclarations, { config })
+  const animation = 'mecanim'
 
   let entityId = ''
 
@@ -87,7 +88,8 @@ async function main() {
         unityPath: $UNITY_PATH,
         projectPath: $PROJECT_PATH,
         timeout: 30 * 60 * 1000, // 30min
-        unityBuildTarget: unityBuildTarget
+        unityBuildTarget: unityBuildTarget,
+        animation: animation
       }
     )
 

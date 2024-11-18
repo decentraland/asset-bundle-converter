@@ -1,6 +1,7 @@
 ﻿using AssetBundleConverter.Persistence;
 using System.Threading.Tasks;
 using DCL.ABConverter;
+using GLTFast;
 using System;
 using System.Linq;
 using UnityEditor;
@@ -65,6 +66,7 @@ namespace AssetBundleConverter
         private PersistentSetting<SupportedBuildTarget> buildTarget;
 
         private ClientSettings clientSettings;
+        private PersistentSetting<AnimationMethod> animationMehtod;
         private bool showDebugOptions;
         private bool stripShaders = true;
         private bool importGltf = true;
@@ -87,6 +89,7 @@ namespace AssetBundleConverter
             xCoord = PersistentSetting.CreateInt(nameof(xCoord), -110);
             yCoord = PersistentSetting.CreateInt(nameof(yCoord), -110);
             buildPipelineType = PersistentSetting.CreateEnum(nameof(buildPipelineType), BuildPipelineType.Scriptable);
+            animationMehtod = PersistentSetting.CreateEnum(nameof(animationMehtod), AnimationMethod.Mecanim);
             buildTarget = PersistentSetting.CreateEnum(nameof(buildTarget), SupportedBuildTarget.WebGL);
             failingConversionTolerance = PersistentSetting.CreateFloat(nameof(failingConversionTolerance), 0.05f); // 5%
             downloadBatchSize = PersistentSetting.CreateInt(nameof(downloadBatchSize), 20);
@@ -96,6 +99,7 @@ namespace AssetBundleConverter
         {
             GUILayout.Space(5);
             buildPipelineType.Value = (BuildPipelineType)EditorGUILayout.EnumPopup("Build Pipeline", buildPipelineType);
+            animationMehtod.Value = (AnimationMethod)EditorGUILayout.EnumPopup("Animation Method", animationMehtod);
             buildTarget.Value = (SupportedBuildTarget)EditorGUILayout.EnumPopup("Build Target", buildTarget);
 
             cleanAndExitOnFinish = EditorGUILayout.Toggle("Clean and exit on finish", cleanAndExitOnFinish);
@@ -342,7 +346,8 @@ namespace AssetBundleConverter
                 placeOnScene = placeOnScene,
                 verbose = verbose,
                 buildTarget = GetBuildTarget(),
-                BuildPipelineType = buildPipelineType
+                BuildPipelineType = buildPipelineType,
+                AnimationMethod = animationMehtod
             };
         }
 

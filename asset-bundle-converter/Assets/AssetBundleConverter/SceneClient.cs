@@ -1,5 +1,6 @@
 using AssetBundleConverter;
 using AssetBundleConverter.Wearables;
+using GLTFast;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -237,7 +238,17 @@ namespace DCL.ABConverter
             if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_CUSTOM_BASE_URL, 1, out string[] customBaseUrl))
                 settings.baseUrl = customBaseUrl[0];
 
+
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_ANIMATION_METHOD, 1, out string[] animationMethod))
+            {
+                var animMethod = animationMethod[0];
+
+                settings.AnimationMethod = animMethod switch { "legacy" => AnimationMethod.Legacy, _ => AnimationMethod.Mecanim };
+
+            }
+
             if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_SHADER, 1, out string[] shaderParam))
+
             {
                 var shader = shaderParam[0];
 

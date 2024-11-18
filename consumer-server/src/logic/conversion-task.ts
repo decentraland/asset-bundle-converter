@@ -199,7 +199,8 @@ export async function executeConversion(
   components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry'>,
   entityId: string,
   contentServerUrl: string,
-  force: boolean | undefined
+  force: boolean | undefined,
+  animation: string | undefined
 ) {
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
@@ -266,7 +267,8 @@ export async function executeConversion(
         projectPath: $PROJECT_PATH,
         unityPath: $UNITY_PATH,
         timeout: 120 * 60 * 1000, // 120min temporarily doubled
-        unityBuildTarget: unityBuildTarget
+        unityBuildTarget: unityBuildTarget,
+        animation: animation
       })
     } else {
       exitCode = 0
