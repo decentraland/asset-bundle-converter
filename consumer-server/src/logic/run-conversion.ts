@@ -112,7 +112,7 @@ export async function runConversion(
     projectPath: string
     timeout: number
     unityBuildTarget: string
-    animation: string
+    animation: string | undefined
   }
 ) {
   await setupStartDirectories(options)
@@ -145,7 +145,7 @@ export async function runConversion(
     '-buildTarget',
     options.unityBuildTarget,
     '-animation',
-    options.animation
+    options.animation || 'mecanim'
   ]
 
   return await executeProgram({
