@@ -239,7 +239,7 @@ export async function executeConversion(
   logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
   let hasContentChanged = true
 
-  if ($BUILD_TARGET !== 'webgl') {
+  if ($BUILD_TARGET !== 'webgl' && !force) {
     try {
       hasContentChanged = await hasContentChange(
         entityId,

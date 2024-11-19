@@ -50,7 +50,7 @@ async function main() {
   const logs = await createLogComponent({})
   const config = createConfigComponent({})
   const metrics = await createMetricsComponent(metricDeclarations, { config })
-  const animation = 'mecanim'
+  const animation = 'legacy'
 
   let entityId = ''
 

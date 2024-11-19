@@ -1,6 +1,6 @@
+using System.IO;
 using DCL.ABConverter;
 using GLTFast;
-using System.IO;
 using UnityEditor;
 using UnityEngine;
 
@@ -23,7 +23,7 @@ namespace AssetBundleConverter
             /// <summary>
             /// animation method used to force the legacy animation system or not from CLI
             /// </summary>
-            public AnimationMethod AnimationMethod = AnimationMethod.Mecanim;
+            public AnimationMethod AnimationMethod = AnimationMethod.Legacy;
 
             /// <summary>
             /// if set to true, when conversion finishes, the working folder containing all downloaded assets will be deleted

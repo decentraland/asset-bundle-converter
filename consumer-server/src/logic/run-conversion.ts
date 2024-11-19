@@ -145,7 +145,7 @@ export async function runConversion(
     '-buildTarget',
     options.unityBuildTarget,
     '-animation',
-    options.animation || 'mecanim'
+    options.animation || 'legacy'
   ]
 
   return await executeProgram({
