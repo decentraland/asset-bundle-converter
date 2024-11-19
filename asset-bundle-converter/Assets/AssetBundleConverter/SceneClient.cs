@@ -1,10 +1,9 @@
+using System;
+using System.Linq;
+using System.Threading.Tasks;
 using AssetBundleConverter;
 using AssetBundleConverter.Wearables;
 using GLTFast;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 using Environment = AssetBundleConverter.Environment;
@@ -76,7 +75,7 @@ namespace DCL.ABConverter
         /// Start the scene conversion process with the given commandLineArgs.
         /// </summary>
         /// <param name="commandLineArgs">An array with the command line arguments.</param>
-        /// <exception cref="ArgumentException">When an invalid argument is passed</exception>
+        /// <exception cref="System.ArgumentException">When an invalid argument is passed</exception>
         public async static void ExportSceneToAssetBundles(string[] commandLineArgs, ClientSettings settings = default)
         {
             settings ??= new ClientSettings();
@@ -173,7 +172,7 @@ namespace DCL.ABConverter
         /// Start the wearables collection conversion process with the given commandLineArgs.
         /// </summary>
         /// <param name="commandLineArgs">An array with the command line arguments.</param>
-        /// <exception cref="ArgumentException">When an invalid argument is passed</exception>
+        /// <exception cref="System.ArgumentException">When an invalid argument is passed</exception>
         public static async void ExportWearablesCollectionToAssetBundles(string[] commandLineArgs)
         {
             ClientSettings settings = new ClientSettings();
@@ -243,7 +242,8 @@ namespace DCL.ABConverter
             {
                 var animMethod = animationMethod[0];
 
-                settings.AnimationMethod = animMethod switch { "legacy" => AnimationMethod.Legacy, _ => AnimationMethod.Mecanim };
+                settings.AnimationMethod =
+                    animMethod switch { "mecanim" => AnimationMethod.Mecanim, _ => AnimationMethod.Legacy };
 
             }
 

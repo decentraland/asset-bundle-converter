@@ -619,10 +619,16 @@ namespace DCL.ABConverter
             AssetDatabase.Refresh();
         }
 
-        private AnimationMethod GetAnimationMethod() =>
-            settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX
-                ? settings.AnimationMethod
-                : AnimationMethod.Legacy;
+        private AnimationMethod GetAnimationMethod()
+        {
+            if (entityDTO == null) return AnimationMethod.Legacy;
+            if (entityDTO.type.ToLower().Contains("emote")) return AnimationMethod.Mecanim;
+            if (settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX)
+                return settings.AnimationMethod;
+
+            //WebGL platform fallback is always Legacy
+            return AnimationMethod.Legacy;
+        }
 
         private void ExtractEmbedMaterialsFromGltf(List<Texture2D> textures, GltfImportSettings gltf, IGltfImport gltfImport, string gltfUrl)
         {
