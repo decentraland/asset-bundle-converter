@@ -37,7 +37,8 @@ namespace DCL.ABConverter
             public AssetPath AssetPath;
         }
 
-        private const float MAX_TEXTURE_SIZE = 512f;
+        private const float DEFAULT_MAX_TEXTURE_SIZE = 512f;
+        private const float DESKTOP_MAX_TEXTURE_SIZE = 1024f;
 
         private const string VERSION = "7.0";
         private const string LOOP_PARAMETER = "Loop";
@@ -770,6 +771,10 @@ namespace DCL.ABConverter
                 if (!env.directory.Exists(texturesRoot))
                     env.directory.CreateDirectory(texturesRoot);
 
+                float maxTextureSize = settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX
+                    ? DESKTOP_MAX_TEXTURE_SIZE
+                    : DEFAULT_MAX_TEXTURE_SIZE;
+
                 for (int i = 0; i < textures.Count; i++)
                 {
                     var tex = textures[i];
@@ -844,7 +849,7 @@ namespace DCL.ABConverter
 
                     env.assetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 
-                    ReduceTextureSizeIfNeeded(texPath, MAX_TEXTURE_SIZE);
+                    ReduceTextureSizeIfNeeded(texPath, maxTextureSize);
 
                     newTextures.Add(env.assetDatabase.LoadAssetAtPath<Texture2D>(texPath));
                 }
@@ -1322,6 +1327,10 @@ namespace DCL.ABConverter
         {
             List<AssetPath> result = new List<AssetPath>(assetPaths);
 
+            float maxTextureSize = settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX
+                ? DESKTOP_MAX_TEXTURE_SIZE
+                : DEFAULT_MAX_TEXTURE_SIZE;
+
             for (var i = 0; i < assetPaths.Count; i++)
             {
                 if (isExitForced) break;
@@ -1349,7 +1358,8 @@ namespace DCL.ABConverter
                 if (importer is TextureImporter texImporter)
                 {
                     string finalTexturePath = finalDownloadedPath + assetPath.hash + "/" + assetPath.hash + Path.GetExtension(assetPath.filePath);
-                    ReduceTextureSizeIfNeeded(finalTexturePath, MAX_TEXTURE_SIZE);
+
+                    ReduceTextureSizeIfNeeded(finalTexturePath, maxTextureSize);
 
                     texImporter.crunchedCompression = true;
                     texImporter.textureCompression = TextureImporterCompression.CompressedHQ;
