@@ -56,5 +56,5 @@ export type HandlerContextWithPath<
 export type Context<Path extends string = any> = IHttpServerComponent.PathAwareContext<GlobalContext, Path>
 
 export type PublisherComponent = {
-  publishMessage(event: any): Promise<void>
+  publishMessage(event: any, attributes: { type: string; subType: string }): Promise<void>
 }

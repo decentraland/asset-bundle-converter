@@ -27,7 +27,10 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
   const logger = components.logs.getLogger('main-loop')
 
   components.runner.runTask(async (opt) => {
-    const platform = (await components.config.requireString('PLATFORM')).toLocaleLowerCase()
+    const platform = (await components.config.requireString('PLATFORM')).toLocaleLowerCase() as
+      | 'windows'
+      | 'mac'
+      | 'webgl'
     while (opt.isRunning) {
       if (await machineRanOutOfSpace(components)) {
         logger.warn('Stopping program due to lack of disk space')
@@ -56,12 +59,15 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
             key: `${job.entity.entityId}-${platform}`,
             timestamp: Date.now(),
             metadata: {
-              platform: platform as "windows" | "mac" | "webgl",
+              platform: platform,
               entityId: job.entity.entityId
             }
           }
 
-          await components.publisher.publishMessage(eventToPublish)
+          await components.publisher.publishMessage(eventToPublish, {
+            type: Events.Type.ASSET_BUNDLE,
+            subType: Events.SubType.AssetBundle.CONVERTED
+          })
         } finally {
           components.metrics.decrement('ab_converter_running_conversion')
         }
