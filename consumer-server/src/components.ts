@@ -15,6 +15,7 @@ import { createMemoryQueueAdapter, createSqsAdapter } from './adapters/task-queu
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { createRunnerComponent } from './adapters/runner'
 import { createSentryComponent } from './adapters/sentry'
+import { createSnsComponent } from './adapters/sns'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -56,6 +57,7 @@ export async function initComponents(): Promise<AppComponents> {
   const cdnS3 = s3Bucket ? new AWS.S3({}) : new MockAws.S3({})
 
   const runner = createRunnerComponent()
+  const publisher = await createSnsComponent({ config })
 
   return {
     config,
@@ -67,6 +69,7 @@ export async function initComponents(): Promise<AppComponents> {
     taskQueue,
     cdnS3,
     runner,
-    sentry
+    sentry,
+    publisher
   }
 }
