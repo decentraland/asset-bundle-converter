@@ -3,6 +3,7 @@ import { setupRouter } from './controllers/routes'
 import { executeConversion, executeLODConversion } from './logic/conversion-task'
 import checkDiskSpace from 'check-disk-space'
 import { AppComponents, GlobalContext, TestComponents } from './types'
+import { AssetBundleConvertedEvent, Events } from '@dcl/schemas'
 
 // this function wires the business logic (adapters & controllers) with the components (ports)
 export async function main(program: Lifecycle.EntryPointParameters<AppComponents | TestComponents>) {
@@ -26,6 +27,10 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
   const logger = components.logs.getLogger('main-loop')
 
   components.runner.runTask(async (opt) => {
+    const platform = (await components.config.requireString('PLATFORM')).toLocaleLowerCase() as
+      | 'windows'
+      | 'mac'
+      | 'webgl'
     while (opt.isRunning) {
       if (await machineRanOutOfSpace(components)) {
         logger.warn('Stopping program due to lack of disk space')
@@ -47,6 +52,22 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
               job.animation
             )
           }
+
+          const eventToPublish: AssetBundleConvertedEvent = {
+            type: Events.Type.ASSET_BUNDLE,
+            subType: Events.SubType.AssetBundle.CONVERTED,
+            key: `${job.entity.entityId}-${platform}`,
+            timestamp: Date.now(),
+            metadata: {
+              platform: platform,
+              entityId: job.entity.entityId
+            }
+          }
+
+          await components.publisher.publishMessage(eventToPublish, {
+            type: Events.Type.ASSET_BUNDLE,
+            subType: Events.SubType.AssetBundle.CONVERTED
+          })
         } finally {
           components.metrics.decrement('ab_converter_running_conversion')
         }

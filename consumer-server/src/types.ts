@@ -28,6 +28,7 @@ export type BaseComponents = {
   cdnS3: S3
   runner: IRunnerComponent
   sentry: SentryComponent
+  publisher: PublisherComponent
 }
 
 // components used in runtime
@@ -53,3 +54,7 @@ export type HandlerContextWithPath<
 >
 
 export type Context<Path extends string = any> = IHttpServerComponent.PathAwareContext<GlobalContext, Path>
+
+export type PublisherComponent = {
+  publishMessage(event: any, attributes: { type: string; subType: string }): Promise<void>
+}
