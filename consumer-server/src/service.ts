@@ -3,7 +3,7 @@ import { setupRouter } from './controllers/routes'
 import { executeConversion, executeLODConversion } from './logic/conversion-task'
 import checkDiskSpace from 'check-disk-space'
 import { AppComponents, GlobalContext, TestComponents } from './types'
-import { AssetBundleConvertedEvent, Events } from '@dcl/schemas'
+import { AssetBundleConversionFinishedEvent, Events } from '@dcl/schemas'
 
 // this function wires the business logic (adapters & controllers) with the components (ports)
 export async function main(program: Lifecycle.EntryPointParameters<AppComponents | TestComponents>) {
@@ -30,7 +30,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
     const platform = (await components.config.requireString('PLATFORM')).toLocaleLowerCase() as
       | 'windows'
       | 'mac'
-      | 'webgl'
+      | 'webglb'
     while (opt.isRunning) {
       if (await machineRanOutOfSpace(components)) {
         logger.warn('Stopping program due to lack of disk space')
@@ -39,12 +39,13 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
       }
 
       await components.taskQueue.consumeAndProcessJob(async (job, _message) => {
+        let statusCode: number
         try {
           components.metrics.increment('ab_converter_running_conversion')
           if (job.lods) {
-            await executeLODConversion(components, job.entity.entityId, job.lods)
+            statusCode = await executeLODConversion(components, job.entity.entityId, job.lods)
           } else {
-            await executeConversion(
+            statusCode = await executeConversion(
               components,
               job.entity.entityId,
               job.contentServerUrls![0],
@@ -53,14 +54,16 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
             )
           }
 
-          const eventToPublish: AssetBundleConvertedEvent = {
+          const eventToPublish: AssetBundleConversionFinishedEvent = {
             type: Events.Type.ASSET_BUNDLE,
             subType: Events.SubType.AssetBundle.CONVERTED,
             key: `${job.entity.entityId}-${platform}`,
             timestamp: Date.now(),
             metadata: {
               platform: platform,
-              entityId: job.entity.entityId
+              entityId: job.entity.entityId,
+              isLods: !!job.lods,
+              statusCode
             }
           }
 
