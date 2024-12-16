@@ -105,7 +105,7 @@ export async function executeLODConversion(
 
   if (!unityBuildTarget) {
     logger.error('Could not find a build target', { ...defaultLoggerMetadata } as any)
-    return -1
+    return 5 // UNEXPECTED_ERROR exit code
   }
 
   try {
@@ -128,7 +128,7 @@ export async function executeLODConversion(
       // this is an error, if succeeded, we should see at least a manifest file
       components.metrics.increment('ab_converter_empty_conversion', { ab_version: $AB_VERSION })
       logger.error('Empty conversion', { ...defaultLoggerMetadata } as any)
-      return -1
+      return 5 // UNEXPECTED_ERROR exit code
     }
 
     await uploadDir(components.cdnS3, cdnBucket, outDirectory, 'LOD', {
@@ -216,13 +216,13 @@ export async function executeConversion(
   const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
   if (!unityBuildTarget) {
     logger.info('Invalid build target ' + $BUILD_TARGET)
-    return -1
+    return 5 // UNEXPECTED_ERROR exit code
   }
 
   if (!force) {
     if (await shouldIgnoreConversion(components, entityId, $AB_VERSION, $BUILD_TARGET)) {
       logger.info('Ignoring conversion', { entityId, contentServerUrl, $AB_VERSION })
-      return -1
+      return 13 // ALREADY_CONVERTED exit code
     }
   } else {
     logger.info('Forcing conversion', { entityId, contentServerUrl, $AB_VERSION })

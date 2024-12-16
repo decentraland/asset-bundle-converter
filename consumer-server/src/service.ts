@@ -30,7 +30,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
     const platform = (await components.config.requireString('PLATFORM')).toLocaleLowerCase() as
       | 'windows'
       | 'mac'
-      | 'webglb'
+      | 'webgl'
     while (opt.isRunning) {
       if (await machineRanOutOfSpace(components)) {
         logger.warn('Stopping program due to lack of disk space')
