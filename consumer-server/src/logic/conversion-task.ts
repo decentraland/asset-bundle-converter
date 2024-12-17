@@ -83,7 +83,7 @@ export async function executeLODConversion(
   components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>,
   entityId: string,
   lods: string[]
-) {
+): Promise<number> {
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
   const $PROJECT_PATH = await components.config.requireString('PROJECT_PATH')
@@ -105,7 +105,7 @@ export async function executeLODConversion(
 
   if (!unityBuildTarget) {
     logger.error('Could not find a build target', { ...defaultLoggerMetadata } as any)
-    return
+    return 5 // UNEXPECTED_ERROR exit code
   }
 
   try {
@@ -128,7 +128,7 @@ export async function executeLODConversion(
       // this is an error, if succeeded, we should see at least a manifest file
       components.metrics.increment('ab_converter_empty_conversion', { ab_version: $AB_VERSION })
       logger.error('Empty conversion', { ...defaultLoggerMetadata } as any)
-      return
+      return 5 // UNEXPECTED_ERROR exit code
     }
 
     await uploadDir(components.cdnS3, cdnBucket, outDirectory, 'LOD', {
@@ -145,6 +145,8 @@ export async function executeLODConversion(
         }
       ]
     })
+
+    return exitCode ?? -1
   } catch (error: any) {
     logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
     components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
@@ -201,7 +203,7 @@ export async function executeConversion(
   contentServerUrl: string,
   force: boolean | undefined,
   animation: string | undefined
-) {
+): Promise<number> {
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
   const $PROJECT_PATH = await components.config.requireString('PROJECT_PATH')
@@ -214,13 +216,13 @@ export async function executeConversion(
   const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
   if (!unityBuildTarget) {
     logger.info('Invalid build target ' + $BUILD_TARGET)
-    return
+    return 5 // UNEXPECTED_ERROR exit code
   }
 
   if (!force) {
     if (await shouldIgnoreConversion(components, entityId, $AB_VERSION, $BUILD_TARGET)) {
       logger.info('Ignoring conversion', { entityId, contentServerUrl, $AB_VERSION })
-      return
+      return 13 // ALREADY_CONVERTED exit code
     }
   } else {
     logger.info('Forcing conversion', { entityId, contentServerUrl, $AB_VERSION })
@@ -347,6 +349,8 @@ export async function executeConversion(
         process.exit(1)
       }
     }
+
+    return exitCode ?? -1
   } catch (err: any) {
     logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
     components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
