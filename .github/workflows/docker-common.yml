@@ -49,14 +49,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Remove unused Haskell GHC CodeQL
-        run: |
-          sudo apt-get remove -y ghc haskell-platform
-          sudo apt-get autoremove -y
-          sudo rm -rf /usr/local/.ghcup
-          sudo rm -rf /usr/local/bin/ghcup
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-
       - uses: actions/checkout@v4
         with:
           submodules: recursive
