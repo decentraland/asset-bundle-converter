@@ -751,10 +751,9 @@
     eslint-plugin-prettier "^5.1.3"
     prettier "^3.3.2"
 
-"@dcl/schemas@15.3.3":
-  version "15.3.3"
-  resolved "https://registry.yarnpkg.com/@dcl/schemas/-/schemas-15.3.3.tgz#29b35d4eb1af0085cb09e79ecdc39a0c074f59a9"
-  integrity sha512-AID1yUW7gvaE5abZrW8ATK6CA941KoHn4eFWauVCQINqTSfTgp1kBlCO3fYs+26di1tcJHI8XWvR2fuf3Q084w==
+"@dcl/schemas@https://sdk-team-cdn.decentraland.org/@dcl/schemas/branch/feat/new-AB-event/dcl-schemas-15.4.1-12678910043.commit-731691e.tgz":
+  version "15.4.1-12678910043.commit-731691e"
+  resolved "https://sdk-team-cdn.decentraland.org/@dcl/schemas/branch/feat/new-AB-event/dcl-schemas-15.4.1-12678910043.commit-731691e.tgz#84b0158e186d5aa2396d46d3e71159473b1c2a4a"
   dependencies:
     ajv "^8.11.0"
     ajv-errors "^3.0.0"

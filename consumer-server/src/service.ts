@@ -67,10 +67,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
             }
           }
 
-          await components.publisher.publishMessage(eventToPublish, {
-            type: Events.Type.ASSET_BUNDLE,
-            subType: Events.SubType.AssetBundle.CONVERTED
-          })
+          await components.publisher.publishMessage(eventToPublish)
         } finally {
           components.metrics.decrement('ab_converter_running_conversion')
         }
