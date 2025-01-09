@@ -31,7 +31,8 @@ export async function queueTaskHandler(
     metadata: {
       platform: platform.toLocaleLowerCase() as 'windows' | 'mac' | 'webgl',
       entityId: body.entity.entityId,
-      isLods: !!body.lods
+      isLods: !!body.lods,
+      isPriority: shouldPrioritize
     }
   })
 
