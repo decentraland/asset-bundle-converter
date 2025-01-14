@@ -13,15 +13,13 @@ namespace DCL.ABConverter
 {
     public class LODClient : MonoBehaviour
     {
-        [MenuItem("Decentraland/LOD/Export URL LODs")]
+        //Used by the consumer-server
         public static async void ExportURLLODsToAssetBundles()
         {
             string[] commandLineArgs = Environment.GetCommandLineArgs();
             
             string customOutputDirectory = "";
-            string lodsURL = "https://lods-bucket-ed4300a.s3.amazonaws.com/-17,-21/LOD/Sources/1707776785658/bafkreidnwpjkv3yoxsz6iiqh3fahuec7lfsqtmkyz3yf6dgps454ngldnu_0.fbx;" +
-                             "https://lods-bucket-ed4300a.s3.amazonaws.com/-17,-21/LOD/Sources/1707776785658/bafkreidnwpjkv3yoxsz6iiqh3fahuec7lfsqtmkyz3yf6dgps454ngldnu_1.fbx;" +
-                             "https://lods-bucket-ed4300a.s3.amazonaws.com/-17,-21/LOD/Sources/1707776785658/bafkreidnwpjkv3yoxsz6iiqh3fahuec7lfsqtmkyz3yf6dgps454ngldnu_2.fbx";
+            string lodsURL = "";
 
             if (Utils.ParseOption(commandLineArgs, Config.LODS_URL, 1, out string[] lodsURLArg))
                 lodsURL = lodsURLArg[0];
@@ -33,15 +31,22 @@ namespace DCL.ABConverter
             await lodConversion.ConvertLODs();
         }
 
-        [MenuItem("Decentraland/LOD/Export FBX Folder To Asset Bundles")]
-        private static async void ExportFBXToAssetBundles()
+        [MenuItem("Decentraland/LOD/Export URL LODs")]
+        public static void ExportURLLODsToAssetBundlesLocal()
         {
-            string[] fileEntries = Directory.GetFiles(Path.Combine(Application.dataPath, "AssetBundleConverter/LODsConverter/ExportLODToAssetBundle"), "*.fbx", SearchOption.AllDirectories);
-            if (fileEntries.Length > 0)
-            {
-                var lodConversion = new LODConversion(LODConstants.DEFAULT_OUTPUT_PATH, fileEntries);
-                await lodConversion.ConvertLODs();
-            }
+            URLLODWindow.Open(OnConvert);
+        }
+
+        [MenuItem("Decentraland/LOD/Export Local FBX LODs")]
+        private static void ExportFBXToAssetBundlesLocal()
+        {
+            DragAndDropLODWindow.Open(OnConvert);
+        }
+
+        private static async void OnConvert(List<string> fbxFilesPaths)
+        {
+            var lodConversion = new LODConversion(LODConstants.DEFAULT_OUTPUT_PATH, fbxFilesPaths.ToArray());
+            await lodConversion.ConvertLODs();
         }
         
     }
