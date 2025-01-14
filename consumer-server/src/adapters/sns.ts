@@ -1,5 +1,6 @@
 import { PublishCommand, SNSClient } from '@aws-sdk/client-sns'
 import { AppComponents, PublisherComponent } from '../types'
+import { AssetBundleConversionFinishedEvent, AssetBundleConversionManuallyQueuedEvent } from '@dcl/schemas'
 
 export async function createSnsComponent({ config }: Pick<AppComponents, 'config'>): Promise<PublisherComponent> {
   const snsArn = await config.requireString('AWS_SNS_ARN')
@@ -9,18 +10,20 @@ export async function createSnsComponent({ config }: Pick<AppComponents, 'config
     endpoint: optionalEndpoint ? optionalEndpoint : undefined
   })
 
-  async function publishMessage(event: any, attributes: { type: string; subType: string }): Promise<void> {
+  async function publishMessage(
+    event: AssetBundleConversionFinishedEvent | AssetBundleConversionManuallyQueuedEvent
+  ): Promise<void> {
     const command = new PublishCommand({
       TopicArn: snsArn,
       Message: JSON.stringify(event),
       MessageAttributes: {
         type: {
           DataType: 'String',
-          StringValue: attributes.type
+          StringValue: event.type
         },
         subType: {
           DataType: 'String',
-          StringValue: attributes.subType
+          StringValue: event.subType
         }
       }
     })

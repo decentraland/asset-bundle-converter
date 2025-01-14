@@ -12,6 +12,7 @@ import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { S3 } from 'aws-sdk'
 import { IRunnerComponent } from './adapters/runner'
 import { SentryComponent } from './adapters/sentry'
+import { AssetBundleConversionFinishedEvent, AssetBundleConversionManuallyQueuedEvent } from '@dcl/schemas'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -56,5 +57,5 @@ export type HandlerContextWithPath<
 export type Context<Path extends string = any> = IHttpServerComponent.PathAwareContext<GlobalContext, Path>
 
 export type PublisherComponent = {
-  publishMessage(event: any, attributes: { type: string; subType: string }): Promise<void>
+  publishMessage(event: AssetBundleConversionFinishedEvent | AssetBundleConversionManuallyQueuedEvent): Promise<void>
 }
