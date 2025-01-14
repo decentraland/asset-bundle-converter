@@ -32,6 +32,17 @@ public class LODConversion
         usedLODShader = Shader.Find("DCL/Scene_TexArray");
     }
 
+    public LODConversion(string customOutputPath, string urlToConvert)
+    {
+        urlsToConvert = new []
+        {
+            urlToConvert
+        };
+        lodPathHandler = new LODPathHandler(customOutputPath);
+        usedLOD0Shader = Shader.Find("DCL/Scene");
+        usedLODShader = Shader.Find("DCL/Scene_TexArray");
+    }
+
     public async Task ConvertLODs()
     {
         PlatformUtils.currentTarget = EditorUserBuildSettings.activeBuildTarget;
@@ -46,6 +57,9 @@ public class LODConversion
         catch (Exception e)
         {
             Debug.Log("DOWNLOAD FAILED");
+#if UNITY_EDITOR
+            throw;
+#endif
             Utils.Exit(1);
             return;
         }
@@ -70,6 +84,9 @@ public class LODConversion
         {
             Debug.LogError($"Unexpected exit with error {e.Message}");
             Directory.Delete(lodPathHandler.tempPath, true);
+#if UNITY_EDITOR
+            throw;
+#endif
             Utils.Exit(1);
             return;
         }

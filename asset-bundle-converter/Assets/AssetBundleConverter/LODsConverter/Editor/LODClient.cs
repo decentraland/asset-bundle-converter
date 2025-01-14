@@ -34,14 +34,46 @@ namespace DCL.ABConverter
         }
 
         [MenuItem("Decentraland/LOD/Export FBX Folder To Asset Bundles")]
-        private static async void ExportFBXToAssetBundles()
+        private static void ExportLocalFBXToAssetBundles()
         {
-            string[] fileEntries = Directory.GetFiles(Path.Combine(Application.dataPath, "AssetBundleConverter/LODsConverter/ExportLODToAssetBundle"), "*.fbx", SearchOption.AllDirectories);
-            if (fileEntries.Length > 0)
+            DragAndDropLOD.Open(OnConvert);
+        }
+
+        private static async void OnConvert(List<Object> fbxFiles)
+        {
+            int totalFiles = fbxFiles.Count;
+
+            for (int i = 0; i < totalFiles; i++)
             {
-                var lodConversion = new LODConversion(LODConstants.DEFAULT_OUTPUT_PATH, fileEntries);
-                await lodConversion.ConvertLODs();
+                var fbx = fbxFiles[i];
+                // Update the progress bar
+                float progress = (float)(i + 1) / totalFiles;
+                EditorUtility.DisplayProgressBar("Processing FBX Files", $"Processing {fbx.name}", progress);
+                var lodConversion = new LODConversion(LODConstants.DEFAULT_OUTPUT_PATH, Path.Combine(Application.dataPath, AssetDatabase.GetAssetPath(fbx)["Assets/".Length..]));
+                try
+                {
+                    await lodConversion.ConvertLODs();
+                }
+                catch
+                {
+                    EditorUtility.DisplayDialog(
+                        "Conversion Failed",
+                        $"Conversion failed on {fbx.name}.",
+                        "OK"
+                    );
+                    EditorUtility.ClearProgressBar();
+                    return;
+                }
             }
+
+
+            EditorUtility.ClearProgressBar();
+            // Clear the progress bar
+            EditorUtility.DisplayDialog(
+                "Conversion Complete",
+                $"Successfully converted {totalFiles} FBX file(s).",
+                "OK"
+            );
         }
         
     }
