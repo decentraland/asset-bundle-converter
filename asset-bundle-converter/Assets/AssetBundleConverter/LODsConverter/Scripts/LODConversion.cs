@@ -28,17 +28,6 @@ public class LODConversion
         usedLODShader = Shader.Find("DCL/Scene_TexArray");
     }
 
-    public LODConversion(string customOutputPath, string urlToConvert)
-    {
-        urlsToConvert = new []
-        {
-            urlToConvert
-        };
-        lodPathHandler = new LODPathHandler(customOutputPath);
-        usedLOD0Shader = Shader.Find("DCL/Scene");
-        usedLODShader = Shader.Find("DCL/Scene_TexArray");
-    }
-
     public async Task ConvertLODs()
     {
         PlatformUtils.currentTarget = EditorUserBuildSettings.activeBuildTarget;
@@ -52,10 +41,7 @@ public class LODConversion
         }
         catch (Exception e)
         {
-            Debug.Log("DOWNLOAD FAILED");
-#if UNITY_EDITOR
-            throw;
-#endif
+            Debug.Log("Could not download all files. Exiting");
             Utils.Exit(1);
             return;
         }
@@ -79,20 +65,15 @@ public class LODConversion
         catch (Exception e)
         {
             Debug.LogError($"Unexpected exit with error {e.Message}");
-            Directory.Delete(lodPathHandler.tempPath, true);
-#if UNITY_EDITOR
-            throw;
-#endif
+            AssetDatabase.DeleteAsset(lodPathHandler.tempPathRelativeToDataPath);
             Utils.Exit(1);
             return;
         }
 
         lodPathHandler.RelocateOutputFolder();
-        Directory.Delete(lodPathHandler.tempPath, true);
+        AssetDatabase.DeleteAsset(lodPathHandler.tempPathRelativeToDataPath);
         foreach (string downloadedFilePath in downloadedFilePaths)
-        {
             Debug.Log($"LOD conversion done for {Path.GetFileName(downloadedFilePath)}");
-        }
         Utils.Exit();
     }
 

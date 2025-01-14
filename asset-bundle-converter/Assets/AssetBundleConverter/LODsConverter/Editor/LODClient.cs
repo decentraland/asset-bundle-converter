@@ -13,15 +13,13 @@ namespace DCL.ABConverter
 {
     public class LODClient : MonoBehaviour
     {
-        [MenuItem("Decentraland/LOD/Export URL LODs")]
+        //Used by the consumer-server
         public static async void ExportURLLODsToAssetBundles()
         {
             string[] commandLineArgs = Environment.GetCommandLineArgs();
             
             string customOutputDirectory = "";
-            string lodsURL = "https://lods-bucket-ed4300a.s3.amazonaws.com/-17,-21/LOD/Sources/1707776785658/bafkreidnwpjkv3yoxsz6iiqh3fahuec7lfsqtmkyz3yf6dgps454ngldnu_0.fbx;" +
-                             "https://lods-bucket-ed4300a.s3.amazonaws.com/-17,-21/LOD/Sources/1707776785658/bafkreidnwpjkv3yoxsz6iiqh3fahuec7lfsqtmkyz3yf6dgps454ngldnu_1.fbx;" +
-                             "https://lods-bucket-ed4300a.s3.amazonaws.com/-17,-21/LOD/Sources/1707776785658/bafkreidnwpjkv3yoxsz6iiqh3fahuec7lfsqtmkyz3yf6dgps454ngldnu_2.fbx";
+            string lodsURL = "";
 
             if (Utils.ParseOption(commandLineArgs, Config.LODS_URL, 1, out string[] lodsURLArg))
                 lodsURL = lodsURLArg[0];
@@ -33,47 +31,22 @@ namespace DCL.ABConverter
             await lodConversion.ConvertLODs();
         }
 
-        [MenuItem("Decentraland/LOD/Export FBX Folder To Asset Bundles")]
-        private static void ExportLocalFBXToAssetBundles()
+        [MenuItem("Decentraland/LOD/Export URL LODs")]
+        public static void ExportURLLODsToAssetBundlesLocal()
         {
-            DragAndDropLOD.Open(OnConvert);
+            URLLODWindow.Open(OnConvert);
         }
 
-        private static async void OnConvert(List<Object> fbxFiles)
+        [MenuItem("Decentraland/LOD/Export Local FBX LODs")]
+        private static void ExportFBXToAssetBundlesLocal()
         {
-            int totalFiles = fbxFiles.Count;
+            DragAndDropLODWindow.Open(OnConvert);
+        }
 
-            for (int i = 0; i < totalFiles; i++)
-            {
-                var fbx = fbxFiles[i];
-                // Update the progress bar
-                float progress = (float)(i + 1) / totalFiles;
-                EditorUtility.DisplayProgressBar("Processing FBX Files", $"Processing {fbx.name}", progress);
-                var lodConversion = new LODConversion(LODConstants.DEFAULT_OUTPUT_PATH, Path.Combine(Application.dataPath, AssetDatabase.GetAssetPath(fbx)["Assets/".Length..]));
-                try
-                {
-                    await lodConversion.ConvertLODs();
-                }
-                catch
-                {
-                    EditorUtility.DisplayDialog(
-                        "Conversion Failed",
-                        $"Conversion failed on {fbx.name}.",
-                        "OK"
-                    );
-                    EditorUtility.ClearProgressBar();
-                    return;
-                }
-            }
-
-
-            EditorUtility.ClearProgressBar();
-            // Clear the progress bar
-            EditorUtility.DisplayDialog(
-                "Conversion Complete",
-                $"Successfully converted {totalFiles} FBX file(s).",
-                "OK"
-            );
+        private static async void OnConvert(List<string> fbxFilesPaths)
+        {
+            var lodConversion = new LODConversion(LODConstants.DEFAULT_OUTPUT_PATH, fbxFilesPaths.ToArray());
+            await lodConversion.ConvertLODs();
         }
         
     }

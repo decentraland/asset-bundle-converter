@@ -1,13 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using Object = UnityEngine.Object;
 
-public class DragAndDropLOD : EditorWindow
+public class DragAndDropLODWindow : EditorWindow
 {
     private readonly List<Object> fbxFiles = new ();
-    public static Action<List<Object>> OnConvertButtonClicked;
+    public static Action<List<string>> OnConvertButtonClicked;
 
     private void OnGUI()
     {
@@ -66,17 +68,29 @@ public class DragAndDropLOD : EditorWindow
 
         GUILayout.Space(10);
 
+        // Clear All button
+        if (fbxFiles.Count > 0 && GUILayout.Button("Clear All"))
+        {
+            fbxFiles.Clear();
+        }
+
         // Action button
         if (GUILayout.Button("Convert LODs to ABs"))
         {
-            OnConvertButtonClicked?.Invoke(fbxFiles);
+            var fbxPaths = fbxFiles.Select(fbx =>
+                {
+                    string assetPath = AssetDatabase.GetAssetPath(fbx);
+                    return Path.Combine(Application.dataPath, assetPath["Assets/".Length..]);
+                })
+                .ToList();
+            OnConvertButtonClicked?.Invoke(fbxPaths);
         }
     }
 
     // Static method to open the window
-    public static void Open(Action<List<Object>> onConvertCallback = null)
+    public static void Open(Action<List<string>> onConvertCallback = null)
     {
-        var window = GetWindow<DragAndDropLOD>("LOD to AssetBundle Converter");
+        var window = GetWindow<DragAndDropLODWindow>("LOD to AssetBundle Converter");
         OnConvertButtonClicked = onConvertCallback;
         window.Show();
     }
