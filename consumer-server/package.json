@@ -17,7 +17,7 @@
   "dependencies": {
     "@aws-sdk/client-sns": "^3.699.0",
     "@dcl/cdn-uploader": "^1.4.1-20230208155013.commit-f75a6ee",
-    "@dcl/schemas": "https://sdk-team-cdn.decentraland.org/@dcl/schemas/branch/feat/new-AB-event/dcl-schemas-15.4.1-12697045668.commit-29b51c2.tgz",
+    "@dcl/schemas": "^15.5.0",
     "@sentry/node": "^8.27.0",
     "@well-known-components/env-config-provider": "^1.2.0",
     "@well-known-components/http-server": "^2.1.0",
