@@ -1,18 +1,14 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
 using AssetBundleConverter.LODsConverter.Utils;
-using AssetBundleConverter.Wrappers.Interfaces;
 using DCL;
 using DCL.ABConverter;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Object = UnityEngine.Object;
-using SystemWrappers = AssetBundleConverter.Wrappers.Implementations.Default.SystemWrappers;
 
 public class LODConversion
 {
@@ -235,7 +231,8 @@ public class LODConversion
         
         // 1. Convert flagged folders to asset bundles only to automatically get dependencies for the metadata
         var manifest = buildPipeline.BuildAssetBundles(lodPathHandler.outputPath,
-            BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
+            BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
+            BuildAssetBundleOptions.AssetBundleStripUnityVersion,
             target);
 
         if (manifest == null)
@@ -262,7 +259,8 @@ public class LODConversion
 
         // 3. Convert flagged folders to asset bundles again but this time they have the metadata file inside
         buildPipeline.BuildAssetBundles(lodPathHandler.outputPath,
-            BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
+            BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
+            BuildAssetBundleOptions.AssetBundleStripUnityVersion,
             target);
     }
     

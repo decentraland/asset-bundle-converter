@@ -1,10 +1,12 @@
-﻿using AssetBundleConverter.Persistence;
-using System.Threading.Tasks;
-using DCL.ABConverter;
-using System;
+﻿using System;
 using System.Linq;
+using System.Threading.Tasks;
+using AssetBundleConverter.Persistence;
+using DCL.ABConverter;
+using GLTFast;
 using UnityEditor;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 namespace AssetBundleConverter
 {
@@ -47,6 +49,7 @@ namespace AssetBundleConverter
         private string baseUrl;
         private bool placeOnScene = true;
         private bool visualTest = false;
+        private bool cleanAndExitOnFinish = true;
         private bool clearDownloads = true;
         private PersistentSetting<int> downloadBatchSize;
         private PersistentSetting<float> failingConversionTolerance;
@@ -64,6 +67,7 @@ namespace AssetBundleConverter
         private PersistentSetting<SupportedBuildTarget> buildTarget;
 
         private ClientSettings clientSettings;
+        private PersistentSetting<AnimationMethod> animationMehtod;
         private bool showDebugOptions;
         private bool stripShaders = true;
         private bool importGltf = true;
@@ -86,6 +90,7 @@ namespace AssetBundleConverter
             xCoord = PersistentSetting.CreateInt(nameof(xCoord), -110);
             yCoord = PersistentSetting.CreateInt(nameof(yCoord), -110);
             buildPipelineType = PersistentSetting.CreateEnum(nameof(buildPipelineType), BuildPipelineType.Scriptable);
+            animationMehtod = PersistentSetting.CreateEnum(nameof(animationMehtod), AnimationMethod.Legacy);
             buildTarget = PersistentSetting.CreateEnum(nameof(buildTarget), SupportedBuildTarget.WebGL);
             failingConversionTolerance = PersistentSetting.CreateFloat(nameof(failingConversionTolerance), 0.05f); // 5%
             downloadBatchSize = PersistentSetting.CreateInt(nameof(downloadBatchSize), 20);
@@ -95,8 +100,10 @@ namespace AssetBundleConverter
         {
             GUILayout.Space(5);
             buildPipelineType.Value = (BuildPipelineType)EditorGUILayout.EnumPopup("Build Pipeline", buildPipelineType);
+            animationMehtod.Value = (AnimationMethod)EditorGUILayout.EnumPopup("Animation Method", animationMehtod);
             buildTarget.Value = (SupportedBuildTarget)EditorGUILayout.EnumPopup("Build Target", buildTarget);
 
+            cleanAndExitOnFinish = EditorGUILayout.Toggle("Clean and exit on finish", cleanAndExitOnFinish);
             visualTest = EditorGUILayout.Toggle("Visual Test", visualTest);
             placeOnScene = EditorGUILayout.Toggle("Place on Scene", placeOnScene);
             createAssetBundle.Value = EditorGUILayout.Toggle("Create Asset Bundle", createAssetBundle);
@@ -282,8 +289,8 @@ namespace AssetBundleConverter
 
                 try
                 {
-                    int x = UnityEngine.Random.Range(-150, 151);
-                    int y = UnityEngine.Random.Range(-150, 151);
+                    int x = Random.Range(-150, 151);
+                    int y = Random.Range(-150, 151);
 
                     Debug.Log($"Converting {x},{y}");
                     var targetPosition = new Vector2Int(x, y);
@@ -327,7 +334,7 @@ namespace AssetBundleConverter
             {
                 visualTest = visualTest,
                 baseUrl = baseUrl,
-                cleanAndExitOnFinish = false,
+                cleanAndExitOnFinish = cleanAndExitOnFinish,
                 createAssetBundle = createAssetBundle,
                 downloadBatchSize = ClampDownloadBatchSize(downloadBatchSize),
                 failingConversionTolerance = ClampConversionTolerance(failingConversionTolerance),
@@ -340,7 +347,8 @@ namespace AssetBundleConverter
                 placeOnScene = placeOnScene,
                 verbose = verbose,
                 buildTarget = GetBuildTarget(),
-                BuildPipelineType = buildPipelineType
+                BuildPipelineType = buildPipelineType,
+                AnimationMethod = animationMehtod
             };
         }
 

@@ -1,16 +1,15 @@
-﻿using AssetBundleConverter;
-using AssetBundleConverter.Editor;
-using AssetBundleConverter.Wrappers.Implementations.Default;
-using AssetBundleConverter.Wrappers.Interfaces;
-using GLTFast;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using AssetBundleConverter;
+using AssetBundleConverter.Editor;
+using AssetBundleConverter.Wrappers.Interfaces;
 using Cysharp.Threading.Tasks;
+using GLTFast;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -132,8 +131,6 @@ namespace DCL.ABConverter
             if (!env.editor.SwitchBuildTarget(settings.buildTarget))
                 return;
 
-            Utils.PrintDiskSize("STARTED");
-
             log.verboseEnabled = settings.verbose;
             await env.editor.LoadVisualTestSceneAsync();
 
@@ -144,8 +141,6 @@ namespace DCL.ABConverter
             InitializeDirectoryPaths(settings.clearDirectoriesOnStart, settings.clearDirectoriesOnStart);
             AdjustRenderingMode(settings.buildTarget);
             env.assetDatabase.Refresh();
-
-            Utils.PrintDiskSize("INITIALIZED_DIRECTORIES");
 
             await env.editor.Delay(TimeSpan.FromSeconds(0.1f));
 
@@ -163,9 +158,6 @@ namespace DCL.ABConverter
                 }
             }
 
-            Utils.PrintDiskSize("DOWNLOADED_GLTFS");
-
-
             // Third step: we import gltfs
             importStartupTime = EditorApplication.timeSinceStartup;
 
@@ -173,8 +165,6 @@ namespace DCL.ABConverter
                 return;
 
             await ProcessAllGltfs();
-
-            Utils.PrintDiskSize("PROCESSED_GLTFS");
 
             importEndTime = EditorApplication.timeSinceStartup;
 
@@ -194,8 +184,6 @@ namespace DCL.ABConverter
                 bundlesEndTime = EditorApplication.timeSinceStartup;
             }
 
-            Utils.PrintDiskSize("ASSET_BUNDLES_BUILT");
-
             if (isExitForced)
                 return;
 
@@ -205,8 +193,6 @@ namespace DCL.ABConverter
                 await env.editor.TestConvertedAssetsAsync(env, settings, assetsToMark, errorReporter);
                 visualTestEndTime = EditorApplication.timeSinceStartup;
             }
-
-            Utils.PrintDiskSize("FINISHED_TESTING");
 
             OnFinish();
         }
@@ -346,7 +332,7 @@ namespace DCL.ABConverter
 
                     string directory = Path.GetDirectoryName(relativePath);
 
-                    if (textures.Count > 0) { textures = ExtractEmbedTexturesFromGltf(textures, directory); }
+                    if (textures.Count > 0) { textures = ExtractEmbedTexturesFromGltf(textures, gltfImport, directory); }
 
                     embedExtractTextureTime.Stop();
 
@@ -415,8 +401,6 @@ namespace DCL.ABConverter
                             }
                     }
 
-                    Utils.PrintDiskSize("PROCESSED_SINGLE_GLTF");
-
                     log.Verbose($"<color={color}>Ended loading gltf {gltfUrl} with result <b>{loadingSuccess}</b></color>");
                 }
 
@@ -463,6 +447,10 @@ namespace DCL.ABConverter
             var filePath = $"{animatorRoot}animatorController.controller";
             var controller = AnimatorController.CreateAnimatorControllerAtPath(filePath);
 
+            List<string> layerNames = new List<string>();
+            foreach (AnimatorControllerLayer animatorControllerLayer in controller.layers)
+                layerNames.Add(animatorControllerLayer.name);
+
             for (var i = 0; i < clips.Count; i++)
             {
                 AnimationClip originalClip = clips[i];
@@ -502,9 +490,10 @@ namespace DCL.ABConverter
 
                 // Configure layers
                 string layerName = controller.MakeUniqueLayerName(animationClipName);
+                layerNames.Add(layerName);
                 controller.AddLayer(new AnimatorControllerLayer
                 {
-                    name = animationClipName,
+                    name = layerName,
                     defaultWeight = isDefaultState ? 1f : 0f,
                     stateMachine = new AnimatorStateMachine(),
                     iKPass = false,
@@ -559,8 +548,8 @@ namespace DCL.ABConverter
 
                 int GetLayerIndex()
                 {
-                    for (var i = 0; i < controller.layers.Length; i++)
-                        if (controller.layers[i].name == layerName)
+                    for (var i = 0; i < layerNames.Count; i++)
+                        if (layerNames[i] == layerName)
                             return i;
 
                     return -1;
@@ -630,10 +619,16 @@ namespace DCL.ABConverter
             AssetDatabase.Refresh();
         }
 
-        private AnimationMethod GetAnimationMethod() =>
-            settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX
-                ? AnimationMethod.Mecanim
-                : AnimationMethod.Legacy;
+        private AnimationMethod GetAnimationMethod()
+        {
+            if (entityDTO == null) return AnimationMethod.Legacy;
+            if (entityDTO.type.ToLower().Contains("emote")) return AnimationMethod.Mecanim;
+            if (settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX)
+                return settings.AnimationMethod;
+
+            //WebGL platform fallback is always Legacy
+            return AnimationMethod.Legacy;
+        }
 
         private void ExtractEmbedMaterialsFromGltf(List<Texture2D> textures, GltfImportSettings gltf, IGltfImport gltfImport, string gltfUrl)
         {
@@ -744,9 +739,29 @@ namespace DCL.ABConverter
             Debug.unityLogger.logEnabled = true;
         }
 
-        private List<Texture2D> ExtractEmbedTexturesFromGltf(List<Texture2D> textures, string folderName)
+
+
+        private List<Texture2D> ExtractEmbedTexturesFromGltf(List<Texture2D> textures, IGltfImport gltfImport, string folderName)
         {
             var newTextures = new List<Texture2D>();
+
+            TextureTypeManager textTypeMan = new TextureTypeManager();
+
+            for (var t = 0; t < gltfImport.MaterialCount; t++)
+            {
+
+                var originalMaterial = gltfImport.GetMaterial(t);
+                var textureProperties = originalMaterial.GetTexturePropertyNameIDs();
+                var texturePropertiesNames = originalMaterial.GetTexturePropertyNames();
+
+                for (int i = 0; i < textureProperties.Count(); i++)
+                {
+                    int propertyId = textureProperties[i];
+                    Texture currentTexture = originalMaterial.GetTexture(propertyId);
+                    if (currentTexture)
+                        textTypeMan.AddTextureType(currentTexture.name, TextureInfoExtensions.GetTextureTypeFromString(texturePropertiesNames[i]));
+                }
+            }
 
             if (textures.Count > 0)
             {
@@ -803,12 +818,14 @@ namespace DCL.ABConverter
                     }
                     else
                     {
+                        TextureInfo texInfo = textTypeMan.GetTextureInfo(tex.name);
+
                         RenderTexture tmp = RenderTexture.GetTemporary(
                             tex.width,
                             tex.height,
                             0,
-                            RenderTextureFormat.Default,
-                            RenderTextureReadWrite.Default);
+                            texInfo.HasAnyType(TextureType.BumpMap) ? RenderTextureFormat.RGHalf : RenderTextureFormat.Default,
+                            texInfo.HasAnyType( TextureType.BumpMap | TextureType.MetallicGlossMap | TextureType.OcclusionMap | TextureType.ParallaxMap | TextureType.SpecGlossMap) ? RenderTextureReadWrite.Linear : RenderTextureReadWrite.Default );
 
                         Graphics.Blit(tex, tmp);
                         RenderTexture previous = RenderTexture.active;
@@ -941,7 +958,8 @@ namespace DCL.ABConverter
 
             // 1. Convert flagged folders to asset bundles only to automatically get dependencies for the metadata
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
-                BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
+                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
+                BuildAssetBundleOptions.AssetBundleStripUnityVersion,
                 target);
 
             if (manifest == null)
@@ -966,7 +984,8 @@ namespace DCL.ABConverter
 
             // 3. Convert flagged folders to asset bundles again but this time they have the metadata file inside
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
-                BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
+                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
+                BuildAssetBundleOptions.AssetBundleStripUnityVersion,
                 target);
 
             var afterSecondBuild = EditorApplication.timeSinceStartup;

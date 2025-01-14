@@ -6,7 +6,6 @@ using System.IO;
 using System.Threading.Tasks;
 using GLTFast.Loading;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -14,7 +13,7 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 {
 #pragma warning disable 1998
 
-    class SyncFileLoader : IDownload
+    internal class SyncFileLoader : IDownload
     {
         public SyncFileLoader(Uri url)
         {
@@ -44,13 +43,13 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
         public void Dispose() { }
     }
 
-    static class GltfGlobals
+    internal static class GltfGlobals
     {
         /// <summary>
         /// First four bytes of a glTF-Binary file are made up of this signature
         /// Represents glTF in ASCII
         /// </summary>
-        internal const uint GLB_MAGIC = 0x46546c67;
+        private const uint GLB_MAGIC = 0x46546c67;
 
         /// <summary>
         /// Figures out if a byte array contains data of a glTF-Binary
@@ -67,7 +66,7 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
         }
     }
 
-    class SyncTextureLoader : SyncFileLoader, ITextureDownload
+    internal class SyncTextureLoader : SyncFileLoader, ITextureDownload
     {
         public Texture2D Texture { get; }
 
@@ -92,10 +91,10 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
         private readonly Dictionary<string, string> contentTable;
 
         // Note (Kinerius): Since we can get multiple dependencies with the same name ( mostly textures ) we have to use the glb original root to determine which of them to use
-        // for example 'models/Genesis_TX.png' and 'models/core_building/Genesis_TX.png', the importer is going to ask for Genesis_TX.png since its path is relative
+        // for example 'models/Genesis_TX.png' and 'models/core_building/Genesis_TX.png', the importer is going to ask for Genesis_TX.png since its path is relative,
         // so we have to create a new path using the original root path that is already mapped by the asset bundle converter.
-        private string fileRootPath;
-        private string hash;
+        private readonly string fileRootPath;
+        private readonly string hash;
         private readonly List<GltfAssetDependency> gltfAssetDependencies = new ();
 
         public GltFastFileProvider(string fileRootPath, string hash, Dictionary<string, string> contentTable)
@@ -105,7 +104,7 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
             this.contentTable = contentTable;
         }
 
-        public async Task<IDownload> Request(Uri url)
+        public async Task<IDownload> RequestAsync(Uri url)
         {
             Uri newUrl = GetDependenciesPaths(RebuildUrl(url));
 
@@ -119,7 +118,7 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
             return new SyncFileLoader(newUrl);
         }
 
-        public async Task<ITextureDownload> RequestTexture(Uri url, bool nonReadable, bool forceLinear)
+        public async Task<ITextureDownload> RequestTextureAsync(Uri url, bool nonReadable, bool forceLinear)
         {
             Uri newUrl = GetDependenciesPaths(RebuildUrl(url));
 
@@ -136,7 +135,7 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
         private Uri RebuildUrl(Uri url)
         {
             var absolutePath = url.OriginalString;
-            string relativePath = $"{fileRootPath}{absolutePath.Substring(absolutePath.IndexOf(hash) + hash.Length + 1)}";
+            string relativePath = $"{fileRootPath}{absolutePath.Substring(absolutePath.IndexOf(hash, StringComparison.Ordinal) + hash.Length + 1)}";
             relativePath = relativePath.Replace("\\", "/");
             return new Uri(relativePath, UriKind.Relative);
         }

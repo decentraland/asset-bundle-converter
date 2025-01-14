@@ -18,6 +18,7 @@ namespace DCL.ABConverter
         internal const string CLI_SET_POSITION_X = "x";
         internal const string CLI_SET_POSITION_Y = "y";
         internal const string CLI_SET_SHADER = "shader";
+        internal const string CLI_ANIMATION_METHOD = "animation";
 
         internal const string CLI_SET_CUSTOM_OUTPUT_ROOT_PATH = "output";
         internal const string CLI_SET_SHADER_TARGET = "shaderTarget";

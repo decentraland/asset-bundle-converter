@@ -1,9 +1,9 @@
-using AssetBundleConverter;
-using AssetBundleConverter.Wearables;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using AssetBundleConverter;
+using AssetBundleConverter.Wearables;
+using GLTFast;
 using UnityEditor;
 using UnityEngine;
 using Environment = AssetBundleConverter.Environment;
@@ -75,7 +75,7 @@ namespace DCL.ABConverter
         /// Start the scene conversion process with the given commandLineArgs.
         /// </summary>
         /// <param name="commandLineArgs">An array with the command line arguments.</param>
-        /// <exception cref="ArgumentException">When an invalid argument is passed</exception>
+        /// <exception cref="System.ArgumentException">When an invalid argument is passed</exception>
         public async static void ExportSceneToAssetBundles(string[] commandLineArgs, ClientSettings settings = default)
         {
             settings ??= new ClientSettings();
@@ -172,7 +172,7 @@ namespace DCL.ABConverter
         /// Start the wearables collection conversion process with the given commandLineArgs.
         /// </summary>
         /// <param name="commandLineArgs">An array with the command line arguments.</param>
-        /// <exception cref="ArgumentException">When an invalid argument is passed</exception>
+        /// <exception cref="System.ArgumentException">When an invalid argument is passed</exception>
         public static async void ExportWearablesCollectionToAssetBundles(string[] commandLineArgs)
         {
             ClientSettings settings = new ClientSettings();
@@ -237,7 +237,18 @@ namespace DCL.ABConverter
             if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_CUSTOM_BASE_URL, 1, out string[] customBaseUrl))
                 settings.baseUrl = customBaseUrl[0];
 
+
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_ANIMATION_METHOD, 1, out string[] animationMethod))
+            {
+                var animMethod = animationMethod[0];
+
+                settings.AnimationMethod =
+                    animMethod switch { "mecanim" => AnimationMethod.Mecanim, _ => AnimationMethod.Legacy };
+
+            }
+
             if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_SHADER, 1, out string[] shaderParam))
+
             {
                 var shader = shaderParam[0];
 

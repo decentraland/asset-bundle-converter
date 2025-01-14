@@ -39,7 +39,6 @@ namespace DCL
             EditorSceneManager.SaveOpenScenes();
 
             var buildInput = ContentBuildInterface.GenerateAssetBundleBuilds();
-
             // Address by names instead of paths for backwards compatibility.
             for (var i = 0; i < buildInput.Length; i++)
                 buildInput[i].addressableNames = buildInput[i].assetNames.Select(Path.GetFileName).ToArray();
