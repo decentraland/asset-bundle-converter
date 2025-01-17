@@ -57,7 +57,7 @@ export async function initComponents(): Promise<AppComponents> {
   const cdnS3 = s3Bucket ? new AWS.S3({}) : new MockAws.S3({})
 
   const runner = createRunnerComponent()
-  const publisher = await createSnsComponent({ config })
+  const publisher = await createSnsComponent({ config, logs })
 
   return {
     config,
