@@ -17,19 +17,28 @@ export async function createSnsComponent({
   async function publishMessage(
     event: AssetBundleConversionFinishedEvent | AssetBundleConversionManuallyQueuedEvent
   ): Promise<void> {
+    let messageAttributes: any = {
+      type: {
+        DataType: 'String',
+        StringValue: event.type
+      },
+      subType: {
+        DataType: 'String',
+        StringValue: event.subType
+      }
+    }
+
+    if ('isPriority' in event.metadata && event.metadata.isPriority) {
+      messageAttributes = {
+        ...messageAttributes,
+        priority: { DataType: 'String', StringValue: '1' }
+      }
+    }
+
     const command = new PublishCommand({
       TopicArn: snsArn,
       Message: JSON.stringify(event),
-      MessageAttributes: {
-        type: {
-          DataType: 'String',
-          StringValue: event.type
-        },
-        subType: {
-          DataType: 'String',
-          StringValue: event.subType
-        }
-      }
+      MessageAttributes: messageAttributes
     })
 
     await client.send(command)
