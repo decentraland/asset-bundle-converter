@@ -63,6 +63,10 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
               platform: platform,
               entityId: job.entity.entityId,
               isLods: !!job.lods,
+              isWorld:
+                !!job.contentServerUrls &&
+                job.contentServerUrls.length > 1 &&
+                job.contentServerUrls[0].includes('worlds-content-server'),
               statusCode
             }
           }
