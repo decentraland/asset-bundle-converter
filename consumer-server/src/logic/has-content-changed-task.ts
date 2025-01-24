@@ -27,7 +27,7 @@ async function getManifestFiles(
   env: string,
   logger: ILoggerComponent.ILogger
 ): Promise<any | null> {
-  const url = `https://ab-cdn.decentraland.${env}/manifest/${entityID}_${buildTarget}.json`
+  const url = `https://ab-cdn.decentraland.${env}/manifest/${entityID}_${buildTarget}.json?no-cache=123`
 
   const res = await fetch(url)
   const response = await res.json()
