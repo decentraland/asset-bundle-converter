@@ -92,7 +92,7 @@ namespace AssetBundleConverter
             buildPipelineType = PersistentSetting.CreateEnum(nameof(buildPipelineType), BuildPipelineType.Scriptable);
             animationMehtod = PersistentSetting.CreateEnum(nameof(animationMehtod), AnimationMethod.Legacy);
             buildTarget = PersistentSetting.CreateEnum(nameof(buildTarget), SupportedBuildTarget.WebGL);
-            failingConversionTolerance = PersistentSetting.CreateFloat(nameof(failingConversionTolerance), 0.05f); // 5%
+            failingConversionTolerance = PersistentSetting.CreateFloat(nameof(failingConversionTolerance), 1f); // 5%
             downloadBatchSize = PersistentSetting.CreateInt(nameof(downloadBatchSize), 20);
         }
 
@@ -326,7 +326,7 @@ namespace AssetBundleConverter
             Mathf.Clamp(value, 1, 1000);
 
         private float ClampConversionTolerance(float value) =>
-            Mathf.Clamp(value, 0f, 0.5f);
+            Mathf.Clamp(value, 0f, 1f);
 
         private void SetupSettings()
         {
