@@ -1,16 +1,15 @@
-﻿using AssetBundleConverter;
-using AssetBundleConverter.Editor;
-using AssetBundleConverter.Wrappers.Implementations.Default;
-using AssetBundleConverter.Wrappers.Interfaces;
-using GLTFast;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using AssetBundleConverter;
+using AssetBundleConverter.Editor;
+using AssetBundleConverter.Wrappers.Interfaces;
 using Cysharp.Threading.Tasks;
+using GLTFast;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -449,6 +448,10 @@ namespace DCL.ABConverter
             var filePath = $"{animatorRoot}animatorController.controller";
             var controller = AnimatorController.CreateAnimatorControllerAtPath(filePath);
 
+            List<string> layerNames = new List<string>();
+            foreach (AnimatorControllerLayer animatorControllerLayer in controller.layers)
+                layerNames.Add(animatorControllerLayer.name);
+
             for (var i = 0; i < clips.Count; i++)
             {
                 AnimationClip originalClip = clips[i];
@@ -488,9 +491,10 @@ namespace DCL.ABConverter
 
                 // Configure layers
                 string layerName = controller.MakeUniqueLayerName(animationClipName);
+                layerNames.Add(layerName);
                 controller.AddLayer(new AnimatorControllerLayer
                 {
-                    name = animationClipName,
+                    name = layerName,
                     defaultWeight = isDefaultState ? 1f : 0f,
                     stateMachine = new AnimatorStateMachine(),
                     iKPass = false,
@@ -545,8 +549,8 @@ namespace DCL.ABConverter
 
                 int GetLayerIndex()
                 {
-                    for (var i = 0; i < controller.layers.Length; i++)
-                        if (controller.layers[i].name == layerName)
+                    for (var i = 0; i < layerNames.Count; i++)
+                        if (layerNames[i] == layerName)
                             return i;
 
                     return -1;
@@ -616,10 +620,16 @@ namespace DCL.ABConverter
             AssetDatabase.Refresh();
         }
 
-        private AnimationMethod GetAnimationMethod() =>
-            settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX
-                ? AnimationMethod.Mecanim
-                : AnimationMethod.Legacy;
+        private AnimationMethod GetAnimationMethod()
+        {
+            if (entityDTO == null) return AnimationMethod.Legacy;
+            if (entityDTO.type.ToLower().Contains("emote")) return AnimationMethod.Mecanim;
+            if (settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX)
+                return settings.AnimationMethod;
+
+            //WebGL platform fallback is always Legacy
+            return AnimationMethod.Legacy;
+        }
 
         private void ExtractEmbedMaterialsFromGltf(List<Texture2D> textures, GltfImportSettings gltf, IGltfImport gltfImport, string gltfUrl)
         {
@@ -953,7 +963,8 @@ namespace DCL.ABConverter
 
             // 1. Convert flagged folders to asset bundles only to automatically get dependencies for the metadata
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
-                BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
+                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
+                BuildAssetBundleOptions.AssetBundleStripUnityVersion,
                 target);
 
             if (manifest == null)
@@ -978,7 +989,8 @@ namespace DCL.ABConverter
 
             // 3. Convert flagged folders to asset bundles again but this time they have the metadata file inside
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
-                BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
+                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
+                BuildAssetBundleOptions.AssetBundleStripUnityVersion,
                 target);
 
             var afterSecondBuild = EditorApplication.timeSinceStartup;

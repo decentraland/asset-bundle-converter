@@ -1,5 +1,6 @@
-using DCL.ABConverter;
 using System.IO;
+using DCL.ABConverter;
+using GLTFast;
 using UnityEditor;
 using UnityEngine;
 
@@ -18,7 +19,12 @@ namespace AssetBundleConverter
     }
 
     public class ClientSettings
-        {
+    {
+            /// <summary>
+            /// animation method used to force the legacy animation system or not from CLI
+            /// </summary>
+            public AnimationMethod AnimationMethod = AnimationMethod.Legacy;
+
             /// <summary>
             /// if set to true, when conversion finishes, the working folder containing all downloaded assets will be deleted
             /// </summary>
@@ -59,7 +65,7 @@ namespace AssetBundleConverter
             public bool visualTest = false;
             public bool createAssetBundle = true;
             public int downloadBatchSize = 20;
-            public float failingConversionTolerance = 0.05f;
+        public float failingConversionTolerance = 1f;
             public bool placeOnScene = false;
             public string importOnlyEntity;
 

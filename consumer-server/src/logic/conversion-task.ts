@@ -6,6 +6,7 @@ import { AppComponents } from '../types'
 import { runConversion, runLodsConversion } from './run-conversion'
 import * as fs from 'fs'
 import * as path from 'path'
+import { hasContentChange } from './has-content-changed-task'
 
 type Manifest = {
   version: string
@@ -82,7 +83,7 @@ export async function executeLODConversion(
   components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>,
   entityId: string,
   lods: string[]
-) {
+): Promise<number> {
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
   const $PROJECT_PATH = await components.config.requireString('PROJECT_PATH')
@@ -104,7 +105,7 @@ export async function executeLODConversion(
 
   if (!unityBuildTarget) {
     logger.error('Could not find a build target', { ...defaultLoggerMetadata } as any)
-    return
+    return 5 // UNEXPECTED_ERROR exit code
   }
 
   try {
@@ -127,7 +128,7 @@ export async function executeLODConversion(
       // this is an error, if succeeded, we should see at least a manifest file
       components.metrics.increment('ab_converter_empty_conversion', { ab_version: $AB_VERSION })
       logger.error('Empty conversion', { ...defaultLoggerMetadata } as any)
-      return
+      return 5 // UNEXPECTED_ERROR exit code
     }
 
     await uploadDir(components.cdnS3, cdnBucket, outDirectory, 'LOD', {
@@ -144,6 +145,8 @@ export async function executeLODConversion(
         }
       ]
     })
+
+    return exitCode ?? -1
   } catch (error: any) {
     logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
     components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
@@ -198,8 +201,9 @@ export async function executeConversion(
   components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry'>,
   entityId: string,
   contentServerUrl: string,
-  force: boolean | undefined
-) {
+  force: boolean | undefined,
+  animation: string | undefined
+): Promise<number> {
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
   const $PROJECT_PATH = await components.config.requireString('PROJECT_PATH')
@@ -212,13 +216,13 @@ export async function executeConversion(
   const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
   if (!unityBuildTarget) {
     logger.info('Invalid build target ' + $BUILD_TARGET)
-    return
+    return 5 // UNEXPECTED_ERROR exit code
   }
 
   if (!force) {
     if (await shouldIgnoreConversion(components, entityId, $AB_VERSION, $BUILD_TARGET)) {
       logger.info('Ignoring conversion', { entityId, contentServerUrl, $AB_VERSION })
-      return
+      return 13 // ALREADY_CONVERTED exit code
     }
   } else {
     logger.info('Forcing conversion', { entityId, contentServerUrl, $AB_VERSION })
@@ -235,19 +239,42 @@ export async function executeConversion(
   const defaultLoggerMetadata = { entityId, contentServerUrl, version: $AB_VERSION, logFile: s3LogKey }
 
   logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
+  let hasContentChanged = true
+
+  if ($BUILD_TARGET !== 'webgl' && !force) {
+    try {
+      hasContentChanged = await hasContentChange(
+        entityId,
+        contentServerUrl,
+        $BUILD_TARGET,
+        outDirectory,
+        $AB_VERSION,
+        logger
+      )
+    } catch (e) {
+      logger.info('HasContentChanged failed with error ' + e)
+    }
+  }
+
+  logger.info(`HasContentChanged for ${entityId} result was ${hasContentChanged}`)
 
   let exitCode
   try {
-    exitCode = await runConversion(logger, components, {
-      contentServerUrl,
-      entityId,
-      logFile,
-      outDirectory,
-      projectPath: $PROJECT_PATH,
-      unityPath: $UNITY_PATH,
-      timeout: 120 * 60 * 1000, // 120min temporarily doubled
-      unityBuildTarget: unityBuildTarget
-    })
+    if (hasContentChanged) {
+      exitCode = await runConversion(logger, components, {
+        contentServerUrl,
+        entityId,
+        logFile,
+        outDirectory,
+        projectPath: $PROJECT_PATH,
+        unityPath: $UNITY_PATH,
+        timeout: 120 * 60 * 1000, // 120min temporarily doubled
+        unityBuildTarget: unityBuildTarget,
+        animation: animation
+      })
+    } else {
+      exitCode = 0
+    }
 
     components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })
 
@@ -322,6 +349,8 @@ export async function executeConversion(
         process.exit(1)
       }
     }
+
+    return exitCode ?? -1
   } catch (err: any) {
     logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
     components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
@@ -367,7 +396,7 @@ export async function executeConversion(
 
     throw err
   } finally {
-    if ($LOGS_BUCKET) {
+    if ($LOGS_BUCKET && hasContentChanged) {
       const log = `https://${$LOGS_BUCKET}.s3.amazonaws.com/${s3LogKey}`
 
       logger.info(`LogFile=${log}`, defaultLoggerMetadata)

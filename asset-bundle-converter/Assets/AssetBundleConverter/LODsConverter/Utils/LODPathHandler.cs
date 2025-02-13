@@ -10,6 +10,8 @@ namespace AssetBundleConverter.LODsConverter.Utils
     public class LODPathHandler
     {
         public string tempPath;
+        public string tempPathRelativeToDataPath;
+
         public string outputPath;
 
         public string fileDirectoryRelativeToDataPath;
@@ -29,9 +31,11 @@ namespace AssetBundleConverter.LODsConverter.Utils
         {
             outputPath = !string.IsNullOrEmpty(customOutputPath) ? customOutputPath : LODConstants.DEFAULT_OUTPUT_PATH;
             tempPath = LODConstants.DEFAULT_TEMP_PATH;
-
+            tempPathRelativeToDataPath = LODConstants.DEFAULT_TEMP_PATH_RELATIVE_TO_DATA_PATH;
             Directory.CreateDirectory(outputPath);
-            Directory.CreateDirectory(tempPath);
+            if (Directory.Exists(tempPath))
+                AssetDatabase.DeleteAsset(tempPathRelativeToDataPath);
+            AssetDatabase.CreateFolder("Assets", LODConstants.TEMP_FOLDER_NAME);
         }
 
         public void SetCurrentFile(string downloadedFilePath)

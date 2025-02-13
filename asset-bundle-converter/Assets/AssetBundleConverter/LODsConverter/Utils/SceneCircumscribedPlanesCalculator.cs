@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using Cysharp.Threading.Tasks;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 namespace AssetBundleConverter.LODsConverter.Utils
@@ -10,6 +7,7 @@ namespace AssetBundleConverter.LODsConverter.Utils
     {
         private const float PARCEL_SIZE = 16.0f;
         private const float EXTEND_AMOUNT = 0.05f;
+        private const float EXTEND_AMOUNT_FOR_DISABLE = 0.5f;
         private const float MAX_HEIGHT = 200f;
 
         private static ParcelCorners CalculateCorners(Vector2Int parcelPosition)
@@ -55,21 +53,22 @@ namespace AssetBundleConverter.LODsConverter.Utils
             }
         }
 
-        private static Bounds CalculateSceneBoundingBox(Vector4 scenePlane, int parcelCount)
+        private static Bounds CalculateSceneBoundingBox(Vector4 scenePlane)
         {
             Vector3 center = new Vector3((scenePlane[0] + scenePlane[1]) / 2, 0, (scenePlane[2] + scenePlane[3]) / 2);
             
             //NOTE: I was getting inconsistencies on LOD_1 because weird merging was done underground.
             //SO, by setting MAX_HEIGHT * 2, the height wont be larger than MAX_HEIGHT going up,
             //And we'll go until MAX_HEIGHT underground
-            Vector3 size = new Vector3(scenePlane[1] - scenePlane[0]  + EXTEND_AMOUNT, MAX_HEIGHT * 2, scenePlane[3] - scenePlane[2] + EXTEND_AMOUNT);
+            var size = new Vector3(scenePlane[1] - scenePlane[0] + EXTEND_AMOUNT_FOR_DISABLE, MAX_HEIGHT * 2,
+                scenePlane[3] - scenePlane[2] + EXTEND_AMOUNT_FOR_DISABLE);
             return new Bounds(center, size);
         }
         
         public static void DisableObjectsOutsideBounds(Parcel parcel, GameObject parent)
         {
             parent.transform.position = GetPositionByParcelPosition(parcel.GetDecodedBaseParcel());
-            Bounds sceneBoundingBox = CalculateSceneBoundingBox(CalculateScenePlane(parcel.GetDecodedParcels()), parcel.GetDecodedParcels().Count);
+            var sceneBoundingBox = CalculateSceneBoundingBox(CalculateScenePlane(parcel.GetDecodedParcels()));
             foreach (var renderer in parent.GetComponentsInChildren<MeshFilter>()) {
                 Bounds meshBounds = renderer.sharedMesh.bounds;
                 meshBounds.center = renderer.transform.TransformPoint(meshBounds.center);

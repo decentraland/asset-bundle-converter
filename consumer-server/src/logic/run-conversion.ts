@@ -112,6 +112,7 @@ export async function runConversion(
     projectPath: string
     timeout: number
     unityBuildTarget: string
+    animation: string | undefined
   }
 ) {
   await setupStartDirectories(options)
@@ -142,7 +143,9 @@ export async function runConversion(
     '-output',
     options.outDirectory,
     '-buildTarget',
-    options.unityBuildTarget
+    options.unityBuildTarget,
+    '-animation',
+    options.animation || 'legacy'
   ]
 
   return await executeProgram({

@@ -1,18 +1,14 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
 using AssetBundleConverter.LODsConverter.Utils;
-using AssetBundleConverter.Wrappers.Interfaces;
 using DCL;
 using DCL.ABConverter;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Object = UnityEngine.Object;
-using SystemWrappers = AssetBundleConverter.Wrappers.Implementations.Default.SystemWrappers;
 
 public class LODConversion
 {
@@ -45,7 +41,7 @@ public class LODConversion
         }
         catch (Exception e)
         {
-            Debug.Log("DOWNLOAD FAILED");
+            Debug.Log("Could not download all files. Exiting");
             Utils.Exit(1);
             return;
         }
@@ -69,17 +65,15 @@ public class LODConversion
         catch (Exception e)
         {
             Debug.LogError($"Unexpected exit with error {e.Message}");
-            Directory.Delete(lodPathHandler.tempPath, true);
+            AssetDatabase.DeleteAsset(lodPathHandler.tempPathRelativeToDataPath);
             Utils.Exit(1);
             return;
         }
 
         lodPathHandler.RelocateOutputFolder();
-        Directory.Delete(lodPathHandler.tempPath, true);
+        AssetDatabase.DeleteAsset(lodPathHandler.tempPathRelativeToDataPath);
         foreach (string downloadedFilePath in downloadedFilePaths)
-        {
             Debug.Log($"LOD conversion done for {Path.GetFileName(downloadedFilePath)}");
-        }
         Utils.Exit();
     }
 
@@ -130,14 +124,14 @@ public class LODConversion
         {
             string assetPath = PathUtils.GetRelativePathTo(Application.dataPath, texturePath);
             var importer = AssetImporter.GetAtPath(assetPath) as TextureImporter;
-            var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
             if (importer != null)
             {
                 importer.textureType = TextureImporterType.Default;
                 importer.isReadable = true;
                 importer.SetPlatformTextureSettings(new TextureImporterPlatformSettings
                 {
-                    overridden = true, maxTextureSize = texture.width, name = "Standalone", format = TextureImporterFormat.BC7,
+                    //All LODs texture that are not 0 should have 256 as max size
+                    overridden = true, maxTextureSize = 256, name = "Standalone", format = TextureImporterFormat.BC7,
                     textureCompression = TextureImporterCompression.Compressed
                 });
                 AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
@@ -218,7 +212,8 @@ public class LODConversion
         
         // 1. Convert flagged folders to asset bundles only to automatically get dependencies for the metadata
         var manifest = buildPipeline.BuildAssetBundles(lodPathHandler.outputPath,
-            BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
+            BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
+            BuildAssetBundleOptions.AssetBundleStripUnityVersion,
             target);
 
         if (manifest == null)
@@ -245,7 +240,8 @@ public class LODConversion
 
         // 3. Convert flagged folders to asset bundles again but this time they have the metadata file inside
         buildPipeline.BuildAssetBundles(lodPathHandler.outputPath,
-            BuildAssetBundleOptions.UncompressedAssetBundle | BuildAssetBundleOptions.ForceRebuildAssetBundle | BuildAssetBundleOptions.AssetBundleStripUnityVersion,
+            BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
+            BuildAssetBundleOptions.AssetBundleStripUnityVersion,
             target);
     }
     
