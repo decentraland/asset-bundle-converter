@@ -10,6 +10,8 @@ using AssetBundleConverter.Editor;
 using AssetBundleConverter.Wrappers.Interfaces;
 using Cysharp.Threading.Tasks;
 using GLTFast;
+using GLTFast.Export;
+using GLTFast.Logging;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -361,6 +363,8 @@ namespace DCL.ABConverter
                     {
                         GameObject importedGameObject = env.assetDatabase.LoadAssetAtPath<GameObject>(relativePath);
                         CreateBackfaceForDoubleSidedMeshes(importedGameObject);
+                        string originalGlbPath = gltfUrl.Replace(".glb", "aaa.glb"); // This should be the full path to the .glb file
+                        await ExportModifiedGameObjectToGlb(importedGameObject, originalGlbPath);
                         if (importedGameObject == null)
                         {
                             var message = "Fatal error when importing this object, check previous error messages";
@@ -445,6 +449,32 @@ namespace DCL.ABConverter
                     MeshUtils.MakeDoubleSidedMesh(renderer.sharedMesh);
 
                 }
+            }
+        }
+
+        /// <summary>
+        /// Exports a modified GameObject back to a GLB file, overwriting the original
+        /// </summary>
+        /// <param name="modifiedGameObject">The GameObject that has been modified</param>
+        /// <param name="originalGlbPath">Path to the original GLB file to overwrite</param>
+        /// <returns>True if export was successful</returns>
+        private async Task<bool> ExportModifiedGameObjectToGlb(GameObject modifiedGameObject, string originalGlbPath)
+        {
+            if (modifiedGameObject == null)
+            {
+                log.Error("Cannot export null GameObject");
+                return false;
+            }
+
+            try
+            {
+                return await env.gltfExporter.ExportToGlb(modifiedGameObject, originalGlbPath);
+            }
+            catch (Exception e)
+            {
+                log.Exception($"Error exporting modified GameObject: {e.Message}");
+                errorReporter.ReportException(new ConversionException(ConversionStep.Convert, settings, e));
+                return false;
             }
         }
 

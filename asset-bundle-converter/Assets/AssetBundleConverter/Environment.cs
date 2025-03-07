@@ -17,6 +17,7 @@ namespace AssetBundleConverter
         public readonly IABLogger logger;
         public readonly IErrorReporter errorReporter;
         public readonly BuildPipelineType buildPipelineType;
+        public IGltfExport gltfExporter { get; private set; }
 
         internal Environment(IDirectory directory, IFile file, IAssetDatabase assetDatabase, IWebRequest webRequest, IBuildPipeline buildPipeline, IGltfImporter gltfImporter, IEditor editor, IABLogger logger, IErrorReporter errorReporter,
             BuildPipelineType buildPipelineType)
@@ -31,6 +32,10 @@ namespace AssetBundleConverter
             this.logger = logger;
             this.errorReporter = errorReporter;
             this.buildPipelineType = buildPipelineType;
+
+            gltfExporter = new GltfExportWrapper(
+                logger: new GLTFast.Logging.ConsoleLogger()
+            );
         }
 
         public static Environment CreateWithDefaultImplementations(BuildPipelineType buildPipelineType)
