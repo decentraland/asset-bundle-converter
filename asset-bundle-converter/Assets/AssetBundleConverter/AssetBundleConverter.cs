@@ -360,7 +360,7 @@ namespace DCL.ABConverter
                     if (importerSuccess)
                     {
                         GameObject importedGameObject = env.assetDatabase.LoadAssetAtPath<GameObject>(relativePath);
-
+                        CreateBackfaceForDoubleSidedMeshes(importedGameObject);
                         if (importedGameObject == null)
                         {
                             var message = "Fatal error when importing this object, check previous error messages";
@@ -387,6 +387,7 @@ namespace DCL.ABConverter
                             try
                             {
                                 var clone = (GameObject)PrefabUtility.InstantiatePrefab(originalGltf);
+                                Debug.Log($"ASD: Original name is {originalGltf.name}, clone name {clone.name}");
                                 var renderers = clone.GetComponentsInChildren<Renderer>(true);
 
                                 foreach (Renderer renderer in renderers)
@@ -433,6 +434,18 @@ namespace DCL.ABConverter
             EditorUtility.ClearProgressBar();
 
             log.Info("Ended importing GLTFs");
+        }
+
+        private static void CreateBackfaceForDoubleSidedMeshes(GameObject importedGameObject)
+        {
+            foreach (var renderer in importedGameObject.GetComponentsInChildren<SkinnedMeshRenderer>())
+            {
+                if (renderer.sharedMaterial != null && renderer.sharedMaterial.doubleSidedGI)
+                {
+                    MeshUtils.MakeDoubleSidedMesh(renderer.sharedMesh);
+
+                }
+            }
         }
 
         private void CreateLayeredAnimatorController(IGltfImport gltfImport, string directory)

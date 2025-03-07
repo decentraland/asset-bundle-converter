@@ -21,6 +21,52 @@ namespace DCL.ABConverter
 {
     public static class MeshUtils
     {
+        public static void MakeDoubleSidedMesh(Mesh mesh)
+        {
+            int[] triangles = mesh.triangles;
+            Vector3[] vertices = mesh.vertices;
+            Vector3[] normals = mesh.normals;
+            Vector2[] uv = mesh.uv;
+            int originalCount = vertices.Length;
+            int newCount = originalCount * 2;
+
+            Vector3[] newVertices = new Vector3[newCount];
+            Vector3[] newNormals = new Vector3[newCount];
+            Vector2[] newUVs = new Vector2[newCount];
+            int[] newTriangles = new int[triangles.Length * 2];
+
+            for (int i = 0; i < originalCount; i++)
+            {
+                newVertices[i] = vertices[i];
+                newNormals[i] = normals[i];
+                newUVs[i] = uv[i];
+
+                //Duplicate with inverted normal
+                newVertices[i + originalCount] = vertices[i];
+                newNormals[i + originalCount] = -normals[i];
+                newUVs[i + originalCount] = uv[i];
+            }
+
+            //Copy and invert triangles
+            for (int i = 0; i < triangles.Length; i += 3)
+            {
+                newTriangles[i] = triangles[i];
+                newTriangles[i + 1] = triangles[i + 1];
+                newTriangles[i + 2] = triangles[i + 2];
+
+                //Calculate and assign inverted triangle order
+                newTriangles[triangles.Length + i] = triangles[i + 2] + originalCount;
+                newTriangles[triangles.Length + i + 1] = triangles[i + 1] + originalCount;
+                newTriangles[triangles.Length + i + 2] = triangles[i] + originalCount;
+            }
+
+            mesh.vertices = newVertices;
+            mesh.normals = newNormals;
+            mesh.uv = newUVs;
+            mesh.triangles = newTriangles;
+            mesh.RecalculateBounds();
+        }
+
         public static Bounds BuildMergedBounds(Renderer[] renderers)
         {
             Bounds bounds = new Bounds();
