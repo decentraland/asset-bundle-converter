@@ -287,21 +287,21 @@ namespace DCL.ABConverter
 
             ContentMap[] contentMap = contentTable.Select(kvp => new ContentMap(kvp.Key, kvp.Value)).ToArray();
 
-            AnimationMethod animationMethod = GetAnimationMethod();
-
-            var importSettings = new ImportSettings
-            {
-                AnimationMethod = animationMethod,
-                NodeNameMethod = NameImportMethod.OriginalUnique,
-                AnisotropicFilterLevel = 0,
-                GenerateMipMaps = false
-            };
-
             foreach (GltfImportSettings gltf in gltfToWait)
             {
                 string gltfUrl = gltf.url;
                 var gltfImport = gltf.import;
                 string relativePath = PathUtils.FullPathToAssetPath(gltfUrl);
+                bool isSceneEmote = gltf.AssetPath.fileName.EndsWith("_emote.glb");
+                AnimationMethod animationMethod = GetAnimationMethod(isSceneEmote);
+
+                var importSettings = new ImportSettings
+                {
+                    AnimationMethod = animationMethod,
+                    NodeNameMethod = NameImportMethod.OriginalUnique,
+                    AnisotropicFilterLevel = 0,
+                    GenerateMipMaps = false
+                };
 
                 try
                 {
@@ -343,7 +343,7 @@ namespace DCL.ABConverter
 
                     if (animationMethod == AnimationMethod.Mecanim)
                     {
-                        bool isEmote = entityDTO.type.ToLower().Contains("emote");
+                        bool isEmote = entityDTO.type.ToLower().Contains("emote") || gltf.AssetPath.fileName.EndsWith("_emote.glb");
 
                         if (isEmote)
                             CreateAnimatorController(gltfImport, directory);
@@ -620,9 +620,10 @@ namespace DCL.ABConverter
             AssetDatabase.Refresh();
         }
 
-        private AnimationMethod GetAnimationMethod()
+        private AnimationMethod GetAnimationMethod(bool isSceneEmote)
         {
             if (entityDTO == null) return AnimationMethod.Legacy;
+            if (isSceneEmote) return AnimationMethod.Mecanim;
             if (entityDTO.type.ToLower().Contains("emote")) return AnimationMethod.Mecanim;
             if (settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX)
                 return settings.AnimationMethod;
