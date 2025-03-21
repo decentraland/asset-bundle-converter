@@ -295,7 +295,7 @@ namespace DCL.ABConverter
                 bool isSceneEmote = gltf.AssetPath.fileName.EndsWith("_emote.glb");
                 bool isEmote = entityDTO.type.ToLower().Contains("emote") || isSceneEmote;
 
-                AnimationMethod animationMethod = GetAnimationMethod(isSceneEmote);
+                AnimationMethod animationMethod = GetAnimationMethod(isEmote);
 
                 var importSettings = new ImportSettings
                 {
@@ -620,11 +620,10 @@ namespace DCL.ABConverter
             AssetDatabase.Refresh();
         }
 
-        private AnimationMethod GetAnimationMethod(bool isSceneEmote)
+        private AnimationMethod GetAnimationMethod(bool isEmote)
         {
             if (entityDTO == null) return AnimationMethod.Legacy;
-            if (isSceneEmote) return AnimationMethod.Mecanim;
-            if (entityDTO.type.ToLower().Contains("emote")) return AnimationMethod.Mecanim;
+            if (isEmote) return AnimationMethod.Mecanim;
             if (settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX)
                 return settings.AnimationMethod;
 
