@@ -293,6 +293,8 @@ namespace DCL.ABConverter
                 var gltfImport = gltf.import;
                 string relativePath = PathUtils.FullPathToAssetPath(gltfUrl);
                 bool isSceneEmote = gltf.AssetPath.fileName.EndsWith("_emote.glb");
+                bool isEmote = entityDTO.type.ToLower().Contains("emote") || isSceneEmote;
+
                 AnimationMethod animationMethod = GetAnimationMethod(isSceneEmote);
 
                 var importSettings = new ImportSettings
@@ -343,8 +345,6 @@ namespace DCL.ABConverter
 
                     if (animationMethod == AnimationMethod.Mecanim)
                     {
-                        bool isEmote = entityDTO.type.ToLower().Contains("emote") || gltf.AssetPath.fileName.EndsWith("_emote.glb");
-
                         if (isEmote)
                             CreateAnimatorController(gltfImport, directory);
                         else
