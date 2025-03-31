@@ -292,7 +292,8 @@ namespace DCL.ABConverter
                 string gltfUrl = gltf.url;
                 var gltfImport = gltf.import;
                 string relativePath = PathUtils.FullPathToAssetPath(gltfUrl);
-                bool isEmote = (entityDTO is { type: not null } && entityDTO.type.ToLower().Contains("emote")) || gltf.AssetPath.fileName.EndsWith("_emote.glb");
+                bool isEmote = (entityDTO is { type: not null } && entityDTO.type.ToLower().Contains("emote"))
+                               || gltf.AssetPath.fileName.ToLower().EndsWith("_emote.glb");
 
                 AnimationMethod animationMethod = GetAnimationMethod(isEmote);
 
