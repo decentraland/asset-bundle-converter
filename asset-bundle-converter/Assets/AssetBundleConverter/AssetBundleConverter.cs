@@ -343,12 +343,15 @@ namespace DCL.ABConverter
                     ExtractEmbedMaterialsFromGltf(textures, gltf, gltfImport, gltfUrl);
                     embedExtractMaterialTime.Stop();
 
-                    if (animationMethod == AnimationMethod.Mecanim)
+                    if (!entityDTO.type.ToLower().Contains("wearable"))
                     {
-                        if (isEmote)
-                            CreateAnimatorController(gltfImport, directory);
-                        else
-                            CreateLayeredAnimatorController(gltfImport, directory);
+                        if (animationMethod == AnimationMethod.Mecanim)
+                        {
+                            if (isEmote)
+                                CreateAnimatorController(gltfImport, directory);
+                            else
+                                CreateLayeredAnimatorController(gltfImport, directory);
+                        }
                     }
 
                     log.Verbose($"Importing {relativePath}");
