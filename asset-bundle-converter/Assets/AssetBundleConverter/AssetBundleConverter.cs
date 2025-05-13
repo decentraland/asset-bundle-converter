@@ -296,7 +296,7 @@ namespace DCL.ABConverter
                                || gltf.AssetPath.fileName.ToLower().EndsWith("_emote.glb");
                 bool isWearable = (entityDTO is { type: not null } && entityDTO.type.ToLower().Contains("wearable"));
 
-                AnimationMethod animationMethod = GetAnimationMethod(isEmote);
+                AnimationMethod animationMethod = GetAnimationMethod(isEmote,isWearable);
 
                 var importSettings = new ImportSettings
                 {
@@ -305,12 +305,6 @@ namespace DCL.ABConverter
                     AnisotropicFilterLevel = 0,
                     GenerateMipMaps = false
                 };
-                
-                if (isWearable)
-                {
-                    // Setting to None to not import the animation clips
-                    importSettings.AnimationMethod = AnimationMethod.None;
-                }
 
                 try
                 {
@@ -627,9 +621,10 @@ namespace DCL.ABConverter
             AssetDatabase.Refresh();
         }
 
-        private AnimationMethod GetAnimationMethod(bool isEmote)
+        private AnimationMethod GetAnimationMethod(bool isEmote, bool isWearable)
         {
             if (entityDTO == null) return AnimationMethod.Legacy;
+            if (isWearable) return AnimationMethod.None;
             if (isEmote) return AnimationMethod.Mecanim;
             if (settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX)
                 return settings.AnimationMethod;
