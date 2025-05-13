@@ -376,20 +376,6 @@ namespace DCL.ABConverter
                             SetExitState(ErrorCodes.GLTFAST_CRITICAL_ERROR);
                             continue;
                         }
-                        
-                        // // NOTE: if type is wearable remove
-                        // // NOTE: the animator and legacy animation
-                        // if (entityDTO.type.ToLower().Contains("wearable"))
-                        // {
-                        //     var animator = importedGameObject.GetComponent<Animator>();
-                        //     if (animator != null) Object.DestroyImmediate(animator, true);
-                        //
-                        //     var legacyAnimation = importedGameObject.GetComponent<Animation>();
-                        //     if (legacyAnimation != null) Object.DestroyImmediate(legacyAnimation, true);
-                        //     
-                        //     EditorUtility.SetDirty(importedGameObject);
-                        //     env.assetDatabase.SaveAssets();
-                        // }
                     }
                     else
                     {
