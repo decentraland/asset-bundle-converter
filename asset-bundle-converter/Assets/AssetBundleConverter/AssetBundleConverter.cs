@@ -294,6 +294,8 @@ namespace DCL.ABConverter
                 string relativePath = PathUtils.FullPathToAssetPath(gltfUrl);
                 bool isEmote = (entityDTO is { type: not null } && entityDTO.type.ToLower().Contains("emote"))
                                || gltf.AssetPath.fileName.ToLower().EndsWith("_emote.glb");
+                bool isWearable = (entityDTO is { type: not null } && entityDTO.type.ToLower().Contains("wearable"))
+                                  || gltf.AssetPath.fileName.ToLower().EndsWith("_wearable.glb");
 
                 AnimationMethod animationMethod = GetAnimationMethod(isEmote);
 
@@ -304,6 +306,12 @@ namespace DCL.ABConverter
                     AnisotropicFilterLevel = 0,
                     GenerateMipMaps = false
                 };
+                
+                if (isWearable)
+                {
+                    // Setting to None to not import the animation clips
+                    importSettings.AnimationMethod = AnimationMethod.None;
+                }
 
                 try
                 {
@@ -357,7 +365,7 @@ namespace DCL.ABConverter
                     log.Verbose($"Importing {relativePath}");
 
                     configureGltftime.Start();
-                    bool importerSuccess = env.gltfImporter.ConfigureImporter(relativePath, contentMap, gltf.AssetPath.fileRootPath, gltf.AssetPath.hash, settings.shaderType, animationMethod);
+                    bool importerSuccess = env.gltfImporter.ConfigureImporter(relativePath, contentMap, gltf.AssetPath.fileRootPath, gltf.AssetPath.hash, settings.shaderType, importSettings.AnimationMethod);
                     configureGltftime.Stop();
 
                     if (importerSuccess)
@@ -372,6 +380,20 @@ namespace DCL.ABConverter
                             SetExitState(ErrorCodes.GLTFAST_CRITICAL_ERROR);
                             continue;
                         }
+                        
+                        // // NOTE: if type is wearable remove
+                        // // NOTE: the animator and legacy animation
+                        // if (entityDTO.type.ToLower().Contains("wearable"))
+                        // {
+                        //     var animator = importedGameObject.GetComponent<Animator>();
+                        //     if (animator != null) Object.DestroyImmediate(animator, true);
+                        //
+                        //     var legacyAnimation = importedGameObject.GetComponent<Animation>();
+                        //     if (legacyAnimation != null) Object.DestroyImmediate(legacyAnimation, true);
+                        //     
+                        //     EditorUtility.SetDirty(importedGameObject);
+                        //     env.assetDatabase.SaveAssets();
+                        // }
                     }
                     else
                     {
