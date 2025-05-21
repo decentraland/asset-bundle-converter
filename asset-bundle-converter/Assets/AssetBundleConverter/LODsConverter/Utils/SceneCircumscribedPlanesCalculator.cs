@@ -8,7 +8,6 @@ namespace AssetBundleConverter.LODsConverter.Utils
         private const float PARCEL_SIZE = 16.0f;
         private const float EXTEND_AMOUNT = 0.05f;
         private const float EXTEND_AMOUNT_FOR_DISABLE = 0.5f;
-        private const float MAX_HEIGHT = 200f;
 
         private static ParcelCorners CalculateCorners(Vector2Int parcelPosition)
         {
@@ -53,22 +52,20 @@ namespace AssetBundleConverter.LODsConverter.Utils
             }
         }
 
-        private static Bounds CalculateSceneBoundingBox(Vector4 scenePlane)
+        private static Bounds CalculateSceneBoundingBox(Vector4 scenePlane, int parcelCount)
         {
             Vector3 center = new Vector3((scenePlane[0] + scenePlane[1]) / 2, 0, (scenePlane[2] + scenePlane[3]) / 2);
-            
-            //NOTE: I was getting inconsistencies on LOD_1 because weird merging was done underground.
-            //SO, by setting MAX_HEIGHT * 2, the height wont be larger than MAX_HEIGHT going up,
-            //And we'll go until MAX_HEIGHT underground
-            var size = new Vector3(scenePlane[1] - scenePlane[0] + EXTEND_AMOUNT_FOR_DISABLE, MAX_HEIGHT * 2,
-                scenePlane[3] - scenePlane[2] + EXTEND_AMOUNT_FOR_DISABLE);
+            var size = new Vector3(scenePlane[1] - scenePlane[0]  + EXTEND_AMOUNT_FOR_DISABLE, CalculateSceneHeight(parcelCount) * 2, scenePlane[3] - scenePlane[2] + EXTEND_AMOUNT_FOR_DISABLE);
             return new Bounds(center, size);
         }
-        
+
+        public static float CalculateSceneHeight(int parcelCount) =>
+            Mathf.Log(parcelCount + 1, 2) * 20;
+
         public static void DisableObjectsOutsideBounds(Parcel parcel, GameObject parent)
         {
             parent.transform.position = GetPositionByParcelPosition(parcel.GetDecodedBaseParcel());
-            var sceneBoundingBox = CalculateSceneBoundingBox(CalculateScenePlane(parcel.GetDecodedParcels()));
+            var sceneBoundingBox = CalculateSceneBoundingBox(CalculateScenePlane(parcel.GetDecodedParcels()), parcel.GetDecodedParcels().Count);
             foreach (var renderer in parent.GetComponentsInChildren<MeshFilter>()) {
                 Bounds meshBounds = renderer.sharedMesh.bounds;
                 meshBounds.center = renderer.transform.TransformPoint(meshBounds.center);
@@ -85,7 +82,7 @@ namespace AssetBundleConverter.LODsConverter.Utils
                     new Vector3(meshBounds.max.x, meshBounds.min.y, meshBounds.max.z),
                     meshBounds.max
                 };
-                
+
                 foreach (Vector3 corner in meshCorners) {
                     if (!sceneBoundingBox.Contains(corner)) {
                         isFullyContained = false;
@@ -122,7 +119,7 @@ namespace AssetBundleConverter.LODsConverter.Utils
 
             // to prevent on-boundary flickering (float accuracy) extend the circumscribed planes a little bit
 
-           
+
 
             circumscribedPlaneMinX -= EXTEND_AMOUNT;
             circumscribedPlaneMaxX += EXTEND_AMOUNT;
