@@ -2,6 +2,7 @@ import { Events } from '@dcl/schemas'
 import { HandlerContextWithPath } from '../../types'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
+import { getAbVersionEnvName } from '../../utils'
 
 export async function queueTaskHandler(
   context: HandlerContextWithPath<'taskQueue' | 'config' | 'publisher', '/queue-task'>
@@ -11,10 +12,18 @@ export async function queueTaskHandler(
     request
   } = context
 
+  if (request.headers.get('Authorization') !== (await config.requireString('TMP_SECRET'))) {
+    return {
+      status: 401,
+      body: 'Unauthorized'
+    }
+  }
+
   const platform = await config.requireString('PLATFORM')
 
-  if (request.headers.get('Authorization') !== (await config.requireString('TMP_SECRET')))
-    return { status: 401, body: 'Unauthorized' }
+  const $BUILD_TARGET = await config.requireString('BUILD_TARGET')
+  const abVersionEnvName = getAbVersionEnvName($BUILD_TARGET)
+  const $AB_VERSION = await config.requireString(abVersionEnvName)
 
   const body = await request.json()
 
@@ -32,7 +41,8 @@ export async function queueTaskHandler(
       platform: platform.toLocaleLowerCase() as 'windows' | 'mac' | 'webgl',
       entityId: body.entity.entityId,
       isLods: !!body.lods,
-      isPriority: shouldPrioritize
+      isPriority: shouldPrioritize,
+      version: $AB_VERSION
     }
   })
 

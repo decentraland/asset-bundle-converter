@@ -4,6 +4,7 @@ import { executeConversion, executeLODConversion } from './logic/conversion-task
 import checkDiskSpace from 'check-disk-space'
 import { AppComponents, GlobalContext, TestComponents } from './types'
 import { AssetBundleConversionFinishedEvent, Events } from '@dcl/schemas'
+import { getAbVersionEnvName } from './utils'
 
 // this function wires the business logic (adapters & controllers) with the components (ports)
 export async function main(program: Lifecycle.EntryPointParameters<AppComponents | TestComponents>) {
@@ -31,6 +32,10 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
       | 'windows'
       | 'mac'
       | 'webgl'
+    const $BUILD_TARGET = await components.config.requireString('BUILD_TARGET')
+    const abVersionEnvName = getAbVersionEnvName($BUILD_TARGET)
+    const $AB_VERSION = await components.config.requireString(abVersionEnvName)
+
     while (opt.isRunning) {
       if (await machineRanOutOfSpace(components)) {
         logger.warn('Stopping program due to lack of disk space')
@@ -67,7 +72,8 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
                 !!job.contentServerUrls &&
                 job.contentServerUrls.length > 1 &&
                 job.contentServerUrls[0].includes('worlds-content-server'),
-              statusCode
+              statusCode,
+              version: $AB_VERSION
             }
           }
 

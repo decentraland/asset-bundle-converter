@@ -17,7 +17,7 @@ import { dirname } from 'path'
 import { createMetricsComponent } from '@well-known-components/metrics'
 import { metricDeclarations } from './metrics'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
-import { getUnityBuildTarget } from './logic/conversion-task'
+import { getUnityBuildTarget } from './utils'
 
 const args = arg({
   '--pointer': String,
