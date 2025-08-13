@@ -177,7 +177,8 @@ export async function executeConversion(
   entityId: string,
   contentServerUrl: string,
   force: boolean | undefined,
-  animation: string | undefined
+  animation: string | undefined,
+  buildDate: string
 ): Promise<number> {
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
@@ -258,7 +259,7 @@ export async function executeConversion(
       files: await promises.readdir(outDirectory),
       exitCode,
       contentServerUrl,
-      date: new Date().toISOString()
+      date: buildDate
     }
 
     logger.debug('Manifest', { ...defaultLoggerMetadata, manifest } as any)

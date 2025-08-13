@@ -44,6 +44,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
       }
 
       await components.taskQueue.consumeAndProcessJob(async (job, _message) => {
+        const buildDate = new Date().toISOString()
         let statusCode: number
         try {
           components.metrics.increment('ab_converter_running_conversion')
@@ -55,7 +56,8 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
               job.entity.entityId,
               job.contentServerUrls![0],
               job.force,
-              job.animation
+              job.animation,
+              buildDate
             )
           }
 
@@ -73,7 +75,8 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
                 job.contentServerUrls.length > 1 &&
                 job.contentServerUrls[0].includes('worlds-content-server'),
               statusCode,
-              version: $AB_VERSION
+              version: $AB_VERSION,
+              buildDate
             }
           }
 
