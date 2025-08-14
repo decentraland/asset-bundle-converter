@@ -86,6 +86,7 @@ namespace AssetBundleConverter
             public BuildTarget buildTarget = BuildTarget.WebGL;
             public BuildPipelineType BuildPipelineType = BuildPipelineType.Default;
 
+            public string json;
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 
         }

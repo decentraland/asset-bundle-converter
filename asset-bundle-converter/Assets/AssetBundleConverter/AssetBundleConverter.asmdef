@@ -27,7 +27,7 @@
     "overrideReferences": true,
     "precompiledReferences": [
         "Sentry.dll",
-        "Unity.Plastic.Newtonsoft.Json.dll"
+        "Newtonsoft.Json.dll"
     ],
     "autoReferenced": true,
     "defineConstraints": [],

@@ -7,9 +7,11 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using AssetBundleConverter;
 using AssetBundleConverter.Editor;
+using AssetBundleConverter.StaticSceneAssetBundle;
 using AssetBundleConverter.Wrappers.Interfaces;
 using Cysharp.Threading.Tasks;
 using GLTFast;
+using Newtonsoft.Json;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -106,6 +108,8 @@ namespace DCL.ABConverter
             finalDownloadedAssetDbPath = PathUtils.FixDirectorySeparator(Config.ASSET_BUNDLES_PATH_ROOT + Config.DASH);
 
             log.verboseEnabled = true;
+
+
         }
 
         /// <summary>
@@ -119,6 +123,8 @@ namespace DCL.ABConverter
             entityDTO = conversionParams.apiResponse;
             startupAllocated = Profiler.GetTotalAllocatedMemoryLong() / 100000.0;
             startupReserved = Profiler.GetTotalReservedMemoryLong() / 100000.0;
+
+
 
             if (settings.buildTarget is not (BuildTarget.WebGL or BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX))
             {
@@ -180,7 +186,7 @@ namespace DCL.ABConverter
 
                 bundlesStartupTime = EditorApplication.timeSinceStartup;
 
-                MarkAndBuildForTarget(settings.buildTarget);
+                MarkAndBuildForTarget(settings.buildTarget, settings.json);
 
                 bundlesEndTime = EditorApplication.timeSinceStartup;
             }
@@ -237,11 +243,11 @@ namespace DCL.ABConverter
             AssetDatabase.ImportAsset(rendererDataPath);
         }
 
-        private void MarkAndBuildForTarget(BuildTarget target)
+        private void MarkAndBuildForTarget(BuildTarget target, string staticSceneJSON)
         {
 
             // Fourth step: we mark all assets for bundling
-            MarkAllAssetBundles(assetsToMark, target);
+            MarkAllAssetBundles(assetsToMark, target, staticSceneJSON);
 
             // Fifth step: we build the Asset Bundles
             env.assetDatabase.Refresh();
@@ -904,16 +910,89 @@ namespace DCL.ABConverter
         /// </summary>
         /// <param name="assetPaths">The paths to be built.</param>
         /// <param name="BuildTarget"></param>
-        private void MarkAllAssetBundles(List<AssetPath> assetPaths, BuildTarget target)
+        private void MarkAllAssetBundles(List<AssetPath> assetPaths, BuildTarget target, string staticSceneJSON)
         {
+            var asset = ScriptableObject.CreateInstance<StaticSceneDescriptor>();
+
+            Dictionary<string, List<int>> gltfsComponents = new Dictionary<string, List<int>>();
+
+            if (!string.IsNullOrEmpty(staticSceneJSON))
+            {
+
+                try
+                {
+                    var components = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic[]>(staticSceneJSON);
+                    foreach (var component in components)
+                    {
+                        if (component.componentName == "core::GltfContainer" && component.data?.src != null)
+                        {
+                            string src = component.data.src;
+                            if(!gltfsComponents.ContainsKey(src))
+                                gltfsComponents.Add(src, new List<int>());
+
+                            gltfsComponents[src].Add((int)component.entityId);
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    log.Warning($"Failed to parse staticSceneJSON: {e.Message}");
+                }
+            }
+
             foreach (var assetPath in assetPaths)
             {
                 if (assetPath == null) continue;
 
                 if (assetPath.finalPath.EndsWith(".bin")) continue;
+
+                // Check if this asset matches a GltfContainer source
+                bool isStatic = gltfsComponents.ContainsKey(assetPath.filePath);
                 string assetBundleName = assetPath.hash + PlatformUtils.GetPlatform();
 
-                env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, assetBundleName);
+                if (isStatic)
+                {
+                    List<int> entityIds = gltfsComponents[assetPath.filePath];
+                    foreach (int entityId in entityIds)
+                    {
+                        asset.assetHash.Add(assetPath.hash);
+                        Matrix4x4 worldMatrix = GltfTransformDumper.DumpGltfWorldTransforms(staticSceneJSON, entityId);
+                        asset.positions.Add(worldMatrix.GetColumn(3));
+                        // Rotation extraction
+                        Vector3 forward = worldMatrix.GetColumn(2); // Z axis
+                        Vector3 up = worldMatrix.GetColumn(1);      // Y axis
+                        asset.rotations.Add(Quaternion.LookRotation(forward, up));
+
+                        // Optional: scale extraction
+                        Vector3 scale = new Vector3(
+                            worldMatrix.GetColumn(0).magnitude,
+                            worldMatrix.GetColumn(1).magnitude,
+                            worldMatrix.GetColumn(2).magnitude
+                        );
+
+                        asset.scales.Add(scale);
+                    }
+                }
+                env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, isStatic ? "StaticScene" : assetBundleName);
+            }
+
+            ExportToTextAsset(asset, "Assets/_Downloaded/StaticSceneDescriptor.json");
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            AssetImporter importer_json = AssetImporter.GetAtPath("Assets/_Downloaded/StaticSceneDescriptor.json");
+            importer_json.SetAssetBundleNameAndVariant("StaticScene", "");
+
+            void ExportToTextAsset(StaticSceneDescriptor descriptor, string assetPath)
+            {
+                // Convert ScriptableObject to JSON using Newtonsoft.Json
+                var settings = new JsonSerializerSettings
+                {
+                    Formatting = Formatting.Indented,
+                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+                };
+                string json = JsonConvert.SerializeObject(descriptor, settings);
+                File.WriteAllText("/Users/juanmolteni/Decentraland/asset-bundle-converter/asset-bundle-converter/Assets/_Downloaded/StaticSceneDescriptor.json", json);
             }
         }
 
@@ -963,7 +1042,7 @@ namespace DCL.ABConverter
 
             // 1. Convert flagged folders to asset bundles only to automatically get dependencies for the metadata
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
-                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
+                BuildAssetBundleOptions.None | BuildAssetBundleOptions.ForceRebuildAssetBundle |
                 BuildAssetBundleOptions.AssetBundleStripUnityVersion,
                 target);
 
@@ -989,7 +1068,7 @@ namespace DCL.ABConverter
 
             // 3. Convert flagged folders to asset bundles again but this time they have the metadata file inside
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
-                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
+                BuildAssetBundleOptions.None | BuildAssetBundleOptions.ForceRebuildAssetBundle |
                 BuildAssetBundleOptions.AssetBundleStripUnityVersion,
                 target);
 
