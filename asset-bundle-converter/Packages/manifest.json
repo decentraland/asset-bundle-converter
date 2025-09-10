@@ -4,7 +4,6 @@
     "com.atteneder.gltfast": "https://github.com/decentraland/unity-gltf.git",
     "com.atteneder.ktx": "2.2.3",
     "com.cysharp.unitask": "https://github.com/Cysharp/UniTask.git?path=src/UniTask/Assets/Plugins/UniTask",
-    "com.decentraland.unity-shared-dependencies": "https://github.com/decentraland/unity-shared-dependencies.git",
     "com.unity.ai.navigation": "2.0.7",
     "com.unity.assetbundlebrowser": "https://github.com/Unity-Technologies/AssetBundles-Browser.git",
     "com.unity.ide.rider": "3.0.36",
