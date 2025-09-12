@@ -1,7 +1,6 @@
 {
   "dependencies": {
     "com.atteneder.draco": "4.0.2",
-    "com.atteneder.gltfast": "https://github.com/decentraland/unity-gltf.git",
     "com.atteneder.ktx": "2.2.3",
     "com.cysharp.unitask": "https://github.com/Cysharp/UniTask.git?path=src/UniTask/Assets/Plugins/UniTask",
     "com.unity.assetbundlebrowser": "https://github.com/Unity-Technologies/AssetBundles-Browser.git",
