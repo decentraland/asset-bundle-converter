@@ -296,7 +296,7 @@ namespace AssetBundleConverter.Editor
                         tImporter.sRGBTexture = !metallics.Contains(tex);
                         tImporter.compressionQuality = 100;
                         tImporter.textureCompression = TextureImporterCompression.CompressedHQ;
-                        tImporter.mipmapEnabled = false;
+                        tImporter.mipmapEnabled = true;
 
                         // With this we avoid re-importing this glb as it may contain invalid references to textures
                         EditorUtility.SetDirty(tImporter);
