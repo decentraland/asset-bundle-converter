@@ -54,6 +54,15 @@ jobs:
           submodules: recursive
           lfs: true
 
+      - name: Move Docker data-root to /mnt/docker
+        run: |
+          sudo systemctl stop docker
+          sudo mkdir -p /mnt/docker
+          echo '{"data-root":"/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl start docker
+          docker info | sed -n '1,40p'
+          df -h /mnt /mnt/docker
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -62,7 +71,7 @@ jobs:
         with:
           driver: docker
 
-      - name: Login to DockerHub
+      - name: Login to Quay.io
         uses: docker/login-action@v3
         with:
           registry: quay.io
@@ -86,7 +95,7 @@ jobs:
           load: true
           build-args: |
             COMMIT_HASH=${{ github.event.pull_request.head.sha || github.sha }}
-            VERSION_TAG=${{ github.event.pull_request.head.ref || github.event.release.tag_name || inputs.docker-tag ||  'unknown' }}
+            VERSION_TAG=${{ github.event.pull_request.head.ref || github.event.release.tag_name || inputs.docker-tag || 'unknown' }}
             UNITY_DOCKER_IMAGE=${{ inputs.unity-docker-image }}
             PLATFORM_TARGET=${{ inputs.platform-target }}
 

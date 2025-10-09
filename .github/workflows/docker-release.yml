@@ -10,13 +10,13 @@ jobs:
     strategy:
       matrix:
         include:
-          - unity-docker-image: unityci/editor:6000.0.49f1-webgl-3
+          - unity-docker-image: unityci/editor:6000.2.6f2-webgl-3
             service-name: asset-bundle-converter
             platform-target: webgl
-          - unity-docker-image: unityci/editor:6000.0.49f1-windows-mono-3
+          - unity-docker-image: unityci/editor:6000.2.6f2-windows-mono-3
             service-name: asset-bundle-converter-windows
             platform-target: windows
-          - unity-docker-image: unityci/editor:6000.0.49f1-mac-mono-3
+          - unity-docker-image: unityci/editor:6000.2.6f2-mac-mono-3
             service-name: asset-bundle-converter-mac
             platform-target: mac
 
@@ -34,13 +34,13 @@ jobs:
     strategy:
       matrix:
         include:
-          - unity-docker-image: unityci/editor:6000.0.49f1-webgl-3
+          - unity-docker-image: unityci/editor:6000.2.6f2-webgl-3
             service-name: asset-bundle-converter
             platform-target: webgl
-          - unity-docker-image: unityci/editor:6000.0.49f1-windows-mono-3
+          - unity-docker-image: unityci/editor:6000.2.6f2-windows-mono-3
             service-name: asset-bundle-converter-windows
             platform-target: windows
-          - unity-docker-image: unityci/editor:6000.0.49f1-mac-mono-3
+          - unity-docker-image: unityci/editor:6000.2.6f2-mac-mono-3
             service-name: asset-bundle-converter-mac
             platform-target: mac
 
