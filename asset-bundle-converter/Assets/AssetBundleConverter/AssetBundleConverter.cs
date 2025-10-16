@@ -7,11 +7,9 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using AssetBundleConverter;
 using AssetBundleConverter.Editor;
-using AssetBundleConverter.StaticSceneAssetBundle;
 using AssetBundleConverter.Wrappers.Interfaces;
 using Cysharp.Threading.Tasks;
 using GLTFast;
-using Newtonsoft.Json;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -55,7 +53,6 @@ namespace DCL.ABConverter
         private List<GltfImportSettings> gltfToWait = new ();
         private Dictionary<string, string> contentTable = new ();
         private Dictionary<string, string> gltfOriginalNames = new ();
-        private Dictionary<string, IGltfImport> gltfImporters = new ();
         private string logBuffer;
         private int skippedAssets;
         private IErrorReporter errorReporter;
@@ -109,8 +106,6 @@ namespace DCL.ABConverter
             finalDownloadedAssetDbPath = PathUtils.FixDirectorySeparator(Config.ASSET_BUNDLES_PATH_ROOT + Config.DASH);
 
             log.verboseEnabled = true;
-
-
         }
 
         /// <summary>
@@ -124,8 +119,6 @@ namespace DCL.ABConverter
             entityDTO = conversionParams.apiResponse;
             startupAllocated = Profiler.GetTotalAllocatedMemoryLong() / 100000.0;
             startupReserved = Profiler.GetTotalReservedMemoryLong() / 100000.0;
-
-
 
             if (settings.buildTarget is not (BuildTarget.WebGL or BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX))
             {
@@ -187,7 +180,7 @@ namespace DCL.ABConverter
 
                 bundlesStartupTime = EditorApplication.timeSinceStartup;
 
-                MarkAndBuildForTarget(settings.buildTarget, settings.json);
+                MarkAndBuildForTarget(settings.buildTarget);
 
                 bundlesEndTime = EditorApplication.timeSinceStartup;
             }
@@ -244,11 +237,11 @@ namespace DCL.ABConverter
             AssetDatabase.ImportAsset(rendererDataPath);
         }
 
-        private void MarkAndBuildForTarget(BuildTarget target, string staticSceneJSON)
+        private void MarkAndBuildForTarget(BuildTarget target)
         {
 
             // Fourth step: we mark all assets for bundling
-            MarkAllAssetBundles(assetsToMark, target, staticSceneJSON);
+            MarkAllAssetBundles(assetsToMark, target);
 
             // Fifth step: we build the Asset Bundles
             env.assetDatabase.Refresh();
@@ -301,8 +294,9 @@ namespace DCL.ABConverter
                 string relativePath = PathUtils.FullPathToAssetPath(gltfUrl);
                 bool isEmote = (entityDTO is { type: not null } && entityDTO.type.ToLower().Contains("emote"))
                                || gltf.AssetPath.fileName.ToLower().EndsWith("_emote.glb");
+                bool isWearable = (entityDTO is { type: not null } && entityDTO.type.ToLower().Contains("wearable"));
 
-                AnimationMethod animationMethod = GetAnimationMethod(isEmote);
+                AnimationMethod animationMethod = GetAnimationMethod(isEmote,isWearable);
 
                 var importSettings = new ImportSettings
                 {
@@ -361,7 +355,7 @@ namespace DCL.ABConverter
                     log.Verbose($"Importing {relativePath}");
 
                     configureGltftime.Start();
-                    bool importerSuccess = env.gltfImporter.ConfigureImporter(relativePath, contentMap, gltf.AssetPath.fileRootPath, gltf.AssetPath.hash, settings.shaderType, animationMethod);
+                    bool importerSuccess = env.gltfImporter.ConfigureImporter(relativePath, contentMap, gltf.AssetPath.fileRootPath, gltf.AssetPath.hash, settings.shaderType, importSettings.AnimationMethod);
                     configureGltftime.Stop();
 
                     if (importerSuccess)
@@ -627,9 +621,10 @@ namespace DCL.ABConverter
             AssetDatabase.Refresh();
         }
 
-        private AnimationMethod GetAnimationMethod(bool isEmote)
+        private AnimationMethod GetAnimationMethod(bool isEmote, bool isWearable)
         {
             if (entityDTO == null) return AnimationMethod.Legacy;
+            if (isWearable) return AnimationMethod.None;
             if (isEmote) return AnimationMethod.Mecanim;
             if (settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX)
                 return settings.AnimationMethod;
@@ -653,13 +648,13 @@ namespace DCL.ABConverter
             if (gltfImport.defaultMaterial != null)
             {
                 var mat = gltfImport.defaultMaterial;
-                CreateMaterialAsset(mat, materialDirectory, texNameMap, gltf.AssetPath.hash);
+                CreateMaterialAsset(mat, materialDirectory, texNameMap);
             }
 
             for (var t = 0; t < gltfImport.MaterialCount; t++)
             {
                 var originalMaterial = gltfImport.GetMaterial(t);
-                CreateMaterialAsset(originalMaterial, materialDirectory, texNameMap, gltf.AssetPath.hash);
+                CreateMaterialAsset(originalMaterial, materialDirectory, texNameMap);
             }
 
             Profiler.EndSample();
@@ -667,7 +662,7 @@ namespace DCL.ABConverter
             RefreshAssetsWithNoLogs();
         }
 
-        private void CreateMaterialAsset(Material originalMaterial, string materialRoot, Dictionary<string, Texture2D> texNameMap, string hash)
+        private void CreateMaterialAsset(Material originalMaterial, string materialRoot, Dictionary<string, Texture2D> texNameMap)
         {
             string matName = Utils.NicifyName(originalMaterial.name);
 
@@ -911,120 +906,16 @@ namespace DCL.ABConverter
         /// </summary>
         /// <param name="assetPaths">The paths to be built.</param>
         /// <param name="BuildTarget"></param>
-        private void MarkAllAssetBundles(List<AssetPath> assetPaths, BuildTarget target, string staticSceneJSON)
+        private void MarkAllAssetBundles(List<AssetPath> assetPaths, BuildTarget target)
         {
-            var asset = ScriptableObject.CreateInstance<StaticSceneDescriptor>();
-
-            Dictionary<string, List<int>> gltfsComponents = new Dictionary<string, List<int>>();
-            List<string> textureComponents = new List<string>();
-
-
-            if (!string.IsNullOrEmpty(staticSceneJSON))
-            {
-                try
-                {
-                    var components = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic[]>(staticSceneJSON);
-                    foreach (var component in components)
-                    {
-                        if (component.componentName == "core::GltfContainer" && component.data?.src != null)
-                        {
-                            string src = component.data.src;
-                            if(!gltfsComponents.ContainsKey(src))
-                                gltfsComponents.Add(src, new List<int>());
-
-                            gltfsComponents[src].Add((int)component.entityId);
-                        }else if (component.componentName == "core::Material" && component.data?.material?.unlit?.texture?.tex?.texture?.src != null)
-                        {
-                            string src = component.data?.material?.unlit?.texture?.tex?.texture?.src;
-                            textureComponents.Add(src);
-                        }
-                        else if (component.componentName == "core::Material" && component.data?.material?.pbr?.texture?.tex?.texture?.src != null)
-                        {
-                            string src = component.data?.material?.pbr?.texture?.tex?.texture?.src;
-                            textureComponents.Add(src);
-                        }
-                    }
-                }
-                catch (Exception e)
-                {
-                    log.Warning($"Failed to parse staticSceneJSON: {e.Message}");
-                }
-            }
-
             foreach (var assetPath in assetPaths)
             {
                 if (assetPath == null) continue;
 
                 if (assetPath.finalPath.EndsWith(".bin")) continue;
-
-                // Check if this asset matches a GltfContainer source
-                bool isStatic = gltfsComponents.ContainsKey(assetPath.filePath);
                 string assetBundleName = assetPath.hash + PlatformUtils.GetPlatform();
 
-                if (isStatic)
-                {
-                    List<int> entityIds = gltfsComponents[assetPath.filePath];
-                    foreach (int entityId in entityIds)
-                    {
-                        asset.assetHash.Add(assetPath.hash);
-                        Matrix4x4 worldMatrix = GltfTransformDumper.DumpGltfWorldTransforms(staticSceneJSON, entityId);
-                        asset.positions.Add(worldMatrix.GetColumn(3));
-                        // Rotation extraction
-                        Vector3 forward = worldMatrix.GetColumn(2); // Z axis
-                        Vector3 up = worldMatrix.GetColumn(1);      // Y axis
-                        asset.rotations.Add(Quaternion.LookRotation(forward, up));
-
-                        // Optional: scale extraction
-                        Vector3 scale = new Vector3(
-                            worldMatrix.GetColumn(0).magnitude,
-                            worldMatrix.GetColumn(1).magnitude,
-                            worldMatrix.GetColumn(2).magnitude
-                        );
-
-                        asset.scales.Add(scale);
-                    }
-
-                    // Mark GLTF dependencies as static
-                    if (gltfImporters.TryGetValue(assetPath.filePath, out IGltfImport gltfImport))
-                    {
-                        var dependencies = gltfImport.assetDependencies;
-                        if (dependencies != null)
-                        {
-                            foreach (var dependency in dependencies)
-                            {
-                                if (!string.IsNullOrEmpty(dependency.assetPath) && !dependency.assetPath.Contains("dcl/scene_ignorel"))
-                                {
-                                    env.directory.MarkFolderForAssetBundleBuild(dependency.assetPath, "StaticScene");
-                                    log.Verbose($"Marked dependency as static: {dependency.assetPath}");
-                                }
-                            }
-                        }
-                    }
-
-                }
-                bool isStaticTexture = textureComponents.Contains(assetPath.filePath);
-
-                env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, (isStatic || isStaticTexture) ? "StaticScene" : assetBundleName);
-            }
-
-
-            ExportToTextAsset(asset, "Assets/_Downloaded/StaticSceneDescriptor.json");
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
-
-            AssetImporter importer_json = AssetImporter.GetAtPath("Assets/_Downloaded/StaticSceneDescriptor.json");
-            importer_json.SetAssetBundleNameAndVariant("StaticScene", "");
-
-            void ExportToTextAsset(StaticSceneDescriptor descriptor, string assetPath)
-            {
-                // Convert ScriptableObject to JSON using Newtonsoft.Json
-                var settings = new JsonSerializerSettings
-                {
-                    Formatting = Formatting.Indented,
-                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore
-                };
-                string json = JsonConvert.SerializeObject(descriptor, settings);
-                File.WriteAllText("/Users/juanmolteni/Decentraland/asset-bundle-converter/asset-bundle-converter/Assets/_Downloaded/StaticSceneDescriptor.json", json);
+                env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, assetBundleName);
             }
         }
 
@@ -1074,7 +965,7 @@ namespace DCL.ABConverter
 
             // 1. Convert flagged folders to asset bundles only to automatically get dependencies for the metadata
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
-                BuildAssetBundleOptions.None | BuildAssetBundleOptions.ForceRebuildAssetBundle |
+                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
                 BuildAssetBundleOptions.AssetBundleStripUnityVersion,
                 target);
 
@@ -1100,7 +991,7 @@ namespace DCL.ABConverter
 
             // 3. Convert flagged folders to asset bundles again but this time they have the metadata file inside
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
-                BuildAssetBundleOptions.None | BuildAssetBundleOptions.ForceRebuildAssetBundle |
+                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
                 BuildAssetBundleOptions.AssetBundleStripUnityVersion,
                 target);
 
@@ -1557,7 +1448,6 @@ namespace DCL.ABConverter
                     });
 
                     gltfOriginalNames[outputPath] = assetPath.filePath;
-                    gltfImporters[assetPath.filePath] = gltfImport;
                 }
                 else { env.assetDatabase.ImportAsset(outputPath, ImportAssetOptions.ForceUpdate); }
             }

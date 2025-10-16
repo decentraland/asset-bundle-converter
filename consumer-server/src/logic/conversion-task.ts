@@ -7,6 +7,7 @@ import { runConversion, runLodsConversion } from './run-conversion'
 import * as fs from 'fs'
 import * as path from 'path'
 import { hasContentChange } from './has-content-changed-task'
+import { getAbVersionEnvName, getUnityBuildTarget } from '../utils'
 
 type Manifest = {
   version: string
@@ -51,32 +52,6 @@ async function shouldIgnoreConversion(
   } catch {}
 
   return false
-}
-
-export function getUnityBuildTarget(target: string): string | undefined {
-  switch (target) {
-    case 'webgl':
-      return 'WebGL'
-    case 'windows':
-      return 'StandaloneWindows64'
-    case 'mac':
-      return 'StandaloneOSX'
-    default:
-      return undefined
-  }
-}
-
-function getAbVersionEnvName(buildTarget: string) {
-  switch (buildTarget) {
-    case 'webgl':
-      return 'AB_VERSION'
-    case 'windows':
-      return 'AB_VERSION_WINDOWS'
-    case 'mac':
-      return 'AB_VERSION_MAC'
-    default:
-      throw 'Invalid buildTarget'
-  }
 }
 
 export async function executeLODConversion(
