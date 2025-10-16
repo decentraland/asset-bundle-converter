@@ -1024,7 +1024,7 @@ namespace DCL.ABConverter
                     ReferenceLoopHandling = ReferenceLoopHandling.Ignore
                 };
                 string json = JsonConvert.SerializeObject(descriptor, settings);
-                File.WriteAllText("/Users/juanmolteni/Decentraland/asset-bundle-converter/asset-bundle-converter/Assets/_Downloaded/StaticSceneDescriptor.json", json);
+                File.WriteAllText($"{finalDownloadedPath}/StaticSceneDescriptor.json", json);
             }
         }
 
