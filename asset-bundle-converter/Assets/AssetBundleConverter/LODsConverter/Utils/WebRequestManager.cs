@@ -1,9 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Cysharp.Threading.Tasks;
-using Unity.Plastic.Newtonsoft.Json;
+using Newtonsoft.Json;
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -26,7 +25,7 @@ namespace AssetBundleConverter.LODsConverter.Utils
                     string responseText = request.downloadHandler.text;
                     var parcelData = JsonConvert.DeserializeObject<Parcel[]>(responseText);
                     return parcelData[0];
-                    
+
                 }
                 else
                 {

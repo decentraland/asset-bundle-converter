@@ -25,6 +25,6 @@ namespace AssetBundleConverter.Wrappers.Interfaces
 
         Material defaultMaterial { get; }
 
-
+        List<GltfAssetDependency> assetDependencies { get; }
     }
 }

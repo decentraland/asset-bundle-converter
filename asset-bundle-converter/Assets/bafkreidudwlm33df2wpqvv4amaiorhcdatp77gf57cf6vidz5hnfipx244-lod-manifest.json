@@ -1,0 +1,7397 @@
+[
+  {
+    "entityId": 513,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 2
+    }
+  },
+  {
+    "entityId": 514,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 2
+    }
+  },
+  {
+    "entityId": 515,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 2
+    }
+  },
+  {
+    "entityId": 516,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 2
+    }
+  },
+  {
+    "entityId": 517,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 2
+    }
+  },
+  {
+    "entityId": 518,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 2
+    }
+  },
+  {
+    "entityId": 519,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": 0,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 520,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 519
+    }
+  },
+  {
+    "entityId": 521,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": 3.0350100994110107,
+        "z": 4
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1.149999976158142,
+        "y": 1.149999976158142,
+        "z": 1.149999976158142
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 522,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": 0.5648850202560425,
+        "z": 11.363889694213867
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1.149999976158142,
+        "y": 1.149999976158142,
+        "z": 1.149999976158142
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 523,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 524,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 525,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 526,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 527,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 528,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 529,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 530,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 531,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 532,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 533,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 534,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 535,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 536,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 537,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 538,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 539,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 540,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 541,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 542,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 543,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 544,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 545,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 546,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 547,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 548,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": -2,
+        "z": 8
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 550,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": 0.6000000238418579,
+        "z": 11.169039726257324
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 551,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 0.8500000238418579,
+        "y": 0.550000011920929,
+        "z": 1
+      },
+      "parent": 550
+    }
+  },
+  {
+    "entityId": 552,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0.5,
+        "z": 0.009999999776482582
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0.75,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 551
+    }
+  },
+  {
+    "entityId": 553,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": -0.30000001192092896,
+        "y": -0.20000000298023224,
+        "z": 0.009999999776482582
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0.75,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 551
+    }
+  },
+  {
+    "entityId": 554,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": 6,
+        "z": 5.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 16,
+        "y": 12,
+        "z": 11
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 555,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": 3.0350100994110107,
+        "z": 4
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 556,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": -1.725000023841858,
+        "y": -1.725000023841858,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1.034999966621399,
+        "y": 1.034999966621399,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 557,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -0.019999999552965164
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 556
+    }
+  },
+  {
+    "entityId": 558,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 556
+    }
+  },
+  {
+    "entityId": 559,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 556
+    }
+  },
+  {
+    "entityId": 560,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 556
+    }
+  },
+  {
+    "entityId": 561,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 556
+    }
+  },
+  {
+    "entityId": 562,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 556
+    }
+  },
+  {
+    "entityId": 563,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 556
+    }
+  },
+  {
+    "entityId": 564,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": -0.574999988079071,
+        "y": -1.725000023841858,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1.034999966621399,
+        "y": 1.034999966621399,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 565,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -0.019999999552965164
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 564
+    }
+  },
+  {
+    "entityId": 566,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 564
+    }
+  },
+  {
+    "entityId": 567,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 564
+    }
+  },
+  {
+    "entityId": 568,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 564
+    }
+  },
+  {
+    "entityId": 569,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 564
+    }
+  },
+  {
+    "entityId": 570,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 564
+    }
+  },
+  {
+    "entityId": 571,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 564
+    }
+  },
+  {
+    "entityId": 572,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0.574999988079071,
+        "y": -1.725000023841858,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1.034999966621399,
+        "y": 1.034999966621399,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 573,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -0.019999999552965164
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 572
+    }
+  },
+  {
+    "entityId": 574,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 572
+    }
+  },
+  {
+    "entityId": 575,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 572
+    }
+  },
+  {
+    "entityId": 576,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 572
+    }
+  },
+  {
+    "entityId": 577,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 572
+    }
+  },
+  {
+    "entityId": 578,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 572
+    }
+  },
+  {
+    "entityId": 579,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 572
+    }
+  },
+  {
+    "entityId": 580,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 1.725000023841858,
+        "y": -1.725000023841858,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1.034999966621399,
+        "y": 1.034999966621399,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 581,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -0.019999999552965164
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 580
+    }
+  },
+  {
+    "entityId": 582,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 580
+    }
+  },
+  {
+    "entityId": 583,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 580
+    }
+  },
+  {
+    "entityId": 584,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 580
+    }
+  },
+  {
+    "entityId": 585,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 580
+    }
+  },
+  {
+    "entityId": 586,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 580
+    }
+  },
+  {
+    "entityId": 587,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 580
+    }
+  },
+  {
+    "entityId": 588,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": -1.725000023841858,
+        "y": -0.574999988079071,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1.034999966621399,
+        "y": 1.034999966621399,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 589,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -0.019999999552965164
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 588
+    }
+  },
+  {
+    "entityId": 590,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 588
+    }
+  },
+  {
+    "entityId": 591,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 588
+    }
+  },
+  {
+    "entityId": 592,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 588
+    }
+  },
+  {
+    "entityId": 593,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 588
+    }
+  },
+  {
+    "entityId": 594,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 588
+    }
+  },
+  {
+    "entityId": 595,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 588
+    }
+  },
+  {
+    "entityId": 596,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": -0.574999988079071,
+        "y": -0.574999988079071,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1.034999966621399,
+        "y": 1.034999966621399,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 597,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -0.019999999552965164
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 596
+    }
+  },
+  {
+    "entityId": 598,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 596
+    }
+  },
+  {
+    "entityId": 599,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 596
+    }
+  },
+  {
+    "entityId": 600,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 596
+    }
+  },
+  {
+    "entityId": 601,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 596
+    }
+  },
+  {
+    "entityId": 602,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 596
+    }
+  },
+  {
+    "entityId": 603,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 596
+    }
+  },
+  {
+    "entityId": 604,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0.574999988079071,
+        "y": -0.574999988079071,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1.034999966621399,
+        "y": 1.034999966621399,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 605,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -0.019999999552965164
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 604
+    }
+  },
+  {
+    "entityId": 606,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 604
+    }
+  },
+  {
+    "entityId": 607,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 604
+    }
+  },
+  {
+    "entityId": 608,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 604
+    }
+  },
+  {
+    "entityId": 609,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 604
+    }
+  },
+  {
+    "entityId": 610,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 604
+    }
+  },
+  {
+    "entityId": 611,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 604
+    }
+  },
+  {
+    "entityId": 612,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 1.725000023841858,
+        "y": -0.574999988079071,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1.034999966621399,
+        "y": 1.034999966621399,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 613,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -0.019999999552965164
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 612
+    }
+  },
+  {
+    "entityId": 614,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 612
+    }
+  },
+  {
+    "entityId": 615,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 612
+    }
+  },
+  {
+    "entityId": 616,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 612
+    }
+  },
+  {
+    "entityId": 617,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 612
+    }
+  },
+  {
+    "entityId": 618,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 612
+    }
+  },
+  {
+    "entityId": 619,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 612
+    }
+  },
+  {
+    "entityId": 620,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": -1.725000023841858,
+        "y": 0.574999988079071,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1.034999966621399,
+        "y": 1.034999966621399,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 621,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -0.019999999552965164
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 620
+    }
+  },
+  {
+    "entityId": 622,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 620
+    }
+  },
+  {
+    "entityId": 623,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 620
+    }
+  },
+  {
+    "entityId": 624,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 620
+    }
+  },
+  {
+    "entityId": 625,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 620
+    }
+  },
+  {
+    "entityId": 626,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 620
+    }
+  },
+  {
+    "entityId": 627,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 620
+    }
+  },
+  {
+    "entityId": 628,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": -0.574999988079071,
+        "y": 0.574999988079071,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1.034999966621399,
+        "y": 1.034999966621399,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 629,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -0.019999999552965164
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 628
+    }
+  },
+  {
+    "entityId": 630,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 628
+    }
+  },
+  {
+    "entityId": 631,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 628
+    }
+  },
+  {
+    "entityId": 632,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 628
+    }
+  },
+  {
+    "entityId": 633,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 628
+    }
+  },
+  {
+    "entityId": 634,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 628
+    }
+  },
+  {
+    "entityId": 635,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 628
+    }
+  },
+  {
+    "entityId": 636,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0.574999988079071,
+        "y": 0.574999988079071,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1.034999966621399,
+        "y": 1.034999966621399,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 637,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -0.019999999552965164
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 636
+    }
+  },
+  {
+    "entityId": 638,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 636
+    }
+  },
+  {
+    "entityId": 639,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 636
+    }
+  },
+  {
+    "entityId": 640,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 636
+    }
+  },
+  {
+    "entityId": 641,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 636
+    }
+  },
+  {
+    "entityId": 642,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 636
+    }
+  },
+  {
+    "entityId": 643,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 636
+    }
+  },
+  {
+    "entityId": 644,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 1.725000023841858,
+        "y": 0.574999988079071,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1.034999966621399,
+        "y": 1.034999966621399,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 645,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -0.019999999552965164
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 644
+    }
+  },
+  {
+    "entityId": 646,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 644
+    }
+  },
+  {
+    "entityId": 647,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 644
+    }
+  },
+  {
+    "entityId": 648,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 644
+    }
+  },
+  {
+    "entityId": 649,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 644
+    }
+  },
+  {
+    "entityId": 650,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 644
+    }
+  },
+  {
+    "entityId": 651,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 644
+    }
+  },
+  {
+    "entityId": 652,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": -1.725000023841858,
+        "y": 1.725000023841858,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1.034999966621399,
+        "y": 1.034999966621399,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 653,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -0.019999999552965164
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 652
+    }
+  },
+  {
+    "entityId": 654,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 652
+    }
+  },
+  {
+    "entityId": 655,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 652
+    }
+  },
+  {
+    "entityId": 656,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 652
+    }
+  },
+  {
+    "entityId": 657,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 652
+    }
+  },
+  {
+    "entityId": 658,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 652
+    }
+  },
+  {
+    "entityId": 659,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 652
+    }
+  },
+  {
+    "entityId": 660,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": -0.574999988079071,
+        "y": 1.725000023841858,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1.034999966621399,
+        "y": 1.034999966621399,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 661,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -0.019999999552965164
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 660
+    }
+  },
+  {
+    "entityId": 662,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 660
+    }
+  },
+  {
+    "entityId": 663,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 660
+    }
+  },
+  {
+    "entityId": 664,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 660
+    }
+  },
+  {
+    "entityId": 665,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 660
+    }
+  },
+  {
+    "entityId": 666,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 660
+    }
+  },
+  {
+    "entityId": 667,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 660
+    }
+  },
+  {
+    "entityId": 668,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0.574999988079071,
+        "y": 1.725000023841858,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1.034999966621399,
+        "y": 1.034999966621399,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 669,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -0.019999999552965164
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 668
+    }
+  },
+  {
+    "entityId": 670,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 668
+    }
+  },
+  {
+    "entityId": 671,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 668
+    }
+  },
+  {
+    "entityId": 672,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 668
+    }
+  },
+  {
+    "entityId": 673,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 668
+    }
+  },
+  {
+    "entityId": 674,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 668
+    }
+  },
+  {
+    "entityId": 675,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 668
+    }
+  },
+  {
+    "entityId": 676,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 1.725000023841858,
+        "y": 1.725000023841858,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1.034999966621399,
+        "y": 1.034999966621399,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 677,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -0.019999999552965164
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 676
+    }
+  },
+  {
+    "entityId": 678,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 676
+    }
+  },
+  {
+    "entityId": 679,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 676
+    }
+  },
+  {
+    "entityId": 680,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 676
+    }
+  },
+  {
+    "entityId": 681,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 676
+    }
+  },
+  {
+    "entityId": 682,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 676
+    }
+  },
+  {
+    "entityId": 683,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 676
+    }
+  },
+  {
+    "entityId": 684,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -0.08500000089406967
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 685,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 4.599999904632568,
+        "y": 4.599999904632568,
+        "z": 4.599999904632568
+      },
+      "parent": 684
+    }
+  },
+  {
+    "entityId": 686,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": -0.009999999776482582
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 685
+    }
+  },
+  {
+    "entityId": 687,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 1.100000023841858,
+        "z": 3.396780014038086
+      },
+      "rotation": {
+        "x": -2.3432602348612458e-17,
+        "y": 0.9238795042037964,
+        "z": 0.3826834261417389,
+        "w": 5.657130560897519e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 519
+    }
+  },
+  {
+    "entityId": 688,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 687
+    }
+  },
+  {
+    "entityId": 689,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0.07599999755620956,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0.7071067690849304,
+        "y": 0,
+        "z": 0,
+        "w": 0.7071067690849304
+      },
+      "scale": {
+        "x": 0.3499999940395355,
+        "y": 0.11666666716337204,
+        "z": 0.11999999731779099
+      },
+      "parent": 688
+    }
+  },
+  {
+    "entityId": 690,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0.029999999329447746,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0.7071067690849304,
+        "y": 0,
+        "z": 0,
+        "w": 0.7071067690849304
+      },
+      "scale": {
+        "x": 0.44999998807907104,
+        "y": 0.20000000298023224,
+        "z": 0.2199999988079071
+      },
+      "parent": 687
+    }
+  },
+  {
+    "entityId": 691,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": -1.850000023841858,
+        "y": 0.20000000298023224,
+        "z": -3.902630090713501
+      },
+      "rotation": {
+        "x": -4.329780301713277e-17,
+        "y": 0.7071067690849304,
+        "z": 0.7071067690849304,
+        "w": 4.329780301713277e-17
+      },
+      "scale": {
+        "x": 1.25,
+        "y": 1.25,
+        "z": 1.25
+      },
+      "parent": 519
+    }
+  },
+  {
+    "entityId": 692,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 691
+    }
+  },
+  {
+    "entityId": 693,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0.07599999755620956,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0.7071067690849304,
+        "y": 0,
+        "z": 0,
+        "w": 0.7071067690849304
+      },
+      "scale": {
+        "x": 0.3499999940395355,
+        "y": 0.11666666716337204,
+        "z": 0.11999999731779099
+      },
+      "parent": 692
+    }
+  },
+  {
+    "entityId": 694,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0.029999999329447746,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0.7071067690849304,
+        "y": 0,
+        "z": 0,
+        "w": 0.7071067690849304
+      },
+      "scale": {
+        "x": 0.44999998807907104,
+        "y": 0.20000000298023224,
+        "z": 0.2199999988079071
+      },
+      "parent": 691
+    }
+  },
+  {
+    "entityId": 695,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": -2.009999990463257,
+        "y": 0.550000011920929,
+        "z": -3.902630090713501
+      },
+      "rotation": {
+        "x": -4.329780301713277e-17,
+        "y": 0.7071067690849304,
+        "z": 0.7071067690849304,
+        "w": 4.329780301713277e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 519
+    }
+  },
+  {
+    "entityId": 696,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 695
+    }
+  },
+  {
+    "entityId": 697,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0.07599999755620956,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0.7071067690849304,
+        "y": 0,
+        "z": 0,
+        "w": 0.7071067690849304
+      },
+      "scale": {
+        "x": 0.15000000596046448,
+        "y": 0.15000000596046448,
+        "z": 0.15000000596046448
+      },
+      "parent": 696
+    }
+  },
+  {
+    "entityId": 698,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0.029999999329447746,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0.7071067690849304,
+        "y": 0,
+        "z": 0,
+        "w": 0.7071067690849304
+      },
+      "scale": {
+        "x": 0.23999999463558197,
+        "y": 0.23999999463558197,
+        "z": 0.23999999463558197
+      },
+      "parent": 695
+    }
+  },
+  {
+    "entityId": 699,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": -1.6799999475479126,
+        "y": 0.550000011920929,
+        "z": -3.902630090713501
+      },
+      "rotation": {
+        "x": -4.329780301713277e-17,
+        "y": 0.7071067690849304,
+        "z": 0.7071067690849304,
+        "w": 4.329780301713277e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 519
+    }
+  },
+  {
+    "entityId": 700,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 699
+    }
+  },
+  {
+    "entityId": 701,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0.07599999755620956,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0.7071067690849304,
+        "y": 0,
+        "z": 0,
+        "w": 0.7071067690849304
+      },
+      "scale": {
+        "x": 0.15000000596046448,
+        "y": 0.15000000596046448,
+        "z": 0.15000000596046448
+      },
+      "parent": 700
+    }
+  },
+  {
+    "entityId": 702,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0.029999999329447746,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0.7071067690849304,
+        "y": 0,
+        "z": 0,
+        "w": 0.7071067690849304
+      },
+      "scale": {
+        "x": 0.23999999463558197,
+        "y": 0.23999999463558197,
+        "z": 0.23999999463558197
+      },
+      "parent": 699
+    }
+  },
+  {
+    "entityId": 703,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 2.1059300899505615,
+        "y": 0.550000011920929,
+        "z": -3.902630090713501
+      },
+      "rotation": {
+        "x": -4.329780301713277e-17,
+        "y": 0.7071067690849304,
+        "z": 0.7071067690849304,
+        "w": 4.329780301713277e-17
+      },
+      "scale": {
+        "x": 2,
+        "y": 2,
+        "z": 2
+      },
+      "parent": 519
+    }
+  },
+  {
+    "entityId": 704,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0.7071067690849304,
+        "y": 0,
+        "z": 0,
+        "w": 0.7071067690849304
+      },
+      "scale": {
+        "x": 0.15000000596046448,
+        "y": 0.15000000596046448,
+        "z": 0.15000000596046448
+      },
+      "parent": 703
+    }
+  },
+  {
+    "entityId": 705,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 2.1059300899505615,
+        "y": 0.20000000298023224,
+        "z": -3.902630090713501
+      },
+      "rotation": {
+        "x": -4.329780301713277e-17,
+        "y": 0.7071067690849304,
+        "z": 0.7071067690849304,
+        "w": 4.329780301713277e-17
+      },
+      "scale": {
+        "x": 2,
+        "y": 2,
+        "z": 2
+      },
+      "parent": 519
+    }
+  },
+  {
+    "entityId": 706,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0.7071067690849304,
+        "y": 0,
+        "z": 0,
+        "w": 0.7071067690849304
+      },
+      "scale": {
+        "x": 0.15000000596046448,
+        "y": 0.15000000596046448,
+        "z": 0.15000000596046448
+      },
+      "parent": 705
+    }
+  },
+  {
+    "entityId": 707,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": -1.850000023841858,
+        "y": -2.950000047683716,
+        "z": -0.10000000149011612
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 708,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": -1.850000023841858,
+        "y": -2.5999999046325684,
+        "z": -0.10000000149011612
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 709,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": -1.3848199844360352,
+        "y": 2.684999942779541,
+        "z": -0.17000000178813934
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 512,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 1.3848199844360352,
+        "y": 2.684999942779541,
+        "z": -0.17000000178813934
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 555
+    }
+  },
+  {
+    "entityId": 710,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": 0.035009998828172684,
+        "z": 2
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 711,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0,
+        "y": 0.20000000298023224,
+        "z": -2
+      },
+      "rotation": {
+        "x": 0,
+        "y": -0.7071067690849304,
+        "z": 0,
+        "w": 0.7071067690849304
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 710
+    }
+  },
+  {
+    "entityId": 712,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": -3,
+        "y": 0.20000000298023224,
+        "z": -2
+      },
+      "rotation": {
+        "x": 0,
+        "y": -0.9238795042037964,
+        "z": 0,
+        "w": 0.3826834261417389
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 710
+    }
+  },
+  {
+    "entityId": 713,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 3,
+        "y": 0.20000000298023224,
+        "z": -2
+      },
+      "rotation": {
+        "x": 0,
+        "y": -0.3826834261417389,
+        "z": 0,
+        "w": 0.9238795042037964
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 710
+    }
+  },
+  {
+    "entityId": 714,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 8,
+        "y": 3.0350100994110107,
+        "z": 10.5
+      },
+      "rotation": {
+        "x": 0,
+        "y": 1,
+        "z": 0,
+        "w": 6.123234262925839e-17
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 0
+    }
+  },
+  {
+    "entityId": 716,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 0.18199999630451202,
+        "y": -0.12727272510528564,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 715
+    }
+  },
+  {
+    "entityId": 717,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 2.74399995803833,
+        "y": -0.12727272510528564,
+        "z": 0
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 1,
+        "y": 1,
+        "z": 1
+      },
+      "parent": 715
+    }
+  },
+  {
+    "entityId": 715,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": -7.5,
+        "y": 4.199999809265137,
+        "z": 3.6500000953674316
+      },
+      "rotation": {
+        "x": 0,
+        "y": -0.7071067690849304,
+        "z": 0,
+        "w": 0.7071067690849304
+      },
+      "scale": {
+        "x": 1.25,
+        "y": 1.25,
+        "z": 1.25
+      },
+      "parent": 519
+    }
+  },
+  {
+    "entityId": 718,
+    "componentId": 1,
+    "componentName": "core::Transform",
+    "data": {
+      "position": {
+        "x": 1.399999976158142,
+        "y": -1.399999976158142,
+        "z": 0.019999999552965164
+      },
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 1
+      },
+      "scale": {
+        "x": 2.799999952316284,
+        "y": 2.799999952316284,
+        "z": 1
+      },
+      "parent": 715
+    }
+  },
+  {
+    "entityId": 520,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/structure.glb",
+      "invisibleMeshesCollisionMask": 2
+    }
+  },
+  {
+    "entityId": 521,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/board_2.glb",
+      "invisibleMeshesCollisionMask": 2
+    }
+  },
+  {
+    "entityId": 522,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/workstation.glb",
+      "invisibleMeshesCollisionMask": 2
+    }
+  },
+  {
+    "entityId": 523,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 524,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_1.glb"
+    }
+  },
+  {
+    "entityId": 525,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_2.glb"
+    }
+  },
+  {
+    "entityId": 526,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_3.glb"
+    }
+  },
+  {
+    "entityId": 527,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_4.glb"
+    }
+  },
+  {
+    "entityId": 528,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_4.glb"
+    }
+  },
+  {
+    "entityId": 529,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_5.glb"
+    }
+  },
+  {
+    "entityId": 530,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_6.glb"
+    }
+  },
+  {
+    "entityId": 531,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_7.glb"
+    }
+  },
+  {
+    "entityId": 532,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_8.glb"
+    }
+  },
+  {
+    "entityId": 533,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_9.glb"
+    }
+  },
+  {
+    "entityId": 534,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/cells/cell_bg_2.glb"
+    }
+  },
+  {
+    "entityId": 535,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/cells/cell_bg_4.glb"
+    }
+  },
+  {
+    "entityId": 536,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/cells/cell_bg_4.glb"
+    }
+  },
+  {
+    "entityId": 537,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/cells/cell_bg_8.glb"
+    }
+  },
+  {
+    "entityId": 538,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/cells/cell_bg_16.glb"
+    }
+  },
+  {
+    "entityId": 539,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/cells/cell_bg_32.glb"
+    }
+  },
+  {
+    "entityId": 540,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/cells/cell_bg_64.glb"
+    }
+  },
+  {
+    "entityId": 541,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/cells/cell_bg_128.glb"
+    }
+  },
+  {
+    "entityId": 542,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/cells/cell_bg_256.glb"
+    }
+  },
+  {
+    "entityId": 543,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/cells/cell_bg_256.glb"
+    }
+  },
+  {
+    "entityId": 544,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/cells/cell_bg_512.glb"
+    }
+  },
+  {
+    "entityId": 545,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/cells/cell_bg_512.glb"
+    }
+  },
+  {
+    "entityId": 546,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/cells/cell_bg_1024.glb"
+    }
+  },
+  {
+    "entityId": 547,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/cells/cell_bg_over.glb"
+    }
+  },
+  {
+    "entityId": 548,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/merge_particle.glb"
+    }
+  },
+  {
+    "entityId": 550,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "mini-game-assets/models/queueDisplay/workstation_display.glb"
+    }
+  },
+  {
+    "entityId": 558,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 559,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 560,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 561,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 562,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 563,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 566,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 567,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 568,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 569,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 570,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 571,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 574,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 575,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 576,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 577,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 578,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 579,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 582,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 583,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 584,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 585,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 586,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 587,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 590,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 591,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 592,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 593,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 594,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 595,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 598,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 599,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 600,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 601,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 602,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 603,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 606,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 607,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 608,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 609,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 610,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 611,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 614,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 615,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 616,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 617,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 618,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 619,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 622,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 623,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 624,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 625,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 626,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 627,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 630,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 631,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 632,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 633,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 634,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 635,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 638,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 639,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 640,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 641,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 642,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 643,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 646,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 647,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 648,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 649,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 650,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 651,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 654,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 655,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 656,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 657,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 658,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 659,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 662,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 663,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 664,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 665,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 666,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 667,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 670,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 671,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 672,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 673,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 674,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 675,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 678,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 679,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 680,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 681,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 682,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 683,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/numbers/game/number_0.glb"
+    }
+  },
+  {
+    "entityId": 687,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "mini-game-assets/models/ui/button_base_rectangle.glb"
+    }
+  },
+  {
+    "entityId": 688,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "mini-game-assets/models/ui/button_rectangle_green.glb"
+    }
+  },
+  {
+    "entityId": 691,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "mini-game-assets/models/ui/button_base_rectangle.glb"
+    }
+  },
+  {
+    "entityId": 692,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "mini-game-assets/models/ui/button_rectangle_black.glb"
+    }
+  },
+  {
+    "entityId": 695,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "mini-game-assets/models/ui/button_base_square.glb"
+    }
+  },
+  {
+    "entityId": 696,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "mini-game-assets/models/ui/button_square_red.glb"
+    }
+  },
+  {
+    "entityId": 699,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "mini-game-assets/models/ui/button_base_square.glb"
+    }
+  },
+  {
+    "entityId": 700,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "mini-game-assets/models/ui/button_square_red.glb"
+    }
+  },
+  {
+    "entityId": 711,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/win/winAnim.glb"
+    }
+  },
+  {
+    "entityId": 712,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/win/winAnim.glb"
+    }
+  },
+  {
+    "entityId": 713,
+    "componentId": 1041,
+    "componentName": "core::GltfContainer",
+    "data": {
+      "src": "models/win/winAnim.glb"
+    }
+  },
+  {
+    "entityId": 552,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 553,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 690,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 694,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 698,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 702,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 704,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": true
+    }
+  },
+  {
+    "entityId": 706,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": true
+    }
+  },
+  {
+    "entityId": 551,
+    "componentId": 1017,
+    "componentName": "core::Material",
+    "data": {
+      "material": {
+        "$case": "pbr",
+        "pbr": {
+          "texture": {
+            "tex": {
+              "$case": "texture",
+              "texture": {
+                "src": "mini-game-assets/images/GameSigns.png"
+              }
+            }
+          },
+          "emissiveTexture": {
+            "tex": {
+              "$case": "texture",
+              "texture": {
+                "src": "mini-game-assets/images/GameSigns.png"
+              }
+            }
+          },
+          "emissiveColor": {
+            "r": 1,
+            "g": 1,
+            "b": 2
+          },
+          "metallic": 0,
+          "roughness": 1,
+          "specularIntensity": 0,
+          "emissiveIntensity": 0.5
+        }
+      }
+    }
+  },
+  {
+    "entityId": 685,
+    "componentId": 1017,
+    "componentName": "core::Material",
+    "data": {
+      "material": {
+        "$case": "pbr",
+        "pbr": {
+          "albedoColor": {
+            "r": 0.5,
+            "g": 0.30000001192092896,
+            "b": 0.10000000149011612,
+            "a": 0.800000011920929
+          }
+        }
+      }
+    }
+  },
+  {
+    "entityId": 689,
+    "componentId": 1017,
+    "componentName": "core::Material",
+    "data": {
+      "material": {
+        "$case": "pbr",
+        "pbr": {
+          "texture": {
+            "tex": {
+              "$case": "texture",
+              "texture": {
+                "src": "mini-game-assets/images/AtlasGames.png"
+              }
+            }
+          },
+          "alphaTexture": {
+            "tex": {
+              "$case": "texture",
+              "texture": {
+                "src": "mini-game-assets/images/AtlasGames.png"
+              }
+            }
+          },
+          "albedoColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1,
+            "a": 1
+          },
+          "emissiveColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1
+          },
+          "transparencyMode": 1,
+          "emissiveIntensity": 0.800000011920929
+        }
+      }
+    }
+  },
+  {
+    "entityId": 690,
+    "componentId": 1017,
+    "componentName": "core::Material",
+    "data": {
+      "material": {
+        "$case": "pbr",
+        "pbr": {
+          "albedoColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1,
+            "a": 1
+          },
+          "emissiveColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1
+          },
+          "emissiveIntensity": 2
+        }
+      }
+    }
+  },
+  {
+    "entityId": 693,
+    "componentId": 1017,
+    "componentName": "core::Material",
+    "data": {
+      "material": {
+        "$case": "pbr",
+        "pbr": {
+          "texture": {
+            "tex": {
+              "$case": "texture",
+              "texture": {
+                "src": "mini-game-assets/images/AtlasGames.png"
+              }
+            }
+          },
+          "alphaTexture": {
+            "tex": {
+              "$case": "texture",
+              "texture": {
+                "src": "mini-game-assets/images/AtlasGames.png"
+              }
+            }
+          },
+          "albedoColor": {
+            "r": 0.3333333432674408,
+            "g": 0.3333333432674408,
+            "b": 0.3333333432674408,
+            "a": 1
+          },
+          "transparencyMode": 1
+        }
+      }
+    }
+  },
+  {
+    "entityId": 694,
+    "componentId": 1017,
+    "componentName": "core::Material",
+    "data": {
+      "material": {
+        "$case": "pbr",
+        "pbr": {
+          "albedoColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1,
+            "a": 1
+          },
+          "emissiveColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1
+          },
+          "emissiveIntensity": 2
+        }
+      }
+    }
+  },
+  {
+    "entityId": 697,
+    "componentId": 1017,
+    "componentName": "core::Material",
+    "data": {
+      "material": {
+        "$case": "pbr",
+        "pbr": {
+          "texture": {
+            "tex": {
+              "$case": "texture",
+              "texture": {
+                "src": "mini-game-assets/images/AtlasGames.png"
+              }
+            }
+          },
+          "alphaTexture": {
+            "tex": {
+              "$case": "texture",
+              "texture": {
+                "src": "mini-game-assets/images/AtlasGames.png"
+              }
+            }
+          },
+          "albedoColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1,
+            "a": 1
+          },
+          "emissiveColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1
+          },
+          "transparencyMode": 1,
+          "emissiveIntensity": 0.800000011920929
+        }
+      }
+    }
+  },
+  {
+    "entityId": 698,
+    "componentId": 1017,
+    "componentName": "core::Material",
+    "data": {
+      "material": {
+        "$case": "pbr",
+        "pbr": {
+          "albedoColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1,
+            "a": 1
+          },
+          "emissiveColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1
+          },
+          "emissiveIntensity": 2
+        }
+      }
+    }
+  },
+  {
+    "entityId": 701,
+    "componentId": 1017,
+    "componentName": "core::Material",
+    "data": {
+      "material": {
+        "$case": "pbr",
+        "pbr": {
+          "texture": {
+            "tex": {
+              "$case": "texture",
+              "texture": {
+                "src": "mini-game-assets/images/AtlasGames.png"
+              }
+            }
+          },
+          "alphaTexture": {
+            "tex": {
+              "$case": "texture",
+              "texture": {
+                "src": "mini-game-assets/images/AtlasGames.png"
+              }
+            }
+          },
+          "albedoColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1,
+            "a": 1
+          },
+          "emissiveColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1
+          },
+          "transparencyMode": 1,
+          "emissiveIntensity": 0.800000011920929
+        }
+      }
+    }
+  },
+  {
+    "entityId": 702,
+    "componentId": 1017,
+    "componentName": "core::Material",
+    "data": {
+      "material": {
+        "$case": "pbr",
+        "pbr": {
+          "albedoColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1,
+            "a": 1
+          },
+          "emissiveColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1
+          },
+          "emissiveIntensity": 2
+        }
+      }
+    }
+  },
+  {
+    "entityId": 704,
+    "componentId": 1017,
+    "componentName": "core::Material",
+    "data": {
+      "material": {
+        "$case": "pbr",
+        "pbr": {
+          "texture": {
+            "tex": {
+              "$case": "texture",
+              "texture": {
+                "src": "mini-game-assets/images/AtlasGames.png"
+              }
+            }
+          },
+          "alphaTexture": {
+            "tex": {
+              "$case": "texture",
+              "texture": {
+                "src": "mini-game-assets/images/AtlasGames.png"
+              }
+            }
+          },
+          "albedoColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1,
+            "a": 1
+          },
+          "emissiveColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1
+          },
+          "transparencyMode": 1
+        }
+      }
+    }
+  },
+  {
+    "entityId": 706,
+    "componentId": 1017,
+    "componentName": "core::Material",
+    "data": {
+      "material": {
+        "$case": "pbr",
+        "pbr": {
+          "texture": {
+            "tex": {
+              "$case": "texture",
+              "texture": {
+                "src": "mini-game-assets/images/AtlasGames.png"
+              }
+            }
+          },
+          "alphaTexture": {
+            "tex": {
+              "$case": "texture",
+              "texture": {
+                "src": "mini-game-assets/images/AtlasGames.png"
+              }
+            }
+          },
+          "albedoColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1,
+            "a": 1
+          },
+          "emissiveColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1
+          },
+          "transparencyMode": 1
+        }
+      }
+    }
+  },
+  {
+    "entityId": 718,
+    "componentId": 1017,
+    "componentName": "core::Material",
+    "data": {
+      "material": {
+        "$case": "pbr",
+        "pbr": {
+          "texture": {
+            "tex": {
+              "$case": "texture",
+              "texture": {
+                "src": "mini-game-assets/images/scoreboard_bg.png"
+              }
+            }
+          },
+          "emissiveTexture": {
+            "tex": {
+              "$case": "texture",
+              "texture": {
+                "src": "mini-game-assets/images/scoreboard_bg.png"
+              }
+            }
+          },
+          "emissiveColor": {
+            "r": 1,
+            "g": 1,
+            "b": 1
+          },
+          "metallic": 0,
+          "roughness": 1,
+          "specularIntensity": 0,
+          "emissiveIntensity": 0.5
+        }
+      }
+    }
+  },
+  {
+    "entityId": 551,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875,
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 685,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": []
+        }
+      }
+    }
+  },
+  {
+    "entityId": 689,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0.625,
+            0.6875,
+            0.625,
+            0.75,
+            0.8125,
+            0.75,
+            0.8125,
+            0.6875,
+            0.625,
+            0.6875,
+            0.625,
+            0.75,
+            0.8125,
+            0.75,
+            0.8125,
+            0.6875
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 690,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0.625,
+            0.6875,
+            0.625,
+            0.75,
+            0.8125,
+            0.75,
+            0.8125,
+            0.6875,
+            0.625,
+            0.6875,
+            0.625,
+            0.75,
+            0.8125,
+            0.75,
+            0.8125,
+            0.6875
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 693,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0.8125,
+            0.75,
+            0.8125,
+            0.8125,
+            1,
+            0.8125,
+            1,
+            0.75,
+            0.8125,
+            0.75,
+            0.8125,
+            0.8125,
+            1,
+            0.8125,
+            1,
+            0.75
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 694,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0.8125,
+            0.75,
+            0.8125,
+            0.8125,
+            1,
+            0.8125,
+            1,
+            0.75,
+            0.8125,
+            0.75,
+            0.8125,
+            0.8125,
+            1,
+            0.8125,
+            1,
+            0.75
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 697,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0.5,
+            0.9375,
+            0.5,
+            1,
+            0.5625,
+            1,
+            0.5625,
+            0.9375,
+            0.5,
+            0.9375,
+            0.5,
+            1,
+            0.5625,
+            1,
+            0.5625,
+            0.9375
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 698,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0.5,
+            0.9375,
+            0.5,
+            1,
+            0.5625,
+            1,
+            0.5625,
+            0.9375,
+            0.5,
+            0.9375,
+            0.5,
+            1,
+            0.5625,
+            1,
+            0.5625,
+            0.9375
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 701,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0.4375,
+            0.9375,
+            0.4375,
+            1,
+            0.5,
+            1,
+            0.5,
+            0.9375,
+            0.4375,
+            0.9375,
+            0.4375,
+            1,
+            0.5,
+            1,
+            0.5,
+            0.9375
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 702,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0.4375,
+            0.9375,
+            0.4375,
+            1,
+            0.5,
+            1,
+            0.5,
+            0.9375,
+            0.4375,
+            0.9375,
+            0.4375,
+            1,
+            0.5,
+            1,
+            0.5,
+            0.9375
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 704,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0,
+            0.875,
+            0,
+            0.9375,
+            0.0625,
+            0.9375,
+            0.0625,
+            0.875,
+            0,
+            0.875,
+            0,
+            0.9375,
+            0.0625,
+            0.9375,
+            0.0625,
+            0.875
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 706,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0.25,
+            0.9375,
+            0.25,
+            1,
+            0.3125,
+            1,
+            0.3125,
+            0.9375,
+            0.25,
+            0.9375,
+            0.25,
+            1,
+            0.3125,
+            1,
+            0.3125,
+            0.9375
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 718,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": []
+        }
+      }
+    }
+  },
+  {
+    "entityId": 552,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 553,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 551,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875,
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 552,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 553,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 551,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875,
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 552,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 553,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 551,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875,
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 552,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 553,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 551,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875,
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 552,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 553,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 551,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875,
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 552,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 553,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 551,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875,
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 552,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 553,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 551,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875,
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 552,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 553,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 551,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875,
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 552,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 553,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 551,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875,
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 552,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 553,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 551,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875,
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875
+          ]
+        }
+      }
+    }
+  },
+  {
+    "entityId": 552,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 553,
+    "componentId": 1081,
+    "componentName": "core::VisibilityComponent",
+    "data": {
+      "visible": false
+    }
+  },
+  {
+    "entityId": 551,
+    "componentId": 1018,
+    "componentName": "core::MeshRenderer",
+    "data": {
+      "mesh": {
+        "$case": "plane",
+        "plane": {
+          "uvs": [
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875,
+            0,
+            0.6875,
+            0,
+            1,
+            0.4375,
+            1,
+            0.4375,
+            0.6875
+          ]
+        }
+      }
+    }
+  }
+]

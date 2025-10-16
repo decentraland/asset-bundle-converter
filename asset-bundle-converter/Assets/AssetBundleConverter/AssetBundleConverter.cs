@@ -55,6 +55,7 @@ namespace DCL.ABConverter
         private List<GltfImportSettings> gltfToWait = new ();
         private Dictionary<string, string> contentTable = new ();
         private Dictionary<string, string> gltfOriginalNames = new ();
+        private Dictionary<string, IGltfImport> gltfImporters = new ();
         private string logBuffer;
         private int skippedAssets;
         private IErrorReporter errorReporter;
@@ -652,13 +653,13 @@ namespace DCL.ABConverter
             if (gltfImport.defaultMaterial != null)
             {
                 var mat = gltfImport.defaultMaterial;
-                CreateMaterialAsset(mat, materialDirectory, texNameMap);
+                CreateMaterialAsset(mat, materialDirectory, texNameMap, gltf.AssetPath.hash);
             }
 
             for (var t = 0; t < gltfImport.MaterialCount; t++)
             {
                 var originalMaterial = gltfImport.GetMaterial(t);
-                CreateMaterialAsset(originalMaterial, materialDirectory, texNameMap);
+                CreateMaterialAsset(originalMaterial, materialDirectory, texNameMap, gltf.AssetPath.hash);
             }
 
             Profiler.EndSample();
@@ -666,7 +667,7 @@ namespace DCL.ABConverter
             RefreshAssetsWithNoLogs();
         }
 
-        private void CreateMaterialAsset(Material originalMaterial, string materialRoot, Dictionary<string, Texture2D> texNameMap)
+        private void CreateMaterialAsset(Material originalMaterial, string materialRoot, Dictionary<string, Texture2D> texNameMap, string hash)
         {
             string matName = Utils.NicifyName(originalMaterial.name);
 
@@ -915,10 +916,11 @@ namespace DCL.ABConverter
             var asset = ScriptableObject.CreateInstance<StaticSceneDescriptor>();
 
             Dictionary<string, List<int>> gltfsComponents = new Dictionary<string, List<int>>();
+            List<string> textureComponents = new List<string>();
+
 
             if (!string.IsNullOrEmpty(staticSceneJSON))
             {
-
                 try
                 {
                     var components = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic[]>(staticSceneJSON);
@@ -931,6 +933,15 @@ namespace DCL.ABConverter
                                 gltfsComponents.Add(src, new List<int>());
 
                             gltfsComponents[src].Add((int)component.entityId);
+                        }else if (component.componentName == "core::Material" && component.data?.material?.unlit?.texture?.tex?.texture?.src != null)
+                        {
+                            string src = component.data?.material?.unlit?.texture?.tex?.texture?.src;
+                            textureComponents.Add(src);
+                        }
+                        else if (component.componentName == "core::Material" && component.data?.material?.pbr?.texture?.tex?.texture?.src != null)
+                        {
+                            string src = component.data?.material?.pbr?.texture?.tex?.texture?.src;
+                            textureComponents.Add(src);
                         }
                     }
                 }
@@ -972,9 +983,30 @@ namespace DCL.ABConverter
 
                         asset.scales.Add(scale);
                     }
+
+                    // Mark GLTF dependencies as static
+                    if (gltfImporters.TryGetValue(assetPath.filePath, out IGltfImport gltfImport))
+                    {
+                        var dependencies = gltfImport.assetDependencies;
+                        if (dependencies != null)
+                        {
+                            foreach (var dependency in dependencies)
+                            {
+                                if (!string.IsNullOrEmpty(dependency.assetPath) && !dependency.assetPath.Contains("dcl/scene_ignorel"))
+                                {
+                                    env.directory.MarkFolderForAssetBundleBuild(dependency.assetPath, "StaticScene");
+                                    log.Verbose($"Marked dependency as static: {dependency.assetPath}");
+                                }
+                            }
+                        }
+                    }
+
                 }
-                env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, isStatic ? "StaticScene" : assetBundleName);
+                bool isStaticTexture = textureComponents.Contains(assetPath.filePath);
+
+                env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, (isStatic || isStaticTexture) ? "StaticScene" : assetBundleName);
             }
+
 
             ExportToTextAsset(asset, "Assets/_Downloaded/StaticSceneDescriptor.json");
             AssetDatabase.SaveAssets();
@@ -1525,6 +1557,7 @@ namespace DCL.ABConverter
                     });
 
                     gltfOriginalNames[outputPath] = assetPath.filePath;
+                    gltfImporters[assetPath.filePath] = gltfImport;
                 }
                 else { env.assetDatabase.ImportAsset(outputPath, ImportAssetOptions.ForceUpdate); }
             }

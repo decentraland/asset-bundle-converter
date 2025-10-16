@@ -41,7 +41,21 @@ namespace DCL
             var buildInput = ContentBuildInterface.GenerateAssetBundleBuilds();
             // Address by names instead of paths for backwards compatibility.
             for (var i = 0; i < buildInput.Length; i++)
-                buildInput[i].addressableNames = buildInput[i].assetNames.Select(Path.GetFileName).ToArray();
+            {
+                //TODO (JUANI) : This is done here beacuse Untiy doesnt allow anymore since 2.4.3 Scriptable pipeline package two objects with the same name in an ABs
+                buildInput[i].addressableNames = buildInput[i].assetNames
+                                                              .Select(path =>
+                                                               {
+                                                                   var fileName = Path.GetFileName(path);
+                                                                   bool keepOriginal =
+                                                                       fileName.Contains("image", StringComparison.OrdinalIgnoreCase)
+                                                                       || fileName.Contains("material", StringComparison.OrdinalIgnoreCase)
+                                                                       || fileName.Contains("DCL_Scene", StringComparison.OrdinalIgnoreCase);
+
+                                                                   return keepOriginal ? path : fileName;
+                                                               })
+                                                              .ToArray();
+            }
 
             var group = BuildPipeline.GetBuildTargetGroup(targetPlatform);
             var parameters = new BundleBuildParameters(targetPlatform, group, outputPath);
