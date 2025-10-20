@@ -18,6 +18,14 @@ COPY consumer-server/package.json /consumer-server/package.json
 COPY consumer-server/yarn.lock /consumer-server/yarn.lock
 RUN yarn --frozen-lockfile
 
+# install node for InitialSceneState building
+ADD https://nodejs.org/dist/v18.14.2/node-v18.14.2-win-x64.zip C:\\node.zip
+RUN powershell -Command \
+    Expand-Archive -Path C:\\node.zip -DestinationPath C:\\Node; \
+    Remove-Item -Force C:\\node.zip;
+
+RUN setx /M PATH "C:\\Node/node-v18.14.2-win-x64;%PATH%"
+
 # Make commit hash available to application
 ARG COMMIT_HASH="Unknown"
 RUN echo "COMMIT_HASH=$COMMIT_HASH" >> /consumer-server/.env
