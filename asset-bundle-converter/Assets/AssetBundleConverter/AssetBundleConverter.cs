@@ -913,44 +913,32 @@ namespace DCL.ABConverter
         /// <param name="BuildTarget"></param>
         private void MarkAllAssetBundles(List<AssetPath> assetPaths)
         {
-            string manifestPath = $"Assets/SceneManifest/{entityDTO.id}-lod-manifest.json";;
-            if (IsInitialSceneStateCompatible(manifestPath))
+            if (IsInitialSceneStateCompatible(out dynamic[] convertedJSONComponents))
             {
-                string staticSceneJSON = env.file.ReadAllText(manifestPath);
-
                 var asset = ScriptableObject.CreateInstance<StaticSceneDescriptor>();
-
                 Dictionary<string, List<int>> gltfsComponents = new Dictionary<string, List<int>>();
                 List<string> textureComponents = new List<string>();
 
-                try
-                {
-                    var components = JsonConvert.DeserializeObject<dynamic[]>(staticSceneJSON);
-                    foreach (var component in components)
-                    {
-                        if (component.componentName == "core::GltfContainer" && component.data?.src != null)
-                        {
-                            string src = component.data.src;
-                            if(!gltfsComponents.ContainsKey(src))
-                                gltfsComponents.Add(src, new List<int>());
 
-                            gltfsComponents[src].Add((int)component.entityId);
-                        }else if (component.componentName == "core::Material" && component.data?.material?.unlit?.texture?.tex?.texture?.src != null)
-                        {
-                            string src = component.data?.material?.unlit?.texture?.tex?.texture?.src;
-                            textureComponents.Add(src);
-                        }
-                        else if (component.componentName == "core::Material" && component.data?.material?.pbr?.texture?.tex?.texture?.src != null)
-                        {
-                            string src = component.data?.material?.pbr?.texture?.tex?.texture?.src;
-                            textureComponents.Add(src);
-                        }
-                    }
-                }
-                catch (Exception e)
+                foreach (var component in convertedJSONComponents)
                 {
-                    //TODO: Failsafe
-                    log.Warning($"Failed to parse staticSceneJSON: {e.Message}");
+                    if (component.componentName == "core::GltfContainer" && component.data?.src != null)
+                    {
+                        string src = component.data.src;
+                        if(!gltfsComponents.ContainsKey(src))
+                            gltfsComponents.Add(src, new List<int>());
+
+                        gltfsComponents[src].Add((int)component.entityId);
+                    }else if (component.componentName == "core::Material" && component.data?.material?.unlit?.texture?.tex?.texture?.src != null)
+                    {
+                        string src = component.data?.material?.unlit?.texture?.tex?.texture?.src;
+                        textureComponents.Add(src);
+                    }
+                    else if (component.componentName == "core::Material" && component.data?.material?.pbr?.texture?.tex?.texture?.src != null)
+                    {
+                        string src = component.data?.material?.pbr?.texture?.tex?.texture?.src;
+                        textureComponents.Add(src);
+                    }
                 }
 
                 foreach (var assetPath in assetPaths)
@@ -1049,10 +1037,25 @@ namespace DCL.ABConverter
 
         }
 
-        private bool IsInitialSceneStateCompatible(string initialSceneStateManifestPath)
+        private bool IsInitialSceneStateCompatible(out dynamic[] convertedJSONComponents)
         {
             //Manifest was created before the Unity iteration ran
-            return entityDTO.type.ToLower() == "scene" && !string.IsNullOrEmpty(entityDTO.id) && env.file.Exists(initialSceneStateManifestPath);
+            try
+            {
+                string manifestPath = $"Assets/SceneManifest/{entityDTO.id}-lod-manifest.json";;
+                if (entityDTO.type.ToLower() == "scene" && !string.IsNullOrEmpty(entityDTO.id) && env.file.Exists(manifestPath))
+                {
+                    convertedJSONComponents = JsonConvert.DeserializeObject<dynamic[]>(env.file.ReadAllText(manifestPath));
+                    return true;
+                }
+                convertedJSONComponents = null;
+                return false;
+            }
+            catch (Exception e)
+            {
+                convertedJSONComponents = null;
+                return false;
+            }
         }
 
         /// <summary>
