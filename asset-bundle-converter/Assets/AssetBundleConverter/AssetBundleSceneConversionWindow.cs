@@ -72,8 +72,6 @@ namespace AssetBundleConverter
         private bool stripShaders = true;
         private bool importGltf = true;
 
-        public TextAsset json;
-
         [MenuItem("Decentraland/Asset Bundle Converter")]
         private static void Init()
         {
@@ -108,7 +106,6 @@ namespace AssetBundleConverter
             cleanAndExitOnFinish = EditorGUILayout.Toggle("Clean and exit on finish", cleanAndExitOnFinish);
             visualTest = EditorGUILayout.Toggle("Visual Test", visualTest);
             placeOnScene = EditorGUILayout.Toggle("Place on Scene", placeOnScene);
-            json = EditorGUILayout.ObjectField("Json", json, typeof(TextAsset), false) as TextAsset;
             createAssetBundle.Value = EditorGUILayout.Toggle("Create Asset Bundle", createAssetBundle);
             downloadBatchSize.Value = ClampDownloadBatchSize(EditorGUILayout.IntField("Download Batch Size", downloadBatchSize));
             failingConversionTolerance.Value = ClampConversionTolerance(EditorGUILayout.FloatField("Failed Conversion Tolerance", failingConversionTolerance));
@@ -352,7 +349,6 @@ namespace AssetBundleConverter
                 buildTarget = GetBuildTarget(),
                 BuildPipelineType = buildPipelineType,
                 AnimationMethod = animationMehtod,
-                json = json.text
             };
         }
 

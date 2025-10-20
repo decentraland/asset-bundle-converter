@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -187,7 +187,7 @@ namespace DCL.ABConverter
 
                 bundlesStartupTime = EditorApplication.timeSinceStartup;
 
-                MarkAndBuildForTarget(settings.buildTarget, settings.json);
+                MarkAndBuildForTarget(settings.buildTarget);
 
                 bundlesEndTime = EditorApplication.timeSinceStartup;
             }
@@ -244,11 +244,11 @@ namespace DCL.ABConverter
             AssetDatabase.ImportAsset(rendererDataPath);
         }
 
-        private void MarkAndBuildForTarget(BuildTarget target, string staticSceneJSON)
+        private void MarkAndBuildForTarget(BuildTarget target)
         {
 
             // Fourth step: we mark all assets for bundling
-            MarkAllAssetBundles(assetsToMark, target, staticSceneJSON);
+            MarkAllAssetBundles(assetsToMark);
 
             // Fifth step: we build the Asset Bundles
             env.assetDatabase.Refresh();
@@ -911,19 +911,31 @@ namespace DCL.ABConverter
         /// </summary>
         /// <param name="assetPaths">The paths to be built.</param>
         /// <param name="BuildTarget"></param>
-        private void MarkAllAssetBundles(List<AssetPath> assetPaths, BuildTarget target, string staticSceneJSON)
+        private void MarkAllAssetBundles(List<AssetPath> assetPaths)
         {
             var asset = ScriptableObject.CreateInstance<StaticSceneDescriptor>();
 
             Dictionary<string, List<int>> gltfsComponents = new Dictionary<string, List<int>>();
             List<string> textureComponents = new List<string>();
 
+            string staticSceneJSON = null;
+
+            // Check if this is a scene entity and look for the lod-manifest file
+            if (entityDTO != null && !string.IsNullOrEmpty(entityDTO.type) && entityDTO.type.ToLower() == "scene" && !string.IsNullOrEmpty(entityDTO.id))
+            {
+                string manifestPath = $"Assets/SceneManifest/{entityDTO.id}-lod-manifest.json";
+                if (env.file.Exists(manifestPath))
+                {
+                    staticSceneJSON = env.file.ReadAllText(manifestPath);
+                    log.Info($"Loaded LOD manifest from: {manifestPath}");
+                }
+            }
 
             if (!string.IsNullOrEmpty(staticSceneJSON))
             {
                 try
                 {
-                    var components = Newtonsoft.Json.JsonConvert.DeserializeObject<dynamic[]>(staticSceneJSON);
+                    var components = JsonConvert.DeserializeObject<dynamic[]>(staticSceneJSON);
                     foreach (var component in components)
                     {
                         if (component.componentName == "core::GltfContainer" && component.data?.src != null)
@@ -992,7 +1004,7 @@ namespace DCL.ABConverter
                         {
                             foreach (var dependency in dependencies)
                             {
-                                if (!string.IsNullOrEmpty(dependency.assetPath) && !dependency.assetPath.Contains("dcl/scene_ignorel"))
+                                if (!string.IsNullOrEmpty(dependency.assetPath) && !dependency.assetPath.Contains("dcl/scene_ignore"))
                                 {
                                     env.directory.MarkFolderForAssetBundleBuild(dependency.assetPath, "StaticScene");
                                     log.Verbose($"Marked dependency as static: {dependency.assetPath}");

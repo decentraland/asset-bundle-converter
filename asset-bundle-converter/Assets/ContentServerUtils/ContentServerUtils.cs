@@ -25,6 +25,7 @@ namespace DCL
         [Serializable]
         public class EntityMappingsDTO
         {
+            public string id;
             public string type;
             public string[] pointers;
             public long timestamp;

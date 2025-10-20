@@ -65,7 +65,7 @@ namespace AssetBundleConverter
             public bool visualTest = false;
             public bool createAssetBundle = true;
             public int downloadBatchSize = 20;
-        public float failingConversionTolerance = 1f;
+            public float failingConversionTolerance = 1f;
             public bool placeOnScene = false;
             public string importOnlyEntity;
 
@@ -86,7 +86,6 @@ namespace AssetBundleConverter
             public BuildTarget buildTarget = BuildTarget.WebGL;
             public BuildPipelineType BuildPipelineType = BuildPipelineType.Default;
 
-            public string json;
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 
         }
