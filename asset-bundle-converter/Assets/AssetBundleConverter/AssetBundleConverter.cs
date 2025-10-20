@@ -913,26 +913,16 @@ namespace DCL.ABConverter
         /// <param name="BuildTarget"></param>
         private void MarkAllAssetBundles(List<AssetPath> assetPaths)
         {
-            var asset = ScriptableObject.CreateInstance<StaticSceneDescriptor>();
-
-            Dictionary<string, List<int>> gltfsComponents = new Dictionary<string, List<int>>();
-            List<string> textureComponents = new List<string>();
-
-            string staticSceneJSON = null;
-
-            // Check if this is a scene entity and look for the lod-manifest file
-            if (entityDTO != null && !string.IsNullOrEmpty(entityDTO.type) && entityDTO.type.ToLower() == "scene" && !string.IsNullOrEmpty(entityDTO.id))
+            string manifestPath = $"Assets/SceneManifest/{entityDTO.id}-lod-manifest.json";;
+            if (IsInitialSceneStateCompatible(manifestPath))
             {
-                string manifestPath = $"Assets/SceneManifest/{entityDTO.id}-lod-manifest.json";
-                if (env.file.Exists(manifestPath))
-                {
-                    staticSceneJSON = env.file.ReadAllText(manifestPath);
-                    log.Info($"Loaded LOD manifest from: {manifestPath}");
-                }
-            }
+                string staticSceneJSON = env.file.ReadAllText(manifestPath);
 
-            if (!string.IsNullOrEmpty(staticSceneJSON))
-            {
+                var asset = ScriptableObject.CreateInstance<StaticSceneDescriptor>();
+
+                Dictionary<string, List<int>> gltfsComponents = new Dictionary<string, List<int>>();
+                List<string> textureComponents = new List<string>();
+
                 try
                 {
                     var components = JsonConvert.DeserializeObject<dynamic[]>(staticSceneJSON);
@@ -959,85 +949,110 @@ namespace DCL.ABConverter
                 }
                 catch (Exception e)
                 {
+                    //TODO: Failsafe
                     log.Warning($"Failed to parse staticSceneJSON: {e.Message}");
                 }
-            }
 
-            foreach (var assetPath in assetPaths)
-            {
-                if (assetPath == null) continue;
-
-                if (assetPath.finalPath.EndsWith(".bin")) continue;
-
-                // Check if this asset matches a GltfContainer source
-                bool isStatic = gltfsComponents.ContainsKey(assetPath.filePath);
-                string assetBundleName = assetPath.hash + PlatformUtils.GetPlatform();
-
-                if (isStatic)
+                foreach (var assetPath in assetPaths)
                 {
-                    List<int> entityIds = gltfsComponents[assetPath.filePath];
-                    foreach (int entityId in entityIds)
+                    if (assetPath == null) continue;
+
+                    if (assetPath.finalPath.EndsWith(".bin")) continue;
+
+                    // Check if this asset matches a GltfContainer source
+                    bool isStatic = gltfsComponents.ContainsKey(assetPath.filePath);
+                    string assetBundleName = assetPath.hash + PlatformUtils.GetPlatform();
+
+                    if (isStatic)
                     {
-                        asset.assetHash.Add(assetPath.hash);
-                        Matrix4x4 worldMatrix = GltfTransformDumper.DumpGltfWorldTransforms(staticSceneJSON, entityId);
-                        asset.positions.Add(worldMatrix.GetColumn(3));
-                        // Rotation extraction
-                        Vector3 forward = worldMatrix.GetColumn(2); // Z axis
-                        Vector3 up = worldMatrix.GetColumn(1);      // Y axis
-                        asset.rotations.Add(Quaternion.LookRotation(forward, up));
+                        List<int> entityIds = gltfsComponents[assetPath.filePath];
 
-                        // Optional: scale extraction
-                        Vector3 scale = new Vector3(
-                            worldMatrix.GetColumn(0).magnitude,
-                            worldMatrix.GetColumn(1).magnitude,
-                            worldMatrix.GetColumn(2).magnitude
-                        );
-
-                        asset.scales.Add(scale);
-                    }
-
-                    // Mark GLTF dependencies as static
-                    if (gltfImporters.TryGetValue(assetPath.filePath, out IGltfImport gltfImport))
-                    {
-                        var dependencies = gltfImport.assetDependencies;
-                        if (dependencies != null)
+                        foreach (int entityId in entityIds)
                         {
-                            foreach (var dependency in dependencies)
+                            asset.assetHash.Add(assetPath.hash);
+                            Matrix4x4 worldMatrix = GltfTransformDumper.DumpGltfWorldTransforms(staticSceneJSON, entityId);
+                            asset.positions.Add(worldMatrix.GetColumn(3));
+
+                            // Rotation extraction
+                            Vector3 forward = worldMatrix.GetColumn(2); // Z axis
+                            Vector3 up = worldMatrix.GetColumn(1); // Y axis
+                            asset.rotations.Add(Quaternion.LookRotation(forward, up));
+
+                            // Optional: scale extraction
+                            Vector3 scale = new Vector3(
+                                worldMatrix.GetColumn(0).magnitude,
+                                worldMatrix.GetColumn(1).magnitude,
+                                worldMatrix.GetColumn(2).magnitude
+                            );
+
+                            asset.scales.Add(scale);
+                        }
+
+                        // Mark GLTF dependencies as static
+                        if (gltfImporters.TryGetValue(assetPath.filePath, out IGltfImport gltfImport))
+                        {
+                            var dependencies = gltfImport.assetDependencies;
+
+                            if (dependencies != null)
                             {
-                                if (!string.IsNullOrEmpty(dependency.assetPath) && !dependency.assetPath.Contains("dcl/scene_ignore"))
+                                foreach (var dependency in dependencies)
                                 {
-                                    env.directory.MarkFolderForAssetBundleBuild(dependency.assetPath, "StaticScene");
-                                    log.Verbose($"Marked dependency as static: {dependency.assetPath}");
+                                    if (!string.IsNullOrEmpty(dependency.assetPath) && !dependency.assetPath.Contains("dcl/scene_ignore"))
+                                    {
+                                        env.directory.MarkFolderForAssetBundleBuild(dependency.assetPath, "StaticScene");
+                                        log.Verbose($"Marked dependency as static: {dependency.assetPath}");
+                                    }
                                 }
                             }
                         }
+
                     }
 
+                    bool isStaticTexture = textureComponents.Contains(assetPath.filePath);
+
+                    env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, (isStatic || isStaticTexture) ? "StaticScene" : assetBundleName);
+
+                    //Export of StaticSceneDescriptor
+                    ExportToTextAsset(asset, "Assets/_Downloaded/StaticSceneDescriptor.json");
+                    AssetDatabase.SaveAssets();
+                    AssetDatabase.Refresh();
+
+                    AssetImporter importer_json = AssetImporter.GetAtPath("Assets/_Downloaded/StaticSceneDescriptor.json");
+                    importer_json.SetAssetBundleNameAndVariant("StaticScene", "");
+
+                    void ExportToTextAsset(StaticSceneDescriptor descriptor, string assetPath)
+                    {
+                        // Convert ScriptableObject to JSON using Newtonsoft.Json
+                        var settings = new JsonSerializerSettings
+                        {
+                            Formatting = Formatting.Indented,
+                            ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+                        };
+
+                        string json = JsonConvert.SerializeObject(descriptor, settings);
+                        File.WriteAllText($"{finalDownloadedPath}/StaticSceneDescriptor.json", json);
+                    }
                 }
-                bool isStaticTexture = textureComponents.Contains(assetPath.filePath);
-
-                env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, (isStatic || isStaticTexture) ? "StaticScene" : assetBundleName);
             }
-
-
-            ExportToTextAsset(asset, "Assets/_Downloaded/StaticSceneDescriptor.json");
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
-
-            AssetImporter importer_json = AssetImporter.GetAtPath("Assets/_Downloaded/StaticSceneDescriptor.json");
-            importer_json.SetAssetBundleNameAndVariant("StaticScene", "");
-
-            void ExportToTextAsset(StaticSceneDescriptor descriptor, string assetPath)
+            else
             {
-                // Convert ScriptableObject to JSON using Newtonsoft.Json
-                var settings = new JsonSerializerSettings
+                foreach (var assetPath in assetPaths)
                 {
-                    Formatting = Formatting.Indented,
-                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore
-                };
-                string json = JsonConvert.SerializeObject(descriptor, settings);
-                File.WriteAllText($"{finalDownloadedPath}/StaticSceneDescriptor.json", json);
+                    if (assetPath == null) continue;
+
+                    if (assetPath.finalPath.EndsWith(".bin")) continue;
+                    string assetBundleName = assetPath.hash + PlatformUtils.GetPlatform();
+                    env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, assetBundleName);
+                }
             }
+
+
+        }
+
+        private bool IsInitialSceneStateCompatible(string initialSceneStateManifestPath)
+        {
+            //Manifest was created before the Unity iteration ran
+            return entityDTO.type.ToLower() == "scene" && !string.IsNullOrEmpty(entityDTO.id) && env.file.Exists(initialSceneStateManifestPath);
         }
 
         /// <summary>
