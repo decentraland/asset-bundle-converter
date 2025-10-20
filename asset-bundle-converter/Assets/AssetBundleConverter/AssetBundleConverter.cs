@@ -919,7 +919,6 @@ namespace DCL.ABConverter
                 Dictionary<string, List<int>> gltfsComponents = new Dictionary<string, List<int>>();
                 List<string> textureComponents = new List<string>();
 
-
                 foreach (var component in convertedJSONComponents)
                 {
                     if (component.componentName == "core::GltfContainer")
@@ -998,30 +997,10 @@ namespace DCL.ABConverter
                     }
 
                     bool isStaticTexture = textureComponents.Contains(assetPath.filePath);
-
                     env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, (isStatic || isStaticTexture) ? "StaticScene" : assetBundleName);
-
-                    //Export of StaticSceneDescriptor
-                    ExportToTextAsset(asset, "Assets/_Downloaded/StaticSceneDescriptor.json");
-                    AssetDatabase.SaveAssets();
-                    AssetDatabase.Refresh();
-
-                    AssetImporter importer_json = AssetImporter.GetAtPath("Assets/_Downloaded/StaticSceneDescriptor.json");
-                    importer_json.SetAssetBundleNameAndVariant("StaticScene", "");
-
-                    void ExportToTextAsset(StaticSceneDescriptor descriptor, string assetPath)
-                    {
-                        // Convert ScriptableObject to JSON using Newtonsoft.Json
-                        var settings = new JsonSerializerSettings
-                        {
-                            Formatting = Formatting.Indented,
-                            ReferenceLoopHandling = ReferenceLoopHandling.Ignore
-                        };
-
-                        string json = JsonConvert.SerializeObject(descriptor, settings);
-                        File.WriteAllText($"{finalDownloadedPath}/StaticSceneDescriptor.json", json);
-                    }
                 }
+
+                CreateStaticSceneDescriptor(asset);
             }
             else
             {
@@ -1036,6 +1015,28 @@ namespace DCL.ABConverter
             }
 
 
+        }
+
+        private void CreateStaticSceneDescriptor(StaticSceneDescriptor asset)
+        {
+            string staticSceneDesriptorFilename = "StaticSceneDescriptor.json";
+            string staticSceneDesciptorRelativePath = $"Assets/_Downloaded/{staticSceneDesriptorFilename}";
+            //Export of StaticSceneDescriptor
+            // Convert ScriptableObject to JSON using Newtonsoft.Json
+            var settings = new JsonSerializerSettings
+            {
+                Formatting = Formatting.Indented,
+                ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+            };
+
+            string json = JsonConvert.SerializeObject(asset, settings);
+            File.WriteAllText($"{finalDownloadedPath}/{staticSceneDesriptorFilename}", json);
+
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            AssetImporter importer_json = AssetImporter.GetAtPath(staticSceneDesciptorRelativePath);
+            importer_json.SetAssetBundleNameAndVariant("StaticScene", "");
         }
 
         private bool IsInitialSceneStateCompatible(out List<SceneComponent> convertedJSONComponents)
