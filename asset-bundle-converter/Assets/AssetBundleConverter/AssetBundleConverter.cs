@@ -653,13 +653,13 @@ namespace DCL.ABConverter
             if (gltfImport.defaultMaterial != null)
             {
                 var mat = gltfImport.defaultMaterial;
-                CreateMaterialAsset(mat, materialDirectory, texNameMap, gltf.AssetPath.hash);
+                CreateMaterialAsset(mat, materialDirectory, texNameMap);
             }
 
             for (var t = 0; t < gltfImport.MaterialCount; t++)
             {
                 var originalMaterial = gltfImport.GetMaterial(t);
-                CreateMaterialAsset(originalMaterial, materialDirectory, texNameMap, gltf.AssetPath.hash);
+                CreateMaterialAsset(originalMaterial, materialDirectory, texNameMap);
             }
 
             Profiler.EndSample();
@@ -667,7 +667,7 @@ namespace DCL.ABConverter
             RefreshAssetsWithNoLogs();
         }
 
-        private void CreateMaterialAsset(Material originalMaterial, string materialRoot, Dictionary<string, Texture2D> texNameMap, string hash)
+        private void CreateMaterialAsset(Material originalMaterial, string materialRoot, Dictionary<string, Texture2D> texNameMap)
         {
             string matName = Utils.NicifyName(originalMaterial.name);
 
