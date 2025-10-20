@@ -13,8 +13,8 @@ namespace AssetBundleConverter.StaticSceneAssetBundle
             transformMap = new Dictionary<int, TransformData>();
             foreach (var comp in components)
             {
-                if (comp.componentName == "core::Transform")
-                    transformMap[comp.entityId] = comp.data;
+                if (comp.componentName == "core::Transform" && comp.TryGetData<TransformData>(out var transformData))
+                    transformMap[comp.entityId] = transformData;
             }
         }
 

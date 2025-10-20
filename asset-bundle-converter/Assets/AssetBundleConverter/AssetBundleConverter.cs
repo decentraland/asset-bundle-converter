@@ -913,7 +913,7 @@ namespace DCL.ABConverter
         /// <param name="BuildTarget"></param>
         private void MarkAllAssetBundles(List<AssetPath> assetPaths)
         {
-            if (IsInitialSceneStateCompatible(out dynamic[] convertedJSONComponents))
+            if (IsInitialSceneStateCompatible(out List<SceneComponent> convertedJSONComponents))
             {
                 var asset = ScriptableObject.CreateInstance<StaticSceneDescriptor>();
                 Dictionary<string, List<int>> gltfsComponents = new Dictionary<string, List<int>>();
@@ -922,22 +922,23 @@ namespace DCL.ABConverter
 
                 foreach (var component in convertedJSONComponents)
                 {
-                    if (component.componentName == "core::GltfContainer" && component.data?.src != null)
+                    if (component.componentName == "core::GltfContainer")
                     {
-                        string src = component.data.src;
-                        if(!gltfsComponents.ContainsKey(src))
-                            gltfsComponents.Add(src, new List<int>());
+                        if (component.TryGetData<MeshRendererData>(out var meshData) && !string.IsNullOrEmpty(meshData.src))
+                        {
+                            if (!gltfsComponents.ContainsKey(meshData.src))
+                                gltfsComponents.Add(meshData.src, new List<int>());
 
-                        gltfsComponents[src].Add((int)component.entityId);
-                    }else if (component.componentName == "core::Material" && component.data?.material?.unlit?.texture?.tex?.texture?.src != null)
-                    {
-                        string src = component.data?.material?.unlit?.texture?.tex?.texture?.src;
-                        textureComponents.Add(src);
+                            gltfsComponents[meshData.src].Add((int)component.entityId);
+                        }
                     }
-                    else if (component.componentName == "core::Material" && component.data?.material?.pbr?.texture?.tex?.texture?.src != null)
+                    else if (component.componentName == "core::Material")
                     {
-                        string src = component.data?.material?.pbr?.texture?.tex?.texture?.src;
-                        textureComponents.Add(src);
+                        if (component.TryGetData<MaterialComponentData>(out var materialData))
+                        {
+                            var textureSources = materialData.GetAllTextureSources();
+                            textureComponents.AddRange(textureSources);
+                        }
                     }
                 }
 
@@ -958,7 +959,7 @@ namespace DCL.ABConverter
                         foreach (int entityId in entityIds)
                         {
                             asset.assetHash.Add(assetPath.hash);
-                            Matrix4x4 worldMatrix = GltfTransformDumper.DumpGltfWorldTransforms(staticSceneJSON, entityId);
+                            Matrix4x4 worldMatrix = GltfTransformDumper.DumpGltfWorldTransforms(convertedJSONComponents, entityId);
                             asset.positions.Add(worldMatrix.GetColumn(3));
 
                             // Rotation extraction
@@ -1037,15 +1038,15 @@ namespace DCL.ABConverter
 
         }
 
-        private bool IsInitialSceneStateCompatible(out dynamic[] convertedJSONComponents)
+        private bool IsInitialSceneStateCompatible(out List<SceneComponent> convertedJSONComponents)
         {
             //Manifest was created before the Unity iteration ran
             try
             {
-                string manifestPath = $"Assets/SceneManifest/{entityDTO.id}-lod-manifest.json";;
+                string manifestPath = $"Assets/_SceneManifest/{entityDTO.id}-lod-manifest.json";;
                 if (entityDTO.type.ToLower() == "scene" && !string.IsNullOrEmpty(entityDTO.id) && env.file.Exists(manifestPath))
                 {
-                    convertedJSONComponents = JsonConvert.DeserializeObject<dynamic[]>(env.file.ReadAllText(manifestPath));
+                    convertedJSONComponents = JsonConvert.DeserializeObject<List<SceneComponent>>(env.file.ReadAllText(manifestPath));
                     return true;
                 }
                 convertedJSONComponents = null;
@@ -1104,7 +1105,7 @@ namespace DCL.ABConverter
 
             // 1. Convert flagged folders to asset bundles only to automatically get dependencies for the metadata
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
-                BuildAssetBundleOptions.None | BuildAssetBundleOptions.ForceRebuildAssetBundle |
+                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
                 BuildAssetBundleOptions.AssetBundleStripUnityVersion,
                 target);
 
@@ -1130,7 +1131,7 @@ namespace DCL.ABConverter
 
             // 3. Convert flagged folders to asset bundles again but this time they have the metadata file inside
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
-                BuildAssetBundleOptions.None | BuildAssetBundleOptions.ForceRebuildAssetBundle |
+                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
                 BuildAssetBundleOptions.AssetBundleStripUnityVersion,
                 target);
 
