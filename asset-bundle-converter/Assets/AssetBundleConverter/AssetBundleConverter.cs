@@ -915,6 +915,7 @@ namespace DCL.ABConverter
         {
             if (IsInitialSceneStateCompatible(out List<SceneComponent> convertedJSONComponents))
             {
+                string staticSceneABName = $"staticScene_{entityDTO.id}";
                 var asset = ScriptableObject.CreateInstance<StaticSceneDescriptor>();
                 Dictionary<string, List<int>> gltfsComponents = new Dictionary<string, List<int>>();
                 List<string> textureComponents = new List<string>();
@@ -987,7 +988,7 @@ namespace DCL.ABConverter
                                 {
                                     if (!string.IsNullOrEmpty(dependency.assetPath) && !dependency.assetPath.Contains("dcl/scene_ignore"))
                                     {
-                                        env.directory.MarkFolderForAssetBundleBuild(dependency.assetPath, $"staticScene_{entityDTO.id}");
+                                        env.directory.MarkFolderForAssetBundleBuild(dependency.assetPath, staticSceneABName);
                                     }
                                 }
                             }
@@ -996,10 +997,10 @@ namespace DCL.ABConverter
                     }
 
                     bool isStaticTexture = textureComponents.Contains(assetPath.filePath);
-                    env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, (isStatic || isStaticTexture) ? $"staticScene_{entityDTO.id}" : assetBundleName);
+                    env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, (isStatic || isStaticTexture) ? staticSceneABName : assetBundleName);
                 }
 
-                CreateStaticSceneDescriptor(asset);
+                CreateStaticSceneDescriptor(asset, staticSceneABName);
             }
             else
             {
@@ -1016,7 +1017,7 @@ namespace DCL.ABConverter
 
         }
 
-        private void CreateStaticSceneDescriptor(StaticSceneDescriptor asset)
+        private void CreateStaticSceneDescriptor(StaticSceneDescriptor asset, string staticSceneABName)
         {
             string staticSceneDesriptorFilename = "StaticSceneDescriptor.json";
             string staticSceneDesciptorRelativePath = $"Assets/_Downloaded/{staticSceneDesriptorFilename}";
@@ -1035,7 +1036,7 @@ namespace DCL.ABConverter
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             AssetImporter importer_json = AssetImporter.GetAtPath(staticSceneDesciptorRelativePath);
-            importer_json.SetAssetBundleNameAndVariant("StaticScene", "");
+            importer_json.SetAssetBundleNameAndVariant(staticSceneABName, "");
         }
 
         private bool IsInitialSceneStateCompatible(out List<SceneComponent> convertedJSONComponents)
