@@ -155,4 +155,3 @@ export async function runTestConversion(options: TestConversionOptions) {
 
   process.exit()
 }
-
