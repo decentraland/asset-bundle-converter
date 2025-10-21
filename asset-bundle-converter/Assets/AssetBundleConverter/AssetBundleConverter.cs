@@ -987,8 +987,7 @@ namespace DCL.ABConverter
                                 {
                                     if (!string.IsNullOrEmpty(dependency.assetPath) && !dependency.assetPath.Contains("dcl/scene_ignore"))
                                     {
-                                        env.directory.MarkFolderForAssetBundleBuild(dependency.assetPath, "StaticScene");
-                                        log.Verbose($"Marked dependency as static: {dependency.assetPath}");
+                                        env.directory.MarkFolderForAssetBundleBuild(dependency.assetPath, $"staticScene_{entityDTO.id}");
                                     }
                                 }
                             }
@@ -997,7 +996,7 @@ namespace DCL.ABConverter
                     }
 
                     bool isStaticTexture = textureComponents.Contains(assetPath.filePath);
-                    env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, (isStatic || isStaticTexture) ? "StaticScene" : assetBundleName);
+                    env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, (isStatic || isStaticTexture) ? $"staticScene_{entityDTO.id}" : assetBundleName);
                 }
 
                 CreateStaticSceneDescriptor(asset);
@@ -1045,6 +1044,13 @@ namespace DCL.ABConverter
             try
             {
                 string manifestPath = $"Assets/_SceneManifest/{entityDTO.id}-lod-manifest.json";;
+
+                Debug.Log("JUANI A " + entityDTO.type.ToLower() == "scene");
+                Debug.Log("JUANI X " + entityDTO.id.ToLower());
+
+                Debug.Log("JUANI B " + !string.IsNullOrEmpty(entityDTO.id));
+                Debug.Log("JUANI C " + env.file.Exists(manifestPath));
+
                 if (entityDTO.type.ToLower() == "scene" && !string.IsNullOrEmpty(entityDTO.id) && env.file.Exists(manifestPath))
                 {
                     convertedJSONComponents = JsonConvert.DeserializeObject<List<SceneComponent>>(env.file.ReadAllText(manifestPath));
@@ -1055,6 +1061,8 @@ namespace DCL.ABConverter
             }
             catch (Exception e)
             {
+                Debug.Log("JUANI D " + e.Message);
+
                 convertedJSONComponents = null;
                 return false;
             }
