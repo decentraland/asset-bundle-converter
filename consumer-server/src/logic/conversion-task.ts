@@ -167,6 +167,13 @@ export async function executeLODConversion(
     } catch (err: any) {
       logger.error(err, defaultLoggerMetadata)
     }
+
+    // delete scene manifest folder
+    try {
+      await rimraf(`${$PROJECT_PATH}/Assets/_SceneManifest`, { maxRetries: 3 })
+    } catch (err: any) {
+      logger.error(err, defaultLoggerMetadata)
+    }
   }
 
   logger.debug('LOD Conversion finished', defaultLoggerMetadata)
