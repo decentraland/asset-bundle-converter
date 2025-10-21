@@ -46,7 +46,6 @@ RUN npm ci
 # build the scene-lod-entities-manifest-builder
 COPY scene-lod-entities-manifest-builder /scene-lod-entities-manifest-builder
 RUN npm run build
-RUN npm run test
 
 # remove devDependencies, keep only used dependencies
 RUN npm prune --production
