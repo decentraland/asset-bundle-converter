@@ -79,7 +79,6 @@ async function main() {
   try {
     // Run manifest builder before conversion
     await startManifest(entityId, '../asset-bundle-converter/Assets/_SceneManifest')
-    console.log("JUANI CONVERSION DONE")
     const exitCode = await runConversion(
       logger,
       { metrics },
@@ -113,20 +112,31 @@ main().catch((err) => {
 })
 
 export function startManifest(sceneId: string, outputPath: string) {
-  const cmd = process.platform === "win32" ? "npm.cmd" : "npm";
-  const child = spawn(cmd, ["run", "start", `--sceneid=${sceneId}`, `--output=${outputPath}`, "--prefix", "../scene-lod-entities-manifest-builder"], {
-    stdio: "inherit",
-    env: process.env
-  });
+  const cmd = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+  const child = spawn(
+    cmd,
+    [
+      'run',
+      'start',
+      `--sceneid=${sceneId}`,
+      `--output=${outputPath}`,
+      '--prefix',
+      '../scene-lod-entities-manifest-builder'
+    ],
+    {
+      stdio: 'inherit',
+      env: process.env
+    }
+  )
 
   return new Promise<void>((resolve, reject) => {
-    child.on("close", code => {
+    child.on('close', (code) => {
       if (code !== 0) {
-        console.error(`scene-lod-entities-manifest-builder exited with ${code}`);
-        reject(new Error(`Process exited with code ${code}`));
+        console.error(`scene-lod-entities-manifest-builder exited with ${code}`)
+        reject(new Error(`Process exited with code ${code}`))
       } else {
-        resolve();
+        resolve()
       }
-    });
-  });
+    })
+  })
 }
