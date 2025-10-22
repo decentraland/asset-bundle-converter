@@ -6,9 +6,10 @@ set -e  # stop on first error
 
 PROJECT_PATH="$(pwd)/asset-bundle-converter"
 OUTPUT_DIR=../AssetBundlesTest
-SCENE_ID="bafkreidudwlm33df2wpqvv4amaiorhcdatp77gf57cf6vidz5hnfipx244"
-CONTENT_URL="https://peer.decentraland.org/content/contents/"
+SCENE_ID="bafkreiexxnyolhmf4ckdhm57ulo3kcvuyy7wpeizpwy737ivtabettkxtq"
+CONTENT_URL="https://peer.decentraland.zone/content/contents/"
 LOCAL_LOG_FILE="testResultLog.txt"
+CATALYST_URL="https://peer.decentraland.zone/"
 
 # --- Go into the npm project directory ---
 echo "Entering scene-lod-entities-manifest-builder..."
@@ -25,7 +26,7 @@ fi
 
 # --- NPM start step ---
 echo "Starting scene manifest generation..."
-npm run start --sceneid=$SCENE_ID --output=../asset-bundle-converter/Assets/_SceneManifest
+npm run start --sceneid=$SCENE_ID --output=../asset-bundle-converter/Assets/_SceneManifest --catalyst=$CATALYST_URL
 
 # --- Return to root ---
 popd > /dev/null
