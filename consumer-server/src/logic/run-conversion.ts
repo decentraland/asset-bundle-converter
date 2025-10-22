@@ -13,7 +13,7 @@ async function setupStartDirectories(options: { logFile: string; outDirectory: s
   closeSync(openSync(options.logFile, 'w'))
 }
 
-export function startManifestBuilder(sceneId: string, outputPath: string) {
+export function startManifestBuilder(sceneId: string, outputPath: string, catalyst: string) {
   const cmd = process.platform === 'win32' ? 'npm.cmd' : 'npm'
   const child = spawn(
     cmd,
@@ -22,6 +22,7 @@ export function startManifestBuilder(sceneId: string, outputPath: string) {
       'start',
       `--sceneid=${sceneId}`,
       `--output=${outputPath}`,
+      `--catalyst=${catalyst}`,
       '--prefix',
       '../scene-lod-entities-manifest-builder'
     ],
@@ -151,7 +152,12 @@ export async function runConversion(
 
   // Run manifest builder before conversion if needed
   if (options.entityType === 'scene' && options.unityBuildTarget !== 'WebGL') {
-    await startManifestBuilder(options.entityId, options.projectPath + '/Assets/_SceneManifest')
+    try {
+      const catalystDomain = new URL(options.contentServerUrl).origin
+      await startManifestBuilder(options.entityId, options.projectPath + '/Assets/_SceneManifest', catalystDomain)
+    } catch (e) {
+      logger.error('Failed to generate scene manifest, building without ISS')
+    }
   }
 
   // normalize content server URL
