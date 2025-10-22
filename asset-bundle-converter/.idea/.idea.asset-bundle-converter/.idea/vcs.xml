@@ -2,7 +2,8 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$/.." vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/Assets/git-submodules/glTFast" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Assets/git-submodules/unity-gltf" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/Assets/git-submodules/unity-shared-dependencies" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/../scene-lod-entities-manifest-builder" vcs="Git" />
   </component>
 </project>
