@@ -348,7 +348,7 @@ namespace AssetBundleConverter
                 verbose = verbose,
                 buildTarget = GetBuildTarget(),
                 BuildPipelineType = buildPipelineType,
-                AnimationMethod = animationMehtod,
+                AnimationMethod = animationMehtod
             };
         }
 
