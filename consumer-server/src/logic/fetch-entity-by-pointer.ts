@@ -23,7 +23,7 @@ export async function getEntities(
   return JSON.parse(response)
 }
 
-export async function getActiveEntity(ids: string, contentServer: string): Promise<Entity> {
+export async function getActiveEntity(id: string, contentServer: string): Promise<Entity> {
   const url = `${contentServer}/entities/active`
 
   const res = await fetch(url, {
