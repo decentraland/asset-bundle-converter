@@ -150,7 +150,7 @@ export async function runConversion(
   await setupStartDirectories(options)
 
   // Run manifest builder before conversion if needed
-  if (options.entityType === 'scene') {
+  if (options.entityType === 'scene' && options.unityBuildTarget !== 'WebGL') {
     await startManifestBuilder(options.entityId, options.projectPath + '/Assets/_SceneManifest')
   }
 
