@@ -8,6 +8,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { hasContentChange } from './has-content-changed-task'
 import { getAbVersionEnvName, getUnityBuildTarget } from '../utils'
+import { getActiveEntity } from './fetch-entity-by-pointer'
 
 type Manifest = {
   version: string
@@ -240,12 +241,17 @@ export async function executeConversion(
 
   logger.info(`HasContentChanged for ${entityId} result was ${hasContentChanged}`)
 
+  // Fetch the entity to get its type
+  const entity = await getActiveEntity(entityId, contentServerUrl)
+  const entityType = entity.type
+
   let exitCode
   try {
     if (hasContentChanged) {
       exitCode = await runConversion(logger, components, {
         contentServerUrl,
         entityId,
+        entityType,
         logFile,
         outDirectory,
         projectPath: $PROJECT_PATH,

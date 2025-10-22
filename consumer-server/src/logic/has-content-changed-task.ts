@@ -1,25 +1,8 @@
-import { Entity } from '@dcl/schemas'
 import * as fs from 'fs'
 import * as path from 'path'
 import fetch from 'node-fetch'
 import { ILoggerComponent } from '@well-known-components/interfaces'
-async function getActiveEntity(ids: string, contentServer: string): Promise<Entity> {
-  const url = `${contentServer}/entities/active`
-
-  const res = await fetch(url, {
-    method: 'post',
-    body: JSON.stringify({ ids: [ids] }),
-    headers: { 'content-type': 'application/json' }
-  })
-
-  const response = await res.text()
-
-  if (!res.ok) {
-    throw new Error('Error fetching list of active entities: ' + response)
-  }
-
-  return JSON.parse(response)[0]
-}
+import { getActiveEntity } from './fetch-entity-by-pointer'
 
 async function getManifestFiles(
   entityID: string,
