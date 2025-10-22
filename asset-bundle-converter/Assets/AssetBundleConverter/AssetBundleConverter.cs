@@ -989,9 +989,7 @@ namespace DCL.ABConverter
                                 foreach (var dependency in dependencies)
                                 {
                                     if (!string.IsNullOrEmpty(dependency.assetPath) && !dependency.assetPath.Contains("dcl/scene_ignore"))
-                                    {
                                         env.directory.MarkFolderForAssetBundleBuild(dependency.assetPath, staticSceneABName);
-                                    }
                                 }
                             }
                         }

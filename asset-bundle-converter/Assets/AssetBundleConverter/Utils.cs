@@ -300,9 +300,6 @@ namespace DCL.ABConverter
             string assetPath = PathUtils.GetRelativePathTo(Application.dataPath, fullPath);
             assetPath = Path.GetDirectoryName(assetPath);
             AssetImporter importer = AssetImporter.GetAtPath(assetPath);
-
-            if (importer.assetBundleName == "StaticScene")
-                return;
             importer.SetAssetBundleNameAndVariant(abName, "");
         }
 
