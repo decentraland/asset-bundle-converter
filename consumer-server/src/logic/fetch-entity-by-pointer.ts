@@ -28,7 +28,7 @@ export async function getActiveEntity(id: string, contentServer: string): Promis
 
   const res = await fetch(url, {
     method: 'post',
-    body: JSON.stringify({ ids: [ids] }),
+    body: JSON.stringify({ ids: [id] }),
     headers: { 'content-type': 'application/json' }
   })
 
