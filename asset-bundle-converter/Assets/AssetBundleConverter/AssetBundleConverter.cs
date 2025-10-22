@@ -301,8 +301,9 @@ namespace DCL.ABConverter
                 string relativePath = PathUtils.FullPathToAssetPath(gltfUrl);
                 bool isEmote = (entityDTO is { type: not null } && entityDTO.type.ToLower().Contains("emote"))
                                || gltf.AssetPath.fileName.ToLower().EndsWith("_emote.glb");
+                bool isWearable = (entityDTO is { type: not null } && entityDTO.type.ToLower().Contains("wearable"));
 
-                AnimationMethod animationMethod = GetAnimationMethod(isEmote);
+                AnimationMethod animationMethod = GetAnimationMethod(isEmote,isWearable);
 
                 var importSettings = new ImportSettings
                 {
@@ -361,7 +362,7 @@ namespace DCL.ABConverter
                     log.Verbose($"Importing {relativePath}");
 
                     configureGltftime.Start();
-                    bool importerSuccess = env.gltfImporter.ConfigureImporter(relativePath, contentMap, gltf.AssetPath.fileRootPath, gltf.AssetPath.hash, settings.shaderType, animationMethod);
+                    bool importerSuccess = env.gltfImporter.ConfigureImporter(relativePath, contentMap, gltf.AssetPath.fileRootPath, gltf.AssetPath.hash, settings.shaderType, importSettings.AnimationMethod);
                     configureGltftime.Stop();
 
                     if (importerSuccess)
@@ -627,9 +628,10 @@ namespace DCL.ABConverter
             AssetDatabase.Refresh();
         }
 
-        private AnimationMethod GetAnimationMethod(bool isEmote)
+        private AnimationMethod GetAnimationMethod(bool isEmote, bool isWearable)
         {
             if (entityDTO == null) return AnimationMethod.Legacy;
+            if (isWearable) return AnimationMethod.None;
             if (isEmote) return AnimationMethod.Mecanim;
             if (settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX)
                 return settings.AnimationMethod;
