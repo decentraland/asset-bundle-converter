@@ -1045,13 +1045,6 @@ namespace DCL.ABConverter
             try
             {
                 string manifestPath = $"Assets/_SceneManifest/{entityDTO.id}-lod-manifest.json";;
-
-                Debug.Log("JUANI A " + entityDTO.type.ToLower() == "scene");
-                Debug.Log("JUANI X " + entityDTO.id.ToLower());
-
-                Debug.Log("JUANI B " + !string.IsNullOrEmpty(entityDTO.id));
-                Debug.Log("JUANI C " + env.file.Exists(manifestPath));
-
                 if (entityDTO.type.ToLower() == "scene" && !string.IsNullOrEmpty(entityDTO.id) && env.file.Exists(manifestPath))
                 {
                     convertedJSONComponents = JsonConvert.DeserializeObject<List<SceneComponent>>(env.file.ReadAllText(manifestPath));
@@ -1062,8 +1055,6 @@ namespace DCL.ABConverter
             }
             catch (Exception e)
             {
-                Debug.Log("JUANI D " + e.Message);
-
                 convertedJSONComponents = null;
                 return false;
             }
