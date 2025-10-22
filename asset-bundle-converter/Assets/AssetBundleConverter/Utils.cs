@@ -440,6 +440,7 @@ namespace DCL.ABConverter
             }
 
             EntityMappingsDTO parcelInfoDto = JsonUtility.FromJson<EntityMappingsDTO>(downloadHandler.text);
+            parcelInfoDto.id = entityId;
             downloadHandler.Dispose();
 
             if (parcelInfoDto == null) { throw new Exception("No mapping received"); }

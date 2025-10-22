@@ -57,5 +57,7 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
                 return importer.defaultMaterial;
             }
         }
+
+        public List<GltfAssetDependency> assetDependencies => fileProvider.assetDependencies;
     }
 }

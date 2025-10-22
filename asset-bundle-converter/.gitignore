@@ -61,6 +61,8 @@ crashlytics-build.properties
 _Downloaded/
 _Downloaded.meta
 AssetBundles/
+Assets/_SceneManifest
+Assets/_SceneManifest.meta
 TestResources/
 UserSettings/
 

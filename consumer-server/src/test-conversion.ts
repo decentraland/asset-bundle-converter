@@ -5,7 +5,7 @@
 import arg from 'arg'
 import { createFetchComponent } from './adapters/fetch'
 
-import { getEntities } from './logic/fetch-entity-by-pointer'
+import { getActiveEntity, getEntities } from './logic/fetch-entity-by-pointer'
 import { createLogComponent } from '@well-known-components/logger'
 import { IPFSv1, IPFSv2 } from '@dcl/schemas'
 import { runConversion } from './logic/run-conversion'
@@ -76,6 +76,10 @@ async function main() {
     return
   }
 
+  // Fetch the entity to get its type
+  const entity = await getActiveEntity(entityId, BASE_URL)
+  const entityType = entity.type
+
   try {
     const exitCode = await runConversion(
       logger,
@@ -84,6 +88,7 @@ async function main() {
         logFile: LOG_FILE,
         contentServerUrl: BASE_URL,
         entityId,
+        entityType,
         outDirectory: OUT_DIRECTORY,
         unityPath: $UNITY_PATH,
         projectPath: $PROJECT_PATH,
