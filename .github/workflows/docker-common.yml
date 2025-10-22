@@ -141,7 +141,7 @@ jobs:
             ${{ env.QUAY_URL }}${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
               node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js \
                 --baseUrl https://peer.decentraland.org/content \
-                --pointer 43,100 \
+                --pointer 20,4 \
                 --outDir /tmp-ab \
                 --logFile /tmp-ab/log.txt
                 --baseUrl https://peer.decentraland.zone/content
