@@ -917,7 +917,7 @@ namespace DCL.ABConverter
         {
             if (IsInitialSceneStateCompatible(out List<SceneComponent> convertedJSONComponents))
             {
-                string staticSceneABName = $"staticScene_{entityDTO.id}";
+                string staticSceneABName = $"staticScene_{entityDTO.id}{PlatformUtils.GetPlatform()}";
                 var asset = ScriptableObject.CreateInstance<StaticSceneDescriptor>();
                 Dictionary<string, List<int>> gltfsComponents = new Dictionary<string, List<int>>();
                 List<string> textureComponents = new List<string>();
