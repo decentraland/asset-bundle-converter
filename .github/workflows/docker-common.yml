@@ -144,7 +144,6 @@ jobs:
                 --pointer 20,4 \
                 --outDir /tmp-ab \
                 --logFile /tmp-ab/log.txt
-                --baseUrl https://peer.decentraland.zone/content
 
       - name: Push Docker image to Quay.io
         if: ${{ inputs.upload-image }}
