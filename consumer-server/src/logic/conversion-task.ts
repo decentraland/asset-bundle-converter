@@ -247,7 +247,7 @@ export async function executeConversion(
     const entity = await getActiveEntity(entityId, contentServerUrl)
     entityType = entity.type
   } catch (e) {
-    logger.info('Could not determine entity type for ${entityId}, scene manifest wont be generated')
+    logger.info(`Could not determine entity type for ${entityId}, scene manifest wont be generated`)
   }
 
   let exitCode
