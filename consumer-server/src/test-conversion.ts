@@ -24,7 +24,7 @@ const args = arg({
   '--baseUrl': String,
   '--outDir': String,
   '--logFile': String,
-  '--doISS': Boolean,
+  '--doISS': Boolean
 })
 
 const BASE_URL = args['--baseUrl'] || 'https://peer.decentraland.org/content'

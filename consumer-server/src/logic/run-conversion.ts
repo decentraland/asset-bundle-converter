@@ -145,8 +145,8 @@ export async function runConversion(
     projectPath: string
     timeout: number
     unityBuildTarget: string
-    animation: string | undefined,
-    doISS : boolean | undefined
+    animation: string | undefined
+    doISS: boolean | undefined
   }
 ) {
   await setupStartDirectories(options)

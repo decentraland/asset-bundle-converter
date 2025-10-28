@@ -186,7 +186,7 @@ export async function executeConversion(
   contentServerUrl: string,
   force: boolean | undefined,
   animation: string | undefined,
-  doISS : boolean | undefined
+  doISS: boolean | undefined
 ): Promise<number> {
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
@@ -265,7 +265,7 @@ export async function executeConversion(
         timeout: 120 * 60 * 1000, // 120min temporarily doubled
         unityBuildTarget: unityBuildTarget,
         animation: animation,
-        doISS : doISS
+        doISS: doISS
       })
     } else {
       exitCode = 0
