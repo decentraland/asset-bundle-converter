@@ -145,13 +145,14 @@ export async function runConversion(
     projectPath: string
     timeout: number
     unityBuildTarget: string
-    animation: string | undefined
+    animation: string | undefined,
+    doISS : boolean | undefined
   }
 ) {
   await setupStartDirectories(options)
 
   // Run manifest builder before conversion if needed
-  if (options.entityType === 'scene' && options.unityBuildTarget !== 'WebGL') {
+  if (options.entityType === 'scene' && options.unityBuildTarget !== 'WebGL' && options.doISS) {
     try {
       const catalystDomain = new URL(options.contentServerUrl).origin
       await startManifestBuilder(options.entityId, options.projectPath + '/Assets/_SceneManifest', catalystDomain)

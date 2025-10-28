@@ -55,7 +55,8 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
               job.entity.entityId,
               job.contentServerUrls![0],
               job.force,
-              job.animation
+              job.animation,
+              job.doISS
             )
           }
 
