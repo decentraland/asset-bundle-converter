@@ -134,7 +134,19 @@ jobs:
                 --outDir /tmp-ab \
                 --logFile /tmp-ab/log.txt
           
-      - name: Run test conversion of scene 20,4 Goerli
+      - name: Run test conversion of scene 43,100 with ISS
+        run: |
+          docker run --rm \
+            -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
+            ${{ env.QUAY_URL }}${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
+              node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js \
+                --baseUrl https://peer.decentraland.org/content \
+                --pointer 43,100 \
+                --outDir /tmp-ab \
+                --logFile /tmp-ab/log.txt \
+                --doISS true
+          
+      - name: Run test conversion of scene 20,4 Goerli with ISS
         run: |
           docker run --rm \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
@@ -143,7 +155,8 @@ jobs:
                 --baseUrl https://peer.decentraland.zone/content \
                 --pointer 20,4 \
                 --outDir /tmp-ab \
-                --logFile /tmp-ab/log.txt
+                --logFile /tmp-ab/log.txt \
+                --doISS true
 
       - name: Push Docker image to Quay.io
         if: ${{ inputs.upload-image }}
