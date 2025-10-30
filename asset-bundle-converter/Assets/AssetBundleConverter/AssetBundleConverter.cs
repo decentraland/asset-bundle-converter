@@ -15,6 +15,7 @@ using Newtonsoft.Json;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
+using UnityEngine.Experimental.Rendering;
 using UnityEngine.Networking;
 using UnityEngine.Profiling;
 using UnityEngine.Rendering.Universal;
@@ -73,6 +74,9 @@ namespace DCL.ABConverter
         private double visualTestEndTime;
         private double startupAllocated;
         private double startupReserved;
+
+        private Dictionary<string, Texture2D> texNameMap = new Dictionary<string, Texture2D>();
+        private Dictionary<string, int> texIDMap = new Dictionary<string, int>();
 
         /// <summary>
         /// Total number of GLTFs required by the conversion process
@@ -349,6 +353,16 @@ namespace DCL.ABConverter
 
                     embedExtractMaterialTime.Start();
                     ExtractEmbedMaterialsFromGltf(textures, gltf, gltfImport, gltfUrl);
+                    QuadtreeAtlasCreator quadtreeTextureAtlasPacker = new QuadtreeAtlasCreator();
+
+                    foreach (Texture2D _tex in textures)
+                    {
+                        quadtreeTextureAtlasPacker.texturesToPack.Add(_tex);
+                    }
+
+                    quadtreeTextureAtlasPacker.CreateAtlas();
+
+
                     embedExtractMaterialTime.Stop();
 
                     if (animationMethod == AnimationMethod.Mecanim)
@@ -392,10 +406,41 @@ namespace DCL.ABConverter
                         GameObject originalGltf = env.assetDatabase.LoadAssetAtPath<GameObject>(relativePath);
 
                         if (originalGltf != null)
+                        {
                             try
                             {
-                                var clone = (GameObject)PrefabUtility.InstantiatePrefab(originalGltf);
-                                var renderers = clone.GetComponentsInChildren<Renderer>(true);
+                                GameObject clone = (GameObject)PrefabUtility.InstantiatePrefab(originalGltf);
+                                Renderer[] renderers = clone.GetComponentsInChildren<Renderer>(true);
+
+                                foreach (Renderer _renderer in renderers)
+                                {
+                                    foreach (MeshFilter _meshFilter in _renderer.GetComponentsInChildren<MeshFilter>())
+                                    {
+                                        Shader shader = _renderer.material.shader;
+
+                                        List<int> textureProperties = GetTextureProperties(shader);
+
+                                        for (int i = 0; i < textureProperties.Count; ++i)
+                                        {
+                                            int propertyId = textureProperties[i];
+
+                                            // we reassign the texture reference
+                                            Texture prevTexture = _renderer.material.GetTexture(propertyId);
+
+                                            // after copying a material it should hold the reference to the original texture
+                                            if (!prevTexture)
+                                                continue;
+
+                                            string texName = Utils.NicifyName(prevTexture.name);
+                                            texName = Path.GetFileNameWithoutExtension(texName).ToLowerInvariant();
+
+                                            if (texIDMap.TryGetValue(texName, out int arrayID))
+                                            {
+                                                quadtreeTextureAtlasPacker.RemapMeshUVs(_meshFilter, arrayID);
+                                            }
+                                        }
+                                    }
+                                }
 
                                 foreach (Renderer renderer in renderers)
                                     if (renderer.name.ToLower().Contains("_collider"))
@@ -408,6 +453,7 @@ namespace DCL.ABConverter
 
                                 // we dont crash here since we dont do this on batch mode
                             }
+                        }
                     }
 
                     log.Verbose($"<color={color}>Ended loading gltf {gltfUrl} with result <b>{loadingSuccess}</b></color>");
@@ -643,10 +689,19 @@ namespace DCL.ABConverter
         private void ExtractEmbedMaterialsFromGltf(List<Texture2D> textures, GltfImportSettings gltf, IGltfImport gltfImport, string gltfUrl)
         {
             Profiler.BeginSample("ExtractEmbedMaterials");
-            Dictionary<string, Texture2D> texNameMap = new Dictionary<string, Texture2D>();
+            //Dictionary<string, Texture2D> texNameMap = new Dictionary<string, Texture2D>();
 
-            foreach (var texture in textures.Where(texture => texture != null))
-                texNameMap[texture.name.ToLowerInvariant()] = texture;
+            for (int texture = 0; texture < textures.Count; ++texture)
+            {
+                if (texture != null)
+                {
+                    texNameMap[textures[texture].name.ToLowerInvariant()] = textures[texture];
+                    texIDMap[textures[texture].name.ToLowerInvariant()] = texture;
+                }
+            }
+
+            // foreach (var texture in textures.Where(texture => texture != null))
+            //     texNameMap[texture.name.ToLowerInvariant()] = texture;
 
             var folder = gltf.AssetPath.assetFolder;
             var materialDirectory = $"{folder}Materials{Path.DirectorySeparatorChar}";
@@ -749,8 +804,6 @@ namespace DCL.ABConverter
             Debug.unityLogger.logEnabled = true;
         }
 
-
-
         private List<Texture2D> ExtractEmbedTexturesFromGltf(List<Texture2D> textures, IGltfImport gltfImport, string folderName)
         {
             var newTextures = new List<Texture2D>();
@@ -759,10 +812,9 @@ namespace DCL.ABConverter
 
             for (var t = 0; t < gltfImport.MaterialCount; t++)
             {
-
-                var originalMaterial = gltfImport.GetMaterial(t);
-                var textureProperties = originalMaterial.GetTexturePropertyNameIDs();
-                var texturePropertiesNames = originalMaterial.GetTexturePropertyNames();
+                Material originalMaterial = gltfImport.GetMaterial(t);
+                int[] textureProperties = originalMaterial.GetTexturePropertyNameIDs();
+                string[] texturePropertiesNames = originalMaterial.GetTexturePropertyNames();
 
                 for (int i = 0; i < textureProperties.Count(); i++)
                 {
