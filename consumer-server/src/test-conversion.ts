@@ -5,7 +5,7 @@
 import arg from 'arg'
 import { createFetchComponent } from './adapters/fetch'
 
-import { getEntities } from './logic/fetch-entity-by-pointer'
+import { getActiveEntity, getEntities } from './logic/fetch-entity-by-pointer'
 import { createLogComponent } from '@well-known-components/logger'
 import { IPFSv1, IPFSv2 } from '@dcl/schemas'
 import { runConversion } from './logic/run-conversion'
@@ -17,19 +17,21 @@ import { dirname } from 'path'
 import { createMetricsComponent } from '@well-known-components/metrics'
 import { metricDeclarations } from './metrics'
 import { createConfigComponent } from '@well-known-components/env-config-provider'
-import { getUnityBuildTarget } from './logic/conversion-task'
+import { getUnityBuildTarget } from './utils'
 
 const args = arg({
   '--pointer': String,
   '--baseUrl': String,
   '--outDir': String,
-  '--logFile': String
+  '--logFile': String,
+  '--doISS': Boolean
 })
 
 const BASE_URL = args['--baseUrl'] || 'https://peer.decentraland.org/content'
 const POINTER = args['--pointer'] || '0,0'
 const OUT_DIRECTORY = args['--outDir']!
 const LOG_FILE = args['--logFile']!
+const DO_ISS = args['--doISS'] ?? false
 const $UNITY_PATH = process.env.UNITY_PATH!
 const $PROJECT_PATH = process.env.PROJECT_PATH!
 const $BUILD_TARGET = process.env.BUILD_TARGET!
@@ -76,6 +78,10 @@ async function main() {
     return
   }
 
+  // Fetch the entity to get its type
+  const entity = await getActiveEntity(entityId, BASE_URL)
+  const entityType = entity.type
+
   try {
     const exitCode = await runConversion(
       logger,
@@ -84,12 +90,14 @@ async function main() {
         logFile: LOG_FILE,
         contentServerUrl: BASE_URL,
         entityId,
+        entityType,
         outDirectory: OUT_DIRECTORY,
         unityPath: $UNITY_PATH,
         projectPath: $PROJECT_PATH,
         timeout: 30 * 60 * 1000, // 30min
         unityBuildTarget: unityBuildTarget,
-        animation: animation
+        animation: animation,
+        doISS: DO_ISS
       }
     )
 

@@ -1,4 +1,5 @@
 using AssetBundleConverter;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -8,7 +9,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using Unity.Plastic.Newtonsoft.Json;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -440,6 +440,7 @@ namespace DCL.ABConverter
             }
 
             EntityMappingsDTO parcelInfoDto = JsonUtility.FromJson<EntityMappingsDTO>(downloadHandler.text);
+            parcelInfoDto.id = entityId;
             downloadHandler.Dispose();
 
             if (parcelInfoDto == null) { throw new Exception("No mapping received"); }

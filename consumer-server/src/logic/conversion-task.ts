@@ -7,6 +7,8 @@ import { runConversion, runLodsConversion } from './run-conversion'
 import * as fs from 'fs'
 import * as path from 'path'
 import { hasContentChange } from './has-content-changed-task'
+import { getAbVersionEnvName, getUnityBuildTarget } from '../utils'
+import { getActiveEntity } from './fetch-entity-by-pointer'
 
 type Manifest = {
   version: string
@@ -51,32 +53,6 @@ async function shouldIgnoreConversion(
   } catch {}
 
   return false
-}
-
-export function getUnityBuildTarget(target: string): string | undefined {
-  switch (target) {
-    case 'webgl':
-      return 'WebGL'
-    case 'windows':
-      return 'StandaloneWindows64'
-    case 'mac':
-      return 'StandaloneOSX'
-    default:
-      return undefined
-  }
-}
-
-function getAbVersionEnvName(buildTarget: string) {
-  switch (buildTarget) {
-    case 'webgl':
-      return 'AB_VERSION'
-    case 'windows':
-      return 'AB_VERSION_WINDOWS'
-    case 'mac':
-      return 'AB_VERSION_MAC'
-    default:
-      throw 'Invalid buildTarget'
-  }
 }
 
 export async function executeLODConversion(
@@ -192,6 +168,13 @@ export async function executeLODConversion(
     } catch (err: any) {
       logger.error(err, defaultLoggerMetadata)
     }
+
+    // delete scene manifest folder
+    try {
+      await rimraf(`${$PROJECT_PATH}/Assets/_SceneManifest`, { maxRetries: 3 })
+    } catch (err: any) {
+      logger.error(err, defaultLoggerMetadata)
+    }
   }
 
   logger.debug('LOD Conversion finished', defaultLoggerMetadata)
@@ -202,7 +185,8 @@ export async function executeConversion(
   entityId: string,
   contentServerUrl: string,
   force: boolean | undefined,
-  animation: string | undefined
+  animation: string | undefined,
+  doISS: boolean | undefined
 ): Promise<number> {
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
@@ -258,19 +242,30 @@ export async function executeConversion(
 
   logger.info(`HasContentChanged for ${entityId} result was ${hasContentChanged}`)
 
+  let entityType = 'undefined'
+  try {
+    // Fetch the entity to get its type
+    const entity = await getActiveEntity(entityId, contentServerUrl)
+    entityType = entity.type
+  } catch (e) {
+    logger.info(`Could not determine entity type for ${entityId}, scene manifest wont be generated`)
+  }
+
   let exitCode
   try {
     if (hasContentChanged) {
       exitCode = await runConversion(logger, components, {
         contentServerUrl,
         entityId,
+        entityType,
         logFile,
         outDirectory,
         projectPath: $PROJECT_PATH,
         unityPath: $UNITY_PATH,
         timeout: 120 * 60 * 1000, // 120min temporarily doubled
         unityBuildTarget: unityBuildTarget,
-        animation: animation
+        animation: animation,
+        doISS: doISS
       })
     } else {
       exitCode = 0

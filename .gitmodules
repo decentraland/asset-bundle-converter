@@ -1,6 +1,9 @@
-[submodule "asset-bundle-converter/Assets/git-submodules/glTFast"]
-	path = asset-bundle-converter/Assets/git-submodules/glTFast
-	url = https://github.com/decentraland/unity-gltf
 [submodule "asset-bundle-converter/Assets/git-submodules/unity-shared-dependencies"]
 	path = asset-bundle-converter/Assets/git-submodules/unity-shared-dependencies
 	url = https://github.com/decentraland/unity-shared-dependencies.git
+[submodule "asset-bundle-converter/Assets/git-submodules/unity-gltf"]
+	path = asset-bundle-converter/Assets/git-submodules/unity-gltf
+	url = git@github.com:decentraland/unity-gltf.git
+[submodule "scene-lod-entities-manifest-builder"]
+	path = scene-lod-entities-manifest-builder
+	url = git@github.com:decentraland/scene-lod-entities-manifest-builder.git

@@ -4,12 +4,44 @@ import * as fs from 'fs/promises'
 import { dirname } from 'path'
 import { AppComponents } from '../types'
 import { execCommand } from './run-command'
+import { spawn } from 'child_process'
 
 async function setupStartDirectories(options: { logFile: string; outDirectory: string; projectPath: string }) {
   // touch logfile and create folders
   await fs.mkdir(dirname(options.logFile), { recursive: true })
   await fs.mkdir(options.outDirectory, { recursive: true })
   closeSync(openSync(options.logFile, 'w'))
+}
+
+export function startManifestBuilder(sceneId: string, outputPath: string, catalyst: string) {
+  const cmd = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+  const child = spawn(
+    cmd,
+    [
+      'run',
+      'start',
+      `--sceneid=${sceneId}`,
+      `--output=${outputPath}`,
+      `--catalyst=${catalyst}`,
+      '--prefix',
+      '../scene-lod-entities-manifest-builder'
+    ],
+    {
+      stdio: 'inherit',
+      env: process.env
+    }
+  )
+
+  return new Promise<void>((resolve, reject) => {
+    child.on('close', (code) => {
+      if (code !== 0) {
+        console.error(`scene-lod-entities-manifest-builder exited with ${code}`)
+        reject(new Error(`Process exited with code ${code}`))
+      } else {
+        resolve()
+      }
+    })
+  })
 }
 
 async function executeProgram(options: {
@@ -107,15 +139,27 @@ export async function runConversion(
     logFile: string
     outDirectory: string
     entityId: string
+    entityType: string
     contentServerUrl: string
     unityPath: string
     projectPath: string
     timeout: number
     unityBuildTarget: string
     animation: string | undefined
+    doISS: boolean | undefined
   }
 ) {
   await setupStartDirectories(options)
+
+  // Run manifest builder before conversion if needed
+  if (options.entityType === 'scene' && options.unityBuildTarget !== 'WebGL' && options.doISS) {
+    try {
+      const catalystDomain = new URL(options.contentServerUrl).origin
+      await startManifestBuilder(options.entityId, options.projectPath + '/Assets/_SceneManifest', catalystDomain)
+    } catch (e) {
+      logger.error('Failed to generate scene manifest, building without ISS')
+    }
+  }
 
   // normalize content server URL
   let contentServerUrl = options.contentServerUrl
@@ -126,6 +170,7 @@ export async function runConversion(
     contentServerUrl += 'contents/'
   }
 
+  //TODO (JUANI): ASK ABOUT THIS PATH, NOT SURE HOW THIS WORKS
   const childArg0 = `${options.unityPath}/Editor/Unity`
 
   const childArguments: string[] = [

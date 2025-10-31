@@ -1,10 +1,9 @@
-
 # Decentraland Asset Bundle Converter
 
 This is the standalone version of our Asset Bundle Conversion tool that is actually present at the unity-renderer
 The intent of this repository is to decouple the conversion tool to have fewer dependencies and more maintainability.
 
---- 
+---
 
 ## Before you start
 
@@ -21,7 +20,7 @@ So this tool loads every scene asset, loads and re-imports all gltf's to turn th
 
 ## How do I manually run this tool?
 
-- Initialize and update the git submodules (`git submodule update --init` and `git submodule update .`) 
+- Initialize and update the git submodules (`git submodule update --init` and `git submodule update .`)
 - Open this project using `Unity 2021.3.20f1`.
 - Go to `Decentraland > Convert Scene` menu.
 - Fill in the scene info and press `Start`.
@@ -62,9 +61,9 @@ The structure of the bucket will look like this:
 │  ├── entityId1.json
 │  └── entityId2.json
 ├──/v4             (files of the v4 of the converter)
-│  └── ... 
+│  └── ...
 └──/v5             (files of the v5 of the converter)
-   └── ... 
+   └── ...
 ```
 
 - Every asset bundle conversion may be bound to a specific version of the converter. Versions may change because materials change or as a result of upgrading versions of unity.
@@ -84,7 +83,7 @@ The logs for each conversion are stored in the path `logs/:AB_VERSION/:entityId/
 To schedule a manual conversion, there is an special with custom authentication at `/queue-task`. It sends a job to the queue, the job will be consumed by any available worker.
 
 ```
-curl -XPOST -H 'Authorization: <TOKEN>' https://asset-bundle-converter.decentraland.org/queue-task -d '{"entityId": "bafyadsaljsdlkas", "contentServerUrl": "https://peer.decentraland.org/content"}'  
+curl -XPOST -H 'Authorization: <TOKEN>' https://asset-bundle-converter.decentraland.org/queue-task -d '{"entityId": "bafyadsaljsdlkas", "contentServerUrl": "https://peer.decentraland.org/content"}'
 ```
 
 # Using the new asset bundles
@@ -100,7 +99,7 @@ Now the assets need to be resolved based on a manifest including the list of con
 Here is some pseudocode to illustrate the asset resolution process for an entity:
 
 ```typescript
-// this is the manifest file, it is uploaded after the entire entity was uplodaded.
+// this is the manifest file, it is uploaded after the entire entity was uploaded.
 type Manifest = {
   version: string
   files: string[] // list of converted files
@@ -112,7 +111,7 @@ const assetBundleCdn = 'https://ab-cdn.decentraland.zone' // .org
 /**
  * This function returns the manifest of a converted scene
  * @param entityId - EntityID used for the conversion
- * @param assetBundleCdn - baseUrl of the asset bundle CDN. 
+ * @param assetBundleCdn - baseUrl of the asset bundle CDN.
  */
 async function getSceneManifest(entityId: string, assetBundleCdn: string): Manifest | null = {
   const manifest = await fetch(`${assetBundleCdn}/manifest/${entityId}.json`)
@@ -150,7 +149,7 @@ async function resolveAssetBundle(
 
 # Deploying
 
-This repository has continous delivery to the goerli (decentraland.zone) network.
+This repository has continuous delivery to the goerli (decentraland.zone) network.
 
 To deploy to production, you must first select the full commit hash from the version you whish to deploy. Then check it exists as a tag in https://quay.io/repository/decentraland/asset-bundle-converter?tab=tags and lastly execute the workflow "Manual Deploy" selecting the target environment and the docker tag (commit hash).
 
