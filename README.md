@@ -161,3 +161,7 @@ NOTICE: Please do not use `latest` as tag for the "Manual deploy", the pipeline 
 
 This repository is protected with a standard Apache 2 license. See the terms and conditions in
 the [LICENSE](https://github.com/decentraland/unity-renderer/blob/master/LICENSE) file.
+
+## AI Agent Context
+
+For detailed AI Agent context, see [docs/ai-agent-context.md](docs/ai-agent-context.md).
