@@ -162,7 +162,7 @@ NOTICE: Please do not use `latest` as tag for the "Manual deploy", the pipeline 
 This repository is protected with a standard Apache 2 license. See the terms and conditions in
 the [LICENSE](https://github.com/decentraland/unity-renderer/blob/master/LICENSE) file.
 
-## 🤖 AI Agent Context
+## AI Agent Context
 
 **Service Purpose:** Converts Decentraland scene assets (GLTF models, textures) into optimized Unity Asset Bundles for improved WebGL performance. The service monitors deployment events and processes entities (scenes, wearables, emotes) by re-importing GLTF files in Unity and packaging them into versioned, compressed Asset Bundles stored on CDN.
 
