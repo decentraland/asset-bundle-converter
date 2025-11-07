@@ -51,7 +51,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
           // Increment version if doISS is true
           let versionToUse = $AB_VERSION
           if (job.doISS) {
-            versionToUse = incrementVersion($AB_VERSION)
+            versionToUse = 'v2000'
           }
 
           if (job.lods) {
@@ -93,17 +93,6 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
       })
     }
   })
-}
-
-function incrementVersion(version: string): string {
-  // Extract the number from version string (e.g., "v39" -> 39)
-  const match = version.match(/^v(\d+)$/)
-  if (match) {
-    const versionNumber = parseInt(match[1], 10)
-    return `v${versionNumber + 1}`
-  }
-  // If version doesn't match expected format, return as is
-  return version
 }
 
 async function machineRanOutOfSpace(components: Pick<AppComponents, 'metrics'>) {
