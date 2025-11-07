@@ -47,8 +47,15 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
         let statusCode: number
         try {
           components.metrics.increment('ab_converter_running_conversion')
+
+          // Increment version if doISS is true
+          let versionToUse = $AB_VERSION
+          if (job.doISS) {
+            versionToUse = incrementVersion($AB_VERSION)
+          }
+
           if (job.lods) {
-            statusCode = await executeLODConversion(components, job.entity.entityId, job.lods)
+            statusCode = await executeLODConversion(components, job.entity.entityId, job.lods, versionToUse)
           } else {
             statusCode = await executeConversion(
               components,
@@ -56,7 +63,8 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
               job.contentServerUrls![0],
               job.force,
               job.animation,
-              job.doISS
+              job.doISS,
+              versionToUse
             )
           }
 
@@ -74,7 +82,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
                 job.contentServerUrls.length > 1 &&
                 job.contentServerUrls[0].includes('worlds-content-server'),
               statusCode,
-              version: $AB_VERSION
+              version: versionToUse
             }
           }
 
@@ -85,6 +93,17 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
       })
     }
   })
+}
+
+function incrementVersion(version: string): string {
+  // Extract the number from version string (e.g., "v39" -> 39)
+  const match = version.match(/^v(\d+)$/)
+  if (match) {
+    const versionNumber = parseInt(match[1], 10)
+    return `v${versionNumber + 1}`
+  }
+  // If version doesn't match expected format, return as is
+  return version
 }
 
 async function machineRanOutOfSpace(components: Pick<AppComponents, 'metrics'>) {

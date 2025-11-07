@@ -7,7 +7,7 @@ import { runConversion, runLodsConversion } from './run-conversion'
 import * as fs from 'fs'
 import * as path from 'path'
 import { hasContentChange } from './has-content-changed-task'
-import { getAbVersionEnvName, getUnityBuildTarget } from '../utils'
+import { getUnityBuildTarget } from '../utils'
 import { getActiveEntity } from './fetch-entity-by-pointer'
 
 type Manifest = {
@@ -58,24 +58,23 @@ async function shouldIgnoreConversion(
 export async function executeLODConversion(
   components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>,
   entityId: string,
-  lods: string[]
+  lods: string[],
+  abVersion: string
 ): Promise<number> {
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
   const $PROJECT_PATH = await components.config.requireString('PROJECT_PATH')
   const $BUILD_TARGET = await components.config.requireString('BUILD_TARGET')
 
-  const abVersionEnvName = getAbVersionEnvName($BUILD_TARGET)
   const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
 
-  const $AB_VERSION = await components.config.requireString(abVersionEnvName)
   const logger = components.logs.getLogger(`ExecuteConversion`)
 
   const cdnBucket = await getCdnBucket(components)
   const logFile = `/tmp/lods_logs/export_log_${entityId}_${Date.now()}.txt`
-  const s3LogKey = `logs/lods/${$AB_VERSION}/${entityId}/${new Date().toISOString()}.txt`
+  const s3LogKey = `logs/lods/${abVersion}/${entityId}/${new Date().toISOString()}.txt`
   const outDirectory = `/tmp/lods_contents/entity_${entityId}`
-  const defaultLoggerMetadata = { entityId, lods, version: $AB_VERSION, logFile } as any
+  const defaultLoggerMetadata = { entityId, lods, version: abVersion, logFile } as any
 
   logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
 
@@ -102,7 +101,7 @@ export async function executeLODConversion(
 
     if (generatedFiles.length === 0) {
       // this is an error, if succeeded, we should see at least a manifest file
-      components.metrics.increment('ab_converter_empty_conversion', { ab_version: $AB_VERSION })
+      components.metrics.increment('ab_converter_empty_conversion', { ab_version: abVersion })
       logger.error('Empty conversion', { ...defaultLoggerMetadata } as any)
       return 5 // UNEXPECTED_ERROR exit code
     }
@@ -186,15 +185,14 @@ export async function executeConversion(
   contentServerUrl: string,
   force: boolean | undefined,
   animation: string | undefined,
-  doISS: boolean | undefined
+  doISS: boolean | undefined,
+  abVersion: string
 ): Promise<number> {
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
   const $PROJECT_PATH = await components.config.requireString('PROJECT_PATH')
   const $BUILD_TARGET = await components.config.requireString('BUILD_TARGET')
 
-  const abVersionEnvName = getAbVersionEnvName($BUILD_TARGET)
-  const $AB_VERSION = await components.config.requireString(abVersionEnvName)
   const logger = components.logs.getLogger(`ExecuteConversion`)
 
   const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
@@ -204,12 +202,12 @@ export async function executeConversion(
   }
 
   if (!force) {
-    if (await shouldIgnoreConversion(components, entityId, $AB_VERSION, $BUILD_TARGET)) {
-      logger.info('Ignoring conversion', { entityId, contentServerUrl, $AB_VERSION })
+    if (await shouldIgnoreConversion(components, entityId, abVersion, $BUILD_TARGET)) {
+      logger.info('Ignoring conversion', { entityId, contentServerUrl, abVersion })
       return 13 // ALREADY_CONVERTED exit code
     }
   } else {
-    logger.info('Forcing conversion', { entityId, contentServerUrl, $AB_VERSION })
+    logger.info('Forcing conversion', { entityId, contentServerUrl, abVersion })
   }
 
   const cdnBucket = await getCdnBucket(components)
@@ -217,10 +215,10 @@ export async function executeConversion(
   const failedManifestFile = `manifest/${entityId}_failed.json`
 
   const logFile = `/tmp/asset_bundles_logs/export_log_${entityId}_${Date.now()}.txt`
-  const s3LogKey = `logs/${$AB_VERSION}/${entityId}/${new Date().toISOString()}.txt`
+  const s3LogKey = `logs/${abVersion}/${entityId}/${new Date().toISOString()}.txt`
   const outDirectory = `/tmp/asset_bundles_contents/entity_${entityId}`
 
-  const defaultLoggerMetadata = { entityId, contentServerUrl, version: $AB_VERSION, logFile: s3LogKey }
+  const defaultLoggerMetadata = { entityId, contentServerUrl, version: abVersion, logFile: s3LogKey }
 
   logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
   let hasContentChanged = true
@@ -232,7 +230,7 @@ export async function executeConversion(
         contentServerUrl,
         $BUILD_TARGET,
         outDirectory,
-        $AB_VERSION,
+        abVersion,
         logger
       )
     } catch (e) {
@@ -274,7 +272,7 @@ export async function executeConversion(
     components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })
 
     const manifest: Manifest = {
-      version: $AB_VERSION,
+      version: abVersion,
       files: await promises.readdir(outDirectory),
       exitCode,
       contentServerUrl,
@@ -285,15 +283,15 @@ export async function executeConversion(
 
     if (manifest.files.length === 0) {
       // this is an error, if succeeded, we should see at least a manifest file
-      components.metrics.increment('ab_converter_empty_conversion', { ab_version: $AB_VERSION })
+      components.metrics.increment('ab_converter_empty_conversion', { ab_version: abVersion })
       logger.error('Empty conversion', { ...defaultLoggerMetadata, manifest } as any)
     }
 
     let uploadPath: string = ''
     if ($BUILD_TARGET === 'webgl') {
-      uploadPath = $AB_VERSION
+      uploadPath = abVersion
     } else {
-      uploadPath = $AB_VERSION + '/' + entityId
+      uploadPath = abVersion + '/' + entityId
     }
 
     // first upload the content
@@ -358,7 +356,7 @@ export async function executeConversion(
         contentServerUrl,
         unityBuildTarget,
         unityExitCode: exitCode || 'unknown',
-        version: $AB_VERSION,
+        version: abVersion,
         log: s3LogKey,
         date: new Date().toISOString()
       }
@@ -374,7 +372,7 @@ export async function executeConversion(
           Body: JSON.stringify({
             entityId,
             contentServerUrl,
-            version: $AB_VERSION,
+            version: abVersion,
             log: s3LogKey,
             date: new Date().toISOString()
           }),
