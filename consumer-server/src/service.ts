@@ -51,7 +51,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
           // Increment version if doISS is true
           let versionToUse = $AB_VERSION
           if (job.doISS) {
-            versionToUse = 'v2000'
+            versionToUse = 'v2001'
           }
 
           if (job.lods) {

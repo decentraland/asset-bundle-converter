@@ -919,7 +919,10 @@ namespace DCL.ABConverter
             {
                 string staticSceneABName = $"staticScene_{entityDTO.id}{PlatformUtils.GetPlatform()}";
                 var asset = ScriptableObject.CreateInstance<StaticSceneDescriptor>();
-                Dictionary<string, List<int>> gltfsComponents = new Dictionary<string, List<int>>();
+
+                //TODO (JUANI): There is a bug in the Asset Manifest generator. The entity could be twice, therefore generating
+                //multiple copies of the same asset. By doing this, we ensure that there is only one
+                Dictionary<string, HashSet<int>> gltfsComponents = new Dictionary<string, HashSet<int>>();
                 List<string> textureComponents = new List<string>();
 
                 foreach (var component in convertedJSONComponents)
@@ -929,9 +932,9 @@ namespace DCL.ABConverter
                         if (component.TryGetData<MeshRendererData>(out var meshData) && !string.IsNullOrEmpty(meshData.src))
                         {
                             if (!gltfsComponents.ContainsKey(meshData.src))
-                                gltfsComponents.Add(meshData.src, new List<int>());
+                                gltfsComponents.Add(meshData.src, new HashSet<int>());
 
-                            gltfsComponents[meshData.src].Add((int)component.entityId);
+                            gltfsComponents[meshData.src].Add(component.entityId);
                         }
                     }
                     else if (component.componentName == "core::Material")
@@ -956,7 +959,7 @@ namespace DCL.ABConverter
 
                     if (isStatic)
                     {
-                        List<int> entityIds = gltfsComponents[assetPath.filePath];
+                        List<int> entityIds = gltfsComponents[assetPath.filePath].ToList();
 
                         foreach (int entityId in entityIds)
                         {
