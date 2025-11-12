@@ -82,14 +82,58 @@ namespace DCL
         [Serializable]
         public class EmoteMetadataDTO : MetadataBase
         {
-            public Data emoteDataADR74;
+            public bool IsSocialEmote => emoteDataADR287 != null;
 
-            public override DataBase AbstractData => emoteDataADR74;
+            public Data emoteDataADR74;
+            public EmoteDataADR287? emoteDataADR287;
+
+            public override DataBase AbstractData => IsSocialEmote ? emoteDataADR287! : emoteDataADR74!;
 
             [Serializable]
             public class Data : DataBase
             {
                 public bool loop;
+            }
+
+            [Serializable]
+            public class EmoteDataADR287 : DataBase
+            {
+                public bool loop;
+                public bool randomizeOutcomes;
+                public EmoteStartClipsDTO? startAnimation;
+                public EmoteOutcomeDTO[]? outcomes;
+            }
+
+            [Serializable]
+            public class EmoteOutcomeDTO
+            {
+                public string title;
+                public bool loop;
+                public EmoteOutcomeClipsDTO? clips;
+                public string? audio;
+            }
+
+            [Serializable]
+            public class EmoteAnimationDTO
+            {
+                public string animation;
+            }
+
+            [Serializable]
+            public class EmoteOutcomeClipsDTO
+            {
+                public EmoteAnimationDTO? Armature;
+                public EmoteAnimationDTO? Armature_Other;
+                public EmoteAnimationDTO? Armature_Prop;
+            }
+
+            [Serializable]
+            public class EmoteStartClipsDTO
+            {
+                public bool loop;
+                public EmoteAnimationDTO? Armature;
+                public EmoteAnimationDTO? Armature_Prop;
+                public string? audio;
             }
         }
 

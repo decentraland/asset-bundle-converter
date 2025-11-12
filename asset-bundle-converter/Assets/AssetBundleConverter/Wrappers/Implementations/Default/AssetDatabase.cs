@@ -66,9 +66,9 @@ namespace DCL
                 return importer;
             }
 
-            public void BuildMetadata(IFile envFile, string finalDownloadedPath, Dictionary<string, string> lowerCaseHashes, IAssetBundleManifest manifest, string version)
+            public void BuildMetadata(IFile envFile, string finalDownloadedPath, Dictionary<string, string> lowerCaseHashes, IAssetBundleManifest manifest, string version, AssetBundleMetadata.SocialEmoteOutcomeAnimationPose[] socialEmoteOutcomeStartAnimationPoses)
             {
-                AssetBundleMetadataBuilder.Generate(envFile, finalDownloadedPath, lowerCaseHashes, manifest, version);
+                AssetBundleMetadataBuilder.Generate(envFile, finalDownloadedPath, lowerCaseHashes, manifest, version, socialEmoteOutcomeStartAnimationPoses);
             }
 
             public void SaveImporter(AssetImporter gltfImporter)

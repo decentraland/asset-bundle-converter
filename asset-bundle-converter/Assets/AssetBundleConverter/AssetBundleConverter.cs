@@ -95,6 +95,8 @@ namespace DCL.ABConverter
         private ContentServerUtils.EntityMappingsDTO entityDTO;
         private readonly Dictionary<Shader, List<int>> textureProperties = new ();
 
+        private AssetBundleMetadata.SocialEmoteOutcomeAnimationPose[] socialEmoteOutcomeAnimationStartPoses;
+
         public AssetBundleConverter(Environment env, ClientSettings settings)
         {
             this.settings = settings;
@@ -354,7 +356,10 @@ namespace DCL.ABConverter
                     if (animationMethod == AnimationMethod.Mecanim)
                     {
                         if (isEmote)
-                            CreateAnimatorController(gltfImport, directory);
+                        {
+                            GameObject originalGltf = env.assetDatabase.LoadAssetAtPath<GameObject>(relativePath);
+                            CreateAnimatorController(gltfImport, directory, originalGltf);
+                        }
                         else
                             CreateLayeredAnimatorController(gltfImport, directory);
                     }
@@ -569,7 +574,7 @@ namespace DCL.ABConverter
             AssetDatabase.Refresh();
         }
 
-        private void CreateAnimatorController(IGltfImport gltfImport, string directory)
+        private void CreateAnimatorController(IGltfImport gltfImport, string directory, GameObject gltfObject)
         {
             var clips = gltfImport.GetClips();
             if (clips == null) return;
@@ -591,8 +596,66 @@ namespace DCL.ABConverter
                 defaultBool = true,
             });
 
+            if (entityDTO.metadata.IsSocialEmote)
+            {
+                socialEmoteOutcomeAnimationStartPoses = new AssetBundleMetadata.SocialEmoteOutcomeAnimationPose[entityDTO.metadata.emoteDataADR287!.outcomes!.Length];
+            }
+
             foreach (AnimationClip animationClip in clips)
             {
+                // If the clip corresponds to the avatar that reacts to the social emote...
+                if (entityDTO.metadata.IsSocialEmote && animationClip.name.EndsWith("_AvatarOther"))
+                {
+                    EditorCurveBinding[] curveBindings = AnimationUtility.GetCurveBindings(animationClip);
+
+                    // Gets the position and rotation of the hips at the beginning of the animation
+                    Vector3 hipsFirstPosition = Vector3.zero;
+                    Quaternion hipsFirstRotation = Quaternion.identity;
+
+                    foreach (EditorCurveBinding binding in curveBindings)
+                    {
+                        if (binding.path.EndsWith("Avatar_Hips"))
+                        {
+                            AnimationCurve curve = AnimationUtility.GetEditorCurve(animationClip, binding);
+
+                            if (curve.keys.Length > 0)
+                            {
+                                if (binding.propertyName == "m_LocalPosition.x")
+                                    hipsFirstPosition.x = curve.Evaluate(0.0f);
+                                else if (binding.propertyName == "m_LocalPosition.y")
+                                    hipsFirstPosition.y = curve.Evaluate(0.0f);
+                                else if (binding.propertyName == "m_LocalPosition.z")
+                                    hipsFirstPosition.z = curve.Evaluate(0.0f);
+                                else if (binding.propertyName == "m_LocalRotation.x")
+                                    hipsFirstRotation.x = curve.Evaluate(0.0f);
+                                else if (binding.propertyName == "m_LocalRotation.y")
+                                    hipsFirstRotation.y = curve.Evaluate(0.0f);
+                                else if (binding.propertyName == "m_LocalRotation.z")
+                                    hipsFirstRotation.z = curve.Evaluate(0.0f);
+                                else if (binding.propertyName == "m_LocalRotation.w")
+                                    hipsFirstRotation.w = curve.Evaluate(0.0f);
+                            }
+                        }
+                    }
+
+                    if (gltfObject != null)
+                    {
+                        Transform armatureOther = gltfObject.transform.Find("Armature_Other");
+                        hipsFirstPosition = armatureOther.localPosition + armatureOther.localRotation * Vector3.Scale(hipsFirstPosition, armatureOther.localScale);
+                        hipsFirstRotation = armatureOther.localRotation * hipsFirstRotation;
+                    }
+
+                    // Searches for the outcome in the metadata and stores the pose data
+                    // Since clips appear in an undetermined order, this way we store the poses in the same order as outcomes appear in the metadata
+                    for (int i = 0; i < entityDTO.metadata.emoteDataADR287.outcomes.Length; ++i)
+                    {
+                        if (entityDTO.metadata.emoteDataADR287.outcomes[i].clips.Armature_Other.animation == animationClip.name)
+                        {
+                            socialEmoteOutcomeAnimationStartPoses[i] = new AssetBundleMetadata.SocialEmoteOutcomeAnimationPose(hipsFirstPosition, hipsFirstRotation);
+                        }
+                    }
+                }
+
                 // copy the animation asset so we dont use the same references that will get disposed
                 var newCopy = Object.Instantiate(animationClip);
                 newCopy.name = animationClip.name;
@@ -1122,7 +1185,7 @@ namespace DCL.ABConverter
             var afterFirstBuild = EditorApplication.timeSinceStartup;
 
             // 2. Create metadata (dependencies, version, timestamp) and store in the target folders to be converted again later with the metadata inside
-            env.assetDatabase.BuildMetadata(env.file, finalDownloadedPath, lowerCaseHashes, manifest, VERSION);
+            env.assetDatabase.BuildMetadata(env.file, finalDownloadedPath, lowerCaseHashes, manifest, VERSION, socialEmoteOutcomeAnimationStartPoses);
 
             env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 
