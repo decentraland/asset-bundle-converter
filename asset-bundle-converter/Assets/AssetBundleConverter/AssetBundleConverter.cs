@@ -596,10 +596,7 @@ namespace DCL.ABConverter
                 defaultBool = true,
             });
 
-            if (entityDTO.metadata.IsSocialEmote)
-            {
-                socialEmoteOutcomeAnimationStartPoses = new AssetBundleMetadata.SocialEmoteOutcomeAnimationPose[entityDTO.metadata.emoteDataADR287!.outcomes!.Length];
-            }
+            socialEmoteOutcomeAnimationStartPoses = entityDTO.metadata.IsSocialEmote ? new AssetBundleMetadata.SocialEmoteOutcomeAnimationPose[entityDTO.metadata.emoteDataADR287!.outcomes!.Length] : null;
 
             foreach (AnimationClip animationClip in clips)
             {
@@ -652,6 +649,7 @@ namespace DCL.ABConverter
                         if (entityDTO.metadata.emoteDataADR287.outcomes[i].clips.Armature_Other.animation == animationClip.name)
                         {
                             socialEmoteOutcomeAnimationStartPoses[i] = new AssetBundleMetadata.SocialEmoteOutcomeAnimationPose(hipsFirstPosition, hipsFirstRotation);
+                            break;
                         }
                     }
                 }
