@@ -47,8 +47,15 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
         let statusCode: number
         try {
           components.metrics.increment('ab_converter_running_conversion')
+
+          // Increment version if doISS is true
+          let versionToUse = $AB_VERSION
+          if (job.doISS) {
+            versionToUse = 'v2001'
+          }
+
           if (job.lods) {
-            statusCode = await executeLODConversion(components, job.entity.entityId, job.lods)
+            statusCode = await executeLODConversion(components, job.entity.entityId, job.lods, versionToUse)
           } else {
             statusCode = await executeConversion(
               components,
@@ -56,7 +63,8 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
               job.contentServerUrls![0],
               job.force,
               job.animation,
-              job.doISS
+              job.doISS,
+              versionToUse
             )
           }
 
@@ -74,7 +82,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
                 job.contentServerUrls.length > 1 &&
                 job.contentServerUrls[0].includes('worlds-content-server'),
               statusCode,
-              version: $AB_VERSION
+              version: versionToUse
             }
           }
 

@@ -170,7 +170,6 @@ export async function runConversion(
     contentServerUrl += 'contents/'
   }
 
-  //TODO (JUANI): ASK ABOUT THIS PATH, NOT SURE HOW THIS WORKS
   const childArg0 = `${options.unityPath}/Editor/Unity`
 
   const childArguments: string[] = [
