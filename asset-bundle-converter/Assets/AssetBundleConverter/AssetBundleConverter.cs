@@ -596,7 +596,7 @@ namespace DCL.ABConverter
                 defaultBool = true,
             });
 
-            socialEmoteOutcomeAnimationStartPoses = entityDTO.metadata.IsSocialEmote ? new AssetBundleMetadata.SocialEmoteOutcomeAnimationPose[entityDTO.metadata.emoteDataADR287!.outcomes!.Length] : null;
+            socialEmoteOutcomeAnimationStartPoses = entityDTO.metadata.IsSocialEmote ? new AssetBundleMetadata.SocialEmoteOutcomeAnimationPose[entityDTO.metadata.emoteDataADR74!.outcomes!.Length] : null;
 
             foreach (AnimationClip animationClip in clips)
             {
@@ -644,9 +644,9 @@ namespace DCL.ABConverter
 
                     // Searches for the outcome in the metadata and stores the pose data
                     // Since clips appear in an undetermined order, this way we store the poses in the same order as outcomes appear in the metadata
-                    for (int i = 0; i < entityDTO.metadata.emoteDataADR287.outcomes.Length; ++i)
+                    for (int i = 0; i < entityDTO.metadata.emoteDataADR74.outcomes.Length; ++i)
                     {
-                        if (entityDTO.metadata.emoteDataADR287.outcomes[i].clips.Armature_Other.animation == animationClip.name)
+                        if (entityDTO.metadata.emoteDataADR74.outcomes[i].clips.Armature_Other.animation == animationClip.name)
                         {
                             socialEmoteOutcomeAnimationStartPoses[i] = new AssetBundleMetadata.SocialEmoteOutcomeAnimationPose(hipsFirstPosition, hipsFirstRotation);
                             break;
