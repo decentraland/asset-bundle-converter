@@ -281,7 +281,7 @@ namespace AssetBundleConverter.Editor
 
                     if (importer is TextureImporter tImporter)
                     {
-                        tImporter.isReadable = false;
+                        tImporter.isReadable = true;
 
                         // texture is considered normal only if all material maps are true
                         var isNormalMap = true;

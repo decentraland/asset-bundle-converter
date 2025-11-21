@@ -172,7 +172,16 @@ namespace DCL.ABConverter
             if (isExitForced)
                 return;
 
+            //TODO: if to do positioning
+            //Im assuming that objects are placed on scene and that they are searchable
+            if (true)
+            {
+                InitialSceneStateGenerator.GenerateInitialSceneState(env, entityDTO);
+            }
+
             await ProcessAllGltfs();
+
+
 
             importEndTime = EditorApplication.timeSinceStartup;
 
@@ -180,6 +189,8 @@ namespace DCL.ABConverter
 
             if (TryExitWithGltfErrors())
                 return;
+
+
 
             if (settings.createAssetBundle)
             {
@@ -394,12 +405,7 @@ namespace DCL.ABConverter
                         if (originalGltf != null)
                             try
                             {
-                                var clone = (GameObject)PrefabUtility.InstantiatePrefab(originalGltf);
-                                var renderers = clone.GetComponentsInChildren<Renderer>(true);
-
-                                foreach (Renderer renderer in renderers)
-                                    if (renderer.name.ToLower().Contains("_collider"))
-                                        renderer.enabled = false;
+                                InitialSceneStateGenerator.PlaceAsset(gltf.AssetPath.filePath, originalGltf);
                             }
                             catch (Exception e)
                             {
@@ -915,7 +921,7 @@ namespace DCL.ABConverter
         /// <param name="BuildTarget"></param>
         private void MarkAllAssetBundles(List<AssetPath> assetPaths)
         {
-            if (IsInitialSceneStateCompatible(out List<SceneComponent> convertedJSONComponents))
+            if (InitialSceneStateGenerator.IsInitialSceneStateCompatible(env, entityDTO, out List<SceneComponent> convertedJSONComponents))
             {
                 string staticSceneABName = $"staticScene_{entityDTO.id}{PlatformUtils.GetPlatform()}";
                 var asset = ScriptableObject.CreateInstance<StaticSceneDescriptor>();
@@ -1042,26 +1048,7 @@ namespace DCL.ABConverter
             importer_json.SetAssetBundleNameAndVariant(staticSceneABName, "");
         }
 
-        private bool IsInitialSceneStateCompatible(out List<SceneComponent> convertedJSONComponents)
-        {
-            //Manifest was created before the Unity iteration ran
-            try
-            {
-                string manifestPath = $"Assets/_SceneManifest/{entityDTO.id}-lod-manifest.json";;
-                if (entityDTO.type.ToLower() == "scene" && !string.IsNullOrEmpty(entityDTO.id) && env.file.Exists(manifestPath))
-                {
-                    convertedJSONComponents = JsonConvert.DeserializeObject<List<SceneComponent>>(env.file.ReadAllText(manifestPath));
-                    return true;
-                }
-                convertedJSONComponents = null;
-                return false;
-            }
-            catch (Exception e)
-            {
-                convertedJSONComponents = null;
-                return false;
-            }
-        }
+
 
         /// <summary>
         /// Clean all working folders and end the batch process.
