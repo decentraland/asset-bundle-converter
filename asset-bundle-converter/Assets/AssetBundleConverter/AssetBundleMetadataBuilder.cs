@@ -23,7 +23,7 @@ namespace DCL.ABConverter
         /// <summary>
         /// Creates the asset bundle metadata file (dependencies, version, timestamp)
         /// </summary>
-        public static void Generate(IFile file, string path, Dictionary<string, string> hashLowercaseToHashProper, IAssetBundleManifest manifest, string version = "1.0", AssetBundleMetadata.SocialEmoteOutcomeAnimationPose[] socialEmoteOutcomeStartAnimationPoses = null)
+        public static void Generate(IFile file, string path, Dictionary<string, string> hashLowercaseToHashProper, IAssetBundleManifest manifest, string version = "1.0")
         {
             string[] assetBundles = manifest.GetAllAssetBundles();
 
@@ -32,7 +32,7 @@ namespace DCL.ABConverter
                 if (string.IsNullOrEmpty(assetBundles[i]))
                     continue;
 
-                var metadata = new AssetBundleMetadata { version = version, timestamp = DateTime.UtcNow.Ticks, socialEmoteOutcomeAnimationStartPoses = socialEmoteOutcomeStartAnimationPoses};
+                var metadata = new AssetBundleMetadata { version = version, timestamp = DateTime.UtcNow.Ticks};
                 string[] deps = manifest.GetAllDependencies(assetBundles[i]);
 
                 if (deps.Length > 0)

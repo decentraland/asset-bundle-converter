@@ -95,8 +95,6 @@ namespace DCL.ABConverter
         private ContentServerUtils.EntityMappingsDTO entityDTO;
         private readonly Dictionary<Shader, List<int>> textureProperties = new ();
 
-        private AssetBundleMetadata.SocialEmoteOutcomeAnimationPose[] socialEmoteOutcomeAnimationStartPoses;
-
         public AssetBundleConverter(Environment env, ClientSettings settings)
         {
             this.settings = settings;
@@ -189,7 +187,7 @@ namespace DCL.ABConverter
 
                 bundlesStartupTime = EditorApplication.timeSinceStartup;
 
-                MarkAndBuildForTarget(settings.buildTarget);
+                await MarkAndBuildForTarget(settings.buildTarget);
 
                 bundlesEndTime = EditorApplication.timeSinceStartup;
             }
@@ -246,11 +244,11 @@ namespace DCL.ABConverter
             AssetDatabase.ImportAsset(rendererDataPath);
         }
 
-        private void MarkAndBuildForTarget(BuildTarget target)
+        private async Task MarkAndBuildForTarget(BuildTarget target)
         {
 
             // Fourth step: we mark all assets for bundling
-            MarkAllAssetBundles(assetsToMark);
+            await MarkAllAssetBundlesAsync(assetsToMark);
 
             // Fifth step: we build the Asset Bundles
             env.assetDatabase.Refresh();
@@ -357,8 +355,7 @@ namespace DCL.ABConverter
                     {
                         if (isEmote)
                         {
-                            GameObject originalGltf = env.assetDatabase.LoadAssetAtPath<GameObject>(relativePath);
-                            CreateAnimatorController(gltfImport, directory, originalGltf);
+                            CreateAnimatorController(gltfImport, directory);
                         }
                         else
                             CreateLayeredAnimatorController(gltfImport, directory);
@@ -574,7 +571,7 @@ namespace DCL.ABConverter
             AssetDatabase.Refresh();
         }
 
-        private void CreateAnimatorController(IGltfImport gltfImport, string directory, GameObject gltfObject)
+        private void CreateAnimatorController(IGltfImport gltfImport, string directory)
         {
             var clips = gltfImport.GetClips();
             if (clips == null) return;
@@ -596,64 +593,8 @@ namespace DCL.ABConverter
                 defaultBool = true,
             });
 
-            socialEmoteOutcomeAnimationStartPoses = entityDTO.metadata.IsSocialEmote ? new AssetBundleMetadata.SocialEmoteOutcomeAnimationPose[entityDTO.metadata.emoteDataADR74!.outcomes!.Length] : null;
-
             foreach (AnimationClip animationClip in clips)
             {
-                // If the clip corresponds to the avatar that reacts to the social emote...
-                if (entityDTO.metadata.IsSocialEmote && animationClip.name.EndsWith("_AvatarOther"))
-                {
-                    EditorCurveBinding[] curveBindings = AnimationUtility.GetCurveBindings(animationClip);
-
-                    // Gets the position and rotation of the hips at the beginning of the animation
-                    Vector3 hipsFirstPosition = Vector3.zero;
-                    Quaternion hipsFirstRotation = Quaternion.identity;
-
-                    foreach (EditorCurveBinding binding in curveBindings)
-                    {
-                        if (binding.path.EndsWith("Avatar_Hips"))
-                        {
-                            AnimationCurve curve = AnimationUtility.GetEditorCurve(animationClip, binding);
-
-                            if (curve.keys.Length > 0)
-                            {
-                                if (binding.propertyName == "m_LocalPosition.x")
-                                    hipsFirstPosition.x = curve.Evaluate(0.0f);
-                                else if (binding.propertyName == "m_LocalPosition.y")
-                                    hipsFirstPosition.y = curve.Evaluate(0.0f);
-                                else if (binding.propertyName == "m_LocalPosition.z")
-                                    hipsFirstPosition.z = curve.Evaluate(0.0f);
-                                else if (binding.propertyName == "m_LocalRotation.x")
-                                    hipsFirstRotation.x = curve.Evaluate(0.0f);
-                                else if (binding.propertyName == "m_LocalRotation.y")
-                                    hipsFirstRotation.y = curve.Evaluate(0.0f);
-                                else if (binding.propertyName == "m_LocalRotation.z")
-                                    hipsFirstRotation.z = curve.Evaluate(0.0f);
-                                else if (binding.propertyName == "m_LocalRotation.w")
-                                    hipsFirstRotation.w = curve.Evaluate(0.0f);
-                            }
-                        }
-                    }
-
-                    if (gltfObject != null)
-                    {
-                        Transform armatureOther = gltfObject.transform.Find("Armature_Other");
-                        hipsFirstPosition = armatureOther.localPosition + armatureOther.localRotation * Vector3.Scale(hipsFirstPosition, armatureOther.localScale);
-                        hipsFirstRotation = armatureOther.localRotation * hipsFirstRotation;
-                    }
-
-                    // Searches for the outcome in the metadata and stores the pose data
-                    // Since clips appear in an undetermined order, this way we store the poses in the same order as outcomes appear in the metadata
-                    for (int i = 0; i < entityDTO.metadata.emoteDataADR74.outcomes.Length; ++i)
-                    {
-                        if (entityDTO.metadata.emoteDataADR74.outcomes[i].clips.Armature_Other.animation == animationClip.name)
-                        {
-                            socialEmoteOutcomeAnimationStartPoses[i] = new AssetBundleMetadata.SocialEmoteOutcomeAnimationPose(hipsFirstPosition, hipsFirstRotation);
-                            break;
-                        }
-                    }
-                }
-
                 // copy the animation asset so we dont use the same references that will get disposed
                 var newCopy = Object.Instantiate(animationClip);
                 newCopy.name = animationClip.name;
@@ -687,6 +628,83 @@ namespace DCL.ABConverter
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
+        }
+
+        private void CreateEmoteMetadataFile(IReadOnlyList<AnimationClip> clips, GameObject gltfObject)
+        {
+            string emoteFileABName = $"emote_{entityDTO.id}{PlatformUtils.GetPlatform()}";
+            string emoteDataFilename = "EmoteData.json";
+            string emoteDataRelativePath = $"Assets/_Downloaded/{emoteDataFilename}";
+
+            AssetBundleMetadata.SocialEmoteOutcomeAnimationPose[] socialEmoteOutcomeAnimationStartPoses = new AssetBundleMetadata.SocialEmoteOutcomeAnimationPose[entityDTO.metadata.emoteDataADR74.outcomes!.Length];
+
+            foreach (AnimationClip animationClip in clips)
+            {
+                // If the clip corresponds to the avatar that reacts to the social emote...
+                if (entityDTO.metadata.IsSocialEmote && animationClip.name.EndsWith("_AvatarOther"))
+                {
+                    EditorCurveBinding[] curveBindings = AnimationUtility.GetCurveBindings(animationClip);
+
+                    // Gets the position and rotation of the hips at the beginning of the animation
+                    Vector3 hipsFirstWorldPosition = Vector3.zero;
+                    Quaternion hipsFirstWorldRotation = Quaternion.identity;
+
+                    foreach (EditorCurveBinding binding in curveBindings)
+                    {
+                        if (binding.path.EndsWith("Avatar_Hips"))
+                        {
+                            AnimationCurve curve = AnimationUtility.GetEditorCurve(animationClip, binding);
+
+                            if (curve.keys.Length > 0)
+                            {
+                                if (binding.propertyName == "m_LocalPosition.x")
+                                    hipsFirstWorldPosition.x = curve.Evaluate(0.0f);
+                                else if (binding.propertyName == "m_LocalPosition.y")
+                                    hipsFirstWorldPosition.y = curve.Evaluate(0.0f);
+                                else if (binding.propertyName == "m_LocalPosition.z")
+                                    hipsFirstWorldPosition.z = curve.Evaluate(0.0f);
+                                else if (binding.propertyName == "m_LocalRotation.x")
+                                    hipsFirstWorldRotation.x = curve.Evaluate(0.0f);
+                                else if (binding.propertyName == "m_LocalRotation.y")
+                                    hipsFirstWorldRotation.y = curve.Evaluate(0.0f);
+                                else if (binding.propertyName == "m_LocalRotation.z")
+                                    hipsFirstWorldRotation.z = curve.Evaluate(0.0f);
+                                else if (binding.propertyName == "m_LocalRotation.w")
+                                    hipsFirstWorldRotation.w = curve.Evaluate(0.0f);
+                            }
+                        }
+                    }
+
+                    if (gltfObject != null)
+                    {
+                        Transform armatureOther = gltfObject.transform.Find("Armature_Other");
+                        hipsFirstWorldPosition = armatureOther.localPosition + armatureOther.localRotation * Vector3.Scale(hipsFirstWorldPosition, armatureOther.localScale);
+                        hipsFirstWorldRotation = armatureOther.localRotation * hipsFirstWorldRotation;
+                    }
+
+                    // Searches for the outcome in the metadata and stores the pose data
+                    // Since clips appear in an undetermined order, this way we store the poses in the same order as outcomes appear in the metadata
+                    for (int i = 0; i < entityDTO.metadata.emoteDataADR74.outcomes.Length; ++i)
+                    {
+                        if (entityDTO.metadata.emoteDataADR74.outcomes[i].clips.Armature_Other.animation == animationClip.name)
+                        {
+                            socialEmoteOutcomeAnimationStartPoses[i] = new AssetBundleMetadata.SocialEmoteOutcomeAnimationPose(hipsFirstWorldPosition, hipsFirstWorldRotation);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            string json = JsonConvert.SerializeObject(socialEmoteOutcomeAnimationStartPoses, new JsonSerializerSettings
+                                                                                                {
+                                                                                                    Formatting = Formatting.Indented,
+                                                                                                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+                                                                                                });
+            File.WriteAllText($"{finalDownloadedPath}/{emoteDataFilename}", json);
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            AssetImporter.GetAtPath(emoteDataRelativePath).SetAssetBundleNameAndVariant(emoteFileABName, "");
         }
 
         private AnimationMethod GetAnimationMethod(bool isEmote, bool isWearable)
@@ -974,7 +992,7 @@ namespace DCL.ABConverter
         /// </summary>
         /// <param name="assetPaths">The paths to be built.</param>
         /// <param name="BuildTarget"></param>
-        private void MarkAllAssetBundles(List<AssetPath> assetPaths)
+        private async Task MarkAllAssetBundlesAsync(List<AssetPath> assetPaths)
         {
             if (IsInitialSceneStateCompatible(out List<SceneComponent> convertedJSONComponents))
             {
@@ -1068,6 +1086,54 @@ namespace DCL.ABConverter
             }
             else
             {
+                foreach (GltfImportSettings gltf in gltfToWait)
+                {
+                    string gltfUrl = gltf.url;
+                    bool isEmote = (entityDTO is { type: not null } && entityDTO.type.ToLower().Contains("emote"))
+                                   || gltf.AssetPath.fileName.ToLower().EndsWith("_emote.glb");
+
+                    if(!isEmote)
+                        continue;
+
+                    bool isWearable = (entityDTO is { type: not null } && entityDTO.type.ToLower().Contains("wearable"));
+
+                    AnimationMethod animationMethod = GetAnimationMethod(isEmote, isWearable);
+
+                    var importSettings = new ImportSettings
+                    {
+                        AnimationMethod = animationMethod,
+                        NodeNameMethod = NameImportMethod.OriginalUnique,
+                        AnisotropicFilterLevel = 0,
+                        GenerateMipMaps = false
+                    };
+/*
+                    assetsToMark.Clear();
+
+                    List<AssetPath> gltfPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.gltfExtensions);
+
+                    foreach (var gltfPath in assetPaths)
+                    {
+                        if (isExitForced) break;
+
+                        if (!string.IsNullOrEmpty(settings.importOnlyEntity))
+                            if (!string.Equals(gltfPath.hash, settings.importOnlyEntity, StringComparison.CurrentCultureIgnoreCase))
+                                continue;
+
+                        assetsToMark.Add(ImportGltf(gltfPath));
+                    }
+*/
+                    foreach (var assetPath in assetPaths)
+                    {
+                        if (gltfImporters.TryGetValue(assetPath.filePath, out IGltfImport gltfImport))
+                        {
+                            await gltfImport.Load(gltfUrl, importSettings);
+                            GameObject originalGltf = env.assetDatabase.LoadAssetAtPath<GameObject>(gltfImport.assetDependencies[0].assetPath);
+                            //ImportGltf(assetPath);
+                            CreateEmoteMetadataFile(gltfImport.GetClips(), originalGltf);
+                        }
+                    }
+                }
+
                 foreach (var assetPath in assetPaths)
                 {
                     if (assetPath == null) continue;
@@ -1186,7 +1252,7 @@ namespace DCL.ABConverter
             var afterFirstBuild = EditorApplication.timeSinceStartup;
 
             // 2. Create metadata (dependencies, version, timestamp) and store in the target folders to be converted again later with the metadata inside
-            env.assetDatabase.BuildMetadata(env.file, finalDownloadedPath, lowerCaseHashes, manifest, VERSION, socialEmoteOutcomeAnimationStartPoses);
+            env.assetDatabase.BuildMetadata(env.file, finalDownloadedPath, lowerCaseHashes, manifest, VERSION);
 
             env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 

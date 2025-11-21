@@ -22,6 +22,4 @@ public class AssetBundleMetadata
     public string version = "1.0";
     public string[] dependencies;
     public string mainAsset;
-    public SocialEmoteOutcomeAnimationPose[] socialEmoteOutcomeAnimationStartPoses;
-    // TODO: Why there are 2 elements per outcome? sex?
 }

@@ -19,7 +19,7 @@ namespace DCL
         string AssetPathToGUID(string path);
         string GetTextMetaFilePathFromAssetPath(string path);
         AssetImporter GetImporterAtPath(string path);
-        void BuildMetadata(IFile envFile, string finalDownloadedPath, Dictionary<string,string> lowerCaseHashes, IAssetBundleManifest manifest, string version, AssetBundleMetadata.SocialEmoteOutcomeAnimationPose[] socialEmoteOutcomeAnimationStartPoses);
+        void BuildMetadata(IFile envFile, string finalDownloadedPath, Dictionary<string,string> lowerCaseHashes, IAssetBundleManifest manifest, string version);
         void SaveImporter(AssetImporter gltfImporter);
 
         void CreateAsset(Object obj, string path);
