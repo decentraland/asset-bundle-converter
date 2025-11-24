@@ -180,7 +180,10 @@ export async function executeLODConversion(
         logger.info(`Scene manifest folder successfully deleted: ${sceneManifestPath}`, defaultLoggerMetadata)
       }
     } catch (err: any) {
-      logger.error(`Error deleting scene manifest folder ${sceneManifestPath}:`, { ...defaultLoggerMetadata, error: err })
+      logger.error(`Error deleting scene manifest folder ${sceneManifestPath}:`, {
+        ...defaultLoggerMetadata,
+        error: err
+      })
       const folderStillExists = fs.existsSync(sceneManifestPath)
       logger.warn(`Scene manifest folder exists after failed deletion: ${folderStillExists}`, defaultLoggerMetadata)
     }
