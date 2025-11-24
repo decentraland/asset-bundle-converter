@@ -11,7 +11,7 @@ namespace DCL.ABConverter.Editor
     {
         private static readonly string SHARED_TEXTURES_FOLDER = "Assets/_Downloaded/_ReusedTextures/";
         private static readonly string SHARED_MATERIALS_FOLDER = "Assets/_Downloaded/_ReusedMaterial/";
-        
+
         private bool includeAllAssets = true;
         private string specificFolder = "Assets/_Downloaded/";
         private Vector2 scrollPosition;
@@ -28,8 +28,8 @@ namespace DCL.ABConverter.Editor
         [MenuItem("Decentraland/Quick Consolidate (All Assets)")]
         public static void QuickConsolidate()
         {
-            if (EditorUtility.DisplayDialog("Consolidate Materials", 
-                "This will consolidate all materials and textures from GLB/GLTF assets into shared folders. Continue?", 
+            if (EditorUtility.DisplayDialog("Consolidate Materials",
+                "This will consolidate all materials and textures from GLB/GLTF assets into shared folders. Continue?",
                 "Yes", "Cancel"))
             {
                 ConsolidateMaterialsAndTextures("Assets/_Downloaded/", true);
@@ -50,7 +50,7 @@ namespace DCL.ABConverter.Editor
             EditorGUILayout.Space();
 
             includeAllAssets = EditorGUILayout.Toggle("Search All Assets", includeAllAssets);
-            
+
             if (!includeAllAssets)
             {
                 EditorGUILayout.BeginHorizontal();
@@ -79,7 +79,7 @@ namespace DCL.ABConverter.Editor
             }
 
             EditorGUILayout.Space();
-            
+
             if (!string.IsNullOrEmpty(lastResult))
             {
                 EditorGUILayout.LabelField("Last Result:", EditorStyles.boldLabel);
@@ -103,7 +103,7 @@ namespace DCL.ABConverter.Editor
                 }
                 AssetDatabase.CreateFolder(parentFolder, "_ReusedTextures");
             }
-            
+
             if (!AssetDatabase.IsValidFolder(SHARED_MATERIALS_FOLDER))
             {
                 string parentFolder = Path.GetDirectoryName(SHARED_MATERIALS_FOLDER.TrimEnd('/'));
@@ -116,7 +116,7 @@ namespace DCL.ABConverter.Editor
 
             var materialCache = new Dictionary<string, Material>(); // hash -> shared material
             var textureCache = new Dictionary<string, Texture2D>(); // hash -> shared texture
-            var materialHashes = new Dictionary<Material, string>(); // original material -> hash
+            var materialPathToHash = new Dictionary<string, string>(); // material path -> hash (for replacement)
 
             // Find all GLB/GLTF assets
             string[] guids;
@@ -143,29 +143,23 @@ namespace DCL.ABConverter.Editor
                 {
                     GameObject asset = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
                     if (asset != null)
-                    {
                         gltfAssets.Add(asset);
-                        
-                        // DEBUGGING: Only process first 2 models for faster testing
-                        if (gltfAssets.Count >= 2)
-                            break;
-                    }
                 }
             }
 
-            Debug.Log($"Found {gltfAssets.Count} GLB/GLTF assets to process (limited to 2 for debugging)");
+            Debug.Log($"Found {gltfAssets.Count} GLB/GLTF assets to process");
 
             // Step 1: Collect all materials and textures
             int totalProgress = gltfAssets.Count * 2; // Two passes
             int currentProgress = 0;
 
             Debug.Log($"\n=== STEP 1: ANALYZING MATERIALS ===");
-            
+
             foreach (GameObject gltfObject in gltfAssets)
             {
                 currentProgress++;
-                EditorUtility.DisplayProgressBar("Consolidating Materials", 
-                    $"Analyzing {gltfObject.name}...", 
+                EditorUtility.DisplayProgressBar("Consolidating Materials",
+                    $"Analyzing {gltfObject.name}...",
                     currentProgress / (float)totalProgress);
 
                 Debug.Log($"\nProcessing GLB: {gltfObject.name}");
@@ -174,12 +168,12 @@ namespace DCL.ABConverter.Editor
 
                 var renderers = gltfObject.GetComponentsInChildren<Renderer>(true);
                 Debug.Log($"  Found {renderers.Length} renderers");
-                
+
                 foreach (var renderer in renderers)
                 {
                     var materials = renderer.sharedMaterials;
                     Debug.Log($"    Renderer '{renderer.name}' has {materials.Length} materials");
-                    
+
                     foreach (Material mat in materials)
                     {
                         if (mat == null)
@@ -187,20 +181,34 @@ namespace DCL.ABConverter.Editor
                             Debug.LogWarning($"      NULL material found!");
                             continue;
                         }
-                        
-                        Debug.Log($"      Material: {mat.name}");
-                        Debug.Log($"        Shader: {mat.shader.name}");
-                        Debug.Log($"        Textures: {GetTextureCount(mat)}");
-                        
-                        if (materialHashes.ContainsKey(mat))
+
+                        string matPath = AssetDatabase.GetAssetPath(mat);
+                        if (string.IsNullOrEmpty(matPath))
                         {
-                            Debug.Log($"        Already processed (duplicate)");
+                            Debug.LogWarning($"      Material has no asset path: {mat.name}");
                             continue;
                         }
 
+                        // Skip if already in shared folder
+                        if (matPath.Contains("_ReusedMaterial"))
+                        {
+                            Debug.Log($"      Material already in shared folder: {mat.name}");
+                            continue;
+                        }
+
+                        Debug.Log($"      Material: {mat.name}");
+                        Debug.Log($"        Path: {matPath}");
+                        Debug.Log($"        Shader: {mat.shader.name}");
+                        Debug.Log($"        Textures: {GetTextureCount(mat)}");
+
                         string matHash = ComputeMaterialHash(mat);
-                        materialHashes[mat] = matHash;
                         Debug.Log($"        Hash: {matHash.Substring(0, 16)}...");
+
+                        // Track this material path for replacement
+                        if (!materialPathToHash.ContainsKey(matPath))
+                        {
+                            materialPathToHash[matPath] = matHash;
+                        }
 
                         if (!materialCache.ContainsKey(matHash))
                         {
@@ -218,12 +226,65 @@ namespace DCL.ABConverter.Editor
                 }
             }
 
-            // Step 2: Verify created materials and textures
+            // Step 2: Replace original material files with shared materials
+            Debug.Log($"\n=== STEP 2: REPLACING MATERIAL FILES ===");
+            int replacedFiles = 0;
+
+            foreach (var kvp in materialPathToHash)
+            {
+                string originalMatPath = kvp.Key;
+                string matHash = kvp.Value;
+
+                if (!materialCache.TryGetValue(matHash, out Material sharedMat))
+                {
+                    Debug.LogError($"No shared material found for hash: {matHash}");
+                    continue;
+                }
+
+                string sharedMatPath = AssetDatabase.GetAssetPath(sharedMat);
+
+                Debug.Log($"Replacing: {originalMatPath}");
+                Debug.Log($"  With: {sharedMatPath}");
+
+                // Delete and copy to replace the file
+                if (AssetDatabase.DeleteAsset(originalMatPath))
+                {
+                    if (AssetDatabase.CopyAsset(sharedMatPath, originalMatPath))
+                    {
+                        replacedFiles++;
+                        Debug.Log($"  Success!");
+                    }
+                    else
+                    {
+                        Debug.LogError($"  Failed to copy!");
+                    }
+                }
+                else
+                {
+                    Debug.LogError($"  Failed to delete original!");
+                }
+            }
+
+            Debug.Log($"\nReplaced {replacedFiles} material files");
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            // Step 3: Reimport GLBs so they pick up the new materials
+            Debug.Log($"\n=== STEP 3: REIMPORTING GLBs ===");
+            foreach (GameObject gltfObject in gltfAssets)
+            {
+                string assetPath = AssetDatabase.GetAssetPath(gltfObject);
+                Debug.Log($"Reimporting: {assetPath}");
+                AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
+            }
+
+            // Step 4: Verify created materials and textures
             Debug.Log($"\n=== CONSOLIDATION SUMMARY ===");
             Debug.Log($"Created {materialCache.Count} unique shared materials");
             Debug.Log($"Created {textureCache.Count} unique shared textures");
-            Debug.Log($"Total original materials found: {materialHashes.Count}");
-            
+            Debug.Log($"Replaced {replacedFiles} material files");
+
             Debug.Log($"\n=== SHARED MATERIALS ===");
             foreach (var kvp in materialCache)
             {
@@ -231,21 +292,21 @@ namespace DCL.ABConverter.Editor
                 Material sharedMat = kvp.Value;
                 string matPath = AssetDatabase.GetAssetPath(sharedMat);
                 int textureCount = GetTextureCount(sharedMat);
-                
+
                 Debug.Log($"Material: {sharedMat.name}");
                 Debug.Log($"  Path: {matPath}");
                 Debug.Log($"  Hash: {matHash}");
                 Debug.Log($"  Textures: {textureCount}");
                 Debug.Log($"  Shader: {sharedMat.shader.name}");
             }
-            
+
             Debug.Log($"\n=== SHARED TEXTURES ===");
             foreach (var kvp in textureCache)
             {
                 string texHash = kvp.Key;
                 Texture2D tex = kvp.Value;
                 string texPath = AssetDatabase.GetAssetPath(tex);
-                
+
                 Debug.Log($"Texture: {tex.name}");
                 Debug.Log($"  Path: {texPath}");
                 Debug.Log($"  Hash: {texHash.Substring(0, 8)}...");
@@ -260,7 +321,8 @@ namespace DCL.ABConverter.Editor
             string result = $"Consolidation Complete!\n\n" +
                           $"Created Unique Materials: {materialCache.Count}\n" +
                           $"Created Unique Textures: {textureCache.Count}\n" +
-                          $"Original Materials Found: {materialHashes.Count}\n\n" +
+                          $"Material Files Replaced: {replacedFiles}\n" +
+                          $"GLBs Reimported: {gltfAssets.Count}\n\n" +
                           $"Check console for detailed output.\n" +
                           $"Materials saved to: {SHARED_MATERIALS_FOLDER}\n" +
                           $"Textures saved to: {SHARED_TEXTURES_FOLDER}";
@@ -283,7 +345,7 @@ namespace DCL.ABConverter.Editor
             int propertyCount = ShaderUtil.GetPropertyCount(shader);
 
             Debug.Log($"          Processing textures for material '{mat.name}'");
-            
+
             for (int i = 0; i < propertyCount; i++)
             {
                 if (ShaderUtil.GetPropertyType(shader, i) != ShaderUtil.ShaderPropertyType.TexEnv)
@@ -298,7 +360,7 @@ namespace DCL.ABConverter.Editor
                 }
 
                 Debug.Log($"            Property '{propName}': {tex2D.name}");
-                
+
                 string texHash = ComputeTextureHashSimple(tex2D);
 
                 if (textureCache.ContainsKey(texHash))
@@ -313,7 +375,7 @@ namespace DCL.ABConverter.Editor
                     Debug.LogWarning($"              No asset path found!");
                     continue;
                 }
-                
+
                 Debug.Log($"              Original path: {texPath}");
 
                 if (texPath.Contains("_ReusedTextures"))
@@ -336,12 +398,12 @@ namespace DCL.ABConverter.Editor
                 }
 
                 Debug.Log($"              Copying to: {newTexPath}");
-                
+
                 if (AssetDatabase.CopyAsset(texPath, newTexPath))
                 {
                     AssetDatabase.ImportAsset(newTexPath, ImportAssetOptions.ForceUpdate);
                     Texture2D copiedTex = AssetDatabase.LoadAssetAtPath<Texture2D>(newTexPath);
-                    
+
                     if (copiedTex != null)
                     {
                         textureCache[texHash] = copiedTex;
@@ -395,6 +457,8 @@ namespace DCL.ABConverter.Editor
             AssetDatabase.CreateAsset(sharedMat, sharedMatPath);
             AssetDatabase.SaveAssets();
             EditorUtility.SetDirty(sharedMat);
+            AssetDatabase.Refresh();
+
 
             return sharedMat;
         }
@@ -402,11 +466,11 @@ namespace DCL.ABConverter.Editor
         private static int GetTextureCount(Material mat)
         {
             if (mat == null) return 0;
-            
+
             int count = 0;
             var shader = mat.shader;
             int propertyCount = ShaderUtil.GetPropertyCount(shader);
-            
+
             for (int i = 0; i < propertyCount; i++)
             {
                 if (ShaderUtil.GetPropertyType(shader, i) == ShaderUtil.ShaderPropertyType.TexEnv)
@@ -416,7 +480,7 @@ namespace DCL.ABConverter.Editor
                         count++;
                 }
             }
-            
+
             return count;
         }
 
