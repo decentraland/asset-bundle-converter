@@ -169,10 +169,23 @@ export async function executeLODConversion(
     }
 
     // delete scene manifest folder
+    const sceneManifestPath = `${$PROJECT_PATH}/Assets/_SceneManifest`
+    logger.info(`Attempting to delete scene manifest folder: ${sceneManifestPath}`, defaultLoggerMetadata)
     try {
-      await rimraf(`${$PROJECT_PATH}/Assets/_SceneManifest`, { maxRetries: 3 })
+      await rimraf(sceneManifestPath, { maxRetries: 3 })
+      const folderStillExists = fs.existsSync(sceneManifestPath)
+      if (folderStillExists) {
+        logger.warn(`Scene manifest folder still exists after deletion: ${sceneManifestPath}`, defaultLoggerMetadata)
+      } else {
+        logger.info(`Scene manifest folder successfully deleted: ${sceneManifestPath}`, defaultLoggerMetadata)
+      }
     } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
+      logger.error(`Error deleting scene manifest folder ${sceneManifestPath}:`, {
+        ...defaultLoggerMetadata,
+        error: err
+      })
+      const folderStillExists = fs.existsSync(sceneManifestPath)
+      logger.warn(`Scene manifest folder exists after failed deletion: ${folderStillExists}`, defaultLoggerMetadata)
     }
   }
 
