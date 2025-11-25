@@ -187,7 +187,7 @@ namespace DCL.ABConverter
 
                 bundlesStartupTime = EditorApplication.timeSinceStartup;
 
-                await MarkAndBuildForTarget(settings.buildTarget);
+                MarkAndBuildForTarget(settings.buildTarget);
 
                 bundlesEndTime = EditorApplication.timeSinceStartup;
             }
@@ -244,11 +244,11 @@ namespace DCL.ABConverter
             AssetDatabase.ImportAsset(rendererDataPath);
         }
 
-        private async Task MarkAndBuildForTarget(BuildTarget target)
+        private void MarkAndBuildForTarget(BuildTarget target)
         {
 
             // Fourth step: we mark all assets for bundling
-            await MarkAllAssetBundlesAsync(assetsToMark);
+            MarkAllAssetBundlesAsync(assetsToMark);
 
             // Fifth step: we build the Asset Bundles
             env.assetDatabase.Refresh();
@@ -359,6 +359,12 @@ namespace DCL.ABConverter
                         }
                         else
                             CreateLayeredAnimatorController(gltfImport, directory);
+                    }
+
+                    if (isEmote && entityDTO.metadata.IsSocialEmote)
+                    {
+                        GameObject originalGltf = env.assetDatabase.LoadAssetAtPath<GameObject>(relativePath);
+                        CreateEmoteMetadataFile(gltfImport, originalGltf);
                     }
 
                     log.Verbose($"Importing {relativePath}");
@@ -630,13 +636,17 @@ namespace DCL.ABConverter
             AssetDatabase.Refresh();
         }
 
-        private void CreateEmoteMetadataFile(IReadOnlyList<AnimationClip> clips, GameObject gltfObject)
+        private void CreateEmoteMetadataFile(IGltfImport gltfImport, GameObject gltfObject)
         {
+            IReadOnlyList<AnimationClip> clips = gltfImport.GetClips();
+            if (clips == null)
+                return;
+
             string emoteFileABName = $"emote_{entityDTO.id}{PlatformUtils.GetPlatform()}";
             string emoteDataFilename = "EmoteData.json";
             string emoteDataRelativePath = $"Assets/_Downloaded/{emoteDataFilename}";
 
-            AssetBundleMetadata.SocialEmoteOutcomeAnimationPose[] socialEmoteOutcomeAnimationStartPoses = new AssetBundleMetadata.SocialEmoteOutcomeAnimationPose[entityDTO.metadata.emoteDataADR74.outcomes!.Length];
+            SocialEmoteOutcomeAnimationPose[] socialEmoteOutcomeAnimationStartPoses = new SocialEmoteOutcomeAnimationPose[entityDTO.metadata.emoteDataADR74.outcomes!.Length];
 
             foreach (AnimationClip animationClip in clips)
             {
@@ -688,7 +698,7 @@ namespace DCL.ABConverter
                     {
                         if (entityDTO.metadata.emoteDataADR74.outcomes[i].clips.Armature_Other.animation == animationClip.name)
                         {
-                            socialEmoteOutcomeAnimationStartPoses[i] = new AssetBundleMetadata.SocialEmoteOutcomeAnimationPose(hipsFirstWorldPosition, hipsFirstWorldRotation);
+                            socialEmoteOutcomeAnimationStartPoses[i] = new SocialEmoteOutcomeAnimationPose(hipsFirstWorldPosition, hipsFirstWorldRotation);
                             break;
                         }
                     }
@@ -992,7 +1002,7 @@ namespace DCL.ABConverter
         /// </summary>
         /// <param name="assetPaths">The paths to be built.</param>
         /// <param name="BuildTarget"></param>
-        private async Task MarkAllAssetBundlesAsync(List<AssetPath> assetPaths)
+        private void MarkAllAssetBundlesAsync(List<AssetPath> assetPaths)
         {
             if (IsInitialSceneStateCompatible(out List<SceneComponent> convertedJSONComponents))
             {
@@ -1086,54 +1096,6 @@ namespace DCL.ABConverter
             }
             else
             {
-                foreach (GltfImportSettings gltf in gltfToWait)
-                {
-                    string gltfUrl = gltf.url;
-                    bool isEmote = (entityDTO is { type: not null } && entityDTO.type.ToLower().Contains("emote"))
-                                   || gltf.AssetPath.fileName.ToLower().EndsWith("_emote.glb");
-
-                    if(!isEmote)
-                        continue;
-
-                    bool isWearable = (entityDTO is { type: not null } && entityDTO.type.ToLower().Contains("wearable"));
-
-                    AnimationMethod animationMethod = GetAnimationMethod(isEmote, isWearable);
-
-                    var importSettings = new ImportSettings
-                    {
-                        AnimationMethod = animationMethod,
-                        NodeNameMethod = NameImportMethod.OriginalUnique,
-                        AnisotropicFilterLevel = 0,
-                        GenerateMipMaps = false
-                    };
-/*
-                    assetsToMark.Clear();
-
-                    List<AssetPath> gltfPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.gltfExtensions);
-
-                    foreach (var gltfPath in assetPaths)
-                    {
-                        if (isExitForced) break;
-
-                        if (!string.IsNullOrEmpty(settings.importOnlyEntity))
-                            if (!string.Equals(gltfPath.hash, settings.importOnlyEntity, StringComparison.CurrentCultureIgnoreCase))
-                                continue;
-
-                        assetsToMark.Add(ImportGltf(gltfPath));
-                    }
-*/
-                    foreach (var assetPath in assetPaths)
-                    {
-                        if (gltfImporters.TryGetValue(assetPath.filePath, out IGltfImport gltfImport))
-                        {
-                            await gltfImport.Load(gltfUrl, importSettings);
-                            GameObject originalGltf = env.assetDatabase.LoadAssetAtPath<GameObject>(gltfImport.assetDependencies[0].assetPath);
-                            //ImportGltf(assetPath);
-                            CreateEmoteMetadataFile(gltfImport.GetClips(), originalGltf);
-                        }
-                    }
-                }
-
                 foreach (var assetPath in assetPaths)
                 {
                     if (assetPath == null) continue;
