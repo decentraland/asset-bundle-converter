@@ -167,7 +167,7 @@ export async function executeLODConversion(
     } catch (err: any) {
       logger.error(err, defaultLoggerMetadata)
     }
-    
+
     // delete scene manifest folder
     await deleteSceneManifestFolder($PROJECT_PATH, logger, defaultLoggerMetadata)
   }
@@ -434,11 +434,7 @@ export async function executeConversion(
   printFolderSizes($PROJECT_PATH, logger)
 }
 
-async function deleteSceneManifestFolder(
-    projectPath: string,
-    logger: any,
-    defaultLoggerMetadata: any
-): Promise<void> {
+async function deleteSceneManifestFolder(projectPath: string, logger: any, defaultLoggerMetadata: any): Promise<void> {
   const sceneManifestPath = `${projectPath}/Assets/_SceneManifest`
   logger.info(`Attempting to delete scene manifest folder: ${sceneManifestPath}`, defaultLoggerMetadata)
   try {
