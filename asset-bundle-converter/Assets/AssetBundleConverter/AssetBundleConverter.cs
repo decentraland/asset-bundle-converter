@@ -364,7 +364,7 @@ namespace DCL.ABConverter
                     if (isEmote && entityDTO.metadata.IsSocialEmote)
                     {
                         GameObject originalGltf = env.assetDatabase.LoadAssetAtPath<GameObject>(relativePath);
-                        CreateEmoteMetadataFile(gltfImport, originalGltf);
+                        CreateEmoteMetadataFile(gltfImport, originalGltf, gltf.AssetPath.hash);
                     }
 
                     log.Verbose($"Importing {relativePath}");
@@ -636,17 +636,18 @@ namespace DCL.ABConverter
             AssetDatabase.Refresh();
         }
 
-        private void CreateEmoteMetadataFile(IGltfImport gltfImport, GameObject gltfObject)
+        private void CreateEmoteMetadataFile(IGltfImport gltfImport, GameObject gltfObject, string emoteHash)
         {
             IReadOnlyList<AnimationClip> clips = gltfImport.GetClips();
             if (clips == null)
                 return;
 
-            string emoteFileABName = $"emote_{entityDTO.id}{PlatformUtils.GetPlatform()}";
             string emoteDataFilename = "EmoteData.json";
-            string emoteDataRelativePath = $"Assets/_Downloaded/{emoteDataFilename}";
 
-            SocialEmoteOutcomeAnimationPose[] socialEmoteOutcomeAnimationStartPoses = new SocialEmoteOutcomeAnimationPose[entityDTO.metadata.emoteDataADR74.outcomes!.Length];
+            SocialEmoteOutcomeAnimationPosesInJson socialEmoteOutcomeAnimationStartPoses = new SocialEmoteOutcomeAnimationPosesInJson()
+            {
+                Poses = new SocialEmoteOutcomeAnimationPose[entityDTO.metadata.emoteDataADR74.outcomes!.Length]
+            };
 
             foreach (AnimationClip animationClip in clips)
             {
@@ -698,7 +699,7 @@ namespace DCL.ABConverter
                     {
                         if (entityDTO.metadata.emoteDataADR74.outcomes[i].clips.Armature_Other.animation == animationClip.name)
                         {
-                            socialEmoteOutcomeAnimationStartPoses[i] = new SocialEmoteOutcomeAnimationPose(hipsFirstWorldPosition, hipsFirstWorldRotation);
+                            socialEmoteOutcomeAnimationStartPoses.Poses[i] = new SocialEmoteOutcomeAnimationPose(hipsFirstWorldPosition, hipsFirstWorldRotation);
                             break;
                         }
                     }
@@ -710,11 +711,10 @@ namespace DCL.ABConverter
                                                                                                     Formatting = Formatting.Indented,
                                                                                                     ReferenceLoopHandling = ReferenceLoopHandling.Ignore
                                                                                                 });
-            File.WriteAllText($"{finalDownloadedPath}/{emoteDataFilename}", json);
+            File.WriteAllText($"{finalDownloadedPath}/{emoteHash}/{emoteDataFilename}", json);
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            AssetImporter.GetAtPath(emoteDataRelativePath).SetAssetBundleNameAndVariant(emoteFileABName, "");
         }
 
         private AnimationMethod GetAnimationMethod(bool isEmote, bool isWearable)

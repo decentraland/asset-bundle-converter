@@ -14,3 +14,9 @@ public struct SocialEmoteOutcomeAnimationPose
         Rotation = rotation;
     }
 }
+
+[Serializable]
+public class SocialEmoteOutcomeAnimationPosesInJson
+{
+    public SocialEmoteOutcomeAnimationPose[]? Poses;
+}
