@@ -174,8 +174,6 @@ namespace DCL.ABConverter
 
             await ProcessAllGltfs();
 
-
-
             importEndTime = EditorApplication.timeSinceStartup;
 
             EditorUtility.ClearProgressBar();
@@ -788,8 +786,10 @@ namespace DCL.ABConverter
                     var tex = textures[i];
                     if (tex == null) continue;
 
-                    string texName = tex.name;
-                    texName = Utils.NicifyName(texName);
+                    // Preserve the original texture name for material lookups
+                    string originalTexName = tex.name;
+
+                    string texName = Utils.NicifyName(originalTexName);
                     texName = Path.GetFileNameWithoutExtension(texName);
 
                     var texPath = string.Concat(texturesRoot, texName);
@@ -805,6 +805,8 @@ namespace DCL.ABConverter
 
                         if (loadedAsset != null)
                         {
+                            // Restore original name for material lookup
+                            loadedAsset.name = originalTexName;
                             newTextures.Add(loadedAsset);
                             continue;
                         }
@@ -816,6 +818,8 @@ namespace DCL.ABConverter
 
                         if (loadedAsset != null)
                         {
+                            // Restore original name for material lookup
+                            loadedAsset.name = originalTexName;
                             newTextures.Add(loadedAsset);
                             continue;
                         }
