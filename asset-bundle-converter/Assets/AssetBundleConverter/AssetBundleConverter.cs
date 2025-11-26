@@ -248,7 +248,7 @@ namespace DCL.ABConverter
         {
 
             // Fourth step: we mark all assets for bundling
-            MarkAllAssetBundlesAsync(assetsToMark);
+            MarkAllAssetBundles(assetsToMark);
 
             // Fifth step: we build the Asset Bundles
             env.assetDatabase.Refresh();
@@ -1002,7 +1002,7 @@ namespace DCL.ABConverter
         /// </summary>
         /// <param name="assetPaths">The paths to be built.</param>
         /// <param name="BuildTarget"></param>
-        private void MarkAllAssetBundlesAsync(List<AssetPath> assetPaths)
+        private void MarkAllAssetBundles(List<AssetPath> assetPaths)
         {
             if (IsInitialSceneStateCompatible(out List<SceneComponent> convertedJSONComponents))
             {
@@ -1799,4 +1799,5 @@ namespace DCL.ABConverter
         }
     }
 }
+
 
