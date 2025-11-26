@@ -172,13 +172,6 @@ namespace DCL.ABConverter
             if (isExitForced)
                 return;
 
-            //TODO: if to do positioning
-            //Im assuming that objects are placed on scene and that they are searchable
-            if (true)
-            {
-                InitialSceneStateGenerator.GenerateInitialSceneState(env, entityDTO);
-            }
-
             await ProcessAllGltfs();
 
 

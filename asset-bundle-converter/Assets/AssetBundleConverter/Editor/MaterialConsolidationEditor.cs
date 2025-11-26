@@ -29,7 +29,8 @@ namespace DCL.ABConverter.Editor
         public static void QuickConsolidate()
         {
             if (EditorUtility.DisplayDialog("Consolidate Materials",
-                "This will consolidate all materials and textures from GLB/GLTF assets into shared folders. Continue?",
+                "This will consolidate all materials and textures from GLB/GLTF assets into shared folders.\n" +
+                "New prefabs will be created with '_Consolidated' suffix. Continue?",
                 "Yes", "Cancel"))
             {
                 ConsolidateMaterialsAndTextures("Assets/_Downloaded/", true);
@@ -43,8 +44,10 @@ namespace DCL.ABConverter.Editor
 
             EditorGUILayout.HelpBox(
                 "This tool consolidates duplicate materials and textures across all GLB/GLTF assets.\n" +
-                "All unique materials will be moved to: " + SHARED_MATERIALS_FOLDER + "\n" +
-                "All unique textures will be moved to: " + SHARED_TEXTURES_FOLDER,
+                "It creates new prefabs with shared materials assigned.\n\n" +
+                "Unique materials will be saved to: " + SHARED_MATERIALS_FOLDER + "\n" +
+                "Unique textures will be saved to: " + SHARED_TEXTURES_FOLDER + "\n" +
+                "New prefabs will be created next to original assets with '_Consolidated' suffix.",
                 MessageType.Info);
 
             EditorGUILayout.Space();
@@ -153,24 +156,32 @@ namespace DCL.ABConverter.Editor
             int totalProgress = gltfAssets.Count * 2; // Two passes
             int currentProgress = 0;
 
-            Debug.Log($"\n=== STEP 1: ANALYZING MATERIALS ===");
+            Debug.Log($"\n=== STEP 1: ANALYZING MATERIALS AND CREATING PREFABS ===");
 
+            int prefabsCreated = 0;
             foreach (GameObject gltfObject in gltfAssets)
             {
                 currentProgress++;
                 EditorUtility.DisplayProgressBar("Consolidating Materials",
-                    $"Analyzing {gltfObject.name}...",
+                    $"Processing {gltfObject.name}...",
                     currentProgress / (float)totalProgress);
 
                 Debug.Log($"\nProcessing GLB: {gltfObject.name}");
                 string assetPath = AssetDatabase.GetAssetPath(gltfObject);
                 Debug.Log($"  Path: {assetPath}");
 
-                var renderers = gltfObject.GetComponentsInChildren<Renderer>(true);
+                // Instantiate the GLTF object in the scene
+                GameObject instance = Object.Instantiate(gltfObject);
+                instance.name = gltfObject.name;
+
+                var renderers = instance.GetComponentsInChildren<Renderer>(true);
                 Debug.Log($"  Found {renderers.Length} renderers");
+
+                bool materialsReplaced = false;
 
                 foreach (var renderer in renderers)
                 {
+                    List<Material> newMaterials = new List<Material>();
                     var materials = renderer.sharedMaterials;
                     Debug.Log($"    Renderer '{renderer.name}' has {materials.Length} materials");
 
@@ -179,6 +190,7 @@ namespace DCL.ABConverter.Editor
                         if (mat == null)
                         {
                             Debug.LogWarning($"      NULL material found!");
+                            newMaterials.Add(null);
                             continue;
                         }
 
@@ -186,13 +198,7 @@ namespace DCL.ABConverter.Editor
                         if (string.IsNullOrEmpty(matPath))
                         {
                             Debug.LogWarning($"      Material has no asset path: {mat.name}");
-                            continue;
-                        }
-
-                        // Skip if already in shared folder
-                        if (matPath.Contains("_ReusedMaterial"))
-                        {
-                            Debug.Log($"      Material already in shared folder: {mat.name}");
+                            newMaterials.Add(mat);
                             continue;
                         }
 
@@ -204,86 +210,68 @@ namespace DCL.ABConverter.Editor
                         string matHash = ComputeMaterialHash(mat);
                         Debug.Log($"        Hash: {matHash.Substring(0, 16)}...");
 
-                        // Track this material path for replacement
-                        if (!materialPathToHash.ContainsKey(matPath))
-                        {
-                            materialPathToHash[matPath] = matHash;
-                        }
-
                         if (!materialCache.ContainsKey(matHash))
                         {
                             Debug.Log($"        Creating shared material...");
                             ProcessMaterialTextures(mat, textureCache);
                             Material sharedMat = CreateSharedMaterial(mat, matHash, textureCache);
                             materialCache[matHash] = sharedMat;
+                            newMaterials.Add(sharedMat);
                             Debug.Log($"        Created at: {AssetDatabase.GetAssetPath(sharedMat)}");
                         }
                         else
                         {
+                            newMaterials.Add(materialCache[matHash]);
                             Debug.Log($"        Shared material already exists (reusing)");
                         }
+                        materialsReplaced = true;
+                    }
+
+                    if (newMaterials.Count >= 1)
+                    {
+                        Debug.Log($"        Assigning {newMaterials.Count} shared material(s) to Renderer '{renderer.name}'");
+                        renderer.sharedMaterials = newMaterials.ToArray();
                     }
                 }
-            }
 
-            // Step 2: Replace original material files with shared materials
-            Debug.Log($"\n=== STEP 2: REPLACING MATERIAL FILES ===");
-            int replacedFiles = 0;
-
-            foreach (var kvp in materialPathToHash)
-            {
-                string originalMatPath = kvp.Key;
-                string matHash = kvp.Value;
-
-                if (!materialCache.TryGetValue(matHash, out Material sharedMat))
+                // Create a new prefab at the same location as the original asset
+                if (materialsReplaced)
                 {
-                    Debug.LogError($"No shared material found for hash: {matHash}");
-                    continue;
-                }
+                    string prefabFolder = Path.GetDirectoryName(assetPath);
+                    string prefabName = Path.GetFileNameWithoutExtension(assetPath) + "_Consolidated.prefab";
+                    string prefabPath = Path.Combine(prefabFolder, prefabName).Replace("\\", "/");
 
-                string sharedMatPath = AssetDatabase.GetAssetPath(sharedMat);
-
-                Debug.Log($"Replacing: {originalMatPath}");
-                Debug.Log($"  With: {sharedMatPath}");
-
-                // Delete and copy to replace the file
-                if (AssetDatabase.DeleteAsset(originalMatPath))
-                {
-                    if (AssetDatabase.CopyAsset(sharedMatPath, originalMatPath))
+                    Debug.Log($"  Creating prefab at: {prefabPath}");
+                    
+                    // Save the instance as a new prefab
+                    GameObject savedPrefab = PrefabUtility.SaveAsPrefabAsset(instance, prefabPath);
+                    if (savedPrefab != null)
                     {
-                        replacedFiles++;
-                        Debug.Log($"  Success!");
+                        Debug.Log($"  Prefab created successfully!");
+                        prefabsCreated++;
                     }
                     else
                     {
-                        Debug.LogError($"  Failed to copy!");
+                        Debug.LogError($"  Failed to create prefab at {prefabPath}");
                     }
                 }
-                else
-                {
-                    Debug.LogError($"  Failed to delete original!");
-                }
+
+                // Clean up the instance from the scene
+                Object.DestroyImmediate(instance);
+
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
             }
 
-            Debug.Log($"\nReplaced {replacedFiles} material files");
+            Debug.Log($"\n=== PREFABS CREATED: {prefabsCreated} ===");
 
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
+            //Debug.Log($"\n=== TOTAL MATERIAL REPLACEMENTS: {totalReplacements} ===");
 
-            // Step 3: Reimport GLBs so they pick up the new materials
-            Debug.Log($"\n=== STEP 3: REIMPORTING GLBs ===");
-            foreach (GameObject gltfObject in gltfAssets)
-            {
-                string assetPath = AssetDatabase.GetAssetPath(gltfObject);
-                Debug.Log($"Reimporting: {assetPath}");
-                AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
-            }
-
-            // Step 4: Verify created materials and textures
+            // Step 3: Verify created materials and textures
             Debug.Log($"\n=== CONSOLIDATION SUMMARY ===");
             Debug.Log($"Created {materialCache.Count} unique shared materials");
             Debug.Log($"Created {textureCache.Count} unique shared textures");
-            Debug.Log($"Replaced {replacedFiles} material files");
+            //Debug.Log($"Total material replacements: {totalReplacements}");
 
             Debug.Log($"\n=== SHARED MATERIALS ===");
             foreach (var kvp in materialCache)
@@ -321,11 +309,11 @@ namespace DCL.ABConverter.Editor
             string result = $"Consolidation Complete!\n\n" +
                           $"Created Unique Materials: {materialCache.Count}\n" +
                           $"Created Unique Textures: {textureCache.Count}\n" +
-                          $"Material Files Replaced: {replacedFiles}\n" +
-                          $"GLBs Reimported: {gltfAssets.Count}\n\n" +
+                          $"Prefabs Created: {prefabsCreated}\n\n" +
                           $"Check console for detailed output.\n" +
                           $"Materials saved to: {SHARED_MATERIALS_FOLDER}\n" +
-                          $"Textures saved to: {SHARED_TEXTURES_FOLDER}";
+                          $"Textures saved to: {SHARED_TEXTURES_FOLDER}\n" +
+                          $"Prefabs saved next to original GLB/GLTF files with '_Consolidated' suffix.";
 
             Debug.Log(result);
             EditorUtility.DisplayDialog("Consolidation Complete", result, "OK");
