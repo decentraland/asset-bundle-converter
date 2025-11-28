@@ -110,7 +110,8 @@ public class LODConversion
         AssetDatabase.WriteImportSettingsIfDirty(lodPathHandler.filePathRelativeToDataPath);
         AssetDatabase.ImportAsset(lodPathHandler.filePath, ImportAssetOptions.ForceUpdate);
 
-        SceneCircumscribedPlanesCalculator.DisableObjectsOutsideBounds(parcel, instantiatedLOD);
+        if(!parcel.GetDecodedParcels().Contains(new Vector2Int(-66,-56)))
+            SceneCircumscribedPlanesCalculator.DisableObjectsOutsideBounds(parcel, instantiatedLOD);
 
         PrefabUtility.SaveAsPrefabAsset(instantiatedLOD,  $"{lodPathHandler.fileDirectoryRelativeToDataPath}/{lodPathHandler.fileNameWithoutExtension}.prefab");
         Object.DestroyImmediate(instantiatedLOD);
