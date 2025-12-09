@@ -354,17 +354,9 @@ namespace DCL.ABConverter
                     if (animationMethod == AnimationMethod.Mecanim)
                     {
                         if (isEmote)
-                        {
                             CreateAnimatorController(gltfImport, directory);
-                        }
                         else
                             CreateLayeredAnimatorController(gltfImport, directory);
-                    }
-
-                    if (isEmote && entityDTO.metadata.IsSocialEmote)
-                    {
-                        GameObject originalGltf = env.assetDatabase.LoadAssetAtPath<GameObject>(relativePath);
-                        CreateEmoteMetadataFile(gltfImport, originalGltf, gltf.AssetPath.hash);
                     }
 
                     log.Verbose($"Importing {relativePath}");
@@ -631,87 +623,6 @@ namespace DCL.ABConverter
                 loopBackTransition.duration = 0;
                 loopBackTransition.hasExitTime = true;
             }
-
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
-        }
-
-        private void CreateEmoteMetadataFile(IGltfImport gltfImport, GameObject gltfObject, string emoteHash)
-        {
-            IReadOnlyList<AnimationClip> clips = gltfImport.GetClips();
-            if (clips == null)
-                return;
-
-            string emoteDataFilename = "EmoteData.json";
-
-            SocialEmoteOutcomeAnimationPosesInJson socialEmoteOutcomeAnimationStartPoses = new SocialEmoteOutcomeAnimationPosesInJson()
-            {
-                Poses = new SocialEmoteOutcomeAnimationPose[entityDTO.metadata.emoteDataADR74.outcomes!.Length]
-            };
-
-            foreach (AnimationClip animationClip in clips)
-            {
-                // If the clip corresponds to the avatar that reacts to the social emote...
-                if (entityDTO.metadata.IsSocialEmote && animationClip.name.EndsWith("_AvatarOther"))
-                {
-                    EditorCurveBinding[] curveBindings = AnimationUtility.GetCurveBindings(animationClip);
-
-                    // Gets the position and rotation of the hips at the beginning of the animation
-                    Vector3 hipsFirstWorldPosition = Vector3.zero;
-                    Quaternion hipsFirstWorldRotation = Quaternion.identity;
-
-                    foreach (EditorCurveBinding binding in curveBindings)
-                    {
-                        if (binding.path.EndsWith("Avatar_Hips"))
-                        {
-                            AnimationCurve curve = AnimationUtility.GetEditorCurve(animationClip, binding);
-
-                            if (curve.keys.Length > 0)
-                            {
-                                if (binding.propertyName == "m_LocalPosition.x")
-                                    hipsFirstWorldPosition.x = curve.Evaluate(0.0f);
-                                else if (binding.propertyName == "m_LocalPosition.y")
-                                    hipsFirstWorldPosition.y = curve.Evaluate(0.0f);
-                                else if (binding.propertyName == "m_LocalPosition.z")
-                                    hipsFirstWorldPosition.z = curve.Evaluate(0.0f);
-                                else if (binding.propertyName == "m_LocalRotation.x")
-                                    hipsFirstWorldRotation.x = curve.Evaluate(0.0f);
-                                else if (binding.propertyName == "m_LocalRotation.y")
-                                    hipsFirstWorldRotation.y = curve.Evaluate(0.0f);
-                                else if (binding.propertyName == "m_LocalRotation.z")
-                                    hipsFirstWorldRotation.z = curve.Evaluate(0.0f);
-                                else if (binding.propertyName == "m_LocalRotation.w")
-                                    hipsFirstWorldRotation.w = curve.Evaluate(0.0f);
-                            }
-                        }
-                    }
-
-                    if (gltfObject != null)
-                    {
-                        Transform armatureOther = gltfObject.transform.Find("Armature_Other");
-                        hipsFirstWorldPosition = armatureOther.localPosition + armatureOther.localRotation * Vector3.Scale(hipsFirstWorldPosition, armatureOther.localScale);
-                        hipsFirstWorldRotation = armatureOther.localRotation * hipsFirstWorldRotation;
-                    }
-
-                    // Searches for the outcome in the metadata and stores the pose data
-                    // Since clips appear in an undetermined order, this way we store the poses in the same order as outcomes appear in the metadata
-                    for (int i = 0; i < entityDTO.metadata.emoteDataADR74.outcomes.Length; ++i)
-                    {
-                        if (entityDTO.metadata.emoteDataADR74.outcomes[i].clips.Armature_Other.animation == animationClip.name)
-                        {
-                            socialEmoteOutcomeAnimationStartPoses.Poses[i] = new SocialEmoteOutcomeAnimationPose(hipsFirstWorldPosition, hipsFirstWorldRotation);
-                            break;
-                        }
-                    }
-                }
-            }
-
-            string json = JsonConvert.SerializeObject(socialEmoteOutcomeAnimationStartPoses, new JsonSerializerSettings
-                                                                                                {
-                                                                                                    Formatting = Formatting.Indented,
-                                                                                                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore
-                                                                                                });
-            File.WriteAllText($"{finalDownloadedPath}/{emoteHash}/{emoteDataFilename}", json);
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -1799,5 +1710,4 @@ namespace DCL.ABConverter
         }
     }
 }
-
 
