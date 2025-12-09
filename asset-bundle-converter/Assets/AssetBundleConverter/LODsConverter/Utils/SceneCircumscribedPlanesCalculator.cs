@@ -7,7 +7,9 @@ namespace AssetBundleConverter.LODsConverter.Utils
     {
         private const float PARCEL_SIZE = 16.0f;
         private const float EXTEND_AMOUNT = 0.05f;
-        private const float EXTEND_AMOUNT_FOR_DISABLE = 0.5f;
+        private const float EXTEND_AMOUNT_FOR_DISABLE_LOD_0 = 0.5f;
+        private const float EXTEND_AMOUNT_FOR_DISABLE_LOD_1 = 2f;
+
 
         private static ParcelCorners CalculateCorners(Vector2Int parcelPosition)
         {
@@ -52,20 +54,22 @@ namespace AssetBundleConverter.LODsConverter.Utils
             }
         }
 
-        private static Bounds CalculateSceneBoundingBox(Vector4 scenePlane, int parcelCount)
+        private static Bounds CalculateSceneBoundingBox(Vector4 scenePlane, int parcelCount, bool isLOD0)
         {
+            float extendedAmountForDisable = isLOD0 ? EXTEND_AMOUNT_FOR_DISABLE_LOD_0 : EXTEND_AMOUNT_FOR_DISABLE_LOD_1;
+
             Vector3 center = new Vector3((scenePlane[0] + scenePlane[1]) / 2, 0, (scenePlane[2] + scenePlane[3]) / 2);
-            var size = new Vector3(scenePlane[1] - scenePlane[0]  + EXTEND_AMOUNT_FOR_DISABLE, CalculateSceneHeight(parcelCount) * 2, scenePlane[3] - scenePlane[2] + EXTEND_AMOUNT_FOR_DISABLE);
+            var size = new Vector3(scenePlane[1] - scenePlane[0]  + extendedAmountForDisable, CalculateSceneHeight(parcelCount) * 2, scenePlane[3] - scenePlane[2] + extendedAmountForDisable);
             return new Bounds(center, size);
         }
 
         public static float CalculateSceneHeight(int parcelCount) =>
             Mathf.Log(parcelCount + 1, 2) * 20;
 
-        public static void DisableObjectsOutsideBounds(Parcel parcel, GameObject parent)
+        public static void DisableObjectsOutsideBounds(Parcel parcel, GameObject parent, bool isLOD0)
         {
             parent.transform.position = GetPositionByParcelPosition(parcel.GetDecodedBaseParcel());
-            var sceneBoundingBox = CalculateSceneBoundingBox(CalculateScenePlane(parcel.GetDecodedParcels()), parcel.GetDecodedParcels().Count);
+            var sceneBoundingBox = CalculateSceneBoundingBox(CalculateScenePlane(parcel.GetDecodedParcels()), parcel.GetDecodedParcels().Count, isLOD0);
             foreach (var renderer in parent.GetComponentsInChildren<MeshFilter>()) {
                 Bounds meshBounds = renderer.sharedMesh.bounds;
                 meshBounds.center = renderer.transform.TransformPoint(meshBounds.center);
