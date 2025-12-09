@@ -94,7 +94,9 @@ public class LODConversion
 
         float sceneHeight = SceneCircumscribedPlanesCalculator.CalculateSceneHeight(parcel.GetDecodedParcels().Count);
 
-        if (lodPathHandler.filePath.Contains("_0"))
+        bool isLOD0 = lodPathHandler.filePath.Contains("_0");
+
+        if (isLOD0)
         {
             SetDCLShaderMaterial(lodPathHandler, instantiatedLOD, false, usedLOD0Shader, scenePlane, sceneHeight);
             ColliderGenerator.GenerateColliders(instantiatedLOD);
@@ -110,7 +112,7 @@ public class LODConversion
         AssetDatabase.WriteImportSettingsIfDirty(lodPathHandler.filePathRelativeToDataPath);
         AssetDatabase.ImportAsset(lodPathHandler.filePath, ImportAssetOptions.ForceUpdate);
 
-        SceneCircumscribedPlanesCalculator.DisableObjectsOutsideBounds(parcel, instantiatedLOD);
+        SceneCircumscribedPlanesCalculator.DisableObjectsOutsideBounds(parcel, instantiatedLOD, isLOD0);
 
         PrefabUtility.SaveAsPrefabAsset(instantiatedLOD,  $"{lodPathHandler.fileDirectoryRelativeToDataPath}/{lodPathHandler.fileNameWithoutExtension}.prefab");
         Object.DestroyImmediate(instantiatedLOD);
