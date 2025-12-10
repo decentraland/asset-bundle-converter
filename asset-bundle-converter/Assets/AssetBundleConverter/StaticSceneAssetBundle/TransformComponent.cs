@@ -158,4 +158,9 @@ namespace AssetBundleConverter.StaticSceneAssetBundle
         public float b;
         public float a;
     }
+
+    public class VisibilityData
+    {
+        public bool visible;
+    }
 }
