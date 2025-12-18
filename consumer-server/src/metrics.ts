@@ -2,7 +2,7 @@ import { IMetricsComponent } from '@well-known-components/interfaces'
 import { validateMetricsDeclaration } from '@well-known-components/metrics'
 import { metricDeclarations as logsMetricsDeclarations } from '@well-known-components/logger'
 import { queueMetrics } from './adapters/task-queue'
-import { getDefaultHttpMetrics } from '@well-known-components/http-server'
+import { getDefaultHttpMetrics } from '@dcl/wkc-http-server'
 
 export const metricDeclarations = {
   ...getDefaultHttpMetrics(),
