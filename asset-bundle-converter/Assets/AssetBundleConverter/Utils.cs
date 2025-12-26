@@ -569,4 +569,23 @@ namespace DCL.ABConverter
         public static string EnsureStartWithSlash(string path) =>
             !path.StartsWith('/') ? $"/{path}" : path;
     }
+
+    public static class AssetInstantiator
+    {
+        public static GameObject InstanceGameObject(GameObject originalGLTF)
+        {
+            GameObject clone = (GameObject)PrefabUtility.InstantiatePrefab(originalGLTF);
+            var renderers = clone.GetComponentsInChildren<Renderer>(true);
+
+            foreach (Renderer renderer in renderers)
+            {
+                if (renderer.name.ToLower().Contains("_collider"))
+                    renderer.enabled = false;
+                //TODO (JUANI): Why was this added?
+                if (renderer.sharedMaterial == null || renderer.sharedMaterials == null || renderer.sharedMaterials.Length == 0)
+                    renderer.enabled = false;
+            }
+            return clone;
+        }
+    }
 }

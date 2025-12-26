@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using AssetBundleConverter;
 using AssetBundleConverter.Editor;
+using AssetBundleConverter.InitialSceneStateGenerator;
 using AssetBundleConverter.StaticSceneAssetBundle;
 using AssetBundleConverter.Wrappers.Interfaces;
 using Cysharp.Threading.Tasks;
@@ -171,6 +172,8 @@ namespace DCL.ABConverter
 
             if (isExitForced)
                 return;
+
+            InitialSceneStateGenerator.GenerateInitialSceneState(env, entityDTO);
 
             await ProcessAllGltfs();
 
@@ -394,12 +397,8 @@ namespace DCL.ABConverter
                         if (originalGltf != null)
                             try
                             {
-                                var clone = (GameObject)PrefabUtility.InstantiatePrefab(originalGltf);
-                                var renderers = clone.GetComponentsInChildren<Renderer>(true);
-
-                                foreach (Renderer renderer in renderers)
-                                    if (renderer.name.ToLower().Contains("_collider"))
-                                        renderer.enabled = false;
+                                GameObject instance = AssetInstantiator.InstanceGameObject(originalGltf);
+                                InitialSceneStateGenerator.PlaceAsset(gltf.AssetPath.filePath, instance);
                             }
                             catch (Exception e)
                             {
