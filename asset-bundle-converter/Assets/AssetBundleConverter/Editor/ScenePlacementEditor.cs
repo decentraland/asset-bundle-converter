@@ -67,8 +67,7 @@ namespace DCL.ABConverter.Editor
 
             EditorGUILayout.HelpBox(
                 "This tool loads a scene manifest and places all assets from the _Downloaded folder into the scene " +
-                "according to their positions and transforms defined in the manifest.\n\n" +
-                "Consolidated prefabs (_Consolidated.prefab) will be used when available, falling back to original GLTF assets.",
+                "according to their positions and transforms defined in the manifest.",
                 MessageType.Info);
 
             EditorGUILayout.Space();
@@ -226,12 +225,8 @@ namespace DCL.ABConverter.Editor
 
                 Debug.Log("Scene state generated. Finding GLB assets...");
 
-                // Find all GLB/GLTF files in the downloaded folder and map them by hash
-                // Prefer _Consolidated prefabs if they exist
                 var gltfAssetsByHash = new Dictionary<string, GameObject>(); // hash -> GameObject
                 var gltfAssetPathsByHash = new Dictionary<string, string>(); // hash -> file path from manifest
-                var consolidatedAssetCount = 0;
-                var originalAssetCount = 0;
 
                 // Search for all files in the directory
                 if (Directory.Exists(downloadedFolder))
@@ -244,34 +239,7 @@ namespace DCL.ABConverter.Editor
                             filePath.EndsWith(".gltf", System.StringComparison.OrdinalIgnoreCase))
                         {
                             string assetPath = filePath.Replace("\\", "/");
-
-                            // Check if a consolidated prefab exists
-                            string consolidatedPath = Path.ChangeExtension(assetPath, null) + "_Consolidated.prefab";
-                            GameObject asset = null;
-                            bool isConsolidated = false;
-
-                            if (File.Exists(consolidatedPath))
-                            {
-                                // Prefer the consolidated prefab
-                                asset = AssetDatabase.LoadAssetAtPath<GameObject>(consolidatedPath);
-                                if (asset != null)
-                                {
-                                    isConsolidated = true;
-                                    consolidatedAssetCount++;
-                                    Debug.Log($"Using consolidated prefab: {consolidatedPath}");
-                                }
-                            }
-
-                            // Fallback to original GLTF if no consolidated prefab exists
-                            if (asset == null)
-                            {
-                                asset = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
-                                if (asset != null)
-                                {
-                                    originalAssetCount++;
-                                    Debug.Log($"Using original GLTF: {assetPath}");
-                                }
-                            }
+                            GameObject asset = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
 
                             if (asset != null)
                             {
@@ -286,7 +254,7 @@ namespace DCL.ABConverter.Editor
                                     if (hashToFileMap.TryGetValue(hash, out string manifestFilePath))
                                     {
                                         gltfAssetPathsByHash[hash] = manifestFilePath;
-                                        Debug.Log($"Found asset: hash={hash}, manifest path={manifestFilePath}, type={( isConsolidated ? "Consolidated" : "Original")}");
+                                        Debug.Log($"Found asset: hash={hash}, manifest path={manifestFilePath}");
                                     }
                                     else
                                     {
@@ -301,8 +269,6 @@ namespace DCL.ABConverter.Editor
                 {
                     Debug.LogError($"Downloaded folder does not exist: {downloadedFolder}");
                 }
-
-                Debug.Log($"Asset types - Consolidated: {consolidatedAssetCount}, Original: {originalAssetCount}");
 
                 Debug.Log($"Found {gltfAssetsByHash.Count} GLB/GLTF assets. Placing in scene...");
 
@@ -333,7 +299,8 @@ namespace DCL.ABConverter.Editor
                         int beforeCount = GameObject.FindObjectsOfType<GameObject>().Length;
 
                         // Use the manifest file path to place the asset
-                        InitialSceneStateGenerator.PlaceAsset(manifestFilePath, AssetInstantiator.InstanceGameObject(asset));
+                        // Pass the prefab directly - PlaceAsset now handles instantiation internally
+                        InitialSceneStateGenerator.PlaceAsset(manifestFilePath, asset);
 
                         int afterCount = FindObjectsOfType<GameObject>().Length;
                         int instancesCreated = afterCount - beforeCount;
@@ -359,8 +326,6 @@ namespace DCL.ABConverter.Editor
                 string result = $"Scene Placement Complete!\n\n" +
                               $"Scene ID: {sceneId}\n" +
                               $"Assets Found: {gltfAssetsByHash.Count}\n" +
-                              $"  - Consolidated Prefabs: {consolidatedAssetCount}\n" +
-                              $"  - Original GLTF: {originalAssetCount}\n" +
                               $"Assets Mapped: {gltfAssetPathsByHash.Count}\n" +
                               $"Instances Placed: {placedCount}";
 

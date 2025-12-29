@@ -395,8 +395,9 @@ namespace DCL.ABConverter
                         if (originalGltf != null)
                             try
                             {
-                                GameObject instance = AssetInstantiator.InstanceGameObject(originalGltf);
-                                InitialSceneStateGenerator.PlaceAsset(gltf.AssetPath.filePath, instance);
+                                // Pass the prefab directly - PlaceAsset now handles instantiation internally
+                                // for each entity that uses this asset
+                                InitialSceneStateGenerator.PlaceAsset(gltf.AssetPath.filePath, originalGltf);
                             }
                             catch (Exception e)
                             {

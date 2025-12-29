@@ -21,7 +21,7 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
         private static List<SceneComponent> convertedJSONComponents = new List<SceneComponent>();
         private static Dictionary<int, bool> entityVisibility = new Dictionary<int, bool>();
 
-        public static void PlaceAsset(string assetPath, GameObject instancedGameObject)
+        public static void PlaceAsset(string assetPath, GameObject prefab)
         {
             if (gltfsComponents.TryGetValue(assetPath, out HashSet<int> Component))
             {
@@ -29,11 +29,13 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
 
                 foreach (int entityId in entityIds)
                 {
-                    // Check if entity has visibility component and if it's not visible, skip instantiation
+                    // Check if entity has visibility component and if it's not visible, skip instantiation entirely
                     if (entityVisibility.TryGetValue(entityId, out bool isVisible) && !isVisible)
-                    {
                         continue;
-                    }
+
+                    // Create a new instance for each entity - this avoids scale accumulation
+                    // and ensures each entity has its own GameObject
+                    GameObject instancedGameObject = AssetInstantiator.InstanceGameObject(prefab);
 
                     Matrix4x4 worldMatrix = GltfTransformDumper.DumpGltfWorldTransforms(convertedJSONComponents, entityId);
 
@@ -60,7 +62,7 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
                     Quaternion finalRotation = jsonRotation * prefabRotation;
                     Vector3 finalScale = Vector3.Scale(prefabScale, jsonScale);
 
-                    UnityEngine.Debug.Log($"Entity {entityId} - {instancedGameObject.name}: prefab pos={prefabPosition}, JSON pos={jsonPosition}, final pos={finalPosition}");
+                    UnityEngine.Debug.Log($"Entity {entityId} - {instancedGameObject.name}: prefab pos={prefabPosition}, JSON pos={jsonPosition}, final pos={finalPosition}, JSON scale={jsonScale}, final scale={finalScale}");
 
                     // Apply all transforms
                     instancedGameObject.transform.position = finalPosition;
