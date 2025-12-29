@@ -100,7 +100,7 @@ namespace AssetBundleConverter.Editor
                 if (animator != null)
                 {
                     var folderName = $"{Path.GetDirectoryName(ctx.assetPath)}/Animator/";
-                    string filePath = folderName + $"animatorController_{hash}.controller";
+                    string filePath = folderName + "animatorController.controller";
                     AnimatorController animationController = AssetDatabase.LoadAssetAtPath<AnimatorController>(filePath);
                     animator.runtimeAnimatorController = animationController;
                 }
