@@ -7,11 +7,8 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using AssetBundleConverter;
 using AssetBundleConverter.Editor;
-using AssetBundleConverter.StaticSceneAssetBundle;
 using AssetBundleConverter.Wrappers.Interfaces;
-using Cysharp.Threading.Tasks;
 using GLTFast;
-using Newtonsoft.Json;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -356,9 +353,9 @@ namespace DCL.ABConverter
                     if (animationMethod == AnimationMethod.Mecanim)
                     {
                         if (isEmote)
-                            CreateAnimatorController(gltfImport, directory);
+                            CreateAnimatorController(gltfImport, directory, gltf.AssetPath.hash);
                         else
-                            CreateLayeredAnimatorController(gltfImport, directory);
+                            CreateLayeredAnimatorController(gltfImport, directory, gltf.AssetPath.hash);
                     }
 
                     log.Verbose($"Importing {relativePath}");
@@ -441,7 +438,7 @@ namespace DCL.ABConverter
             log.Info("Ended importing GLTFs");
         }
 
-        private void CreateLayeredAnimatorController(IGltfImport gltfImport, string directory)
+        private void CreateLayeredAnimatorController(IGltfImport gltfImport, string directory, string hash)
         {
             var clips = gltfImport.GetClips();
             if (clips == null) return;
@@ -451,7 +448,7 @@ namespace DCL.ABConverter
             if (!env.directory.Exists(animatorRoot))
                 env.directory.CreateDirectory(animatorRoot);
 
-            var filePath = $"{animatorRoot}animatorController.controller";
+            var filePath = $"{animatorRoot}animatorController_{hash}.controller";
             var controller = AnimatorController.CreateAnimatorControllerAtPath(filePath);
 
             List<string> layerNames = new List<string>();
@@ -567,7 +564,7 @@ namespace DCL.ABConverter
             AssetDatabase.Refresh();
         }
 
-        private void CreateAnimatorController(IGltfImport gltfImport, string directory)
+        private void CreateAnimatorController(IGltfImport gltfImport, string directory, string hash)
         {
             var clips = gltfImport.GetClips();
             if (clips == null) return;
@@ -577,7 +574,7 @@ namespace DCL.ABConverter
             if (!env.directory.Exists(animatorRoot))
                 env.directory.CreateDirectory(animatorRoot);
 
-            var filePath = $"{animatorRoot}animatorController.controller";
+            var filePath = $"{animatorRoot}animatorController_{hash}.controller";
             var controller = AnimatorController.CreateAnimatorControllerAtPath(filePath);
             var rootStateMachine = controller.layers[0].stateMachine;
 
