@@ -60,57 +60,92 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
             }
         }
 
-        public void PlaceAsset(string assetPath, GameObject prefab)
+        /// <summary>
+        /// Always instantiates the asset. If manifest data exists, places instances at their defined transforms.
+        /// If not in manifest, creates a single instance at origin.
+        /// Use this from AssetBundleConverter where all assets must be instantiated.
+        /// </summary>
+        public void InstantiateAsset(string assetPath, GameObject prefab)
         {
-            if (!IsCompatible) return;
-
-            if (gltfsComponents.TryGetValue(assetPath, out HashSet<int> Component))
+            // Check if this asset has placement data in the manifest
+            if (IsCompatible && gltfsComponents.TryGetValue(assetPath, out HashSet<int> Component))
             {
                 List<int> entityIds = Component.ToList();
 
                 foreach (int entityId in entityIds)
                 {
-                    // Check if entity has visibility component and if it's not visible, skip instantiation entirely
+                    // Skip invisible entities
                     if (entityVisibility.TryGetValue(entityId, out bool isVisible) && !isVisible)
                         continue;
 
-                    // Create a new instance for each entity - this avoids scale accumulation
-                    // and ensures each entity has its own GameObject
-                    GameObject instancedGameObject = AssetInstantiator.InstanceGameObject(prefab);
-
-                    Matrix4x4 worldMatrix = GltfTransformDumper.DumpGltfWorldTransforms(convertedJSONComponents, entityId);
-
-                    // Extract transforms from JSON world matrix
-                    Vector3 jsonPosition = worldMatrix.GetColumn(3);
-
-                    Vector3 forward = worldMatrix.GetColumn(2); // Z axis
-                    Vector3 up = worldMatrix.GetColumn(1); // Y axis
-                    Quaternion jsonRotation = Quaternion.LookRotation(forward, up);
-
-                    Vector3 jsonScale = new Vector3(
-                        worldMatrix.GetColumn(0).magnitude,
-                        worldMatrix.GetColumn(1).magnitude,
-                        worldMatrix.GetColumn(2).magnitude
-                    );
-
-                    // Combine prefab's baked-in transforms with JSON transforms
-                    // This preserves any internal GLTF position/rotation/scaling offsets
-                    Vector3 prefabPosition = instancedGameObject.transform.localPosition;
-                    Quaternion prefabRotation = instancedGameObject.transform.localRotation;
-                    Vector3 prefabScale = instancedGameObject.transform.localScale;
-
-                    Vector3 finalPosition = jsonPosition + jsonRotation * prefabPosition;
-                    Quaternion finalRotation = jsonRotation * prefabRotation;
-                    Vector3 finalScale = Vector3.Scale(prefabScale, jsonScale);
-
-                    UnityEngine.Debug.Log($"Entity {entityId} - {instancedGameObject.name}: prefab pos={prefabPosition}, JSON pos={jsonPosition}, final pos={finalPosition}, JSON scale={jsonScale}, final scale={finalScale}");
-
-                    // Apply all transforms
-                    instancedGameObject.transform.position = finalPosition;
-                    instancedGameObject.transform.rotation = finalRotation;
-                    instancedGameObject.transform.localScale = finalScale;
+                    InstantiateWithTransform(prefab, entityId);
                 }
             }
+
+            // Always create at least one instance (at origin if no manifest data)
+            AssetInstantiator.InstanceGameObject(prefab);
+        }
+
+        /// <summary>
+        /// Only places assets that exist in the manifest with valid transforms.
+        /// Respects visibility - invisible entities are skipped entirely.
+        /// Use this from ScenePlacementEditor for manifest-driven placement only.
+        /// </summary>
+        public void PlaceAssetFromManifest(string assetPath, GameObject prefab)
+        {
+            if (!IsCompatible) return;
+
+            if (!gltfsComponents.TryGetValue(assetPath, out HashSet<int> Component))
+                return;
+
+            List<int> entityIds = Component.ToList();
+
+            foreach (int entityId in entityIds)
+            {
+                // Skip invisible entities entirely
+                if (entityVisibility.TryGetValue(entityId, out bool isVisible) && !isVisible)
+                    continue;
+
+                InstantiateWithTransform(prefab, entityId);
+            }
+        }
+
+        /// <summary>
+        /// Creates an instance of the prefab and applies the transform from the manifest for the given entity.
+        /// </summary>
+        private void InstantiateWithTransform(GameObject prefab, int entityId)
+        {
+            GameObject instancedGameObject = AssetInstantiator.InstanceGameObject(prefab);
+
+            Matrix4x4 worldMatrix = GltfTransformDumper.DumpGltfWorldTransforms(convertedJSONComponents, entityId);
+
+            // Extract transforms from JSON world matrix
+            Vector3 jsonPosition = worldMatrix.GetColumn(3);
+
+            Vector3 forward = worldMatrix.GetColumn(2); // Z axis
+            Vector3 up = worldMatrix.GetColumn(1); // Y axis
+            Quaternion jsonRotation = Quaternion.LookRotation(forward, up);
+
+            Vector3 jsonScale = new Vector3(
+                worldMatrix.GetColumn(0).magnitude,
+                worldMatrix.GetColumn(1).magnitude,
+                worldMatrix.GetColumn(2).magnitude
+            );
+
+            // Combine prefab's baked-in transforms with JSON transforms
+            // This preserves any internal GLTF position/rotation/scaling offsets
+            Vector3 prefabPosition = instancedGameObject.transform.localPosition;
+            Quaternion prefabRotation = instancedGameObject.transform.localRotation;
+            Vector3 prefabScale = instancedGameObject.transform.localScale;
+
+            Vector3 finalPosition = jsonPosition + jsonRotation * prefabPosition;
+            Quaternion finalRotation = jsonRotation * prefabRotation;
+            Vector3 finalScale = Vector3.Scale(prefabScale, jsonScale);
+
+            // Apply all transforms
+            instancedGameObject.transform.position = finalPosition;
+            instancedGameObject.transform.rotation = finalRotation;
+            instancedGameObject.transform.localScale = finalScale;
         }
 
         public void GenerateISSAssetBundle(List<AssetPath> assetPaths, Dictionary<string, IGltfImport> gltfImporters, string finalDownloadedPath)

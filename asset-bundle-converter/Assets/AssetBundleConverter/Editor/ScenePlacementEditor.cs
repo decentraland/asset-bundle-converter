@@ -298,9 +298,8 @@ namespace DCL.ABConverter.Editor
 
                         int beforeCount = GameObject.FindObjectsOfType<GameObject>().Length;
 
-                        // Use the manifest file path to place the asset
-                        // Pass the prefab directly - PlaceAsset now handles instantiation internally
-                        env.sceneStateGenerator.PlaceAsset(manifestFilePath, asset);
+                        // Only place assets that exist in the manifest with proper transforms
+                        env.sceneStateGenerator.PlaceAssetFromManifest(manifestFilePath, asset);
 
                         int afterCount = FindObjectsOfType<GameObject>().Length;
                         int instancesCreated = afterCount - beforeCount;

@@ -396,9 +396,8 @@ namespace DCL.ABConverter
                         if (originalGltf != null)
                             try
                             {
-                                // Pass the prefab directly - PlaceAsset now handles instantiation internally
-                                // for each entity that uses this asset
-                                env.sceneStateGenerator.PlaceAsset(gltf.AssetPath.filePath, originalGltf);
+                                // Always instantiate - uses manifest transforms if available, otherwise at origin
+                                env.sceneStateGenerator.InstantiateAsset(gltf.AssetPath.filePath, originalGltf);
                             }
                             catch (Exception e)
                             {
