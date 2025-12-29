@@ -1,9 +1,12 @@
 // unset:none
 using AssetBundleConverter.StaticSceneAssetBundle;
+using AssetBundleConverter.Wrappers.Interfaces;
 using DCL;
+using DCL.ABConverter;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -67,6 +70,100 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
             }
         }
 
+        public static bool GenerateISSAssetBundle(Environment env, ContentServerUtils.EntityMappingsDTO entityDTO,
+            List<AssetPath> assetPaths, Dictionary<string, IGltfImport> gltfImporters, string finalDownloadedPath)
+        {
+            if (IsInitialSceneStateCompatible(env, entityDTO))
+            {
+                string staticSceneABName = $"staticScene_{entityDTO.id}{PlatformUtils.GetPlatform()}";
+                var asset = ScriptableObject.CreateInstance<StaticSceneDescriptor>();
+
+                foreach (var assetPath in assetPaths)
+                {
+                    if (assetPath == null) continue;
+
+                    if (assetPath.finalPath.EndsWith(".bin")) continue;
+
+                    // Check if this asset matches a GltfContainer source
+                    bool isStatic = gltfsComponents.ContainsKey(assetPath.filePath);
+                    string assetBundleName = assetPath.hash + PlatformUtils.GetPlatform();
+
+                    if (isStatic)
+                    {
+                        List<int> entityIds = gltfsComponents[assetPath.filePath].ToList();
+
+                        foreach (int entityId in entityIds)
+                        {
+                            asset.assetHash.Add(assetPath.hash);
+                            Matrix4x4 worldMatrix = GltfTransformDumper.DumpGltfWorldTransforms(convertedJSONComponents, entityId);
+                            asset.positions.Add(worldMatrix.GetColumn(3));
+
+                            // Rotation extraction
+                            Vector3 forward = worldMatrix.GetColumn(2); // Z axis
+                            Vector3 up = worldMatrix.GetColumn(1); // Y axis
+                            asset.rotations.Add(Quaternion.LookRotation(forward, up));
+
+                            // Optional: scale extraction
+                            Vector3 scale = new Vector3(
+                                worldMatrix.GetColumn(0).magnitude,
+                                worldMatrix.GetColumn(1).magnitude,
+                                worldMatrix.GetColumn(2).magnitude
+                            );
+
+                            asset.scales.Add(scale);
+                        }
+
+                        // Mark GLTF dependencies as static
+                        if (gltfImporters.TryGetValue(assetPath.filePath, out IGltfImport gltfImport))
+                        {
+                            var dependencies = gltfImport.assetDependencies;
+
+                            if (dependencies != null)
+                            {
+                                foreach (var dependency in dependencies)
+                                {
+                                    if (!string.IsNullOrEmpty(dependency.assetPath) && !dependency.assetPath.Contains("dcl/scene_ignore"))
+                                        env.directory.MarkFolderForAssetBundleBuild(dependency.assetPath, staticSceneABName);
+                                }
+                            }
+                        }
+
+                    }
+
+                    bool isStaticTexture = textureComponents.Contains(assetPath.filePath);
+                    env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, (isStatic || isStaticTexture) ? staticSceneABName : assetBundleName);
+                }
+
+                CreateStaticSceneDescriptor(asset, staticSceneABName, finalDownloadedPath);
+
+                return true;
+            }
+
+
+            return false;
+        }
+
+        private static void CreateStaticSceneDescriptor(StaticSceneDescriptor asset, string staticSceneABName, string finalDownloadedPath)
+        {
+            string staticSceneDesriptorFilename = "StaticSceneDescriptor.json";
+            string staticSceneDesciptorRelativePath = $"Assets/_Downloaded/{staticSceneDesriptorFilename}";
+            //Export of StaticSceneDescriptor
+            // Convert ScriptableObject to JSON using Newtonsoft.Json
+            var settings = new JsonSerializerSettings
+            {
+                Formatting = Formatting.Indented,
+                ReferenceLoopHandling = ReferenceLoopHandling.Ignore
+            };
+
+            string json = JsonConvert.SerializeObject(asset, settings);
+            File.WriteAllText($"{finalDownloadedPath}/{staticSceneDesriptorFilename}", json);
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            AssetImporter importer_json = AssetImporter.GetAtPath(staticSceneDesciptorRelativePath);
+            importer_json.SetAssetBundleNameAndVariant(staticSceneABName, "");
+        }
+
         public static void GenerateInitialSceneState(Environment env, ContentServerUtils.EntityMappingsDTO entityDTO)
         {
             if (IsInitialSceneStateCompatible(env, entityDTO))
@@ -106,13 +203,12 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
             }
         }
 
-        public static bool IsInitialSceneStateCompatible(Environment env, ContentServerUtils.EntityMappingsDTO entityDTO)
+        private static bool IsInitialSceneStateCompatible(Environment env, ContentServerUtils.EntityMappingsDTO entityDTO)
         {
             //Manifest was created before the Unity iteration ran
             try
             {
                 string manifestPath = $"Assets/_SceneManifest/{entityDTO.id}-lod-manifest.json";
-
                 if (entityDTO.type.ToLower() == "scene" && !string.IsNullOrEmpty(entityDTO.id) && env.file.Exists(manifestPath))
                 {
                     convertedJSONComponents = JsonConvert.DeserializeObject<List<SceneComponent>>(env.file.ReadAllText(manifestPath));
@@ -122,7 +218,7 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
                 convertedJSONComponents = null;
                 return false;
             }
-            catch (Exception e)
+            catch
             {
                 convertedJSONComponents = null;
                 return false;

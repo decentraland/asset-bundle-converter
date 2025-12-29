@@ -333,9 +333,9 @@ namespace DCL.ABConverter.Editor
                         int beforeCount = GameObject.FindObjectsOfType<GameObject>().Length;
 
                         // Use the manifest file path to place the asset
-                        InitialSceneStateGenerator.PlaceAsset(manifestFilePath, asset);
+                        InitialSceneStateGenerator.PlaceAsset(manifestFilePath, AssetInstantiator.InstanceGameObject(asset));
 
-                        int afterCount = GameObject.FindObjectsOfType<GameObject>().Length;
+                        int afterCount = FindObjectsOfType<GameObject>().Length;
                         int instancesCreated = afterCount - beforeCount;
 
                         if (instancesCreated > 0)

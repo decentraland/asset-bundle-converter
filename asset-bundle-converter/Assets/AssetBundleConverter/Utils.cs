@@ -572,9 +572,9 @@ namespace DCL.ABConverter
 
     public static class AssetInstantiator
     {
-        public static GameObject InstanceGameObject(GameObject originalGLTF)
+        public static GameObject InstanceGameObject(GameObject prefabGLTF)
         {
-            GameObject clone = (GameObject)PrefabUtility.InstantiatePrefab(originalGLTF);
+            GameObject clone = (GameObject)PrefabUtility.InstantiatePrefab(prefabGLTF);
             var renderers = clone.GetComponentsInChildren<Renderer>(true);
 
             foreach (Renderer renderer in renderers)
