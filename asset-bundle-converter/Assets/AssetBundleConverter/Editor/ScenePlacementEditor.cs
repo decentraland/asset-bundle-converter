@@ -17,7 +17,6 @@ namespace DCL.ABConverter.Editor
     {
         private string sceneId = "";
         private string downloadedFolder = "Assets/_Downloaded/";
-        private bool clearSceneFirst = true;
         private Vector2 scrollPosition;
         private string lastResult = "";
         private List<string> availableManifests = new List<string>();
@@ -123,8 +122,6 @@ namespace DCL.ABConverter.Editor
             }
             EditorGUILayout.EndHorizontal();
 
-            clearSceneFirst = EditorGUILayout.Toggle("Clear Scene First", clearSceneFirst);
-
             EditorGUILayout.Space();
 
             // Placement button
@@ -182,9 +179,8 @@ namespace DCL.ABConverter.Editor
 
             try
             {
-                // Clear scene if requested
-                if (clearSceneFirst)
-                    ClearScene();
+                // Clear scene before placing new assets
+                ClearScene();
 
                 // Create environment wrapper
                 var env = Environment.CreateWithDefaultImplementations(BuildPipelineType.Scriptable);

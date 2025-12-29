@@ -64,6 +64,7 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
         /// Always instantiates the asset. If manifest data exists, places instances at their defined transforms.
         /// If not in manifest, creates a single instance at origin.
         /// Use this from AssetBundleConverter where all assets must be instantiated.
+        /// We dont care about visibility on this path
         /// </summary>
         public void InstantiateAsset(string assetPath, GameObject prefab)
         {
@@ -73,17 +74,13 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
                 List<int> entityIds = Component.ToList();
 
                 foreach (int entityId in entityIds)
-                {
-                    // Skip invisible entities
-                    if (entityVisibility.TryGetValue(entityId, out bool isVisible) && !isVisible)
-                        continue;
-
                     InstantiateWithTransform(prefab, entityId);
-                }
             }
-
-            // Always create at least one instance (at origin if no manifest data)
-            AssetInstantiator.InstanceGameObject(prefab);
+            else
+            {
+                // No manifest data - create a single instance at origin
+                AssetInstantiator.InstanceGameObject(prefab);
+            }
         }
 
         /// <summary>
