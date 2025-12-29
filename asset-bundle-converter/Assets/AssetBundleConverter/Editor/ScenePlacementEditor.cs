@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using AssetBundleConverter;
-using AssetBundleConverter.InitialSceneStateGenerator;
 using AssetBundleConverter.Wrappers.Implementations;
 using Cysharp.Threading.Tasks;
 using DCL.ABConverter;
@@ -220,8 +219,9 @@ namespace DCL.ABConverter.Editor
                     }
                 }
 
-                // Generate initial scene state
-                InitialSceneStateGenerator.GenerateInitialSceneState(env, entityDTO);
+                // Initialize the scene state generator and generate the initial scene state
+                env.InitializeSceneStateGenerator(entityDTO);
+                env.sceneStateGenerator.GenerateInitialSceneState();
 
                 Debug.Log("Scene state generated. Finding GLB assets...");
 
@@ -300,7 +300,7 @@ namespace DCL.ABConverter.Editor
 
                         // Use the manifest file path to place the asset
                         // Pass the prefab directly - PlaceAsset now handles instantiation internally
-                        InitialSceneStateGenerator.PlaceAsset(manifestFilePath, asset);
+                        env.sceneStateGenerator.PlaceAsset(manifestFilePath, asset);
 
                         int afterCount = FindObjectsOfType<GameObject>().Length;
                         int instancesCreated = afterCount - beforeCount;

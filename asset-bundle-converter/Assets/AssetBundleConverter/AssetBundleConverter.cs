@@ -7,7 +7,6 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using AssetBundleConverter;
 using AssetBundleConverter.Editor;
-using AssetBundleConverter.InitialSceneStateGenerator;
 using AssetBundleConverter.StaticSceneAssetBundle;
 using AssetBundleConverter.Wrappers.Interfaces;
 using Cysharp.Threading.Tasks;
@@ -171,7 +170,9 @@ namespace DCL.ABConverter
             if (isExitForced)
                 return;
 
-            InitialSceneStateGenerator.GenerateInitialSceneState(env, entityDTO);
+            // Initialize the scene state generator and generate the initial scene state
+            env.InitializeSceneStateGenerator(entityDTO);
+            env.sceneStateGenerator.GenerateInitialSceneState();
 
             await ProcessAllGltfs();
 
@@ -397,7 +398,7 @@ namespace DCL.ABConverter
                             {
                                 // Pass the prefab directly - PlaceAsset now handles instantiation internally
                                 // for each entity that uses this asset
-                                InitialSceneStateGenerator.PlaceAsset(gltf.AssetPath.filePath, originalGltf);
+                                env.sceneStateGenerator.PlaceAsset(gltf.AssetPath.filePath, originalGltf);
                             }
                             catch (Exception e)
                             {
@@ -913,17 +914,22 @@ namespace DCL.ABConverter
         /// <param name="BuildTarget"></param>
         private void MarkAllAssetBundles(List<AssetPath> assetPaths)
         {
-            if(!InitialSceneStateGenerator.GenerateISSAssetBundle(env, entityDTO, assetPaths, gltfImporters, finalDownloadedPath))
+            // If scene is compatible with Initial Scene State, generate a consolidated static scene bundle
+            if (env.sceneStateGenerator.IsCompatible)
+                env.sceneStateGenerator.GenerateISSAssetBundle(assetPaths, gltfImporters, finalDownloadedPath);
+            else
             {
+                // Otherwise, mark each asset as its own bundle
                 foreach (var assetPath in assetPaths)
                 {
                     if (assetPath == null) continue;
-
                     if (assetPath.finalPath.EndsWith(".bin")) continue;
+
                     string assetBundleName = assetPath.hash + PlatformUtils.GetPlatform();
                     env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, assetBundleName);
                 }
             }
+
         }
 
         /// <summary>
