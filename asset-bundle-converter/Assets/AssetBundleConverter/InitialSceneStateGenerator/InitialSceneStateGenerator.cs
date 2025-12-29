@@ -157,7 +157,9 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
                 if (assetPath.finalPath.EndsWith(".bin")) continue;
 
                 // Check if this asset matches a GltfContainer source
-                bool isStatic = gltfsComponents.ContainsKey(assetPath.filePath);
+                // Emotes should not be added to the static asset bundle
+                bool isEmote = Utils.IsEmoteFileName(assetPath.fileName);
+                bool isStatic = !isEmote && gltfsComponents.ContainsKey(assetPath.filePath);
                 string assetBundleName = assetPath.hash + PlatformUtils.GetPlatform();
 
                 if (isStatic)

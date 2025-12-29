@@ -299,7 +299,7 @@ namespace DCL.ABConverter
                 var gltfImport = gltf.import;
                 string relativePath = PathUtils.FullPathToAssetPath(gltfUrl);
                 bool isEmote = (entityDTO is { type: not null } && entityDTO.type.ToLower().Contains("emote"))
-                               || gltf.AssetPath.fileName.ToLower().EndsWith("_emote.glb");
+                               || Utils.IsEmoteFileName(gltf.AssetPath.fileName);
                 bool isWearable = (entityDTO is { type: not null } && entityDTO.type.ToLower().Contains("wearable"));
 
                 AnimationMethod animationMethod = GetAnimationMethod(isEmote,isWearable);
