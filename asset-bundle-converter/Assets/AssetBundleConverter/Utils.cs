@@ -587,9 +587,6 @@ namespace DCL.ABConverter
             {
                 if (renderer.name.ToLower().Contains("_collider"))
                     renderer.enabled = false;
-                //TODO (JUANI): Why was this added?
-                if (renderer.sharedMaterial == null || renderer.sharedMaterials == null || renderer.sharedMaterials.Length == 0)
-                    renderer.enabled = false;
             }
             return clone;
         }
