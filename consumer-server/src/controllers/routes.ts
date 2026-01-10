@@ -1,4 +1,4 @@
-import { Router } from '@well-known-components/http-server'
+import { Router } from '@dcl/wkc-http-server'
 import { GlobalContext } from '../types'
 import { queueTaskHandler } from './handlers/queue-conversion-handle'
 import { statusHandler } from './handlers/status-handler'
