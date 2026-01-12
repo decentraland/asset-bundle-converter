@@ -138,6 +138,13 @@ namespace AssetBundleConverter.Editor
                 if (r.name.Contains("_collider", StringComparison.OrdinalIgnoreCase))
                     DestroyImmediate(r);
             }
+
+            // Generate mesh LODs for all renderers
+            int meshesWithLODs = MeshLODGenerator.GenerateLODsForRenderers(sceneGo);
+            if (meshesWithLODs > 0)
+            {
+                Debug.Log($"CustomGltfImporter: Generated LODs for {meshesWithLODs} mesh(es) in '{sceneGo.name}'");
+            }
         }
 
         private static void ConfigureColliders(Transform transform, MeshFilter filter)
