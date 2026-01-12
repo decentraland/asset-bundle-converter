@@ -1070,21 +1070,46 @@ namespace DCL.ABConverter
                 if (settings.verbose)
                     Debug.Log(string.Join("\n", rawContents.Select(r => $"{r.hash} -> {r.file}")));
 
-                List<AssetPath> gltfPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.gltfExtensions);
-                List<AssetPath> bufferPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.bufferExtensions);
-                List<AssetPath> texturePaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
+                // === PHASE 1: DISCOVERY ===
+                // Build complete lists of all assets (regardless of import state)
+                List<AssetPath> allGltfPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.gltfExtensions);
+                List<AssetPath> allBufferPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.bufferExtensions);
+                List<AssetPath> allTexturePaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
 
-                if (!FilterDumpList(ref gltfPaths))
+                totalGltfs = allGltfPaths.Count;
+
+                // Populate contentTable for ALL assets upfront (needed for GLTF imports to resolve references)
+                AddAssetPathsToContentTable(allTexturePaths);
+                AddAssetPathsToContentTable(allBufferPaths);
+                AddAssetPathsToContentTable(allGltfPaths, true);
+
+                // Check if all bundles already exist
+                if (!FilterDumpList(ref allGltfPaths))
                     return false;
 
-                FilterImportedAssets(gltfPaths, texturePaths, bufferPaths);
+                // === PHASE 2: FILTER ALREADY-IMPORTED ASSETS ===
+                // Separate assets into "needs download" vs "already imported"
+                var (gltfsToDownload, alreadyImportedGltfs) = PartitionByImportState(allGltfPaths);
+                var (texturesToDownload, alreadyImportedTextures) = PartitionByImportState(allTexturePaths);
+                var (buffersToDownload, alreadyImportedBuffers) = PartitionByImportState(allBufferPaths);
 
+                // Mark already-imported assets for bundling (no re-download needed)
+                assetsToMark.AddRange(alreadyImportedGltfs);
+                assetsToMark.AddRange(alreadyImportedTextures);
+                assetsToMark.AddRange(alreadyImportedBuffers);
+
+                // Register GLTF importers for already-imported GLTFs
+                RegisterGltfImportersForExistingAssets(alreadyImportedGltfs);
+
+                // === PHASE 3: DOWNLOAD MISSING ASSETS ===
                 List<Task> downloadTasks = new List<Task>(settings.downloadBatchSize);
 
                 downloadStartupTime = EditorApplication.timeSinceStartup;
 
-                int totalAssetsToDownload = gltfPaths.Count + bufferPaths.Count + texturePaths.Count;
+                int totalAssetsToDownload = gltfsToDownload.Count + buffersToDownload.Count + texturesToDownload.Count;
                 int progress = 0;
+
+                log.Info($"Assets to download: {totalAssetsToDownload} (skipping {alreadyImportedGltfs.Count + alreadyImportedTextures.Count + alreadyImportedBuffers.Count} already imported)");
 
                 long GetTotalMegabytesDownloaded() =>
                     downloadedData.Values.Sum(array => array.LongLength) / (1024 * 1024);
@@ -1097,7 +1122,7 @@ namespace DCL.ABConverter
                 }
 
                 // start and await in batches
-                foreach (AssetPath path in gltfPaths.Concat(bufferPaths).Concat(texturePaths))
+                foreach (AssetPath path in gltfsToDownload.Concat(buffersToDownload).Concat(texturesToDownload))
                 {
                     progress++;
 
@@ -1112,19 +1137,16 @@ namespace DCL.ABConverter
 
                 downloadEndTime = EditorApplication.timeSinceStartup;
 
+                // === PHASE 4: IMPORT DOWNLOADED ASSETS ===
                 nonGltfImportStartupTime = EditorApplication.timeSinceStartup;
 
                 //NOTE(Brian): Prepare textures and buffers. We should prepare all the dependencies in this phase.
-                assetsToMark.AddRange(ImportTextures(texturePaths));
-                assetsToMark.AddRange(ImportBuffers(bufferPaths));
+                assetsToMark.AddRange(ImportTextures(texturesToDownload));
+                assetsToMark.AddRange(ImportBuffers(buffersToDownload));
 
-                AddAssetPathsToContentTable(texturePaths);
-                AddAssetPathsToContentTable(bufferPaths);
-                AddAssetPathsToContentTable(gltfPaths, true);
+                totalGltfsToProcess = gltfsToDownload.Count + alreadyImportedGltfs.Count;
 
-                totalGltfsToProcess = gltfPaths.Count;
-
-                foreach (var gltfPath in gltfPaths)
+                foreach (var gltfPath in gltfsToDownload)
                 {
                     if (isExitForced) break;
 
@@ -1149,6 +1171,76 @@ namespace DCL.ABConverter
             downloadedData = null;
 
             return true;
+        }
+
+        /// <summary>
+        /// Partitions assets into two lists: those that need downloading and those already imported.
+        /// </summary>
+        private (List<AssetPath> toDownload, List<AssetPath> alreadyImported) PartitionByImportState(List<AssetPath> assetPaths)
+        {
+            var toDownload = new List<AssetPath>();
+            var alreadyImported = new List<AssetPath>();
+
+            foreach (var path in assetPaths)
+            {
+                if (IsAssetAlreadyImported(path))
+                    alreadyImported.Add(path);
+                else
+                    toDownload.Add(path);
+            }
+
+            return (toDownload, alreadyImported);
+        }
+
+        /// <summary>
+        /// Checks if an asset is already properly imported in Unity's AssetDatabase.
+        /// </summary>
+        private bool IsAssetAlreadyImported(AssetPath path)
+        {
+            // If directories are cleared, nothing is imported
+            if (settings.clearDirectoriesOnStart)
+                return false;
+
+            var importer = env.assetDatabase.GetImporterAtPath(path.finalPath);
+            if (!importer)
+                return false;
+
+            var asset = env.assetDatabase.LoadAssetAtPath<Object>(path.finalPath);
+            // In case of trouble the asset is not properly imported
+            if (!asset || asset.GetType() == typeof(DefaultAsset))
+                return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Registers GLTF importers for assets that are already imported (skipped download).
+        /// This ensures gltfOriginalNames and gltfImporters dictionaries are populated
+        /// even when we skip downloading.
+        /// </summary>
+        private void RegisterGltfImportersForExistingAssets(List<AssetPath> alreadyImportedGltfs)
+        {
+            foreach (var assetPath in alreadyImportedGltfs)
+            {
+                string outputPath = assetPath.finalPath;
+
+                IGltfImport gltfImport = CreateGltfImport(assetPath);
+
+                gltfToWait.Add(new GltfImportSettings
+                {
+                    AssetPath = assetPath,
+                    url = outputPath,
+                    import = gltfImport
+                });
+
+                gltfOriginalNames[outputPath] = assetPath.filePath;
+                gltfImporters[assetPath.filePath] = gltfImport;
+
+                // Count as already processed since import is complete
+                totalGltfsProcessed++;
+
+                log.Verbose($"Registered existing GLTF: {assetPath.filePath}");
+            }
         }
 
         private async Task RecursiveDownload(Task downloadTask, int tryCount, int maxTries)
@@ -1223,71 +1315,6 @@ namespace DCL.ABConverter
         /// <summary>
         /// Removes assets that are already imported from the list
         /// </summary>
-        private void FilterImportedAssets(List<AssetPath> gltfPaths, List<AssetPath> texturePaths, List<AssetPath> bufferPaths)
-        {
-            // All assets must be re-downloaded
-            if (settings.clearDirectoriesOnStart)
-                return;
-
-            bool CheckAssetIsImported(AssetPath path)
-            {
-                var importer = env.assetDatabase.GetImporterAtPath(path.finalPath);
-
-                if (!importer)
-                    return false;
-
-                var asset = env.assetDatabase.LoadAssetAtPath<Object>(path.finalPath);
-                // in case of a trouble the asset is not imported
-                if (!asset || asset.GetType() == typeof(DefaultAsset))
-                    return false;
-
-                return true;
-            }
-
-            var existingAssetPaths = new List<AssetPath>(gltfPaths.Count + texturePaths.Count + bufferPaths.Count);
-
-            void ProcessImportedAsset(AssetPath assetPath)
-            {
-                existingAssetPaths.Add(assetPath);
-                assetsToMark.Add(assetPath);
-            }
-
-            for (int i = gltfPaths.Count - 1; i >= 0; i--)
-            {
-                var path = gltfPaths[i];
-                if (CheckAssetIsImported(path))
-                {
-                    ProcessImportedAsset(path);
-                    gltfPaths.RemoveAt(i);
-                }
-            }
-
-            AddAssetPathsToContentTable(existingAssetPaths, true);
-            existingAssetPaths.Clear();
-
-            for (int i = texturePaths.Count - 1; i >= 0; i--)
-            {
-                var path = texturePaths[i];
-                if (CheckAssetIsImported(path))
-                {
-                    ProcessImportedAsset(path);
-                    texturePaths.RemoveAt(i);
-                }
-            }
-
-            for (int i = bufferPaths.Count - 1; i >= 0; i--)
-            {
-                var path = bufferPaths[i];
-                if (CheckAssetIsImported(path))
-                {
-                    ProcessImportedAsset(path);
-                    bufferPaths.RemoveAt(i);
-                }
-            }
-
-            AddAssetPathsToContentTable(existingAssetPaths);
-        }
-
         /// <summary>
         /// Trims off existing asset bundles from the given AssetPath array,
         /// if none exists and shouldAbortBecauseAllBundlesExist is true, it will return false.
@@ -1298,7 +1325,7 @@ namespace DCL.ABConverter
         {
             bool shouldBuildAssetBundles;
 
-            totalGltfs = gltfPaths.Count;
+            // Note: totalGltfs is now set in ResolveAssets before this method is called
 
             if (settings.skipAlreadyBuiltBundles)
             {
