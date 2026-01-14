@@ -1313,9 +1313,6 @@ namespace DCL.ABConverter
         }
 
         /// <summary>
-        /// Removes assets that are already imported from the list
-        /// </summary>
-        /// <summary>
         /// Trims off existing asset bundles from the given AssetPath array,
         /// if none exists and shouldAbortBecauseAllBundlesExist is true, it will return false.
         /// </summary>
