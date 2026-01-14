@@ -1214,9 +1214,12 @@ namespace DCL.ABConverter
         }
 
         /// <summary>
-        /// Registers GLTF importers for assets that are already imported (skipped download).
-        /// This ensures gltfOriginalNames and gltfImporters dictionaries are populated
-        /// even when we skip downloading.
+        /// Registers metadata for GLTFs that are already imported (skipped download).
+        /// This populates gltfOriginalNames for downstream processes.
+        /// 
+        /// NOTE: We do NOT add these to gltfToWait or gltfImporters because:
+        /// 1. They don't need to go through ProcessAllGltfs() - they're already imported
+        /// 2. ISS uses AssetDatabase.GetDependencies() fallback for these assets
         /// </summary>
         private void RegisterGltfImportersForExistingAssets(List<AssetPath> alreadyImportedGltfs)
         {
@@ -1224,22 +1227,13 @@ namespace DCL.ABConverter
             {
                 string outputPath = assetPath.finalPath;
 
-                IGltfImport gltfImport = CreateGltfImport(assetPath);
-
-                gltfToWait.Add(new GltfImportSettings
-                {
-                    AssetPath = assetPath,
-                    url = outputPath,
-                    import = gltfImport
-                });
-
+                // Only populate gltfOriginalNames (needed for some downstream processes)
                 gltfOriginalNames[outputPath] = assetPath.filePath;
-                gltfImporters[assetPath.filePath] = gltfImport;
 
                 // Count as already processed since import is complete
                 totalGltfsProcessed++;
 
-                log.Verbose($"Registered existing GLTF: {assetPath.filePath}");
+                log.Verbose($"Skipping reimport for existing GLTF: {assetPath.filePath}");
             }
         }
 

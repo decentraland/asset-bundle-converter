@@ -199,6 +199,7 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
                     // Mark GLTF dependencies as static
                     if (gltfImporters.TryGetValue(assetPath.filePath, out IGltfImport gltfImport))
                     {
+                        // Use importer dependencies if available (freshly imported GLTFs)
                         var dependencies = gltfImport.assetDependencies;
 
                         if (dependencies != null)
@@ -208,6 +209,18 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
                                 if (!string.IsNullOrEmpty(dependency.assetPath) && !dependency.assetPath.Contains("dcl/scene_ignore"))
                                     env.directory.MarkFolderForAssetBundleBuild(dependency.assetPath, staticSceneABName);
                             }
+                        }
+                    }
+                    else
+                    {
+                        // Fallback: Use Unity's AssetDatabase for already-imported assets
+                        string relativePath = PathUtils.FullPathToAssetPath(assetPath.finalPath);
+                        string[] dependencies = AssetDatabase.GetDependencies(relativePath, recursive: false);
+
+                        foreach (var dependency in dependencies)
+                        {
+                            if (!string.IsNullOrEmpty(dependency) && !dependency.Contains("dcl/scene_ignore") && dependency != relativePath)
+                                env.directory.MarkFolderForAssetBundleBuild(dependency, staticSceneABName);
                         }
                     }
 
