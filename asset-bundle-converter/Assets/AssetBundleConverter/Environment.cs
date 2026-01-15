@@ -18,6 +18,12 @@ namespace AssetBundleConverter
         public readonly IErrorReporter errorReporter;
         public readonly BuildPipelineType buildPipelineType;
 
+        /// <summary>
+        /// The InitialSceneStateGenerator instance for this environment.
+        /// Must be initialized via InitializeSceneStateGenerator before use.
+        /// </summary>
+        public InitialSceneStateGenerator.InitialSceneStateGenerator sceneStateGenerator { get; private set; }
+
         internal Environment(IDirectory directory, IFile file, IAssetDatabase assetDatabase, IWebRequest webRequest, IBuildPipeline buildPipeline, IGltfImporter gltfImporter, IEditor editor, IABLogger logger, IErrorReporter errorReporter,
             BuildPipelineType buildPipelineType)
         {
@@ -31,6 +37,17 @@ namespace AssetBundleConverter
             this.logger = logger;
             this.errorReporter = errorReporter;
             this.buildPipelineType = buildPipelineType;
+        }
+
+        /// <summary>
+        /// Initializes the InitialSceneStateGenerator for this environment with the given entity DTO.
+        /// This checks compatibility once and caches the result.
+        /// </summary>
+        /// <param name="entityDTO">The entity DTO containing scene information</param>
+        /// <returns>The initialized generator (also accessible via sceneStateGenerator property)</returns>
+        public void InitializeSceneStateGenerator(ContentServerUtils.EntityMappingsDTO entityDTO)
+        {
+            sceneStateGenerator = new InitialSceneStateGenerator.InitialSceneStateGenerator(this, entityDTO);
         }
 
         public static Environment CreateWithDefaultImplementations(BuildPipelineType buildPipelineType)

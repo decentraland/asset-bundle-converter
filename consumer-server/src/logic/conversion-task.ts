@@ -169,11 +169,7 @@ export async function executeLODConversion(
     }
 
     // delete scene manifest folder
-    try {
-      await rimraf(`${$PROJECT_PATH}/Assets/_SceneManifest`, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
-    }
+    await deleteSceneManifestFolder($PROJECT_PATH, logger, defaultLoggerMetadata)
   }
 
   logger.debug('LOD Conversion finished', defaultLoggerMetadata)
@@ -223,7 +219,7 @@ export async function executeConversion(
   logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
   let hasContentChanged = true
 
-  if ($BUILD_TARGET !== 'webgl' && !force) {
+  if ($BUILD_TARGET !== 'webgl' && !force && !doISS) {
     try {
       hasContentChanged = await hasContentChange(
         entityId,
@@ -428,11 +424,35 @@ export async function executeConversion(
     } catch (err: any) {
       logger.error(err, defaultLoggerMetadata)
     }
+
+    // delete scene manifest folder
+    await deleteSceneManifestFolder($PROJECT_PATH, logger, defaultLoggerMetadata)
   }
 
   logger.debug('Conversion finished', defaultLoggerMetadata)
   logger.debug(`Full project size ${getFolderSize($PROJECT_PATH)}`)
   printFolderSizes($PROJECT_PATH, logger)
+}
+
+async function deleteSceneManifestFolder(projectPath: string, logger: any, defaultLoggerMetadata: any): Promise<void> {
+  const sceneManifestPath = `${projectPath}/Assets/_SceneManifest`
+  logger.info(`Attempting to delete scene manifest folder: ${sceneManifestPath}`, defaultLoggerMetadata)
+  try {
+    await rimraf(sceneManifestPath, { maxRetries: 3 })
+    const folderStillExists = fs.existsSync(sceneManifestPath)
+    if (folderStillExists) {
+      logger.warn(`Scene manifest folder still exists after deletion: ${sceneManifestPath}`, defaultLoggerMetadata)
+    } else {
+      logger.info(`Scene manifest folder successfully deleted: ${sceneManifestPath}`, defaultLoggerMetadata)
+    }
+  } catch (err: any) {
+    logger.error(`Error deleting scene manifest folder ${sceneManifestPath}:`, {
+      ...defaultLoggerMetadata,
+      error: err
+    })
+    const folderStillExists = fs.existsSync(sceneManifestPath)
+    logger.warn(`Scene manifest folder exists after failed deletion: ${folderStillExists}`, defaultLoggerMetadata)
+  }
 }
 
 /**

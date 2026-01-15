@@ -1,3 +1,4 @@
+using AssetBundleConverter.InitialSceneStateGenerator;
 using UnityEngine;
 using System.Collections.Generic;
 
@@ -35,10 +36,5 @@ namespace AssetBundleConverter.StaticSceneAssetBundle
             return GetWorldMatrix(transform.parent) * localMatrix;
         }
 
-        public Vector3 GetWorldPosition(int entityId)
-        {
-            Matrix4x4 worldMatrix = GetWorldMatrix(entityId);
-            return worldMatrix.GetColumn(3);
-        }
     }
 }

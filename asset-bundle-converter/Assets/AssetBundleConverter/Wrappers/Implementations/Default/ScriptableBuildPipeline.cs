@@ -50,8 +50,8 @@ namespace DCL
                                                                    bool keepOriginal =
                                                                        fileName.Contains("image", StringComparison.OrdinalIgnoreCase)
                                                                        || fileName.Contains("material", StringComparison.OrdinalIgnoreCase)
-                                                                       || fileName.Contains("DCL_Scene", StringComparison.OrdinalIgnoreCase);
-
+                                                                       || fileName.Contains("DCL_Scene", StringComparison.OrdinalIgnoreCase)
+                                                                       || fileName.Contains("animatorController", StringComparison.OrdinalIgnoreCase);
                                                                    return keepOriginal ? path : fileName;
                                                                })
                                                               .ToArray();

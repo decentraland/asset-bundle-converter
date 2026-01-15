@@ -568,5 +568,27 @@ namespace DCL.ABConverter
 
         public static string EnsureStartWithSlash(string path) =>
             !path.StartsWith('/') ? $"/{path}" : path;
+
+        /// <summary>
+        /// Checks if a filename indicates an emote asset based on the naming convention.
+        /// </summary>
+        public static bool IsEmoteFileName(string fileName) =>
+            fileName.ToLower().EndsWith("_emote.glb");
+    }
+
+    public static class AssetInstantiator
+    {
+        public static GameObject InstanceGameObject(GameObject prefabGLTF)
+        {
+            GameObject clone = (GameObject)PrefabUtility.InstantiatePrefab(prefabGLTF);
+            var renderers = clone.GetComponentsInChildren<Renderer>(true);
+
+            foreach (Renderer renderer in renderers)
+            {
+                if (renderer.name.ToLower().Contains("_collider"))
+                    renderer.enabled = false;
+            }
+            return clone;
+        }
     }
 }
