@@ -19,6 +19,12 @@ namespace AssetBundleConverter
         public readonly BuildPipelineType buildPipelineType;
 
         /// <summary>
+        /// The ImageDuplicateAnalyzer for detecting duplicate textures via CRC/hash checks.
+        /// Must be initialized via InitializeImageDuplicateAnalyzer before use.
+        /// </summary>
+        public ImageDuplicateAnalyzer imageDuplicateAnalyzer { get; private set; }
+
+        /// <summary>
         /// The InitialSceneStateGenerator instance for this environment.
         /// Must be initialized via InitializeSceneStateGenerator before use.
         /// </summary>
@@ -37,6 +43,22 @@ namespace AssetBundleConverter
             this.logger = logger;
             this.errorReporter = errorReporter;
             this.buildPipelineType = buildPipelineType;
+        }
+
+        /// <summary>
+        /// Initializes the ImageDuplicateAnalyzer for this environment.
+        /// </summary>
+        /// <param name="enabled">Whether duplicate analysis should be enabled</param>
+        /// <param name="downloadedPath">Base path where downloaded assets are stored</param>
+        public void InitializeImageDuplicateAnalyzer(bool enabled, string downloadedPath)
+        {
+            imageDuplicateAnalyzer = new ImageDuplicateAnalyzer(
+                enabled,
+                downloadedPath,
+                file,
+                directory,
+                assetDatabase,
+                logger);
         }
 
         /// <summary>

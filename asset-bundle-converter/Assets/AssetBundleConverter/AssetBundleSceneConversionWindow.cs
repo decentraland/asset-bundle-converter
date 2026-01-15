@@ -68,6 +68,7 @@ namespace AssetBundleConverter
 
         private ClientSettings clientSettings;
         private PersistentSetting<AnimationMethod> animationMehtod;
+        private PersistentSetting<bool> enableImageDuplicateAnalysis;
         private bool showDebugOptions;
         private bool stripShaders = true;
         private bool importGltf = true;
@@ -94,6 +95,7 @@ namespace AssetBundleConverter
             buildTarget = PersistentSetting.CreateEnum(nameof(buildTarget), SupportedBuildTarget.WebGL);
             failingConversionTolerance = PersistentSetting.CreateFloat(nameof(failingConversionTolerance), 1f); // 5%
             downloadBatchSize = PersistentSetting.CreateInt(nameof(downloadBatchSize), 20);
+            enableImageDuplicateAnalysis = PersistentSetting.CreateBool(nameof(enableImageDuplicateAnalysis), false);
         }
 
         private void OnGUI()
@@ -111,6 +113,7 @@ namespace AssetBundleConverter
             failingConversionTolerance.Value = ClampConversionTolerance(EditorGUILayout.FloatField("Failed Conversion Tolerance", failingConversionTolerance));
             clearDownloads = EditorGUILayout.Toggle("Clear Downloads", clearDownloads);
             includeShaderVariants = EditorGUILayout.Toggle("Include Shader Variants", includeShaderVariants);
+            enableImageDuplicateAnalysis.Value = EditorGUILayout.Toggle("Analyze Image Duplicates", enableImageDuplicateAnalysis);
             showDebugOptions = EditorGUILayout.Toggle("Show debug options", showDebugOptions);
 
             RenderUrlEditor();
@@ -348,7 +351,8 @@ namespace AssetBundleConverter
                 verbose = verbose,
                 buildTarget = GetBuildTarget(),
                 BuildPipelineType = buildPipelineType,
-                AnimationMethod = animationMehtod
+                AnimationMethod = animationMehtod,
+                enableImageDuplicateAnalysis = enableImageDuplicateAnalysis
             };
         }
 

@@ -110,7 +110,8 @@ namespace DCL.ABConverter
 
             log.verboseEnabled = true;
 
-
+            // Initialize image duplicate analyzer with download path for shared textures folder
+            env.InitializeImageDuplicateAnalyzer(settings.enableImageDuplicateAnalysis, finalDownloadedPath);
         }
 
         /// <summary>
@@ -177,6 +178,9 @@ namespace DCL.ABConverter
             await ProcessAllGltfs();
 
             importEndTime = EditorApplication.timeSinceStartup;
+
+            // Update materials that reference textures which were moved to the shared folder
+            UpdateMaterialsWithSharedTextures();
 
             EditorUtility.ClearProgressBar();
 
@@ -824,9 +828,11 @@ namespace DCL.ABConverter
                     if (!Path.HasExtension(texPath))
                         texPath += ".png";
 
+                    byte[] textureBytes;
+
                     if (tex.isReadable && !TextureUtils.IsCompressedFormat(tex.format))
                     {
-                        env.file.WriteAllBytes(texPath, tex.EncodeToPNG());
+                        textureBytes = tex.EncodeToPNG();
                     }
                     else
                     {
@@ -848,11 +854,34 @@ namespace DCL.ABConverter
                         RenderTexture.active = previous;
                         RenderTexture.ReleaseTemporary(tmp);
 
-                        env.file.WriteAllBytes(texPath, readableTexture.EncodeToPNG());
+                        textureBytes = readableTexture.EncodeToPNG();
 
                         tmp.DiscardContents();
                         Object.DestroyImmediate(readableTexture);
                     }
+
+                    // Analyze for duplicates before writing
+                    if (env.imageDuplicateAnalyzer != null && env.imageDuplicateAnalyzer.IsEnabled)
+                    {
+                        if (env.imageDuplicateAnalyzer.AnalyzeImage(textureBytes, texPath, folderName, out string sharedPath))
+                        {
+                            // Duplicate found - load the shared texture instead of writing a new one
+                            Texture2D sharedTexture = env.assetDatabase.LoadAssetAtPath<Texture2D>(sharedPath);
+                            if (sharedTexture != null)
+                            {
+                                // IMPORTANT: Preserve original texture name for material assignment lookup
+                                // Materials look up textures by the original GLTF texture name, not the shared hash name
+                                string sharedFileName = sharedTexture.name;
+                                sharedTexture.name = texName;
+                                log.Verbose($"[ImageDuplicateAnalyzer] GLTF '{folderName}' reusing shared texture: {sharedPath} (original name: '{texName}')");
+                                newTextures.Add(sharedTexture);
+                                continue;
+                            }
+                            // If we couldn't load the shared texture, fall through and write the new one
+                        }
+                    }
+
+                    env.file.WriteAllBytes(texPath, textureBytes);
 
                     env.assetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 
@@ -899,6 +928,13 @@ namespace DCL.ABConverter
             logBuffer += $"Startup Memory | Allocated: {startupAllocated:F} MB Reserved: {startupReserved:F} MB\n";
             logBuffer += $"End Memory | Allocated: {allocated:F} MB Reserved: {reserved:F} MB\n";
 
+            // Add image duplicate analysis report if enabled
+            if (env.imageDuplicateAnalyzer != null && env.imageDuplicateAnalyzer.IsEnabled)
+            {
+                logBuffer += "\n";
+                logBuffer += env.imageDuplicateAnalyzer.GenerateReport();
+            }
+
             log.Info(logBuffer);
 
             errorReporter.Dispose();
@@ -913,9 +949,15 @@ namespace DCL.ABConverter
         /// <param name="BuildTarget"></param>
         private void MarkAllAssetBundles(List<AssetPath> assetPaths)
         {
+            string sharedTexturesBundleName;
+
             // If scene is compatible with Initial Scene State, generate a consolidated static scene bundle
             if (env.sceneStateGenerator.IsCompatible)
+            {
                 env.sceneStateGenerator.GenerateISSAssetBundle(assetPaths, gltfImporters, finalDownloadedPath);
+                // For ISS, include shared textures in the same bundle (ISS cannot have dependencies)
+                sharedTexturesBundleName = $"staticScene_{entityDTO.id}{PlatformUtils.GetPlatform()}";
+            }
             else
             {
                 // Otherwise, mark each asset as its own bundle
@@ -927,8 +969,151 @@ namespace DCL.ABConverter
                     string assetBundleName = assetPath.hash + PlatformUtils.GetPlatform();
                     env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, assetBundleName);
                 }
+                // For non-ISS, use a separate shared textures bundle
+                sharedTexturesBundleName = $"shared_textures{PlatformUtils.GetPlatform()}";
             }
 
+            // Mark shared textures with the appropriate bundle name
+            MarkSharedTexturesForAssetBundle(sharedTexturesBundleName);
+        }
+
+        /// <summary>
+        /// Updates materials that reference textures which were moved to the shared folder.
+        /// When a duplicate texture is detected, the original is deleted and replaced with the shared version.
+        /// Materials that were created before the move need to be updated to reference the shared texture.
+        /// </summary>
+        private void UpdateMaterialsWithSharedTextures()
+        {
+            if (env.imageDuplicateAnalyzer == null || !env.imageDuplicateAnalyzer.IsEnabled)
+                return;
+
+            var mappings = env.imageDuplicateAnalyzer.GetOriginalToSharedMappings();
+            if (mappings.Count == 0)
+                return;
+
+            log.Info($"[ImageDuplicateAnalyzer] Updating materials with {mappings.Count} shared texture references...");
+
+            // Find all materials in the downloaded folder
+            string[] materialFiles = Directory.GetFiles(finalDownloadedPath, "*.mat", SearchOption.AllDirectories);
+            int updatedMaterials = 0;
+
+            foreach (string materialFile in materialFiles)
+            {
+                string assetPath = PathUtils.GetRelativePathTo(Application.dataPath, materialFile);
+                Material material = env.assetDatabase.LoadAssetAtPath<Material>(assetPath);
+                
+                if (material == null)
+                    continue;
+
+                bool materialModified = false;
+                var textureProperties = GetTextureProperties(material.shader);
+
+                foreach (int propertyId in textureProperties)
+                {
+                    Texture currentTexture = material.GetTexture(propertyId);
+                    if (currentTexture == null)
+                    {
+                        // Texture is missing - check if it was one that got moved to shared
+                        // We can't easily recover this, but we can log it
+                        continue;
+                    }
+
+                    string texturePath = env.assetDatabase.GetAssetPath(currentTexture);
+                    
+                    // Check if this texture path matches any original that was moved
+                    if (mappings.TryGetValue(texturePath, out string sharedPath))
+                    {
+                        // Load the shared texture and update the material
+                        Texture2D sharedTexture = env.assetDatabase.LoadAssetAtPath<Texture2D>(sharedPath);
+                        if (sharedTexture != null)
+                        {
+                            material.SetTexture(propertyId, sharedTexture);
+                            materialModified = true;
+                            log.Verbose($"[ImageDuplicateAnalyzer] Updated material '{material.name}': {Path.GetFileName(texturePath)} -> {Path.GetFileName(sharedPath)}");
+                        }
+                    }
+                }
+
+                if (materialModified)
+                {
+                    EditorUtility.SetDirty(material);
+                    updatedMaterials++;
+                }
+            }
+
+            if (updatedMaterials > 0)
+            {
+                env.assetDatabase.SaveAssets();
+                log.Info($"[ImageDuplicateAnalyzer] Updated {updatedMaterials} materials to use shared textures");
+            }
+        }
+
+        /// <summary>
+        /// Marks each shared texture individually for asset bundle building.
+        /// For ISS builds, textures are added to the ISS bundle (no dependencies allowed).
+        /// For non-ISS builds, textures go in a separate shared_textures bundle.
+        /// </summary>
+        /// <param name="bundleName">The asset bundle name to assign to shared textures</param>
+        private void MarkSharedTexturesForAssetBundle(string bundleName)
+        {
+            if (env.imageDuplicateAnalyzer == null || !env.imageDuplicateAnalyzer.IsEnabled)
+                return;
+
+            if (env.imageDuplicateAnalyzer.SharedTextureCount == 0)
+            {
+                log.Verbose($"[ImageDuplicateAnalyzer] No shared textures to mark");
+                return;
+            }
+
+            string sharedTexturesPath = env.imageDuplicateAnalyzer.SharedTexturesPath;
+            
+            if (!env.directory.Exists(sharedTexturesPath))
+            {
+                log.Warning($"[ImageDuplicateAnalyzer] Shared textures folder does not exist: {sharedTexturesPath}");
+                return;
+            }
+
+            // Refresh asset database to ensure all shared textures are imported
+            env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+            
+            log.Info($"[ImageDuplicateAnalyzer] Looking for textures in: {sharedTexturesPath}");
+            
+            // Get all texture files in the shared folder
+            string[] sharedTextureFiles = Directory.GetFiles(sharedTexturesPath, "*.png", SearchOption.TopDirectoryOnly);
+            
+            log.Info($"[ImageDuplicateAnalyzer] Found {sharedTextureFiles.Length} texture files to add to bundle: {bundleName}");
+            
+            int markedCount = 0;
+            foreach (string textureFile in sharedTextureFiles)
+            {
+                // Convert to Unity's asset path format (relative to project, starting with "Assets/")
+                string assetPath = textureFile.Replace(Application.dataPath, "Assets");
+                assetPath = assetPath.Replace("\\", "/");
+                
+                log.Verbose($"[ImageDuplicateAnalyzer] Trying to mark: {assetPath}");
+                
+                AssetImporter importer = AssetImporter.GetAtPath(assetPath);
+                if (importer != null)
+                {
+                    importer.SetAssetBundleNameAndVariant(bundleName, "");
+                    importer.SaveAndReimport();
+                    markedCount++;
+                    log.Verbose($"[ImageDuplicateAnalyzer] Marked texture for asset bundle: {assetPath} -> {bundleName}");
+                }
+                else
+                {
+                    log.Warning($"[ImageDuplicateAnalyzer] Could not find importer for: {assetPath} (file exists: {File.Exists(textureFile)})");
+                }
+            }
+            
+            if (markedCount > 0)
+            {
+                log.Info($"[ImageDuplicateAnalyzer] Marked {markedCount} shared textures for asset bundle: {bundleName}");
+            }
+            else if (sharedTextureFiles.Length > 0)
+            {
+                log.Warning($"[ImageDuplicateAnalyzer] Found {sharedTextureFiles.Length} texture files but could not mark any for asset bundle");
+            }
         }
 
         /// <summary>
@@ -1070,21 +1255,46 @@ namespace DCL.ABConverter
                 if (settings.verbose)
                     Debug.Log(string.Join("\n", rawContents.Select(r => $"{r.hash} -> {r.file}")));
 
-                List<AssetPath> gltfPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.gltfExtensions);
-                List<AssetPath> bufferPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.bufferExtensions);
-                List<AssetPath> texturePaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
+                // === PHASE 1: DISCOVERY ===
+                // Build complete lists of all assets (regardless of import state)
+                List<AssetPath> allGltfPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.gltfExtensions);
+                List<AssetPath> allBufferPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.bufferExtensions);
+                List<AssetPath> allTexturePaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
 
-                if (!FilterDumpList(ref gltfPaths))
+                totalGltfs = allGltfPaths.Count;
+
+                // Populate contentTable for ALL assets upfront (needed for GLTF imports to resolve references)
+                AddAssetPathsToContentTable(allTexturePaths);
+                AddAssetPathsToContentTable(allBufferPaths);
+                AddAssetPathsToContentTable(allGltfPaths, true);
+
+                // Check if all bundles already exist
+                if (!FilterDumpList(ref allGltfPaths))
                     return false;
 
-                FilterImportedAssets(gltfPaths, texturePaths, bufferPaths);
+                // === PHASE 2: FILTER ALREADY-IMPORTED ASSETS ===
+                // Separate assets into "needs download" vs "already imported"
+                var (gltfsToDownload, alreadyImportedGltfs) = PartitionByImportState(allGltfPaths);
+                var (texturesToDownload, alreadyImportedTextures) = PartitionByImportState(allTexturePaths);
+                var (buffersToDownload, alreadyImportedBuffers) = PartitionByImportState(allBufferPaths);
 
+                // Mark already-imported assets for bundling (no re-download needed)
+                assetsToMark.AddRange(alreadyImportedGltfs);
+                assetsToMark.AddRange(alreadyImportedTextures);
+                assetsToMark.AddRange(alreadyImportedBuffers);
+
+                // Register GLTF importers for already-imported GLTFs
+                RegisterGltfImportersForExistingAssets(alreadyImportedGltfs);
+
+                // === PHASE 3: DOWNLOAD MISSING ASSETS ===
                 List<Task> downloadTasks = new List<Task>(settings.downloadBatchSize);
 
                 downloadStartupTime = EditorApplication.timeSinceStartup;
 
-                int totalAssetsToDownload = gltfPaths.Count + bufferPaths.Count + texturePaths.Count;
+                int totalAssetsToDownload = gltfsToDownload.Count + buffersToDownload.Count + texturesToDownload.Count;
                 int progress = 0;
+
+                log.Info($"Assets to download: {totalAssetsToDownload} (skipping {alreadyImportedGltfs.Count + alreadyImportedTextures.Count + alreadyImportedBuffers.Count} already imported)");
 
                 long GetTotalMegabytesDownloaded() =>
                     downloadedData.Values.Sum(array => array.LongLength) / (1024 * 1024);
@@ -1097,7 +1307,7 @@ namespace DCL.ABConverter
                 }
 
                 // start and await in batches
-                foreach (AssetPath path in gltfPaths.Concat(bufferPaths).Concat(texturePaths))
+                foreach (AssetPath path in gltfsToDownload.Concat(buffersToDownload).Concat(texturesToDownload))
                 {
                     progress++;
 
@@ -1112,19 +1322,16 @@ namespace DCL.ABConverter
 
                 downloadEndTime = EditorApplication.timeSinceStartup;
 
+                // === PHASE 4: IMPORT DOWNLOADED ASSETS ===
                 nonGltfImportStartupTime = EditorApplication.timeSinceStartup;
 
                 //NOTE(Brian): Prepare textures and buffers. We should prepare all the dependencies in this phase.
-                assetsToMark.AddRange(ImportTextures(texturePaths));
-                assetsToMark.AddRange(ImportBuffers(bufferPaths));
+                assetsToMark.AddRange(ImportTextures(texturesToDownload));
+                assetsToMark.AddRange(ImportBuffers(buffersToDownload));
 
-                AddAssetPathsToContentTable(texturePaths);
-                AddAssetPathsToContentTable(bufferPaths);
-                AddAssetPathsToContentTable(gltfPaths, true);
+                totalGltfsToProcess = gltfsToDownload.Count + alreadyImportedGltfs.Count;
 
-                totalGltfsToProcess = gltfPaths.Count;
-
-                foreach (var gltfPath in gltfPaths)
+                foreach (var gltfPath in gltfsToDownload)
                 {
                     if (isExitForced) break;
 
@@ -1149,6 +1356,70 @@ namespace DCL.ABConverter
             downloadedData = null;
 
             return true;
+        }
+
+        /// <summary>
+        /// Partitions assets into two lists: those that need downloading and those already imported.
+        /// </summary>
+        private (List<AssetPath> toDownload, List<AssetPath> alreadyImported) PartitionByImportState(List<AssetPath> assetPaths)
+        {
+            var toDownload = new List<AssetPath>();
+            var alreadyImported = new List<AssetPath>();
+
+            foreach (var path in assetPaths)
+            {
+                if (IsAssetAlreadyImported(path))
+                    alreadyImported.Add(path);
+                else
+                    toDownload.Add(path);
+            }
+
+            return (toDownload, alreadyImported);
+        }
+
+        /// <summary>
+        /// Checks if an asset is already properly imported in Unity's AssetDatabase.
+        /// </summary>
+        private bool IsAssetAlreadyImported(AssetPath path)
+        {
+            // If directories are cleared, nothing is imported
+            if (settings.clearDirectoriesOnStart)
+                return false;
+
+            var importer = env.assetDatabase.GetImporterAtPath(path.finalPath);
+            if (!importer)
+                return false;
+
+            var asset = env.assetDatabase.LoadAssetAtPath<Object>(path.finalPath);
+            // In case of trouble the asset is not properly imported
+            if (!asset || asset.GetType() == typeof(DefaultAsset))
+                return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Registers metadata for GLTFs that are already imported (skipped download).
+        /// This populates gltfOriginalNames for downstream processes.
+        ///
+        /// NOTE: We do NOT add these to gltfToWait or gltfImporters because:
+        /// 1. They don't need to go through ProcessAllGltfs() - they're already imported
+        /// 2. ISS uses AssetDatabase.GetDependencies() fallback for these assets
+        /// </summary>
+        private void RegisterGltfImportersForExistingAssets(List<AssetPath> alreadyImportedGltfs)
+        {
+            foreach (var assetPath in alreadyImportedGltfs)
+            {
+                string outputPath = assetPath.finalPath;
+
+                // Only populate gltfOriginalNames (needed for some downstream processes)
+                gltfOriginalNames[outputPath] = assetPath.filePath;
+
+                // Count as already processed since import is complete
+                totalGltfsProcessed++;
+
+                log.Verbose($"Skipping reimport for existing GLTF: {assetPath.filePath}");
+            }
         }
 
         private async Task RecursiveDownload(Task downloadTask, int tryCount, int maxTries)
@@ -1221,74 +1492,6 @@ namespace DCL.ABConverter
         }
 
         /// <summary>
-        /// Removes assets that are already imported from the list
-        /// </summary>
-        private void FilterImportedAssets(List<AssetPath> gltfPaths, List<AssetPath> texturePaths, List<AssetPath> bufferPaths)
-        {
-            // All assets must be re-downloaded
-            if (settings.clearDirectoriesOnStart)
-                return;
-
-            bool CheckAssetIsImported(AssetPath path)
-            {
-                var importer = env.assetDatabase.GetImporterAtPath(path.finalPath);
-
-                if (!importer)
-                    return false;
-
-                var asset = env.assetDatabase.LoadAssetAtPath<Object>(path.finalPath);
-                // in case of a trouble the asset is not imported
-                if (!asset || asset.GetType() == typeof(DefaultAsset))
-                    return false;
-
-                return true;
-            }
-
-            var existingAssetPaths = new List<AssetPath>(gltfPaths.Count + texturePaths.Count + bufferPaths.Count);
-
-            void ProcessImportedAsset(AssetPath assetPath)
-            {
-                existingAssetPaths.Add(assetPath);
-                assetsToMark.Add(assetPath);
-            }
-
-            for (int i = gltfPaths.Count - 1; i >= 0; i--)
-            {
-                var path = gltfPaths[i];
-                if (CheckAssetIsImported(path))
-                {
-                    ProcessImportedAsset(path);
-                    gltfPaths.RemoveAt(i);
-                }
-            }
-
-            AddAssetPathsToContentTable(existingAssetPaths, true);
-            existingAssetPaths.Clear();
-
-            for (int i = texturePaths.Count - 1; i >= 0; i--)
-            {
-                var path = texturePaths[i];
-                if (CheckAssetIsImported(path))
-                {
-                    ProcessImportedAsset(path);
-                    texturePaths.RemoveAt(i);
-                }
-            }
-
-            for (int i = bufferPaths.Count - 1; i >= 0; i--)
-            {
-                var path = bufferPaths[i];
-                if (CheckAssetIsImported(path))
-                {
-                    ProcessImportedAsset(path);
-                    bufferPaths.RemoveAt(i);
-                }
-            }
-
-            AddAssetPathsToContentTable(existingAssetPaths);
-        }
-
-        /// <summary>
         /// Trims off existing asset bundles from the given AssetPath array,
         /// if none exists and shouldAbortBecauseAllBundlesExist is true, it will return false.
         /// </summary>
@@ -1298,7 +1501,7 @@ namespace DCL.ABConverter
         {
             bool shouldBuildAssetBundles;
 
-            totalGltfs = gltfPaths.Count;
+            // Note: totalGltfs is now set in ResolveAssets before this method is called
 
             if (settings.skipAlreadyBuiltBundles)
             {

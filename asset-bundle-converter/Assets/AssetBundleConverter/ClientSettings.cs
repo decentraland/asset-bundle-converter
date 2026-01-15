@@ -86,6 +86,12 @@ namespace AssetBundleConverter
             public BuildTarget buildTarget = BuildTarget.WebGL;
             public BuildPipelineType BuildPipelineType = BuildPipelineType.Default;
 
+            /// <summary>
+            /// Whether to analyze images for potential reuse via CRC/hash checks during extraction.
+            /// When enabled, identifies duplicate textures that could be shared across GLTFs.
+            /// </summary>
+            public bool enableImageDuplicateAnalysis = false;
+
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 
         }
