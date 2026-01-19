@@ -88,7 +88,7 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
         /// Respects visibility - invisible entities are skipped entirely.
         /// Use this from ScenePlacementEditor for manifest-driven placement only.
         /// </summary>
-        public void PlaceAssetFromManifest(string assetPath, GameObject prefab)
+        public void PlaceAssetFromManifest(string assetPath, GameObject prefab, bool firstInstanceOnly = false)
         {
             if (!IsCompatible) return;
 
@@ -104,6 +104,10 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
                     continue;
 
                 InstantiateWithTransform(prefab, entityId);
+
+                // If only first instance is requested, break after placing one
+                if (firstInstanceOnly)
+                    return;
             }
         }
 
@@ -150,25 +154,14 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
             string staticSceneABName = $"staticScene_{entityDTO.id}{PlatformUtils.GetPlatform()}";
             var asset = ScriptableObject.CreateInstance<StaticSceneDescriptor>();
 
-            // Track hashes that have been marked as static to prevent duplicate paths with the same hash
-            // from overwriting the static bundle marking (e.g., "models/win.glb" and "mini-game-assets/models/win.glb" 
-            // can have the same hash but only one path matches the manifest)
-            var hashesMarkedAsStatic = new HashSet<string>();
-
             foreach (var assetPath in assetPaths)
             {
                 if (assetPath == null) continue;
 
                 if (assetPath.finalPath.EndsWith(".bin")) continue;
 
-                // Skip if this hash was already processed as static (prevents non-matching duplicate paths from overwriting)
-                if (hashesMarkedAsStatic.Contains(assetPath.hash))
-                    continue;
-
                 // Check if this asset matches a GltfContainer source
-                // Emotes should not be added to the static asset bundle
-                bool isEmote = Utils.IsEmoteFileName(assetPath.fileName);
-                bool isStatic = !isEmote && gltfsComponents.ContainsKey(assetPath.filePath);
+                bool isStatic = gltfsComponents.ContainsKey(assetPath.filePath);
                 string assetBundleName = assetPath.hash + PlatformUtils.GetPlatform();
 
                 if (isStatic)
@@ -199,7 +192,6 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
                     // Mark GLTF dependencies as static
                     if (gltfImporters.TryGetValue(assetPath.filePath, out IGltfImport gltfImport))
                     {
-                        // Use importer dependencies if available (freshly imported GLTFs)
                         var dependencies = gltfImport.assetDependencies;
 
                         if (dependencies != null)
@@ -211,21 +203,7 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
                             }
                         }
                     }
-                    else
-                    {
-                        // Fallback: Use Unity's AssetDatabase for already-imported assets
-                        string relativePath = PathUtils.FullPathToAssetPath(assetPath.finalPath);
-                        string[] dependencies = AssetDatabase.GetDependencies(relativePath, recursive: false);
 
-                        foreach (var dependency in dependencies)
-                        {
-                            if (!string.IsNullOrEmpty(dependency) && !dependency.Contains("dcl/scene_ignore") && dependency != relativePath)
-                                env.directory.MarkFolderForAssetBundleBuild(dependency, staticSceneABName);
-                        }
-                    }
-
-                    // Remember this hash was marked as static
-                    hashesMarkedAsStatic.Add(assetPath.hash);
                 }
 
                 bool isStaticTexture = textureComponents.Contains(assetPath.filePath);

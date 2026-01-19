@@ -21,6 +21,7 @@ namespace DCL.ABConverter.Editor
         private string lastResult = "";
         private List<string> availableManifests = new List<string>();
         private int selectedManifestIndex = 0;
+        private bool firstInstanceOnly = false;
 
         [MenuItem("Decentraland/Instantiate Initial Scene State")]
         public static void ShowWindow()
@@ -121,6 +122,12 @@ namespace DCL.ABConverter.Editor
                 }
             }
             EditorGUILayout.EndHorizontal();
+
+            firstInstanceOnly = EditorGUILayout.Toggle("First Instance Only", firstInstanceOnly);
+            if (firstInstanceOnly)
+            {
+                EditorGUILayout.HelpBox("Only the first instance of each GLTF will be placed.", MessageType.Info);
+            }
 
             EditorGUILayout.Space();
 
@@ -295,7 +302,7 @@ namespace DCL.ABConverter.Editor
                         int beforeCount = GameObject.FindObjectsOfType<GameObject>().Length;
 
                         // Only place assets that exist in the manifest with proper transforms
-                        env.sceneStateGenerator.PlaceAssetFromManifest(manifestFilePath, asset);
+                        env.sceneStateGenerator.PlaceAssetFromManifest(manifestFilePath, asset, firstInstanceOnly);
 
                         int afterCount = FindObjectsOfType<GameObject>().Length;
                         int instancesCreated = afterCount - beforeCount;
