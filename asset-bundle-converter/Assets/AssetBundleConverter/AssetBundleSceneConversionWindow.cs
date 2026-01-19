@@ -69,6 +69,8 @@ namespace AssetBundleConverter
         private ClientSettings clientSettings;
         private PersistentSetting<AnimationMethod> animationMehtod;
         private PersistentSetting<bool> enableImageDuplicateAnalysis;
+        private PersistentSetting<bool> enableMeshBaker;
+        private PersistentSetting<int> meshBakerMaxAtlasSize;
         private bool showDebugOptions;
         private bool stripShaders = true;
         private bool importGltf = true;
@@ -96,6 +98,8 @@ namespace AssetBundleConverter
             failingConversionTolerance = PersistentSetting.CreateFloat(nameof(failingConversionTolerance), 1f); // 5%
             downloadBatchSize = PersistentSetting.CreateInt(nameof(downloadBatchSize), 20);
             enableImageDuplicateAnalysis = PersistentSetting.CreateBool(nameof(enableImageDuplicateAnalysis), false);
+            enableMeshBaker = PersistentSetting.CreateBool(nameof(enableMeshBaker), false);
+            meshBakerMaxAtlasSize = PersistentSetting.CreateInt(nameof(meshBakerMaxAtlasSize), 2048);
         }
 
         private void OnGUI()
@@ -114,6 +118,18 @@ namespace AssetBundleConverter
             clearDownloads = EditorGUILayout.Toggle("Clear Downloads", clearDownloads);
             includeShaderVariants = EditorGUILayout.Toggle("Include Shader Variants", includeShaderVariants);
             enableImageDuplicateAnalysis.Value = EditorGUILayout.Toggle("Analyze Image Duplicates", enableImageDuplicateAnalysis);
+            
+            // MeshBaker settings
+            enableMeshBaker.Value = EditorGUILayout.Toggle("Enable MeshBaker Atlas", enableMeshBaker);
+            if (enableMeshBaker.Value)
+            {
+                EditorGUI.indentLevel++;
+                meshBakerMaxAtlasSize.Value = EditorGUILayout.IntPopup("Max Atlas Size", meshBakerMaxAtlasSize, 
+                    new string[] { "512", "1024", "2048", "4096" }, 
+                    new int[] { 512, 1024, 2048, 4096 });
+                EditorGUI.indentLevel--;
+            }
+            
             showDebugOptions = EditorGUILayout.Toggle("Show debug options", showDebugOptions);
 
             RenderUrlEditor();
@@ -352,7 +368,9 @@ namespace AssetBundleConverter
                 buildTarget = GetBuildTarget(),
                 BuildPipelineType = buildPipelineType,
                 AnimationMethod = animationMehtod,
-                enableImageDuplicateAnalysis = enableImageDuplicateAnalysis
+                enableImageDuplicateAnalysis = enableImageDuplicateAnalysis,
+                enableMeshBaker = enableMeshBaker,
+                meshBakerMaxAtlasSize = meshBakerMaxAtlasSize
             };
         }
 

@@ -286,30 +286,11 @@ namespace AssetBundleConverter.Editor
                     //var importedTex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
                     var importer = GetAtPath(texPath);
 
-                    if (importer is TextureImporter tImporter)
+                    // Skip texture import settings modification - let MeshBaker control all texture settings
+                    if (importer is not TextureImporter)
                     {
-                        tImporter.isReadable = false;
-
-                        // texture is considered normal only if all material maps are true
-                        var isNormalMap = true;
-
-                        foreach (TexMaterialMap materialMap in materialMaps)
-                            isNormalMap &= materialMap.IsNormalMap;
-
-                        TextureImporterType targetImportType = GetTextureImporterType(tImporter, isNormalMap);
-                        tImporter.textureType = targetImportType;
-
-                        tImporter.crunchedCompression = true;
-                        tImporter.sRGBTexture = !metallics.Contains(tex);
-                        tImporter.compressionQuality = 100;
-                        tImporter.textureCompression = TextureImporterCompression.CompressedHQ;
-                        tImporter.mipmapEnabled = true;
-
-                        // With this we avoid re-importing this glb as it may contain invalid references to textures
-                        EditorUtility.SetDirty(tImporter);
-                        tImporter.SaveAndReimport();
+                        throw new Exception($"GLTFImporter: Unable to import texture at path: {texPath}");
                     }
-                    else { throw new Exception($"GLTFImporter: Unable to import texture at path: {texPath}"); }
                 }
             }
         }

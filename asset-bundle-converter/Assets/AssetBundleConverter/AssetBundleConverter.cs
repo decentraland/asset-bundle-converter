@@ -187,6 +187,12 @@ namespace DCL.ABConverter
             if (TryExitWithGltfErrors())
                 return;
 
+            // Optional: Process with MeshBaker for texture atlasing
+            if (settings.enableMeshBaker)
+            {
+                await ProcessWithMeshBaker();
+            }
+
             if (settings.createAssetBundle)
             {
                 GC.Collect();
@@ -443,6 +449,98 @@ namespace DCL.ABConverter
             EditorUtility.ClearProgressBar();
 
             log.Info("Ended importing GLTFs");
+        }
+
+        /// <summary>
+        /// Process all imported GLTFs with MeshBaker to create texture atlases and optimize prefabs.
+        /// This step combines textures into atlases to reduce draw calls and texture memory.
+        /// </summary>
+        private async Task ProcessWithMeshBaker()
+        {
+            log.Info("Starting MeshBaker processing...");
+            
+            var meshBakerSettings = MeshBakerService.CreateSettingsFromClientSettings(settings);
+            
+            // Collect all GLTF/GLB paths from the assets to mark
+            // In Unity, imported GLTF/GLB files ARE the prefab assets
+            var gltfPaths = new List<string>();
+            
+            foreach (var assetPath in assetsToMark)
+            {
+                string fullPath = assetPath.finalPath;
+                
+                // Check if it's a GLTF/GLB file
+                if (fullPath.EndsWith(".gltf", System.StringComparison.OrdinalIgnoreCase) ||
+                    fullPath.EndsWith(".glb", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    string relativePath = PathUtils.FullPathToAssetPath(fullPath);
+                    
+                    // GLTF/GLB files when imported by Unity ARE the prefab - load them directly
+                    GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(relativePath);
+                    
+                    if (prefab != null)
+                    {
+                        log.Verbose($"Found GLTF prefab to process: {relativePath}");
+                        gltfPaths.Add(relativePath);
+                    }
+                    else
+                    {
+                        log.Verbose($"Could not load GLTF as prefab: {relativePath}");
+                    }
+                }
+            }
+            
+            if (gltfPaths.Count == 0)
+            {
+                log.Info("No GLTF prefabs found to process with MeshBaker");
+                return;
+            }
+            
+            log.Info($"Processing {gltfPaths.Count} GLTF prefabs with MeshBaker...");
+            
+            int successCount = 0;
+            int failCount = 0;
+            
+            for (int i = 0; i < gltfPaths.Count; i++)
+            {
+                string gltfPath = gltfPaths[i];
+                
+                env.editor.DisplayProgressBar("MeshBaker Processing", 
+                    $"Processing {i + 1}/{gltfPaths.Count}: {Path.GetFileName(gltfPath)}", 
+                    (i + 1) / (float)gltfPaths.Count);
+                
+                try
+                {
+                    var result = MeshBakerService.ProcessPrefab(gltfPath, meshBakerSettings);
+                    
+                    if (result.Success)
+                    {
+                        successCount++;
+                        log.Verbose($"MeshBaker processed: {gltfPath}");
+                    }
+                    else
+                    {
+                        failCount++;
+                        log.Warning($"MeshBaker failed for {gltfPath}: {result.ErrorMessage}");
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    failCount++;
+                    log.Error($"MeshBaker exception for {gltfPath}: {ex.Message}");
+                    Debug.LogException(ex);
+                }
+                
+                // Give Unity a chance to process
+                await env.editor.Delay(System.TimeSpan.FromMilliseconds(100));
+            }
+            
+            EditorUtility.ClearProgressBar();
+            
+            log.Info($"MeshBaker processing complete: {successCount} succeeded, {failCount} failed out of {gltfPaths.Count} prefabs");
+            
+            // Refresh asset database after all processing
+            env.assetDatabase.Refresh();
         }
 
         private void CreateLayeredAnimatorController(IGltfImport gltfImport, string directory)
@@ -1001,7 +1099,7 @@ namespace DCL.ABConverter
             {
                 string assetPath = PathUtils.GetRelativePathTo(Application.dataPath, materialFile);
                 Material material = env.assetDatabase.LoadAssetAtPath<Material>(assetPath);
-                
+
                 if (material == null)
                     continue;
 
@@ -1019,7 +1117,7 @@ namespace DCL.ABConverter
                     }
 
                     string texturePath = env.assetDatabase.GetAssetPath(currentTexture);
-                    
+
                     // Check if this texture path matches any original that was moved
                     if (mappings.TryGetValue(texturePath, out string sharedPath))
                     {
@@ -1066,7 +1164,7 @@ namespace DCL.ABConverter
             }
 
             string sharedTexturesPath = env.imageDuplicateAnalyzer.SharedTexturesPath;
-            
+
             if (!env.directory.Exists(sharedTexturesPath))
             {
                 log.Warning($"[ImageDuplicateAnalyzer] Shared textures folder does not exist: {sharedTexturesPath}");
@@ -1075,23 +1173,23 @@ namespace DCL.ABConverter
 
             // Refresh asset database to ensure all shared textures are imported
             env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
-            
+
             log.Info($"[ImageDuplicateAnalyzer] Looking for textures in: {sharedTexturesPath}");
-            
+
             // Get all texture files in the shared folder
             string[] sharedTextureFiles = Directory.GetFiles(sharedTexturesPath, "*.png", SearchOption.TopDirectoryOnly);
-            
+
             log.Info($"[ImageDuplicateAnalyzer] Found {sharedTextureFiles.Length} texture files to add to bundle: {bundleName}");
-            
+
             int markedCount = 0;
             foreach (string textureFile in sharedTextureFiles)
             {
                 // Convert to Unity's asset path format (relative to project, starting with "Assets/")
                 string assetPath = textureFile.Replace(Application.dataPath, "Assets");
                 assetPath = assetPath.Replace("\\", "/");
-                
+
                 log.Verbose($"[ImageDuplicateAnalyzer] Trying to mark: {assetPath}");
-                
+
                 AssetImporter importer = AssetImporter.GetAtPath(assetPath);
                 if (importer != null)
                 {
@@ -1105,7 +1203,7 @@ namespace DCL.ABConverter
                     log.Warning($"[ImageDuplicateAnalyzer] Could not find importer for: {assetPath} (file exists: {File.Exists(textureFile)})");
                 }
             }
-            
+
             if (markedCount > 0)
             {
                 log.Info($"[ImageDuplicateAnalyzer] Marked {markedCount} shared textures for asset bundle: {bundleName}");
@@ -1578,11 +1676,12 @@ namespace DCL.ABConverter
 
                     ReduceTextureSizeIfNeeded(finalTexturePath, maxTextureSize);
 
-                    texImporter.crunchedCompression = true;
-                    texImporter.textureCompression = TextureImporterCompression.CompressedHQ;
-                    texImporter.isReadable = true;
-                    texImporter.alphaIsTransparency = true;
-                    EditorUtility.SetDirty(texImporter);
+                    // TODO (JUANI): Commented out so we dont have an infinite loop with Mesh Baker
+                    //texImporter.crunchedCompression = true;
+                    //texImporter.textureCompression = TextureImporterCompression.CompressedHQ;
+                    //texImporter.isReadable = true;
+                    //texImporter.alphaIsTransparency = true;
+                    //EditorUtility.SetDirty(texImporter);
                 }
 
                 env.assetDatabase.ImportAsset(assetPath.finalPath, ImportAssetOptions.ForceUpdate);

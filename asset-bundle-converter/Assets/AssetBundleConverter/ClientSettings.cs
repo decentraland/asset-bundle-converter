@@ -92,6 +92,23 @@ namespace AssetBundleConverter
             /// </summary>
             public bool enableImageDuplicateAnalysis = false;
 
+            /// <summary>
+            /// Whether to use MeshBaker to create texture atlases and optimize prefabs.
+            /// When enabled, all imported GLTFs will be processed through MeshBaker to 
+            /// combine textures into atlases and reduce draw calls.
+            /// </summary>
+            public bool enableMeshBaker = false;
+            
+            /// <summary>
+            /// Maximum atlas size for MeshBaker texture combining (default: 2048).
+            /// </summary>
+            public int meshBakerMaxAtlasSize = 2048;
+            
+            /// <summary>
+            /// Maximum tiling bake size for MeshBaker (default: 512).
+            /// </summary>
+            public int meshBakerMaxTilingBakeSize = 512;
+
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 
         }
