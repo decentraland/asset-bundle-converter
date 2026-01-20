@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -111,7 +111,8 @@ namespace DCL.ABConverter
             log.verboseEnabled = true;
 
             // Initialize image duplicate analyzer with download path for shared textures folder
-            env.InitializeImageDuplicateAnalyzer(settings.enableImageDuplicateAnalysis, finalDownloadedPath);
+            // Pass MeshBaker flag to configure textures with correct settings to avoid reimports
+            env.InitializeImageDuplicateAnalyzer(settings.enableImageDuplicateAnalysis, finalDownloadedPath, settings.enableMeshBaker);
         }
 
         /// <summary>
@@ -1026,7 +1027,16 @@ namespace DCL.ABConverter
 
                     env.file.WriteAllBytes(texPath, textureBytes);
 
-                    env.assetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+                    // Configure texture for MeshBaker BEFORE first import to avoid any reimports
+                    // MeshBaker needs: isReadable=true, uncompressed, no platform override, no crunch
+                    if (settings.enableMeshBaker)
+                    {
+                        ConfigureTextureForMeshBaker(texPath);
+                    }
+                    else
+                    {
+                        env.assetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+                    }
 
                     ReduceTextureSizeIfNeeded(texPath, maxTextureSize);
 
@@ -1720,16 +1730,17 @@ namespace DCL.ABConverter
                     string finalTexturePath = finalDownloadedPath + assetPath.hash + "/" + assetPath.hash + Path.GetExtension(assetPath.filePath);
 
                     ReduceTextureSizeIfNeeded(finalTexturePath, maxTextureSize);
-
-                    // TODO (JUANI): Commented out so we dont have an infinite loop with Mesh Baker
-                    //texImporter.crunchedCompression = true;
-                    //texImporter.textureCompression = TextureImporterCompression.CompressedHQ;
-                    //texImporter.isReadable = true;
-                    //texImporter.alphaIsTransparency = true;
-                    //EditorUtility.SetDirty(texImporter);
                 }
 
-                env.assetDatabase.ImportAsset(assetPath.finalPath, ImportAssetOptions.ForceUpdate);
+                // Configure texture for MeshBaker if enabled, otherwise just import normally
+                if (settings.enableMeshBaker)
+                {
+                    ConfigureTextureForMeshBaker(assetPath.finalPath);
+                }
+                else
+                {
+                    env.assetDatabase.ImportAsset(assetPath.finalPath, ImportAssetOptions.ForceUpdate);
+                }
 
                 SetDeterministicAssetDatabaseGuid(assetPath);
 
@@ -1832,6 +1843,92 @@ namespace DCL.ABConverter
 
         private IGltfImport CreateGltfImport(AssetPath filePath) =>
             env.gltfImporter.GetImporter(filePath, contentTable, settings.shaderType, settings.buildTarget);
+
+        /// <summary>
+        /// Configure texture import settings for MeshBaker compatibility BEFORE first import.
+        /// This prevents MeshBaker from needing to reimport textures later.
+        /// 
+        /// MeshBaker requires:
+        /// - isReadable = true (to read pixel data for atlasing)
+        /// - Uncompressed format (RGB24 or RGBA32 for true-color fidelity)
+        /// - No platform override
+        /// - No crunch compression
+        /// </summary>
+        private void ConfigureTextureForMeshBaker(string texturePath)
+        {
+            string assetPath = PathUtils.FullPathToAssetPath(texturePath);
+            
+            // First do a default import to create the .meta file
+            env.assetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+            
+            var importer = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+            if (importer == null)
+                return;
+            
+            bool needsReimport = false;
+            
+            // 1. isReadable must be true for MeshBaker to read pixels
+            if (!importer.isReadable)
+            {
+                importer.isReadable = true;
+                needsReimport = true;
+            }
+            
+            // 2. Disable crunch compression
+            if (importer.crunchedCompression)
+            {
+                importer.crunchedCompression = false;
+                needsReimport = true;
+            }
+            
+            // 3. Set compression to uncompressed for true-color fidelity
+            if (importer.textureCompression != TextureImporterCompression.Uncompressed)
+            {
+                importer.textureCompression = TextureImporterCompression.Uncompressed;
+                needsReimport = true;
+            }
+            
+            // 4. Disable platform override if enabled
+            string platform = GetCurrentPlatformString();
+            var platformSettings = importer.GetPlatformTextureSettings(platform);
+            if (platformSettings.overridden)
+            {
+                platformSettings.overridden = false;
+                importer.SetPlatformTextureSettings(platformSettings);
+                needsReimport = true;
+            }
+            
+            // 5. Set default format to RGBA32 (uncompressed with alpha) or RGB24 (no alpha)
+            var defaultSettings = importer.GetDefaultPlatformTextureSettings();
+            if (defaultSettings.format != TextureImporterFormat.RGBA32 && 
+                defaultSettings.format != TextureImporterFormat.RGB24)
+            {
+                // Use RGBA32 to preserve alpha channel if present
+                defaultSettings.format = TextureImporterFormat.RGBA32;
+                importer.SetPlatformTextureSettings(defaultSettings);
+                needsReimport = true;
+            }
+            
+            if (needsReimport)
+            {
+                importer.SaveAndReimport();
+            }
+        }
+        
+        private static string GetCurrentPlatformString()
+        {
+            var target = EditorUserBuildSettings.activeBuildTarget;
+            return target switch
+            {
+                BuildTarget.StandaloneWindows or BuildTarget.StandaloneWindows64 => "Standalone",
+                BuildTarget.StandaloneOSX => "Standalone",
+                BuildTarget.StandaloneLinux64 => "Standalone",
+                BuildTarget.iOS => "iPhone",
+                BuildTarget.Android => "Android",
+                BuildTarget.WebGL => "WebGL",
+                _ => "Standalone"
+            };
+        }
 
         private void ReduceTextureSizeIfNeeded(string texturePath, float maxSize)
         {

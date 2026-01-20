@@ -1,4 +1,4 @@
-﻿using AssetBundleConverter.Wrappers.Implementations.Default;
+using AssetBundleConverter.Wrappers.Implementations.Default;
 using AssetBundleConverter.Wrappers.Interfaces;
 using DCL;
 using SystemWrappers = AssetBundleConverter.Wrappers.Implementations.Default.SystemWrappers;
@@ -50,7 +50,8 @@ namespace AssetBundleConverter
         /// </summary>
         /// <param name="enabled">Whether duplicate analysis should be enabled</param>
         /// <param name="downloadedPath">Base path where downloaded assets are stored</param>
-        public void InitializeImageDuplicateAnalyzer(bool enabled, string downloadedPath)
+        /// <param name="configureForMeshBaker">Whether to configure textures for MeshBaker compatibility</param>
+        public void InitializeImageDuplicateAnalyzer(bool enabled, string downloadedPath, bool configureForMeshBaker = false)
         {
             imageDuplicateAnalyzer = new ImageDuplicateAnalyzer(
                 enabled,
@@ -59,6 +60,7 @@ namespace AssetBundleConverter
                 directory,
                 assetDatabase,
                 logger);
+            imageDuplicateAnalyzer.ConfigureForMeshBaker = configureForMeshBaker;
         }
 
         /// <summary>

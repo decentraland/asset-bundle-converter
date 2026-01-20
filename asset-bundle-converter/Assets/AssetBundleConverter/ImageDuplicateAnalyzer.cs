@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
+using UnityEditor;
 
 namespace AssetBundleConverter
 {
@@ -49,6 +50,12 @@ namespace AssetBundleConverter
         private readonly HashSet<string> movedToShared = new();
         private readonly Dictionary<string, string> originalPathsToUpdate = new(); // hash -> original path (for material updates)
         private readonly List<DuplicateInfo> duplicates = new();
+        
+        /// <summary>
+        /// When true, configures imported textures for MeshBaker compatibility
+        /// (isReadable=true, uncompressed, no platform override, no crunch)
+        /// </summary>
+        public bool ConfigureForMeshBaker { get; set; } = false;
         private readonly bool enabled;
         private readonly IABLogger logger;
         private readonly IFile file;
@@ -200,6 +207,12 @@ namespace AssetBundleConverter
                 // Write to shared location (we have the bytes, so just write directly)
                 file.WriteAllBytes(newSharedPath, imageData);
                 assetDatabase.ImportAsset(newSharedPath, UnityEditor.ImportAssetOptions.ForceSynchronousImport);
+                
+                // Configure texture for MeshBaker compatibility if enabled
+                if (ConfigureForMeshBaker)
+                {
+                    ConfigureTextureForMeshBakerInternal(newSharedPath);
+                }
 
                 // Delete the original file to avoid duplication
                 // The original file was saved when the first GLTF with this texture was processed
@@ -371,6 +384,81 @@ namespace AssetBundleConverter
             }
 
             return $"{size:F2} {suffixes[suffixIndex]}";
+        }
+        
+        /// <summary>
+        /// Configure texture import settings for MeshBaker compatibility.
+        /// MeshBaker requires: isReadable=true, uncompressed, no platform override, no crunch
+        /// </summary>
+        private void ConfigureTextureForMeshBakerInternal(string texturePath)
+        {
+            string assetPath = PathUtils.FullPathToAssetPath(texturePath);
+            var importer = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+            if (importer == null)
+                return;
+            
+            bool needsReimport = false;
+            
+            // isReadable must be true for MeshBaker to read pixels
+            if (!importer.isReadable)
+            {
+                importer.isReadable = true;
+                needsReimport = true;
+            }
+            
+            // Disable crunch compression
+            if (importer.crunchedCompression)
+            {
+                importer.crunchedCompression = false;
+                needsReimport = true;
+            }
+            
+            // Set compression to uncompressed for true-color fidelity
+            if (importer.textureCompression != TextureImporterCompression.Uncompressed)
+            {
+                importer.textureCompression = TextureImporterCompression.Uncompressed;
+                needsReimport = true;
+            }
+            
+            // Disable platform override if enabled
+            string platform = GetCurrentPlatformString();
+            var platformSettings = importer.GetPlatformTextureSettings(platform);
+            if (platformSettings.overridden)
+            {
+                platformSettings.overridden = false;
+                importer.SetPlatformTextureSettings(platformSettings);
+                needsReimport = true;
+            }
+            
+            // Set default format to RGBA32 (uncompressed with alpha)
+            var defaultSettings = importer.GetDefaultPlatformTextureSettings();
+            if (defaultSettings.format != TextureImporterFormat.RGBA32 && 
+                defaultSettings.format != TextureImporterFormat.RGB24)
+            {
+                defaultSettings.format = TextureImporterFormat.RGBA32;
+                importer.SetPlatformTextureSettings(defaultSettings);
+                needsReimport = true;
+            }
+            
+            if (needsReimport)
+            {
+                importer.SaveAndReimport();
+            }
+        }
+        
+        private static string GetCurrentPlatformString()
+        {
+            var target = EditorUserBuildSettings.activeBuildTarget;
+            return target switch
+            {
+                BuildTarget.StandaloneWindows or BuildTarget.StandaloneWindows64 => "Standalone",
+                BuildTarget.StandaloneOSX => "Standalone",
+                BuildTarget.StandaloneLinux64 => "Standalone",
+                BuildTarget.iOS => "iPhone",
+                BuildTarget.Android => "Android",
+                BuildTarget.WebGL => "WebGL",
+                _ => "Standalone"
+            };
         }
     }
 }
