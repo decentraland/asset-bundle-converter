@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using DigitalOpus.MB.Core;
 using DigitalOpus.MB.MBEditor;
 using AssetBundleConverter;
@@ -31,6 +32,16 @@ namespace DCL.ABConverter
                 "_OcclusionMap"
             };
             public bool RenameOriginalPrefab = false;
+            
+            /// <summary>
+            /// Number of assets per shared atlas. 0 or negative = all assets in one atlas.
+            /// </summary>
+            public int AssetsPerAtlas = 1;
+            
+            /// <summary>
+            /// Output folder for shared atlases and baked prefabs.
+            /// </summary>
+            public string OutputFolder = null;
         }
 
         /// <summary>
@@ -42,6 +53,18 @@ namespace DCL.ABConverter
             public string OriginalPrefabPath;
             public string BakedPrefabPath;
             public string AtlasAssetPath;
+            public string ErrorMessage;
+        }
+        
+        /// <summary>
+        /// Result of batched MeshBaker processing (multiple assets sharing one atlas)
+        /// </summary>
+        public class BatchedProcessingResult
+        {
+            public bool Success;
+            public string AtlasAssetPath;
+            public string SharedMaterialPath;
+            public List<ProcessingResult> PrefabResults = new List<ProcessingResult>();
             public string ErrorMessage;
         }
 
@@ -58,7 +81,8 @@ namespace DCL.ABConverter
                 MaxTilingBakeSize = clientSettings.meshBakerMaxTilingBakeSize,
                 ConsiderMeshUVs = true,
                 LightmapOption = MB2_LightmapOptions.copy_UV2_unchanged,
-                RenameOriginalPrefab = false
+                RenameOriginalPrefab = false,
+                AssetsPerAtlas = clientSettings.meshBakerAssetsPerAtlas
             };
         }
 
@@ -494,6 +518,272 @@ namespace DCL.ABConverter
             Debug.Log($"[MeshBakerService] Batch processing complete: {successCount}/{total} succeeded");
 
             return results;
+        }
+        
+        /// <summary>
+        /// Process multiple prefabs with a SHARED atlas. All prefabs in the batch will use
+        /// the same atlas texture and material, reducing draw calls.
+        /// </summary>
+        /// <param name="prefabPaths">Paths to the prefabs/models to process together</param>
+        /// <param name="outputFolder">Folder where shared atlas and baked prefabs will be saved</param>
+        /// <param name="batchName">Name for the shared atlas (e.g., "Batch_0")</param>
+        /// <param name="settings">MeshBaker settings</param>
+        /// <returns>Result containing shared atlas info and individual prefab results</returns>
+        public static BatchedProcessingResult ProcessPrefabsWithSharedAtlas(
+            List<string> prefabPaths, 
+            string outputFolder, 
+            string batchName,
+            MeshBakerSettings settings = null)
+        {
+            settings ??= DefaultSettings;
+            var result = new BatchedProcessingResult();
+            
+            if (prefabPaths == null || prefabPaths.Count == 0)
+            {
+                result.ErrorMessage = "No prefab paths provided";
+                return result;
+            }
+            
+            // Ensure output folder exists
+            if (!Directory.Exists(outputFolder))
+            {
+                Directory.CreateDirectory(outputFolder);
+            }
+            
+            GameObject bakerGO = null;
+            var prefabInstances = new List<(GameObject instance, GameObject prefabAsset, string path)>();
+            
+            try
+            {
+                Debug.Log($"[MeshBakerService] Processing batch '{batchName}' with {prefabPaths.Count} prefabs...");
+                
+                // Create Baker GameObject
+                bakerGO = new GameObject($"MeshBaker_{batchName}");
+                
+                // Add components
+                MB3_BatchPrefabBaker batchPrefabBaker = bakerGO.AddComponent<MB3_BatchPrefabBaker>();
+                MB3_TextureBaker textureBaker = bakerGO.AddComponent<MB3_TextureBaker>();
+                MB3_MeshBaker meshBaker = bakerGO.AddComponent<MB3_MeshBaker>();
+                
+                // Configure Texture Baker
+                textureBaker.maxAtlasSize = settings.MaxAtlasSize;
+                textureBaker.maxTilingBakeSize = settings.MaxTilingBakeSize;
+                textureBaker.fixOutOfBoundsUVs = settings.ConsiderMeshUVs;
+                textureBaker.packingAlgorithm = MB2_PackingAlgorithmEnum.MeshBakerTexturePacker;
+                
+                // Set textures to ignore
+                textureBaker.texturePropNamesToIgnore.Clear();
+                textureBaker.texturePropNamesToIgnore.AddRange(settings.TexturesToIgnore);
+                
+                // Configure Mesh Baker
+                meshBaker.meshCombiner.settings.lightmapOption = settings.LightmapOption;
+                meshBaker.meshCombiner.outputOption = MB2_OutputOptions.bakeMeshAssetsInPlace;
+                
+                // Collect all renderers from ALL prefabs
+                List<GameObject> allObjectsToCombine = new List<GameObject>();
+                var prefabRows = new List<MB3_BatchPrefabBaker.MB3_PrefabBakerRow>();
+                
+                foreach (string prefabPath in prefabPaths)
+                {
+                    GameObject prefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+                    if (prefabAsset == null)
+                    {
+                        Debug.LogWarning($"[MeshBakerService] Could not load prefab: {prefabPath}");
+                        result.PrefabResults.Add(new ProcessingResult 
+                        { 
+                            OriginalPrefabPath = prefabPath, 
+                            Success = false, 
+                            ErrorMessage = "Could not load prefab" 
+                        });
+                        continue;
+                    }
+                    
+                    // Instantiate the prefab
+                    bool isModelAsset = IsModelAsset(prefabPath);
+                    GameObject instance;
+                    
+                    if (isModelAsset)
+                    {
+                        instance = Object.Instantiate(prefabAsset);
+                        instance.name = prefabAsset.name;
+                    }
+                    else
+                    {
+                        instance = (GameObject)PrefabUtility.InstantiatePrefab(prefabAsset);
+                    }
+                    
+                    if (instance == null)
+                    {
+                        Debug.LogWarning($"[MeshBakerService] Could not instantiate: {prefabPath}");
+                        result.PrefabResults.Add(new ProcessingResult 
+                        { 
+                            OriginalPrefabPath = prefabPath, 
+                            Success = false, 
+                            ErrorMessage = "Could not instantiate prefab" 
+                        });
+                        continue;
+                    }
+                    
+                    prefabInstances.Add((instance, prefabAsset, prefabPath));
+                    
+                    // Collect renderers from this instance
+                    Renderer[] renderers = instance.GetComponentsInChildren<Renderer>(true);
+                    foreach (Renderer r in renderers)
+                    {
+                        if (r is MeshRenderer || r is SkinnedMeshRenderer)
+                        {
+                            allObjectsToCombine.Add(r.gameObject);
+                        }
+                    }
+                    
+                    // Add to prefab rows for batch baking
+                    var row = new MB3_BatchPrefabBaker.MB3_PrefabBakerRow { sourcePrefab = prefabAsset };
+                    prefabRows.Add(row);
+                }
+                
+                if (allObjectsToCombine.Count == 0)
+                {
+                    result.Success = true;
+                    result.ErrorMessage = "No renderers found in any prefab";
+                    Debug.Log($"[MeshBakerService] No renderers found in batch '{batchName}'");
+                    return result;
+                }
+                
+                // Add all objects to texture baker
+                textureBaker.GetObjectsToCombine().Clear();
+                textureBaker.GetObjectsToCombine().AddRange(allObjectsToCombine);
+                
+                // Create shared atlas assets in the output folder
+                string atlasBasePath = $"{outputFolder}/{batchName}_Atlas";
+                string atlasAssetPath = AssetDatabase.GenerateUniqueAssetPath($"{atlasBasePath}.asset");
+                string matPath = AssetDatabase.GenerateUniqueAssetPath($"{atlasBasePath}_mat.mat");
+                
+                // Create shared material
+                Material sharedMat = CreateMaterialFromRenderers(allObjectsToCombine);
+                AssetDatabase.CreateAsset(sharedMat, matPath);
+                textureBaker.resultMaterial = (Material)AssetDatabase.LoadAssetAtPath(matPath, typeof(Material));
+                result.SharedMaterialPath = matPath;
+                
+                // Create TextureBakeResults
+                AssetDatabase.CreateAsset(ScriptableObject.CreateInstance<MB2_TextureBakeResults>(), atlasAssetPath);
+                MB2_TextureBakeResults textureBakeResults = (MB2_TextureBakeResults)AssetDatabase.LoadAssetAtPath(atlasAssetPath, typeof(MB2_TextureBakeResults));
+                textureBaker.textureBakeResults = textureBakeResults;
+                meshBaker.textureBakeResults = textureBakeResults;
+                result.AtlasAssetPath = atlasAssetPath;
+                
+                AssetDatabase.Refresh();
+                
+                // Bake textures (creates the shared atlas)
+                Debug.Log($"[MeshBakerService] Baking shared atlas for batch '{batchName}' ({allObjectsToCombine.Count} objects)...");
+                textureBaker.CreateAtlases(null, true, new MB3_EditorMethods());
+                
+                if (textureBaker.textureBakeResults != null)
+                {
+                    EditorUtility.SetDirty(textureBaker.textureBakeResults);
+                }
+                
+                // Cleanup result material
+                CleanupResultMaterial(textureBaker.resultMaterial, settings.TexturesToIgnore);
+                
+                // Configure BatchPrefabBaker
+                batchPrefabBaker.outputPrefabFolder = outputFolder;
+                batchPrefabBaker.prefabRows = prefabRows.ToArray();
+                
+                // Remove empty rows
+                RemoveEmptyPrefabRows(batchPrefabBaker);
+                
+                if (batchPrefabBaker.prefabRows.Length == 0)
+                {
+                    result.Success = true;
+                    result.ErrorMessage = "No valid prefab rows after filtering";
+                    return result;
+                }
+                
+                // Create empty result prefabs
+                Debug.Log($"[MeshBakerService] Creating output prefabs for batch '{batchName}'...");
+                MB_BatchPrefabBakerEditorFunctions.CreateEmptyOutputPrefabs(batchPrefabBaker.outputPrefabFolder, batchPrefabBaker);
+                
+                // Bake all prefabs using the shared atlas
+                Debug.Log($"[MeshBakerService] Baking {batchPrefabBaker.prefabRows.Length} prefabs with shared atlas...");
+                MB_BatchPrefabBakerEditorFunctions.BakePrefabs(batchPrefabBaker, true);
+                
+                // Collect results and move prefabs to their original folders
+                for (int i = 0; i < batchPrefabBaker.prefabRows.Length; i++)
+                {
+                    var row = batchPrefabBaker.prefabRows[i];
+                    var originalPath = prefabInstances[i].path;
+                    var prefabResult = new ProcessingResult
+                    {
+                        OriginalPrefabPath = originalPath,
+                        Success = row.resultPrefab != null,
+                        AtlasAssetPath = atlasAssetPath
+                    };
+                    
+                    if (row.resultPrefab != null)
+                    {
+                        string currentPath = AssetDatabase.GetAssetPath(row.resultPrefab);
+                        
+                        // Move prefab to original folder
+                        string originalFolder = Path.GetDirectoryName(originalPath);
+                        string prefabName = Path.GetFileName(currentPath);
+                        string targetPath = $"{originalFolder}/{prefabName}";
+                        
+                        // Ensure unique path in target folder
+                        targetPath = AssetDatabase.GenerateUniqueAssetPath(targetPath);
+                        
+                        string moveError = AssetDatabase.MoveAsset(currentPath, targetPath);
+                        if (string.IsNullOrEmpty(moveError))
+                        {
+                            prefabResult.BakedPrefabPath = targetPath;
+                            Debug.Log($"[MeshBakerService] Moved prefab to: {targetPath}");
+                        }
+                        else
+                        {
+                            // If move failed, keep it in the output folder
+                            prefabResult.BakedPrefabPath = currentPath;
+                            Debug.LogWarning($"[MeshBakerService] Could not move prefab to original folder: {moveError}");
+                        }
+                    }
+                    else
+                    {
+                        prefabResult.Success = false;
+                        prefabResult.ErrorMessage = "Failed to bake prefab";
+                    }
+                    
+                    result.PrefabResults.Add(prefabResult);
+                }
+                
+                result.Success = true;
+                Debug.Log($"[MeshBakerService] Batch '{batchName}' complete: {result.PrefabResults.Count(r => r.Success)}/{prefabPaths.Count} prefabs succeeded");
+            }
+            catch (System.Exception ex)
+            {
+                result.Success = false;
+                result.ErrorMessage = ex.Message;
+                Debug.LogError($"[MeshBakerService] Error processing batch '{batchName}': {ex.Message}");
+                Debug.LogException(ex);
+            }
+            finally
+            {
+                // Cleanup all instances
+                foreach (var (instance, _, _) in prefabInstances)
+                {
+                    if (instance != null)
+                    {
+                        Object.DestroyImmediate(instance);
+                    }
+                }
+                
+                // Cleanup baker
+                if (bakerGO != null)
+                {
+                    Object.DestroyImmediate(bakerGO);
+                }
+                
+                EditorUtility.ClearProgressBar();
+            }
+            
+            return result;
         }
     }
 }

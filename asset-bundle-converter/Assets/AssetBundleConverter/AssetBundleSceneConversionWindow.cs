@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using AssetBundleConverter.Persistence;
@@ -71,6 +71,7 @@ namespace AssetBundleConverter
         private PersistentSetting<bool> enableImageDuplicateAnalysis;
         private PersistentSetting<bool> enableMeshBaker;
         private PersistentSetting<int> meshBakerMaxAtlasSize;
+        private PersistentSetting<int> meshBakerAssetsPerAtlas;
         private bool showDebugOptions;
         private bool stripShaders = true;
         private bool importGltf = true;
@@ -100,6 +101,7 @@ namespace AssetBundleConverter
             enableImageDuplicateAnalysis = PersistentSetting.CreateBool(nameof(enableImageDuplicateAnalysis), false);
             enableMeshBaker = PersistentSetting.CreateBool(nameof(enableMeshBaker), false);
             meshBakerMaxAtlasSize = PersistentSetting.CreateInt(nameof(meshBakerMaxAtlasSize), 2048);
+            meshBakerAssetsPerAtlas = PersistentSetting.CreateInt(nameof(meshBakerAssetsPerAtlas), 0); // 0 = all in one atlas
         }
 
         private void OnGUI()
@@ -127,6 +129,9 @@ namespace AssetBundleConverter
                 meshBakerMaxAtlasSize.Value = EditorGUILayout.IntPopup("Max Atlas Size", meshBakerMaxAtlasSize, 
                     new string[] { "512", "1024", "2048", "4096" }, 
                     new int[] { 512, 1024, 2048, 4096 });
+                meshBakerAssetsPerAtlas.Value = EditorGUILayout.IntPopup("Assets Per Atlas", meshBakerAssetsPerAtlas, 
+                    new string[] { "All in one", "1 (per asset)", "5", "10", "20", "50" }, 
+                    new int[] { 0, 1, 5, 10, 20, 50 });
                 EditorGUI.indentLevel--;
             }
             
@@ -370,7 +375,8 @@ namespace AssetBundleConverter
                 AnimationMethod = animationMehtod,
                 enableImageDuplicateAnalysis = enableImageDuplicateAnalysis,
                 enableMeshBaker = enableMeshBaker,
-                meshBakerMaxAtlasSize = meshBakerMaxAtlasSize
+                meshBakerMaxAtlasSize = meshBakerMaxAtlasSize,
+                meshBakerAssetsPerAtlas = meshBakerAssetsPerAtlas
             };
         }
 

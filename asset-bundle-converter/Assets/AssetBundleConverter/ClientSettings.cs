@@ -108,6 +108,13 @@ namespace AssetBundleConverter
             /// Maximum tiling bake size for MeshBaker (default: 512).
             /// </summary>
             public int meshBakerMaxTilingBakeSize = 512;
+            
+            /// <summary>
+            /// Number of assets to combine into a single shared atlas (default: 1 = one atlas per asset).
+            /// Higher values reduce draw calls but increase atlas size.
+            /// Set to 0 or negative to combine ALL assets into one atlas.
+            /// </summary>
+            public int meshBakerAssetsPerAtlas = 1;
 
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 

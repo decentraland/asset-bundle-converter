@@ -506,6 +506,178 @@ namespace DCL.ABConverter
             int failCount = 0;
             var assetsToDelete = new List<string>();
             
+            // Determine batch size: <= 0 means all in one batch, otherwise use the configured value
+            int assetsPerAtlas = settings.meshBakerAssetsPerAtlas;
+            bool useBatchedProcessing = assetsPerAtlas != 1;
+            
+            if (useBatchedProcessing)
+            {
+                // Batched processing: multiple assets share one atlas
+                successCount = ProcessWithMeshBakerBatched(gltfInfoList, meshBakerSettings, assetsToDelete, out failCount);
+            }
+            else
+            {
+                // Original per-asset processing
+                successCount = ProcessWithMeshBakerPerAsset(gltfInfoList, meshBakerSettings, assetsToDelete, out failCount);
+            }
+            
+            EditorUtility.ClearProgressBar();
+            
+            // Delete original assets (GLTF, materials, textures)
+            if (assetsToDelete.Count > 0)
+            {
+                log.Info($"Deleting {assetsToDelete.Count} original assets...");
+                var uniqueAssets = assetsToDelete.Distinct().ToList();
+                
+                foreach (var assetToDelete in uniqueAssets)
+                {
+                    if (AssetDatabase.DeleteAsset(assetToDelete))
+                    {
+                        log.Verbose($"Deleted: {assetToDelete}");
+                    }
+                    else
+                    {
+                        log.Warning($"Failed to delete: {assetToDelete}");
+                    }
+                }
+            }
+            
+            log.Info($"MeshBaker processing complete: {successCount} succeeded, {failCount} failed out of {gltfInfoList.Count} prefabs");
+            
+            // Refresh asset database after all processing
+            env.assetDatabase.Refresh();
+        }
+        
+        /// <summary>
+        /// Process GLTFs with MeshBaker using batched processing (shared atlases).
+        /// </summary>
+        private int ProcessWithMeshBakerBatched(
+            List<(string gltfPath, int assetIndex, string[] dependencies)> gltfInfoList,
+            MeshBakerService.MeshBakerSettings meshBakerSettings,
+            List<string> assetsToDelete,
+            out int failCount)
+        {
+            int successCount = 0;
+            failCount = 0;
+            
+            // Create output folder for shared atlases and baked prefabs
+            string sharedAtlasFolder = PathUtils.FixDirectorySeparator(
+                Path.Combine(finalDownloadedPath, "_MeshBakerOutput"));
+            
+            if (!Directory.Exists(sharedAtlasFolder))
+            {
+                Directory.CreateDirectory(sharedAtlasFolder);
+            }
+            
+            // Convert to asset path
+            string sharedAtlasFolderAssetPath = PathUtils.FullPathToAssetPath(sharedAtlasFolder);
+            
+            // Determine batch size
+            int batchSize = settings.meshBakerAssetsPerAtlas <= 0 
+                ? gltfInfoList.Count  // All in one batch
+                : settings.meshBakerAssetsPerAtlas;
+            
+            int batchCount = (gltfInfoList.Count + batchSize - 1) / batchSize;
+            log.Info($"Processing {gltfInfoList.Count} GLTFs in {batchCount} batch(es) of up to {batchSize} assets each");
+            
+            for (int batchIndex = 0; batchIndex < batchCount; batchIndex++)
+            {
+                int startIdx = batchIndex * batchSize;
+                int endIdx = Mathf.Min(startIdx + batchSize, gltfInfoList.Count);
+                
+                var batchPaths = new List<string>();
+                var batchDependencies = new Dictionary<string, string[]>();
+                
+                for (int i = startIdx; i < endIdx; i++)
+                {
+                    batchPaths.Add(gltfInfoList[i].gltfPath);
+                    batchDependencies[gltfInfoList[i].gltfPath] = gltfInfoList[i].dependencies;
+                }
+                
+                string batchName = $"Batch_{batchIndex}";
+                
+                env.editor.DisplayProgressBar("MeshBaker Batch Processing", 
+                    $"Processing batch {batchIndex + 1}/{batchCount} ({batchPaths.Count} assets)", 
+                    (batchIndex + 1) / (float)batchCount);
+                
+                try
+                {
+                    var result = MeshBakerService.ProcessPrefabsWithSharedAtlas(
+                        batchPaths, 
+                        sharedAtlasFolderAssetPath, 
+                        batchName, 
+                        meshBakerSettings);
+                    
+                    if (result.Success)
+                    {
+                        log.Info($"Batch '{batchName}' processed: {result.PrefabResults.Count(r => r.Success)}/{batchPaths.Count} succeeded");
+                        log.Info($"  Shared atlas: {result.AtlasAssetPath}");
+                        log.Info($"  Shared material: {result.SharedMaterialPath}");
+                        
+                        foreach (var prefabResult in result.PrefabResults)
+                        {
+                            if (prefabResult.Success)
+                            {
+                                successCount++;
+                                log.Verbose($"  Baked: {prefabResult.OriginalPrefabPath} -> {prefabResult.BakedPrefabPath}");
+                                
+                                // Mark original GLTF and its dependencies for deletion
+                                assetsToDelete.Add(prefabResult.OriginalPrefabPath);
+                                
+                                if (batchDependencies.TryGetValue(prefabResult.OriginalPrefabPath, out var deps))
+                                {
+                                    string gltfFolder = Path.GetDirectoryName(prefabResult.OriginalPrefabPath)?.Replace("\\", "/") ?? "";
+                                    
+                                    foreach (var dep in deps)
+                                    {
+                                        if (dep == prefabResult.OriginalPrefabPath) continue;
+                                        
+                                        string depFolder = Path.GetDirectoryName(dep)?.Replace("\\", "/") ?? "";
+                                        bool isSameFolder = string.Equals(depFolder, gltfFolder, StringComparison.OrdinalIgnoreCase);
+                                        
+                                        if (isSameFolder && dep.EndsWith(".mat", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            assetsToDelete.Add(dep);
+                                        }
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                failCount++;
+                                log.Warning($"  Failed: {prefabResult.OriginalPrefabPath}: {prefabResult.ErrorMessage}");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        failCount += batchPaths.Count;
+                        log.Error($"Batch '{batchName}' failed: {result.ErrorMessage}");
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    failCount += batchPaths.Count;
+                    log.Error($"Batch '{batchName}' exception: {ex.Message}");
+                    Debug.LogException(ex);
+                }
+            }
+            
+            return successCount;
+        }
+        
+        /// <summary>
+        /// Process GLTFs with MeshBaker one at a time (original behavior).
+        /// </summary>
+        private int ProcessWithMeshBakerPerAsset(
+            List<(string gltfPath, int assetIndex, string[] dependencies)> gltfInfoList,
+            MeshBakerService.MeshBakerSettings meshBakerSettings,
+            List<string> assetsToDelete,
+            out int failCount)
+        {
+            int successCount = 0;
+            failCount = 0;
+            
             for (int i = 0; i < gltfInfoList.Count; i++)
             {
                 var (gltfPath, assetIndex, dependencies) = gltfInfoList[i];
@@ -562,31 +734,7 @@ namespace DCL.ABConverter
                 }
             }
             
-            EditorUtility.ClearProgressBar();
-            
-            // Delete original assets (GLTF, materials, textures)
-            if (assetsToDelete.Count > 0)
-            {
-                log.Info($"Deleting {assetsToDelete.Count} original assets...");
-                var uniqueAssets = assetsToDelete.Distinct().ToList();
-                
-                foreach (var assetToDelete in uniqueAssets)
-                {
-                    if (AssetDatabase.DeleteAsset(assetToDelete))
-                    {
-                        log.Verbose($"Deleted: {assetToDelete}");
-                    }
-                    else
-                    {
-                        log.Warning($"Failed to delete: {assetToDelete}");
-                    }
-                }
-            }
-            
-            log.Info($"MeshBaker processing complete: {successCount} succeeded, {failCount} failed out of {gltfInfoList.Count} prefabs");
-            
-            // Refresh asset database after all processing
-            env.assetDatabase.Refresh();
+            return successCount;
         }
 
         private void CreateLayeredAnimatorController(IGltfImport gltfImport, string directory)
