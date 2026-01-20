@@ -226,7 +226,7 @@ namespace DCL.ABConverter.Editor
                 env.InitializeSceneStateGenerator(entityDTO);
                 env.sceneStateGenerator.GenerateInitialSceneState();
 
-                Debug.Log("Scene state generated. Finding GLB assets...");
+                Debug.Log("Scene state generated. Finding GLB/GLTF/Prefab assets...");
 
                 var gltfAssetsByHash = new Dictionary<string, GameObject>(); // hash -> GameObject
                 var gltfAssetPathsByHash = new Dictionary<string, string>(); // hash -> file path from manifest
@@ -238,30 +238,37 @@ namespace DCL.ABConverter.Editor
 
                     foreach (string filePath in allFiles)
                     {
+                        // Support GLB, GLTF, and Prefab files (prefabs may be created by MeshBaker)
                         if (filePath.EndsWith(".glb", System.StringComparison.OrdinalIgnoreCase) ||
-                            filePath.EndsWith(".gltf", System.StringComparison.OrdinalIgnoreCase))
+                            filePath.EndsWith(".gltf", System.StringComparison.OrdinalIgnoreCase) ||
+                            filePath.EndsWith(".prefab", System.StringComparison.OrdinalIgnoreCase))
                         {
                             string assetPath = filePath.Replace("\\", "/");
                             GameObject asset = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
 
                             if (asset != null)
                             {
-                                // Extract the hash from the path (typically Assets/_Downloaded/hash/hash.glb)
+                                // Extract the hash from the path (typically Assets/_Downloaded/hash/hash.glb or hash.prefab)
                                 string hash = ExtractHashFromPath(assetPath);
 
                                 if (!string.IsNullOrEmpty(hash))
                                 {
-                                    gltfAssetsByHash[hash] = asset;
+                                    // Only add if we don't already have this hash (prefer prefab over glb if both exist)
+                                    bool isPrefab = filePath.EndsWith(".prefab", System.StringComparison.OrdinalIgnoreCase);
+                                    if (!gltfAssetsByHash.ContainsKey(hash) || isPrefab)
+                                    {
+                                        gltfAssetsByHash[hash] = asset;
 
-                                    // Look up the file path from the content mapping
-                                    if (hashToFileMap.TryGetValue(hash, out string manifestFilePath))
-                                    {
-                                        gltfAssetPathsByHash[hash] = manifestFilePath;
-                                        Debug.Log($"Found asset: hash={hash}, manifest path={manifestFilePath}");
-                                    }
-                                    else
-                                    {
-                                        Debug.LogWarning($"Asset hash {hash} not found in manifest content mapping");
+                                        // Look up the file path from the content mapping
+                                        if (hashToFileMap.TryGetValue(hash, out string manifestFilePath))
+                                        {
+                                            gltfAssetPathsByHash[hash] = manifestFilePath;
+                                            Debug.Log($"Found asset: hash={hash}, manifest path={manifestFilePath}, type={Path.GetExtension(filePath)}");
+                                        }
+                                        else
+                                        {
+                                            Debug.LogWarning($"Asset hash {hash} not found in manifest content mapping");
+                                        }
                                     }
                                 }
                             }
@@ -273,7 +280,7 @@ namespace DCL.ABConverter.Editor
                     Debug.LogError($"Downloaded folder does not exist: {downloadedFolder}");
                 }
 
-                Debug.Log($"Found {gltfAssetsByHash.Count} GLB/GLTF assets. Placing in scene...");
+                Debug.Log($"Found {gltfAssetsByHash.Count} GLB/GLTF/Prefab assets. Placing in scene...");
 
                 // Place assets using the manifest file paths
                 int placedCount = 0;

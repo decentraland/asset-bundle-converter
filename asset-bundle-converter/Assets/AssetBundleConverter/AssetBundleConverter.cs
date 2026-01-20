@@ -454,6 +454,7 @@ namespace DCL.ABConverter
         /// <summary>
         /// Process all imported GLTFs with MeshBaker to create texture atlases and optimize prefabs.
         /// This step combines textures into atlases to reduce draw calls and texture memory.
+        /// After processing, original GLTF assets and their dependencies are deleted.
         /// </summary>
         private async Task ProcessWithMeshBaker()
         {
@@ -461,12 +462,12 @@ namespace DCL.ABConverter
             
             var meshBakerSettings = MeshBakerService.CreateSettingsFromClientSettings(settings);
             
-            // Collect all GLTF/GLB paths from the assets to mark
-            // In Unity, imported GLTF/GLB files ARE the prefab assets
-            var gltfPaths = new List<string>();
+            // Collect all GLTF/GLB paths and their dependencies
+            var gltfInfoList = new List<(string gltfPath, int assetIndex, string[] dependencies)>();
             
-            foreach (var assetPath in assetsToMark)
+            for (int idx = 0; idx < assetsToMark.Count; idx++)
             {
+                var assetPath = assetsToMark[idx];
                 string fullPath = assetPath.finalPath;
                 
                 // Check if it's a GLTF/GLB file
@@ -480,8 +481,10 @@ namespace DCL.ABConverter
                     
                     if (prefab != null)
                     {
-                        log.Verbose($"Found GLTF prefab to process: {relativePath}");
-                        gltfPaths.Add(relativePath);
+                        // Get all dependencies (materials, textures) before processing
+                        string[] dependencies = AssetDatabase.GetDependencies(relativePath, true);
+                        log.Verbose($"Found GLTF prefab to process: {relativePath} with {dependencies.Length} dependencies");
+                        gltfInfoList.Add((relativePath, idx, dependencies));
                     }
                     else
                     {
@@ -490,33 +493,59 @@ namespace DCL.ABConverter
                 }
             }
             
-            if (gltfPaths.Count == 0)
+            if (gltfInfoList.Count == 0)
             {
                 log.Info("No GLTF prefabs found to process with MeshBaker");
                 return;
             }
             
-            log.Info($"Processing {gltfPaths.Count} GLTF prefabs with MeshBaker...");
+            log.Info($"Processing {gltfInfoList.Count} GLTF prefabs with MeshBaker...");
             
             int successCount = 0;
             int failCount = 0;
+            var assetsToDelete = new List<string>();
             
-            for (int i = 0; i < gltfPaths.Count; i++)
+            for (int i = 0; i < gltfInfoList.Count; i++)
             {
-                string gltfPath = gltfPaths[i];
+                var (gltfPath, assetIndex, dependencies) = gltfInfoList[i];
                 
                 env.editor.DisplayProgressBar("MeshBaker Processing", 
-                    $"Processing {i + 1}/{gltfPaths.Count}: {Path.GetFileName(gltfPath)}", 
-                    (i + 1) / (float)gltfPaths.Count);
+                    $"Processing {i + 1}/{gltfInfoList.Count}: {Path.GetFileName(gltfPath)}", 
+                    (i + 1) / (float)gltfInfoList.Count);
                 
                 try
                 {
                     var result = MeshBakerService.ProcessPrefab(gltfPath, meshBakerSettings);
                     
-                    if (result.Success)
+                    if (result.Success && !string.IsNullOrEmpty(result.BakedPrefabPath))
                     {
                         successCount++;
-                        log.Verbose($"MeshBaker processed: {gltfPath}");
+                        log.Info($"MeshBaker processed: {gltfPath} -> {result.BakedPrefabPath}");
+                        
+                        // Mark original GLTF and its dependencies for deletion
+                        assetsToDelete.Add(gltfPath);
+                        
+                        // Get the GLTF's folder (normalized for comparison)
+                        string gltfFolder = Path.GetDirectoryName(gltfPath)?.Replace("\\", "/") ?? "";
+                        
+                        foreach (var dep in dependencies)
+                        {
+                            if (dep == gltfPath) continue;
+                            
+                            // Get dependency folder (normalized)
+                            string depFolder = Path.GetDirectoryName(dep)?.Replace("\\", "/") ?? "";
+                            bool isSameFolder = string.Equals(depFolder, gltfFolder, StringComparison.OrdinalIgnoreCase);
+                            
+                            // Only delete materials from the same folder
+                            // Materials are specific to this GLTF
+                            if (isSameFolder && dep.EndsWith(".mat", StringComparison.OrdinalIgnoreCase))
+                            {
+                                assetsToDelete.Add(dep);
+                                log.Verbose($"Marking material for deletion: {dep}");
+                            }
+                            // DON'T delete textures - they might be shared by other GLTFs
+                            // The atlas texture created by MeshBaker will be used instead
+                        }
                     }
                     else
                     {
@@ -530,14 +559,30 @@ namespace DCL.ABConverter
                     log.Error($"MeshBaker exception for {gltfPath}: {ex.Message}");
                     Debug.LogException(ex);
                 }
-                
-                // Give Unity a chance to process
-                await env.editor.Delay(System.TimeSpan.FromMilliseconds(100));
             }
             
             EditorUtility.ClearProgressBar();
             
-            log.Info($"MeshBaker processing complete: {successCount} succeeded, {failCount} failed out of {gltfPaths.Count} prefabs");
+            // Delete original assets (GLTF, materials, textures)
+            if (assetsToDelete.Count > 0)
+            {
+                log.Info($"Deleting {assetsToDelete.Count} original assets...");
+                var uniqueAssets = assetsToDelete.Distinct().ToList();
+                
+                foreach (var assetToDelete in uniqueAssets)
+                {
+                    if (AssetDatabase.DeleteAsset(assetToDelete))
+                    {
+                        log.Verbose($"Deleted: {assetToDelete}");
+                    }
+                    else
+                    {
+                        log.Warning($"Failed to delete: {assetToDelete}");
+                    }
+                }
+            }
+            
+            log.Info($"MeshBaker processing complete: {successCount} succeeded, {failCount} failed out of {gltfInfoList.Count} prefabs");
             
             // Refresh asset database after all processing
             env.assetDatabase.Refresh();

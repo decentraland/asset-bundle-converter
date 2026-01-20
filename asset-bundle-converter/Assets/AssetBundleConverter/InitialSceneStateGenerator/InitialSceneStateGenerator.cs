@@ -69,7 +69,24 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
         public void InstantiateAsset(string assetPath, GameObject prefab)
         {
             // Check if this asset has placement data in the manifest
-            if (IsCompatible && gltfsComponents.TryGetValue(assetPath, out HashSet<int> Component))
+            // Also check for prefab version in case MeshBaker replaced the original GLTF
+            HashSet<int> Component = null;
+            bool hasManifestData = false;
+            
+            if (IsCompatible)
+            {
+                if (gltfsComponents.TryGetValue(assetPath, out Component))
+                {
+                    hasManifestData = true;
+                }
+                else if (TryGetGltfKeyForPrefab(assetPath, out string gltfKey))
+                {
+                    Component = gltfsComponents[gltfKey];
+                    hasManifestData = true;
+                }
+            }
+            
+            if (hasManifestData && Component != null)
             {
                 List<int> entityIds = Component.ToList();
 
@@ -92,8 +109,20 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
         {
             if (!IsCompatible) return;
 
-            if (!gltfsComponents.TryGetValue(assetPath, out HashSet<int> Component))
-                return;
+            // Check both original path and prefab path (in case MeshBaker replaced the GLTF)
+            HashSet<int> Component = null;
+            if (gltfsComponents.TryGetValue(assetPath, out Component))
+            {
+                // Found with original path
+            }
+            else if (TryGetGltfKeyForPrefab(assetPath, out string gltfKey))
+            {
+                Component = gltfsComponents[gltfKey];
+            }
+            else
+            {
+                return; // Not found
+            }
 
             List<int> entityIds = Component.ToList();
 
@@ -161,12 +190,18 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
                 if (assetPath.finalPath.EndsWith(".bin")) continue;
 
                 // Check if this asset matches a GltfContainer source
-                bool isStatic = gltfsComponents.ContainsKey(assetPath.filePath);
+                // Also check for .prefab version in case MeshBaker replaced the original GLTF
+                bool isStatic = gltfsComponents.ContainsKey(assetPath.filePath) ||
+                                TryGetGltfKeyForPrefab(assetPath.filePath, out _);
                 string assetBundleName = assetPath.hash + PlatformUtils.GetPlatform();
 
                 if (isStatic)
                 {
-                    List<int> entityIds = gltfsComponents[assetPath.filePath].ToList();
+                    // Get entity IDs - check both original path and prefab path
+                    string gltfKey = gltfsComponents.ContainsKey(assetPath.filePath) 
+                        ? assetPath.filePath 
+                        : (TryGetGltfKeyForPrefab(assetPath.filePath, out string foundKey) ? foundKey : assetPath.filePath);
+                    List<int> entityIds = gltfsComponents[gltfKey].ToList();
 
                     foreach (int entityId in entityIds)
                     {
@@ -279,5 +314,34 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
         /// Gets the parsed JSON components (for external use if needed)
         /// </summary>
         public List<SceneComponent> GetConvertedJSONComponents() => convertedJSONComponents;
+
+        /// <summary>
+        /// Checks if a prefab file path corresponds to an original GLTF/GLB in the gltfsComponents dictionary.
+        /// This handles the case where MeshBaker replaced the original GLTF with a baked prefab.
+        /// </summary>
+        private bool TryGetGltfKeyForPrefab(string prefabPath, out string gltfKey)
+        {
+            gltfKey = null;
+            
+            if (!prefabPath.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            // Try to find a matching GLTF/GLB key by replacing .prefab with common model extensions
+            string basePath = prefabPath.Substring(0, prefabPath.Length - 7); // Remove ".prefab"
+            
+            string[] gltfExtensions = { ".glb", ".gltf", ".GLB", ".GLTF" };
+            
+            foreach (var ext in gltfExtensions)
+            {
+                string potentialKey = basePath + ext;
+                if (gltfsComponents.ContainsKey(potentialKey))
+                {
+                    gltfKey = potentialKey;
+                    return true;
+                }
+            }
+            
+            return false;
+        }
     }
 }

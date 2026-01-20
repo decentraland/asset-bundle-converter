@@ -269,11 +269,30 @@ namespace DCL.ABConverter
                 }
 
                 // Create empty result prefabs
-                MB_BatchPrefabBakerEditorFunctions.CreateEmptyOutputPrefabs(batchPrefabBaker.outputPrefabFolder, batchPrefabBaker);
+                Debug.Log($"[MeshBakerService] Creating empty output prefabs for {prefabName}...");
+                try
+                {
+                    MB_BatchPrefabBakerEditorFunctions.CreateEmptyOutputPrefabs(batchPrefabBaker.outputPrefabFolder, batchPrefabBaker);
+                }
+                catch (System.Exception createEx)
+                {
+                    Debug.LogError($"[MeshBakerService] Exception during CreateEmptyOutputPrefabs for {prefabName}: {createEx.Message}");
+                    Debug.LogException(createEx);
+                    throw;
+                }
 
                 // Bake prefabs
                 Debug.Log($"[MeshBakerService] Baking prefabs for {prefabName}...");
-                MB_BatchPrefabBakerEditorFunctions.BakePrefabs(batchPrefabBaker, true);
+                try
+                {
+                    MB_BatchPrefabBakerEditorFunctions.BakePrefabs(batchPrefabBaker, true);
+                }
+                catch (System.Exception bakeEx)
+                {
+                    Debug.LogError($"[MeshBakerService] Exception during BakePrefabs for {prefabName}: {bakeEx.Message}");
+                    Debug.LogException(bakeEx);
+                    throw; // Re-throw to be caught by outer handler
+                }
 
                 // Get result prefab path
                 if (batchPrefabBaker.prefabRows.Length > 0 && batchPrefabBaker.prefabRows[0].resultPrefab != null)
@@ -440,7 +459,7 @@ namespace DCL.ABConverter
             if (string.IsNullOrEmpty(error))
             {
                 Debug.Log($"[MeshBakerService] Renamed original prefab to {newFileName}");
-                AssetDatabase.Refresh();
+                // Note: Don't call AssetDatabase.Refresh() here - it will be called at the end of batch processing
             }
             else
             {
