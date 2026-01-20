@@ -67,3 +67,8 @@ TestResources/
 UserSettings/
 
 *.idea
+
+# MeshBaker
+Assets/MeshBaker/
+Assets/MeshBaker.meta
+Assets/_MeshBaker.meta
