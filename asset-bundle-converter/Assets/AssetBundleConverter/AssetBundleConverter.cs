@@ -460,26 +460,26 @@ namespace DCL.ABConverter
         private async Task ProcessWithMeshBaker()
         {
             log.Info("Starting MeshBaker processing...");
-            
+
             var meshBakerSettings = MeshBakerService.CreateSettingsFromClientSettings(settings);
-            
+
             // Collect all GLTF/GLB paths and their dependencies
             var gltfInfoList = new List<(string gltfPath, int assetIndex, string[] dependencies)>();
-            
+
             for (int idx = 0; idx < assetsToMark.Count; idx++)
             {
                 var assetPath = assetsToMark[idx];
                 string fullPath = assetPath.finalPath;
-                
+
                 // Check if it's a GLTF/GLB file
                 if (fullPath.EndsWith(".gltf", System.StringComparison.OrdinalIgnoreCase) ||
                     fullPath.EndsWith(".glb", System.StringComparison.OrdinalIgnoreCase))
                 {
                     string relativePath = PathUtils.FullPathToAssetPath(fullPath);
-                    
+
                     // GLTF/GLB files when imported by Unity ARE the prefab - load them directly
                     GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(relativePath);
-                    
+
                     if (prefab != null)
                     {
                         // Get all dependencies (materials, textures) before processing
@@ -493,23 +493,23 @@ namespace DCL.ABConverter
                     }
                 }
             }
-            
+
             if (gltfInfoList.Count == 0)
             {
                 log.Info("No GLTF prefabs found to process with MeshBaker");
                 return;
             }
-            
+
             log.Info($"Processing {gltfInfoList.Count} GLTF prefabs with MeshBaker...");
-            
+
             int successCount = 0;
             int failCount = 0;
             var assetsToDelete = new List<string>();
-            
+
             // Determine batch size: <= 0 means all in one batch, otherwise use the configured value
             int assetsPerAtlas = settings.meshBakerAssetsPerAtlas;
             bool useBatchedProcessing = assetsPerAtlas != 1;
-            
+
             if (useBatchedProcessing)
             {
                 // Batched processing: multiple assets share one atlas
@@ -520,15 +520,15 @@ namespace DCL.ABConverter
                 // Original per-asset processing
                 successCount = ProcessWithMeshBakerPerAsset(gltfInfoList, meshBakerSettings, assetsToDelete, out failCount);
             }
-            
+
             EditorUtility.ClearProgressBar();
-            
+
             // Delete original assets (GLTF, materials, textures)
             if (assetsToDelete.Count > 0)
             {
                 log.Info($"Deleting {assetsToDelete.Count} original assets...");
                 var uniqueAssets = assetsToDelete.Distinct().ToList();
-                
+
                 foreach (var assetToDelete in uniqueAssets)
                 {
                     if (AssetDatabase.DeleteAsset(assetToDelete))
@@ -541,13 +541,13 @@ namespace DCL.ABConverter
                     }
                 }
             }
-            
+
             log.Info($"MeshBaker processing complete: {successCount} succeeded, {failCount} failed out of {gltfInfoList.Count} prefabs");
-            
+
             // Refresh asset database after all processing
             env.assetDatabase.Refresh();
         }
-        
+
         /// <summary>
         /// Process GLTFs with MeshBaker using batched processing (shared atlases).
         /// </summary>
@@ -559,82 +559,82 @@ namespace DCL.ABConverter
         {
             int successCount = 0;
             failCount = 0;
-            
+
             // Create output folder for shared atlases and baked prefabs
             string sharedAtlasFolder = PathUtils.FixDirectorySeparator(
                 Path.Combine(finalDownloadedPath, "_MeshBakerOutput"));
-            
+
             if (!Directory.Exists(sharedAtlasFolder))
             {
                 Directory.CreateDirectory(sharedAtlasFolder);
             }
-            
+
             // Convert to asset path
             string sharedAtlasFolderAssetPath = PathUtils.FullPathToAssetPath(sharedAtlasFolder);
-            
+
             // Determine batch size
-            int batchSize = settings.meshBakerAssetsPerAtlas <= 0 
+            int batchSize = settings.meshBakerAssetsPerAtlas <= 0
                 ? gltfInfoList.Count  // All in one batch
                 : settings.meshBakerAssetsPerAtlas;
-            
+
             int batchCount = (gltfInfoList.Count + batchSize - 1) / batchSize;
             log.Info($"Processing {gltfInfoList.Count} GLTFs in {batchCount} batch(es) of up to {batchSize} assets each");
-            
+
             for (int batchIndex = 0; batchIndex < batchCount; batchIndex++)
             {
                 int startIdx = batchIndex * batchSize;
                 int endIdx = Mathf.Min(startIdx + batchSize, gltfInfoList.Count);
-                
+
                 var batchPaths = new List<string>();
                 var batchDependencies = new Dictionary<string, string[]>();
-                
+
                 for (int i = startIdx; i < endIdx; i++)
                 {
                     batchPaths.Add(gltfInfoList[i].gltfPath);
                     batchDependencies[gltfInfoList[i].gltfPath] = gltfInfoList[i].dependencies;
                 }
-                
+
                 string batchName = $"Batch_{batchIndex}";
-                
-                env.editor.DisplayProgressBar("MeshBaker Batch Processing", 
-                    $"Processing batch {batchIndex + 1}/{batchCount} ({batchPaths.Count} assets)", 
+
+                env.editor.DisplayProgressBar("MeshBaker Batch Processing",
+                    $"Processing batch {batchIndex + 1}/{batchCount} ({batchPaths.Count} assets)",
                     (batchIndex + 1) / (float)batchCount);
-                
+
                 try
                 {
                     var result = MeshBakerService.ProcessPrefabsWithSharedAtlas(
-                        batchPaths, 
-                        sharedAtlasFolderAssetPath, 
-                        batchName, 
+                        batchPaths,
+                        sharedAtlasFolderAssetPath,
+                        batchName,
                         meshBakerSettings);
-                    
+
                     if (result.Success)
                     {
                         log.Info($"Batch '{batchName}' processed: {result.PrefabResults.Count(r => r.Success)}/{batchPaths.Count} succeeded");
                         log.Info($"  Shared atlas: {result.AtlasAssetPath}");
                         log.Info($"  Shared material: {result.SharedMaterialPath}");
-                        
+
                         foreach (var prefabResult in result.PrefabResults)
                         {
                             if (prefabResult.Success)
                             {
                                 successCount++;
                                 log.Verbose($"  Baked: {prefabResult.OriginalPrefabPath} -> {prefabResult.BakedPrefabPath}");
-                                
+
                                 // Mark original GLTF and its dependencies for deletion
                                 assetsToDelete.Add(prefabResult.OriginalPrefabPath);
-                                
+
                                 if (batchDependencies.TryGetValue(prefabResult.OriginalPrefabPath, out var deps))
                                 {
                                     string gltfFolder = Path.GetDirectoryName(prefabResult.OriginalPrefabPath)?.Replace("\\", "/") ?? "";
-                                    
+
                                     foreach (var dep in deps)
                                     {
                                         if (dep == prefabResult.OriginalPrefabPath) continue;
-                                        
+
                                         string depFolder = Path.GetDirectoryName(dep)?.Replace("\\", "/") ?? "";
                                         bool isSameFolder = string.Equals(depFolder, gltfFolder, StringComparison.OrdinalIgnoreCase);
-                                        
+
                                         if (isSameFolder && dep.EndsWith(".mat", StringComparison.OrdinalIgnoreCase))
                                         {
                                             assetsToDelete.Add(dep);
@@ -662,10 +662,10 @@ namespace DCL.ABConverter
                     Debug.LogException(ex);
                 }
             }
-            
+
             return successCount;
         }
-        
+
         /// <summary>
         /// Process GLTFs with MeshBaker one at a time (original behavior).
         /// </summary>
@@ -677,38 +677,38 @@ namespace DCL.ABConverter
         {
             int successCount = 0;
             failCount = 0;
-            
+
             for (int i = 0; i < gltfInfoList.Count; i++)
             {
                 var (gltfPath, assetIndex, dependencies) = gltfInfoList[i];
-                
-                env.editor.DisplayProgressBar("MeshBaker Processing", 
-                    $"Processing {i + 1}/{gltfInfoList.Count}: {Path.GetFileName(gltfPath)}", 
+
+                env.editor.DisplayProgressBar("MeshBaker Processing",
+                    $"Processing {i + 1}/{gltfInfoList.Count}: {Path.GetFileName(gltfPath)}",
                     (i + 1) / (float)gltfInfoList.Count);
-                
+
                 try
                 {
                     var result = MeshBakerService.ProcessPrefab(gltfPath, meshBakerSettings);
-                    
+
                     if (result.Success && !string.IsNullOrEmpty(result.BakedPrefabPath))
                     {
                         successCount++;
                         log.Info($"MeshBaker processed: {gltfPath} -> {result.BakedPrefabPath}");
-                        
+
                         // Mark original GLTF and its dependencies for deletion
                         assetsToDelete.Add(gltfPath);
-                        
+
                         // Get the GLTF's folder (normalized for comparison)
                         string gltfFolder = Path.GetDirectoryName(gltfPath)?.Replace("\\", "/") ?? "";
-                        
+
                         foreach (var dep in dependencies)
                         {
                             if (dep == gltfPath) continue;
-                            
+
                             // Get dependency folder (normalized)
                             string depFolder = Path.GetDirectoryName(dep)?.Replace("\\", "/") ?? "";
                             bool isSameFolder = string.Equals(depFolder, gltfFolder, StringComparison.OrdinalIgnoreCase);
-                            
+
                             // Only delete materials from the same folder
                             // Materials are specific to this GLTF
                             if (isSameFolder && dep.EndsWith(".mat", StringComparison.OrdinalIgnoreCase))
@@ -733,7 +733,7 @@ namespace DCL.ABConverter
                     Debug.LogException(ex);
                 }
             }
-            
+
             return successCount;
         }
 
@@ -1274,6 +1274,10 @@ namespace DCL.ABConverter
                 sharedTexturesBundleName = $"shared_textures{PlatformUtils.GetPlatform()}";
             }
 
+            // Mark MeshBaker output folder for asset bundle (if it exists)
+            string staticSceneBundleName = $"staticScene_{entityDTO.id}{PlatformUtils.GetPlatform()}";
+            MarkMeshBakerOutputForAssetBundle(staticSceneBundleName);
+
             // Mark shared textures with the appropriate bundle name
             MarkSharedTexturesForAssetBundle(sharedTexturesBundleName);
         }
@@ -1414,6 +1418,46 @@ namespace DCL.ABConverter
             else if (sharedTextureFiles.Length > 0)
             {
                 log.Warning($"[ImageDuplicateAnalyzer] Found {sharedTextureFiles.Length} texture files but could not mark any for asset bundle");
+            }
+        }
+
+        /// <summary>
+        /// Marks the _MeshBakerOutput folder for asset bundle building.
+        /// This includes shared atlases, materials, and baked prefabs created by MeshBaker.
+        /// </summary>
+        /// <param name="bundleName">The asset bundle name to assign to MeshBaker output assets</param>
+        private void MarkMeshBakerOutputForAssetBundle(string bundleName)
+        {
+            string meshBakerOutputPath = PathUtils.FixDirectorySeparator(
+                Path.Combine(finalDownloadedPath, "_MeshBakerOutput"));
+
+            if (!Directory.Exists(meshBakerOutputPath))
+                return;
+
+            // Get all asset files in the MeshBaker output folder
+            string[] assetFiles = Directory.GetFiles(meshBakerOutputPath, "*.*", SearchOption.AllDirectories)
+                .Where(f => !f.EndsWith(".meta") && !f.EndsWith(".cs"))
+                .ToArray();
+
+            int markedCount = 0;
+            foreach (string assetFile in assetFiles)
+            {
+                // Convert to Unity's asset path format (relative to project, starting with "Assets/")
+                string assetPath = assetFile.Replace(Application.dataPath, "Assets");
+                assetPath = assetPath.Replace("\\", "/");
+
+                AssetImporter importer = AssetImporter.GetAtPath(assetPath);
+                if (importer != null)
+                {
+                    importer.SetAssetBundleNameAndVariant(bundleName, "");
+                    markedCount++;
+                    log.Verbose($"[MeshBaker] Marked asset for bundle: {assetPath} -> {bundleName}");
+                }
+            }
+
+            if (markedCount > 0)
+            {
+                log.Info($"[MeshBaker] Marked {markedCount} assets in _MeshBakerOutput for bundle: {bundleName}");
             }
         }
 
@@ -1995,7 +2039,7 @@ namespace DCL.ABConverter
         /// <summary>
         /// Configure texture import settings for MeshBaker compatibility BEFORE first import.
         /// This prevents MeshBaker from needing to reimport textures later.
-        /// 
+        ///
         /// MeshBaker requires:
         /// - isReadable = true (to read pixel data for atlasing)
         /// - Uncompressed format (RGB24 or RGBA32 for true-color fidelity)
@@ -2005,37 +2049,37 @@ namespace DCL.ABConverter
         private void ConfigureTextureForMeshBaker(string texturePath)
         {
             string assetPath = PathUtils.FullPathToAssetPath(texturePath);
-            
+
             // First do a default import to create the .meta file
             env.assetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
-            
+
             var importer = AssetImporter.GetAtPath(assetPath) as TextureImporter;
             if (importer == null)
                 return;
-            
+
             bool needsReimport = false;
-            
+
             // 1. isReadable must be true for MeshBaker to read pixels
             if (!importer.isReadable)
             {
                 importer.isReadable = true;
                 needsReimport = true;
             }
-            
+
             // 2. Disable crunch compression
             if (importer.crunchedCompression)
             {
                 importer.crunchedCompression = false;
                 needsReimport = true;
             }
-            
+
             // 3. Set compression to uncompressed for true-color fidelity
             if (importer.textureCompression != TextureImporterCompression.Uncompressed)
             {
                 importer.textureCompression = TextureImporterCompression.Uncompressed;
                 needsReimport = true;
             }
-            
+
             // 4. Disable platform override if enabled
             string platform = GetCurrentPlatformString();
             var platformSettings = importer.GetPlatformTextureSettings(platform);
@@ -2045,10 +2089,10 @@ namespace DCL.ABConverter
                 importer.SetPlatformTextureSettings(platformSettings);
                 needsReimport = true;
             }
-            
+
             // 5. Set default format to RGBA32 (uncompressed with alpha) or RGB24 (no alpha)
             var defaultSettings = importer.GetDefaultPlatformTextureSettings();
-            if (defaultSettings.format != TextureImporterFormat.RGBA32 && 
+            if (defaultSettings.format != TextureImporterFormat.RGBA32 &&
                 defaultSettings.format != TextureImporterFormat.RGB24)
             {
                 // Use RGBA32 to preserve alpha channel if present
@@ -2056,13 +2100,13 @@ namespace DCL.ABConverter
                 importer.SetPlatformTextureSettings(defaultSettings);
                 needsReimport = true;
             }
-            
+
             if (needsReimport)
             {
                 importer.SaveAndReimport();
             }
         }
-        
+
         private static string GetCurrentPlatformString()
         {
             var target = EditorUserBuildSettings.activeBuildTarget;
@@ -2170,4 +2214,3 @@ namespace DCL.ABConverter
         }
     }
 }
-

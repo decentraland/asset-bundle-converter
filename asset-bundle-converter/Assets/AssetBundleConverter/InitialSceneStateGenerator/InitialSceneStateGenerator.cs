@@ -72,7 +72,7 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
             // Also check for prefab version in case MeshBaker replaced the original GLTF
             HashSet<int> Component = null;
             bool hasManifestData = false;
-            
+
             if (IsCompatible)
             {
                 if (gltfsComponents.TryGetValue(assetPath, out Component))
@@ -85,7 +85,7 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
                     hasManifestData = true;
                 }
             }
-            
+
             if (hasManifestData && Component != null)
             {
                 List<int> entityIds = Component.ToList();
@@ -198,8 +198,8 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
                 if (isStatic)
                 {
                     // Get entity IDs - check both original path and prefab path
-                    string gltfKey = gltfsComponents.ContainsKey(assetPath.filePath) 
-                        ? assetPath.filePath 
+                    string gltfKey = gltfsComponents.ContainsKey(assetPath.filePath)
+                        ? assetPath.filePath
                         : (TryGetGltfKeyForPrefab(assetPath.filePath, out string foundKey) ? foundKey : assetPath.filePath);
                     List<int> entityIds = gltfsComponents[gltfKey].ToList();
 
@@ -244,9 +244,6 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
                 bool isStaticTexture = textureComponents.Contains(assetPath.filePath);
                 env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, (isStatic || isStaticTexture) ? staticSceneABName : assetBundleName);
             }
-
-            // Mark MeshBaker output folder (shared atlases and materials) as part of static scene bundle
-            MarkMeshBakerOutputForStaticBundle(finalDownloadedPath, staticSceneABName);
 
             CreateStaticSceneDescriptor(asset, staticSceneABName, finalDownloadedPath);
         }
@@ -325,15 +322,15 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
         private bool TryGetGltfKeyForPrefab(string prefabPath, out string gltfKey)
         {
             gltfKey = null;
-            
+
             if (!prefabPath.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase))
                 return false;
 
             // Try to find a matching GLTF/GLB key by replacing .prefab with common model extensions
             string basePath = prefabPath.Substring(0, prefabPath.Length - 7); // Remove ".prefab"
-            
+
             string[] gltfExtensions = { ".glb", ".gltf", ".GLB", ".GLTF" };
-            
+
             foreach (var ext in gltfExtensions)
             {
                 string potentialKey = basePath + ext;
@@ -343,7 +340,7 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
                     return true;
                 }
             }
-            
+
             return false;
         }
     }
