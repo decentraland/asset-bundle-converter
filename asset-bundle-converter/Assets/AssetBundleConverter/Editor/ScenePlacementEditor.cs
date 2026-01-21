@@ -21,7 +21,7 @@ namespace DCL.ABConverter.Editor
         private string lastResult = "";
         private List<string> availableManifests = new List<string>();
         private int selectedManifestIndex = 0;
-        private bool firstInstanceOnly = false;
+        private bool firstInstanceOnly = true;
 
         [MenuItem("Decentraland/Instantiate Initial Scene State")]
         public static void ShowWindow()
@@ -386,7 +386,7 @@ namespace DCL.ABConverter.Editor
 
         private async UniTask<string> DownloadEntityMapping(string sceneId)
         {
-            const string url = "https://peer.decentraland.org/content/entities/active";
+            const string url = "https://peer.decentraland.zone/content/entities/active";
             string jsonBody = "{\"ids\":[\"" + sceneId + "\"]}";
 
             Debug.Log($"Downloading entity mapping for scene: {sceneId}");
