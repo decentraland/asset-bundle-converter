@@ -123,7 +123,7 @@ namespace AssetBundleConverter
             
             // MeshBaker settings
             enableMeshBaker.Value = EditorGUILayout.Toggle("Enable MeshBaker Atlas", enableMeshBaker);
-            if (enableMeshBaker.Value)
+            using (new EditorGUI.DisabledScope(!enableMeshBaker.Value))
             {
                 EditorGUI.indentLevel++;
                 meshBakerMaxAtlasSize.Value = EditorGUILayout.IntPopup("Max Atlas Size", meshBakerMaxAtlasSize, 
