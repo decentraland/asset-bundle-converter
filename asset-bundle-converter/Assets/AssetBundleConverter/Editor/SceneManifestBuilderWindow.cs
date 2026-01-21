@@ -26,6 +26,8 @@ namespace DCL.ABConverter.Editor
             LocalPath
         }
 
+        private const string DEFAULT_CATALYST_URL = "https://peer.decentraland.org";
+        
         private InputMode inputMode = InputMode.Coordinates;
         private int xCoord = 0;
         private int yCoord = 0;
@@ -33,6 +35,7 @@ namespace DCL.ABConverter.Editor
         private string localPath = "";
         private bool overwriteExisting = false;
         private string customOutputDir = "";
+        private string catalystUrl = DEFAULT_CATALYST_URL;
 
         private Vector2 scrollPosition;
         private string lastOutput = "";
@@ -83,6 +86,16 @@ namespace DCL.ABConverter.Editor
 
             // Options
             EditorGUILayout.LabelField("Options", EditorStyles.boldLabel);
+            
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Catalyst URL:", GUILayout.Width(130));
+            catalystUrl = EditorGUILayout.TextField(catalystUrl);
+            if (GUILayout.Button("Reset", GUILayout.Width(50)))
+            {
+                catalystUrl = DEFAULT_CATALYST_URL;
+            }
+            EditorGUILayout.EndHorizontal();
+            
             overwriteExisting = EditorGUILayout.Toggle("Overwrite Existing", overwriteExisting);
             
             EditorGUILayout.BeginHorizontal();
@@ -286,6 +299,12 @@ namespace DCL.ABConverter.Editor
         private string BuildNpmArguments()
         {
             var args = new List<string>();
+
+            // Always include catalyst URL
+            if (!string.IsNullOrWhiteSpace(catalystUrl))
+            {
+                args.Add($"--catalyst={catalystUrl}");
+            }
 
             switch (inputMode)
             {
