@@ -15,6 +15,8 @@ namespace DCL.ABConverter.Editor
 {
     public class ScenePlacementEditor : EditorWindow
     {
+        private const string DEFAULT_CATALYST_URL = "https://peer.decentraland.org";
+        
         private string sceneId = "";
         private string downloadedFolder = "Assets/_Downloaded/";
         private Vector2 scrollPosition;
@@ -22,6 +24,7 @@ namespace DCL.ABConverter.Editor
         private List<string> availableManifests = new List<string>();
         private int selectedManifestIndex = 0;
         private bool firstInstanceOnly = true;
+        private string catalystUrl = DEFAULT_CATALYST_URL;
 
         [MenuItem("Decentraland/Instantiate Initial Scene State")]
         public static void ShowWindow()
@@ -128,6 +131,18 @@ namespace DCL.ABConverter.Editor
             {
                 EditorGUILayout.HelpBox("Only the first instance of each GLTF will be placed.", MessageType.Info);
             }
+
+            EditorGUILayout.Space();
+            
+            // Catalyst URL
+            EditorGUILayout.LabelField("Catalyst URL", EditorStyles.boldLabel);
+            EditorGUILayout.BeginHorizontal();
+            catalystUrl = EditorGUILayout.TextField(catalystUrl);
+            if (GUILayout.Button("Reset", GUILayout.Width(50)))
+            {
+                catalystUrl = DEFAULT_CATALYST_URL;
+            }
+            EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.Space();
 
@@ -386,10 +401,10 @@ namespace DCL.ABConverter.Editor
 
         private async UniTask<string> DownloadEntityMapping(string sceneId)
         {
-            const string url = "https://peer.decentraland.zone/content/entities/active";
+            string url = $"{catalystUrl}/content/entities/active";
             string jsonBody = "{\"ids\":[\"" + sceneId + "\"]}";
 
-            Debug.Log($"Downloading entity mapping for scene: {sceneId}");
+            Debug.Log($"Downloading entity mapping for scene: {sceneId} from {url}");
 
             using (var request = UnityWebRequest.Post(url, jsonBody, "application/json"))
             {
