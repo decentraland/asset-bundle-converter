@@ -245,6 +245,9 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
                 env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, (isStatic || isStaticTexture) ? staticSceneABName : assetBundleName);
             }
 
+            // Mark MeshBaker output folder (shared atlases and materials) as part of static scene bundle
+            MarkMeshBakerOutputForStaticBundle(finalDownloadedPath, staticSceneABName);
+
             CreateStaticSceneDescriptor(asset, staticSceneABName, finalDownloadedPath);
         }
 
