@@ -1,9 +1,8 @@
-using System.Collections.Generic;
-using System.Linq;
-using UnityEngine;
 using Newtonsoft.Json.Linq;
+using System.Collections.Generic;
+using UnityEngine;
 
-namespace AssetBundleConverter.StaticSceneAssetBundle
+namespace AssetBundleConverter.InitialSceneStateGenerator
 {
     public class SceneComponent
     {
@@ -157,5 +156,10 @@ namespace AssetBundleConverter.StaticSceneAssetBundle
         public float g;
         public float b;
         public float a;
+    }
+
+    public class VisibilityData
+    {
+        public bool visible;
     }
 }

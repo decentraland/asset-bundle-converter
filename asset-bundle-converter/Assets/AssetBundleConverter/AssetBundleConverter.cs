@@ -125,8 +125,6 @@ namespace DCL.ABConverter
             startupAllocated = Profiler.GetTotalAllocatedMemoryLong() / 100000.0;
             startupReserved = Profiler.GetTotalReservedMemoryLong() / 100000.0;
 
-
-
             if (settings.buildTarget is not (BuildTarget.WebGL or BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX))
             {
                 var message = $"Build target is invalid: {settings.buildTarget.ToString()}";
@@ -171,6 +169,10 @@ namespace DCL.ABConverter
 
             if (isExitForced)
                 return;
+
+            // Initialize the scene state generator and generate the initial scene state
+            env.InitializeSceneStateGenerator(entityDTO);
+            env.sceneStateGenerator.GenerateInitialSceneState();
 
             await ProcessAllGltfs();
 
@@ -300,7 +302,7 @@ namespace DCL.ABConverter
                 var gltfImport = gltf.import;
                 string relativePath = PathUtils.FullPathToAssetPath(gltfUrl);
                 bool isEmote = (entityDTO is { type: not null } && entityDTO.type.ToLower().Contains("emote"))
-                               || gltf.AssetPath.fileName.ToLower().EndsWith("_emote.glb");
+                               || Utils.IsEmoteFileName(gltf.AssetPath.fileName);
                 bool isWearable = (entityDTO is { type: not null } && entityDTO.type.ToLower().Contains("wearable"));
 
                 AnimationMethod animationMethod = GetAnimationMethod(isEmote,isWearable);
@@ -394,12 +396,8 @@ namespace DCL.ABConverter
                         if (originalGltf != null)
                             try
                             {
-                                var clone = (GameObject)PrefabUtility.InstantiatePrefab(originalGltf);
-                                var renderers = clone.GetComponentsInChildren<Renderer>(true);
-
-                                foreach (Renderer renderer in renderers)
-                                    if (renderer.name.ToLower().Contains("_collider"))
-                                        renderer.enabled = false;
+                                // Always instantiate - uses manifest transforms if available, otherwise at origin
+                                env.sceneStateGenerator.InstantiateAsset(gltf.AssetPath.filePath, originalGltf);
                             }
                             catch (Exception e)
                             {
@@ -915,152 +913,22 @@ namespace DCL.ABConverter
         /// <param name="BuildTarget"></param>
         private void MarkAllAssetBundles(List<AssetPath> assetPaths)
         {
-            if (IsInitialSceneStateCompatible(out List<SceneComponent> convertedJSONComponents))
-            {
-                string staticSceneABName = $"staticScene_{entityDTO.id}{PlatformUtils.GetPlatform()}";
-                var asset = ScriptableObject.CreateInstance<StaticSceneDescriptor>();
-
-                //TODO (JUANI): There is a bug in the Asset Manifest generator. The entity could be twice, therefore generating
-                //multiple copies of the same asset. By doing this, we ensure that there is only one
-                Dictionary<string, HashSet<int>> gltfsComponents = new Dictionary<string, HashSet<int>>();
-                List<string> textureComponents = new List<string>();
-
-                foreach (var component in convertedJSONComponents)
-                {
-                    if (component.componentName == "core::GltfContainer")
-                    {
-                        if (component.TryGetData<MeshRendererData>(out var meshData) && !string.IsNullOrEmpty(meshData.src))
-                        {
-                            if (!gltfsComponents.ContainsKey(meshData.src))
-                                gltfsComponents.Add(meshData.src, new HashSet<int>());
-
-                            gltfsComponents[meshData.src].Add(component.entityId);
-                        }
-                    }
-                    else if (component.componentName == "core::Material")
-                    {
-                        if (component.TryGetData<MaterialComponentData>(out var materialData))
-                        {
-                            var textureSources = materialData.GetAllTextureSources();
-                            textureComponents.AddRange(textureSources);
-                        }
-                    }
-                }
-
-                foreach (var assetPath in assetPaths)
-                {
-                    if (assetPath == null) continue;
-
-                    if (assetPath.finalPath.EndsWith(".bin")) continue;
-
-                    // Check if this asset matches a GltfContainer source
-                    bool isStatic = gltfsComponents.ContainsKey(assetPath.filePath);
-                    string assetBundleName = assetPath.hash + PlatformUtils.GetPlatform();
-
-                    if (isStatic)
-                    {
-                        List<int> entityIds = gltfsComponents[assetPath.filePath].ToList();
-
-                        foreach (int entityId in entityIds)
-                        {
-                            asset.assetHash.Add(assetPath.hash);
-                            Matrix4x4 worldMatrix = GltfTransformDumper.DumpGltfWorldTransforms(convertedJSONComponents, entityId);
-                            asset.positions.Add(worldMatrix.GetColumn(3));
-
-                            // Rotation extraction
-                            Vector3 forward = worldMatrix.GetColumn(2); // Z axis
-                            Vector3 up = worldMatrix.GetColumn(1); // Y axis
-                            asset.rotations.Add(Quaternion.LookRotation(forward, up));
-
-                            // Optional: scale extraction
-                            Vector3 scale = new Vector3(
-                                worldMatrix.GetColumn(0).magnitude,
-                                worldMatrix.GetColumn(1).magnitude,
-                                worldMatrix.GetColumn(2).magnitude
-                            );
-
-                            asset.scales.Add(scale);
-                        }
-
-                        // Mark GLTF dependencies as static
-                        if (gltfImporters.TryGetValue(assetPath.filePath, out IGltfImport gltfImport))
-                        {
-                            var dependencies = gltfImport.assetDependencies;
-
-                            if (dependencies != null)
-                            {
-                                foreach (var dependency in dependencies)
-                                {
-                                    if (!string.IsNullOrEmpty(dependency.assetPath) && !dependency.assetPath.Contains("dcl/scene_ignore"))
-                                        env.directory.MarkFolderForAssetBundleBuild(dependency.assetPath, staticSceneABName);
-                                }
-                            }
-                        }
-
-                    }
-
-                    bool isStaticTexture = textureComponents.Contains(assetPath.filePath);
-                    env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, (isStatic || isStaticTexture) ? staticSceneABName : assetBundleName);
-                }
-
-                CreateStaticSceneDescriptor(asset, staticSceneABName);
-            }
+            // If scene is compatible with Initial Scene State, generate a consolidated static scene bundle
+            if (env.sceneStateGenerator.IsCompatible)
+                env.sceneStateGenerator.GenerateISSAssetBundle(assetPaths, gltfImporters, finalDownloadedPath);
             else
             {
+                // Otherwise, mark each asset as its own bundle
                 foreach (var assetPath in assetPaths)
                 {
                     if (assetPath == null) continue;
-
                     if (assetPath.finalPath.EndsWith(".bin")) continue;
+
                     string assetBundleName = assetPath.hash + PlatformUtils.GetPlatform();
                     env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, assetBundleName);
                 }
             }
 
-
-        }
-
-        private void CreateStaticSceneDescriptor(StaticSceneDescriptor asset, string staticSceneABName)
-        {
-            string staticSceneDesriptorFilename = "StaticSceneDescriptor.json";
-            string staticSceneDesciptorRelativePath = $"Assets/_Downloaded/{staticSceneDesriptorFilename}";
-            //Export of StaticSceneDescriptor
-            // Convert ScriptableObject to JSON using Newtonsoft.Json
-            var settings = new JsonSerializerSettings
-            {
-                Formatting = Formatting.Indented,
-                ReferenceLoopHandling = ReferenceLoopHandling.Ignore
-            };
-
-            string json = JsonConvert.SerializeObject(asset, settings);
-            File.WriteAllText($"{finalDownloadedPath}/{staticSceneDesriptorFilename}", json);
-
-
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
-            AssetImporter importer_json = AssetImporter.GetAtPath(staticSceneDesciptorRelativePath);
-            importer_json.SetAssetBundleNameAndVariant(staticSceneABName, "");
-        }
-
-        private bool IsInitialSceneStateCompatible(out List<SceneComponent> convertedJSONComponents)
-        {
-            //Manifest was created before the Unity iteration ran
-            try
-            {
-                string manifestPath = $"Assets/_SceneManifest/{entityDTO.id}-lod-manifest.json";;
-                if (entityDTO.type.ToLower() == "scene" && !string.IsNullOrEmpty(entityDTO.id) && env.file.Exists(manifestPath))
-                {
-                    convertedJSONComponents = JsonConvert.DeserializeObject<List<SceneComponent>>(env.file.ReadAllText(manifestPath));
-                    return true;
-                }
-                convertedJSONComponents = null;
-                return false;
-            }
-            catch (Exception e)
-            {
-                convertedJSONComponents = null;
-                return false;
-            }
         }
 
         /// <summary>
