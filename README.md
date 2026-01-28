@@ -1,167 +1,174 @@
-# Decentraland Asset Bundle Converter
+# asset-bundle-converter Server
 
-This is the standalone version of our Asset Bundle Conversion tool that is actually present at the unity-renderer
-The intent of this repository is to decouple the conversion tool to have fewer dependencies and more maintainability.
+[![Coverage Status](https://coveralls.io/repos/github/decentraland/asset-bundle-converter/badge.svg?branch=main)](https://coveralls.io/github/decentraland/asset-bundle-converter?branch=main)
 
----
+This server pulls messages from its SQS queue, which receives messages regarding Catalyst deployments (through [Deployments-To-SQS](https://github.com/decentraland/deployments-to-sqs/) bridge) and worlds deployments ([World Content Server](https://github.com/decentraland/worlds-content-server)) in order to generate optimized assets (_including LODs_) to properly render them in world in a performant way.
+The resulting artifacts are optimized to be used in the [Unity client](https://github.com/decentraland/unity-explorer).
 
-## Before you start
+This server is a bundle of three services:
+- **consumer-server:** orchestrator in charge of pulling messages from SQS, executing conversions for each entity, and uploading resulting artifacts to S3
+- **scene-lod-entities-manifest-builder:** in charge of generating entity manifests to generate their respective LODs
+- **asset-bundle-converter:** Unity process which receives raw textures and generates bundles and LODs from them
 
-1. [Contribution Guidelines](.github/CONTRIBUTING.md)
-2. [Coding Guidelines](docs/style-guidelines.md)
-3. [Code Review Standards](docs/code-review-standards.md)
+**Off-note:** multiple instances of this service are run to support converting bundles for each supported platform (_WebGL, MAC, and Windows_).
 
----
+## Table of Contents
 
-## What does this tool do?
+- [Features](#features)
+- [Dependencies & Related Services](#dependencies--related-services)
+- [API Documentation](#api-documentation)
+- [Database](#database)
+  - [Schema](#schema)
+  - [Migrations](#migrations)
+- [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Configuration](#configuration)
+  - [Running the Service](#running-the-service)
+- [Testing](#testing)
+  - [Running Tests](#running-tests)
+  - [Test Structure](#test-structure)
+- [Additional Documentation](#additional-documentation)
 
-To improve the performance of the WebGL build, in the past, we decided to convert all scenes into Asset Bundles.
-So this tool loads every scene asset, loads and re-imports all gltf's to turn them into AssetBundles just for the CI to upload them into the content servers.
+## Features
 
-## How do I manually run this tool?
+- **Asset Bundles Conversion**: Converts entity raw textures to optimized bundles for rendering in Unity projects.
+- **Asset Bundles Upload**: Makes resulting optimized bundles available for public consumption by uploading them to an S3 bucket behind a CDN.
 
-- Initialize and update the git submodules (`git submodule update --init` and `git submodule update .`)
-- Open this project using `Unity 2021.3.20f1`.
-- Go to `Decentraland > Convert Scene` menu.
-- Fill in the scene info and press `Start`.
-- Once the conversion is done, you will see the assets loaded in the current scene.
-- You can find the converted asset at the `AssetBundles` folder located at the root of this repository.
+## Dependencies & Related Services
 
----
+This service interacts with the following services (indirectly):
 
-# The conversion server
+- **[Deployments-To-SQS](https://github.com/decentraland/deployments-to-sqs)**: Source of Catalyst's entities deployments (hooked through SNS subscriptions)
+- **[Worlds Content Server](https://github.com/decentraland/worlds-content-server)**: Source of Worlds deployments (hooked through SNS subscription)
+- **[LODs Generator](https://github.com/decentraland/lods-generator)**: Source of raw LODs (hooked through SNS subscription)
 
-This tool is exposed as a standalone project and as a Docker-based service. The code of the service lives in the `consumer-server` folder, and runs commands locally by calling the project `asset-bundle-converter` of this same repository.
+External dependencies:
 
-To build the image locally, Docker must be used. The recommended command is:
+- AWS SQS: Queue holding pending conversions
+- AWS SNS: Event notifications for resulting conversions
+- AWS S3: Media storage for resulting artifacts
+- Sentry: Monitoring and observability
 
-```
-docker build -t ab-converter .
-```
+<!-- TODO ## API Documentation -->
 
-And to run the server locally, the minimum command is the following:
+<!-- The API is fully documented using the [OpenAPI standard](https://swagger.io/specification/). Its schema is located at [docs/openapi.yaml](docs/openapi.yaml). -->
 
-```
-docker run -p 5001:5000 ab-converter
-```
+## Getting Started
 
-After it starts, you should be albe to hit `http://localhost:5001/metrics` to check the server is live.
+### Prerequisites
 
----
+Before running this service, ensure you have the following installed:
 
-# CDN Filesystem
+- **Node.js**: Version 18.x (LTS recommended)
+- **Yarn**: Version 1.22.x or higher
+- **Docker**: For containerized deployment (recommended)
+- **Unity**: Version 2022.3.12f1 with WebGL/Windows/Mac build targets (only required for local non-Docker development)
 
-The service uploads the results of the conversion to a S3 bucket defined in the `CDN_BUCKET` env var.
+### Installation
 
-The structure of the bucket will look like this:
+1. Clone the repository:
 
-```
-(root)
-├──/manifest       (manifests of the converted entities)
-│  ├── entityId1.json
-│  └── entityId2.json
-├──/v4             (files of the v4 of the converter)
-│  └── ...
-└──/v5             (files of the v5 of the converter)
-   └── ...
-```
-
-- Every asset bundle conversion may be bound to a specific version of the converter. Versions may change because materials change or as a result of upgrading versions of unity.
-- This service has an embedded version, which is set via an environment variable (`ENV AB_VERSION v1` in the `Dockerfile`)
-- When each entity is converted, a manifest is generated. The manifest contains the AB_VERSION and a list of converted assets. The manifest is stored in the path `/manifest/:entity_id.json`. Manifests should have a TTL of 1 hour in the edge and CDN cache.
-- All converted assets are stored in a version-scoped path `/ab/:AB_VERSION/:CID`. Enabling using the same CDN different versions at a time. Converted assets should have a TTL of 1year in the CDN and edge servers.
-- Converted assets are stored in three versions: `/ab/:AB_VERSION/:CID`, `/ab/:AB_VERSION/:CID.gz` and `/ab/:AB_VERSION/:CID.br` being to enable network optimizations.
-
-# Logs
-
-Logs of conversions are stored in a different bucket for safety reasons, the bucket is defined with the environment variable `LOGS_BUCKET`.
-
-The logs for each conversion are stored in the path `logs/:AB_VERSION/:entityId/:DATE_AND_TIME.log`
-
-# Scheduling a manual conversion
-
-To schedule a manual conversion, there is an special with custom authentication at `/queue-task`. It sends a job to the queue, the job will be consumed by any available worker.
-
-```
-curl -XPOST -H 'Authorization: <TOKEN>' https://asset-bundle-converter.decentraland.org/queue-task -d '{"entityId": "bafyadsaljsdlkas", "contentServerUrl": "https://peer.decentraland.org/content"}'
+```bash
+git clone https://github.com/decentraland/asset-bundle-converter.git
+cd asset-bundle-converter
 ```
 
-# Using the new asset bundles
+2. Install dependencies:
 
-This converter leverages versioning for the assets, the version is changed by the `AB_VERSION` env var in the Dockerfile.
-
-This differs from the previous asset bundles in an impactful way: not all assets are stored at root level anymore. This is due to incompatibilities across versions of the shaders/materials and unity itself.
-
-Prior to this converter, the renderer used to look for the asset bundles of all models and textures, and fallback to the original asset if a 404 was returned.
-
-Now the assets need to be resolved based on a manifest including the list of converted files. If the files are not in the list, we can fallback directly to the original asset without waiting for the 404 and thus, optimizing network roundtrips and loading times.
-
-Here is some pseudocode to illustrate the asset resolution process for an entity:
-
-```typescript
-// this is the manifest file, it is uploaded after the entire entity was uploaded.
-type Manifest = {
-  version: string
-  files: string[] // list of converted files
-  exitCode: number // not used
-}
-
-const assetBundleCdn = 'https://ab-cdn.decentraland.zone' // .org
-
-/**
- * This function returns the manifest of a converted scene
- * @param entityId - EntityID used for the conversion
- * @param assetBundleCdn - baseUrl of the asset bundle CDN.
- */
-async function getSceneManifest(entityId: string, assetBundleCdn: string): Manifest | null = {
-  const manifest = await fetch(`${assetBundleCdn}/manifest/${entityId}.json`)
-  if (manifest.statusCode == 404) return null
-  return manifest.json()
-}
-
-/**
- *  This function resolves the final URL of the asset bundle or returns null if it was not converted
- * @param manifest - Manifest of the converted entity
- * @param cid - content identifier of the asset being converted
- * @param assetBundleCdn - baseUrl of the asset bundle CDN.
- */
-async function resolveAssetBundle(
-  manifest: Manifest,
-  cid: string,
-  assetBundleCdn: string
-): string | null {
-  if (manifest.files.includes(cid)) {
-    if (UNITY_WEBGL)
-      // brotli compressed asset bundles for WebGL, the browser will
-      // uncompress and cache this asset in a different thread
-      // NOTICE: if the asset bundles support range requests, they
-      //         won't work with the .br postfix!
-      return `${assetBundleCdn}/${manifest.version}/${cid}.br`
-    else
-      // raw asset bundles for the rest of the platforms
-      return `${assetBundleCdn}/${manifest.version}/${cid}`
-  }
-  return null
-}
+```bash
+cd consumer-server
+yarn install
 ```
 
-> As an exercise for the reader, here is a URL to resolve assets manually: `https://ab-cdn.decentraland.zone/manifest/bafkreie7b36aggssaerg7nvj5s56op5zqyxcqjtkq4q4kjrfhnkljhshgy.json`
+3. Build the project:
 
-# Deploying
+```bash
+yarn build
+```
 
-This repository has continuous delivery to the goerli (decentraland.zone) network.
+### Configuration
 
-To deploy to production, you must first select the full commit hash from the version you whish to deploy. Then check it exists as a tag in https://quay.io/repository/decentraland/asset-bundle-converter?tab=tags and lastly execute the workflow "Manual Deploy" selecting the target environment and the docker tag (commit hash).
+The service uses environment variables for configuration. Create a .env file in the consumer-server directory containing the environment variables for the service to run. Use the .env.default variables as an example.
 
-NOTICE: Please do not use `latest` as tag for the "Manual deploy", the pipeline of deployments runs on deltas, and if there was a "latest" and now we try to deploy "latest", it will detect no changes and finish without deploying. Always use the commit hash.
+### Running the Service
 
----
+#### Docker-based execution (recommended)
 
-## Copyright info
+This service is designed to run in a Docker container that includes Unity and all required dependencies. Build and run using:
 
-This repository is protected with a standard Apache 2 license. See the terms and conditions in
-the [LICENSE](https://github.com/decentraland/unity-renderer/blob/master/LICENSE) file.
+```bash
+# Build for WebGL (default)
+docker build -t asset-bundle-converter .
 
-## AI Agent Context
+# Build for Windows
+docker build --build-arg PLATFORM_TARGET=windows -t asset-bundle-converter-windows .
 
-For detailed AI Agent context, see [docs/ai-agent-context.md](docs/ai-agent-context.md).
+# Build for Mac
+docker build --build-arg PLATFORM_TARGET=mac -t asset-bundle-converter-mac .
+
+# Run the container
+docker run --env-file consumer-server/.env asset-bundle-converter
+```
+
+#### Local development
+
+For local development without Docker, you need Unity 2022.3.12f1 installed with the appropriate build targets.
+
+1. Ensure your `.env` file has `UNITY_PATH` and `PROJECT_PATH` configured correctly
+2. Start the service:
+
+```bash
+cd consumer-server
+yarn start
+```
+
+**Note:** Without `TASK_QUEUE` configured, the service uses an in-memory queue. You can trigger conversions manually via the `/queue-task` endpoint.
+
+## Testing
+
+This service includes comprehensive test coverage with both unit and integration tests.
+
+### Running Tests
+
+All test commands should be run from the `consumer-server/` directory:
+
+```bash
+cd consumer-server
+```
+
+Run all tests with coverage:
+
+```bash
+yarn test
+```
+
+Run tests in watch mode:
+
+```bash
+yarn test --watch
+```
+
+Run only unit tests:
+
+```bash
+yarn test test/unit
+```
+
+Run only integration tests:
+
+```bash
+yarn test test/integration
+```
+
+### Test Structure
+
+- **Unit Tests** (`consumer-server/test/unit/`): Test individual components and functions in isolation
+- **Integration Tests** (`consumer-server/test/integration/`): Test the complete request/response cycle
+
+For detailed testing guidelines and standards, refer to our [Testing Standards](https://github.com/decentraland/docs/tree/main/development-standards/testing-standards) documentation.
+
+## Additional Documentation
+
+- [Technical Reference](docs/technical-reference.md) - CDN structure, asset resolution, deployment, and manual conversion details
+- [AI Agent Context](docs/ai-agent-context.md) - Context for AI-assisted development
