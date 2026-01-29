@@ -1,4 +1,4 @@
-# asset-bundle-converter Server
+# Asset Bundle Converter
 
 [![Coverage Status](https://coveralls.io/repos/github/decentraland/asset-bundle-converter/badge.svg?branch=main)](https://coveralls.io/github/decentraland/asset-bundle-converter?branch=main)
 
