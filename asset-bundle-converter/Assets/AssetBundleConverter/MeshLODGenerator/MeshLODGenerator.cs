@@ -125,7 +125,8 @@ namespace AssetBundleConverter.Editor
                 int originalVertices = mesh.vertexCount;
                 int originalTriangles = mesh.triangles.Length / 3;
 
-                MeshLodUtility.GenerateMeshLods(mesh, maxLODCount);
+                //Always discard odd levels for bigger buckers
+                MeshLodUtility.GenerateMeshLods(mesh, MeshLodUtility.LodGenerationFlags.DiscardOddLevels, maxLODCount);
 
                 Debug.Log($"MeshLODGenerator: Generated {mesh.lodCount} LODs for mesh '{mesh.name}' " +
                          $"(verts: {originalVertices:N0}, tris: {originalTriangles:N0})");

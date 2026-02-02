@@ -96,7 +96,7 @@ namespace AssetBundleConverter
             /// Maximum number of LOD levels to generate for each mesh.
             /// Only used when generateMeshLODs is true.
             /// </summary>
-            public int meshLODCount = 3;
+            public int meshLODCount = 5;
 
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 
