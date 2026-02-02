@@ -17,11 +17,101 @@ namespace AssetBundleConverter.Editor
         public const int DEFAULT_MAX_LOD_COUNT = 5;
 
         /// <summary>
+        /// Holds information about a mesh source (either MeshFilter or SkinnedMeshRenderer).
+        /// </summary>
+        public struct MeshSource
+        {
+            public Mesh sharedMesh;
+            public GameObject gameObject;
+            public bool isSkinnedMesh;
+
+            public MeshSource(MeshFilter mf)
+            {
+                sharedMesh = mf.sharedMesh;
+                gameObject = mf.gameObject;
+                isSkinnedMesh = false;
+            }
+
+            public MeshSource(SkinnedMeshRenderer smr)
+            {
+                sharedMesh = smr.sharedMesh;
+                gameObject = smr.gameObject;
+                isSkinnedMesh = true;
+            }
+        }
+
+        /// <summary>
+        /// Gets all mesh sources (MeshFilter and SkinnedMeshRenderer) from a GameObject hierarchy.
+        /// Filters out meshes with "_collider" in their name.
+        /// </summary>
+        /// <param name="gameObject">The root GameObject to search</param>
+        /// <returns>List of MeshSource structs</returns>
+        public static List<MeshSource> GetAllMeshSources(GameObject gameObject)
+        {
+            var meshSources = new List<MeshSource>();
+
+            if (gameObject == null)
+                return meshSources;
+
+            // Get MeshFilters
+            MeshFilter[] meshFilters = gameObject.GetComponentsInChildren<MeshFilter>(true);
+            foreach (var mf in meshFilters)
+            {
+                // Skip collider meshes
+                if (mf.sharedMesh != null && mf.sharedMesh.name.Contains("_collider"))
+                    continue;
+
+                meshSources.Add(new MeshSource(mf));
+            }
+
+            // Get SkinnedMeshRenderers
+            SkinnedMeshRenderer[] skinnedMeshRenderers = gameObject.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            foreach (var smr in skinnedMeshRenderers)
+            {
+                // Skip collider meshes
+                if (smr.sharedMesh != null && smr.sharedMesh.name.Contains("_collider"))
+                    continue;
+
+                meshSources.Add(new MeshSource(smr));
+            }
+
+            return meshSources;
+        }
+
+        /// <summary>
+        /// Generates LODs for all meshes in a GameObject hierarchy.
+        /// Processes both MeshFilter and SkinnedMeshRenderer components.
+        /// Skips meshes with "_collider" in their name.
+        /// </summary>
+        /// <param name="gameObject">The root GameObject to process</param>
+        /// <param name="maxLODCount">Maximum number of LOD levels to generate</param>
+        /// <returns>Number of meshes processed</returns>
+        public static int GenerateLODsForGameObject(GameObject gameObject, int maxLODCount = DEFAULT_MAX_LOD_COUNT)
+        {
+            if (gameObject == null) return 0;
+
+            int meshesProcessed = 0;
+            var processedMeshes = new HashSet<Mesh>();
+            var meshSources = GetAllMeshSources(gameObject);
+
+            foreach (var meshSource in meshSources)
+            {
+                if (meshSource.sharedMesh == null) continue;
+                if (processedMeshes.Contains(meshSource.sharedMesh)) continue;
+
+                processedMeshes.Add(meshSource.sharedMesh);
+                GenerateLODsForMesh(meshSource.sharedMesh, maxLODCount);
+                meshesProcessed++;
+            }
+
+            return meshesProcessed;
+        }
+
+        /// <summary>
         /// Generates LODs for a single mesh.
         /// </summary>
         /// <param name="mesh">The mesh to generate LODs for</param>
         /// <param name="maxLODCount">Maximum number of LOD levels to generate</param>
-        /// <returns>True if LODs were generated successfully</returns>
         public static void GenerateLODsForMesh(Mesh mesh, int maxLODCount = DEFAULT_MAX_LOD_COUNT)
         {
             if (mesh == null)
@@ -46,79 +136,6 @@ namespace AssetBundleConverter.Editor
             {
                 Debug.LogError($"MeshLODGenerator: Failed to generate LODs for mesh '{mesh.name}': {e.Message}");
             }
-        }
-
-        /// <summary>
-        /// Extracts each LOD level from a mesh and saves them as separate .mesh files.
-        /// The mesh must already have LODs generated via GenerateLODsForMesh.
-        /// </summary>
-        /// <param name="sourceMesh">The mesh with LODs to extract</param>
-        /// <param name="outputFolder">The folder to save the extracted mesh files</param>
-        /// <returns>List of paths to the created mesh files</returns>
-        public static List<string> ExtractLODMeshesToFiles(Mesh sourceMesh, string outputFolder)
-        {
-            List<string> generatedFiles = new List<string>();
-
-            if (sourceMesh == null || sourceMesh.lodCount == 0)
-            {
-                return generatedFiles;
-            }
-
-            string baseName = sourceMesh.name;
-            int lodCount = sourceMesh.lodCount;
-            int subMeshCount = sourceMesh.subMeshCount;
-
-            for (int lodIndex = 0; lodIndex < lodCount; lodIndex++)
-            {
-                // Create a clean new mesh for this LOD level
-                Mesh lodMesh = new Mesh();
-                lodMesh.name = $"{baseName}_LOD{lodIndex}";
-
-                // Copy vertex data
-                lodMesh.vertices = sourceMesh.vertices;
-                lodMesh.normals = sourceMesh.normals;
-                lodMesh.tangents = sourceMesh.tangents;
-                lodMesh.colors = sourceMesh.colors;
-                lodMesh.colors32 = sourceMesh.colors32;
-                lodMesh.uv = sourceMesh.uv;
-                lodMesh.uv2 = sourceMesh.uv2;
-
-                // Set submesh count
-                lodMesh.subMeshCount = subMeshCount;
-
-                // Set triangles for this specific LOD level only
-                int totalTriangles = 0;
-                for (int subMeshIndex = 0; subMeshIndex < subMeshCount; subMeshIndex++)
-                {
-                    int[] triangles = sourceMesh.GetTriangles(subMeshIndex, lodIndex, false);
-                    lodMesh.SetTriangles(triangles, subMeshIndex, false);
-                    totalTriangles += triangles.Length / 3;
-                }
-
-                lodMesh.RecalculateBounds();
-
-                // Save as separate .mesh file
-                string lodFileName = $"{baseName}_LOD{lodIndex}.mesh";
-                string lodPath = Path.Combine(outputFolder, lodFileName).Replace("\\", "/");
-
-                AssetDatabase.CreateAsset(lodMesh, lodPath);
-                generatedFiles.Add(lodPath);
-
-                float reduction = sourceMesh.vertexCount > 0
-                    ? (1 - (float)lodMesh.vertexCount / sourceMesh.vertexCount) * 100
-                    : 0;
-
-                Debug.Log($"  Extracted LOD{lodIndex}:");
-                Debug.Log($"    Path: {lodPath}");
-                Debug.Log($"    Vertices: {lodMesh.vertexCount:N0}");
-                Debug.Log($"    Triangles: {totalTriangles:N0}");
-                Debug.Log($"    Reduction: {reduction:F1}%");
-            }
-
-            // Mark the source mesh as dirty to save the LOD data
-            EditorUtility.SetDirty(sourceMesh);
-
-            return generatedFiles;
         }
     }
 }

@@ -86,6 +86,18 @@ namespace AssetBundleConverter
             public BuildTarget buildTarget = BuildTarget.WebGL;
             public BuildPipelineType BuildPipelineType = BuildPipelineType.Default;
 
+            /// <summary>
+            /// If set to true, mesh LODs will be generated for all meshes in successfully imported GLTFs.
+            /// Uses Unity's MeshLodUtility to simplify meshes at different detail levels.
+            /// </summary>
+            public bool generateMeshLODs = false;
+
+            /// <summary>
+            /// Maximum number of LOD levels to generate for each mesh.
+            /// Only used when generateMeshLODs is true.
+            /// </summary>
+            public int meshLODCount = 3;
+
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }
 
         }

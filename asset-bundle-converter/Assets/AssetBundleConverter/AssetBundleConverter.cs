@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -409,6 +409,21 @@ namespace DCL.ABConverter
                     }
 
                     log.Verbose($"<color={color}>Ended loading gltf {gltfUrl} with result <b>{loadingSuccess}</b></color>");
+
+                    // Generate mesh LODs if enabled
+                    if (settings.generateMeshLODs)
+                    {
+                        GameObject importedGltf = env.assetDatabase.LoadAssetAtPath<GameObject>(relativePath);
+                        if (importedGltf != null)
+                        {
+                            int meshesProcessed = MeshLODGenerator.GenerateLODsForGameObject(importedGltf, settings.meshLODCount);
+                            if (meshesProcessed > 0)
+                            {
+                                log.Verbose($"Generated LODs for {meshesProcessed} mesh(es) in {relativePath}");
+                                env.assetDatabase.SaveAssets();
+                            }
+                        }
+                    }
                 }
 
                 catch (FileLoadException)

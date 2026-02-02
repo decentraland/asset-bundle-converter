@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
@@ -13,60 +12,6 @@ namespace AssetBundleConverter.Editor
 
         // LOD settings
         private int maxLODCount = 3;
-
-        // Helper struct to hold mesh source information
-        private struct MeshSource
-        {
-            public Mesh sharedMesh;
-            public GameObject gameObject;
-            public string sourceName;
-            public bool isSkinnedMesh;
-
-            public MeshSource(MeshFilter mf)
-            {
-                sharedMesh = mf.sharedMesh;
-                gameObject = mf.gameObject;
-                sourceName = mf.gameObject.name;
-                isSkinnedMesh = false;
-            }
-
-            public MeshSource(SkinnedMeshRenderer smr)
-            {
-                sharedMesh = smr.sharedMesh;
-                gameObject = smr.gameObject;
-                sourceName = smr.gameObject.name;
-                isSkinnedMesh = true;
-            }
-        }
-
-        private List<MeshSource> GetAllMeshSources(GameObject prefab)
-        {
-            var meshSources = new List<MeshSource>();
-
-            // Get MeshFilters
-            MeshFilter[] meshFilters = prefab.GetComponentsInChildren<MeshFilter>(true);
-            foreach (var mf in meshFilters)
-            {
-                // Skip collider meshes
-                if (mf.sharedMesh != null && mf.sharedMesh.name.Contains("_collider"))
-                    continue;
-
-                meshSources.Add(new MeshSource(mf));
-            }
-
-            // Get SkinnedMeshRenderers
-            SkinnedMeshRenderer[] skinnedMeshRenderers = prefab.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-            foreach (var smr in skinnedMeshRenderers)
-            {
-                // Skip collider meshes
-                if (smr.sharedMesh != null && smr.sharedMesh.name.Contains("_collider"))
-                    continue;
-
-                meshSources.Add(new MeshSource(smr));
-            }
-
-            return meshSources;
-        }
 
         [MenuItem("Decentraland/Mesh LOD Generator")]
         public static void ShowWindow()
@@ -95,7 +40,7 @@ namespace AssetBundleConverter.Editor
 
             if (sourcePrefab != null)
             {
-                var meshSources = GetAllMeshSources(sourcePrefab);
+                var meshSources = MeshLODGenerator.GetAllMeshSources(sourcePrefab);
                 MeshFilter[] meshFilters = sourcePrefab.GetComponentsInChildren<MeshFilter>(true);
                 SkinnedMeshRenderer[] skinnedMeshRenderers = sourcePrefab.GetComponentsInChildren<SkinnedMeshRenderer>(true);
 
@@ -150,7 +95,7 @@ namespace AssetBundleConverter.Editor
 
             // Generate button
             bool canGenerate = sourcePrefab != null &&
-                              GetAllMeshSources(sourcePrefab).Count > 0;
+                              MeshLODGenerator.GetAllMeshSources(sourcePrefab).Count > 0;
 
             GUI.enabled = canGenerate;
             if (GUILayout.Button("Generate LOD Meshes for All Meshes", GUILayout.Height(35)))
@@ -179,7 +124,7 @@ namespace AssetBundleConverter.Editor
                 return;
             }
 
-            var meshSources = GetAllMeshSources(sourcePrefab);
+            var meshSources = MeshLODGenerator.GetAllMeshSources(sourcePrefab);
             if (meshSources.Count == 0)
             {
                 EditorUtility.DisplayDialog("Error", "Prefab must have at least one MeshFilter or SkinnedMeshRenderer component in its hierarchy.", "OK");
@@ -209,7 +154,7 @@ namespace AssetBundleConverter.Editor
                 // Process each mesh source (MeshFilter or SkinnedMeshRenderer)
                 for (int msIndex = 0; msIndex < meshSources.Count; msIndex++)
                 {
-                    MeshSource meshSource = meshSources[msIndex];
+                    MeshLODGenerator.MeshSource meshSource = meshSources[msIndex];
                     if (meshSource.sharedMesh == null)
                     {
                         string sourceType = meshSource.isSkinnedMesh ? "SkinnedMeshRenderer" : "MeshFilter";
