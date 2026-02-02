@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using AssetBundleConverter.Persistence;
@@ -72,6 +72,9 @@ namespace AssetBundleConverter
         private bool stripShaders = true;
         private bool importGltf = true;
 
+        private PersistentSetting<bool> generateMeshLODs;
+        private PersistentSetting<int> meshLODCount;
+
         [MenuItem("Decentraland/Asset Bundle Converter")]
         private static void Init()
         {
@@ -94,6 +97,8 @@ namespace AssetBundleConverter
             buildTarget = PersistentSetting.CreateEnum(nameof(buildTarget), SupportedBuildTarget.WebGL);
             failingConversionTolerance = PersistentSetting.CreateFloat(nameof(failingConversionTolerance), 1f); // 5%
             downloadBatchSize = PersistentSetting.CreateInt(nameof(downloadBatchSize), 20);
+            generateMeshLODs = PersistentSetting.CreateBool(nameof(generateMeshLODs), false);
+            meshLODCount = PersistentSetting.CreateInt(nameof(meshLODCount), 3);
         }
 
         private void OnGUI()
@@ -111,6 +116,14 @@ namespace AssetBundleConverter
             failingConversionTolerance.Value = ClampConversionTolerance(EditorGUILayout.FloatField("Failed Conversion Tolerance", failingConversionTolerance));
             clearDownloads = EditorGUILayout.Toggle("Clear Downloads", clearDownloads);
             includeShaderVariants = EditorGUILayout.Toggle("Include Shader Variants", includeShaderVariants);
+
+            // Mesh LOD settings
+            generateMeshLODs.Value = EditorGUILayout.Toggle("Generate Mesh LODs", generateMeshLODs);
+            using (new EditorGUI.DisabledScope(!generateMeshLODs.Value))
+            {
+                meshLODCount.Value = EditorGUILayout.IntSlider("Mesh LOD Count", meshLODCount, 1, 12);
+            }
+
             showDebugOptions = EditorGUILayout.Toggle("Show debug options", showDebugOptions);
 
             RenderUrlEditor();
@@ -348,7 +361,9 @@ namespace AssetBundleConverter
                 verbose = verbose,
                 buildTarget = GetBuildTarget(),
                 BuildPipelineType = buildPipelineType,
-                AnimationMethod = animationMehtod
+                AnimationMethod = animationMehtod,
+                generateMeshLODs = generateMeshLODs,
+                meshLODCount = meshLODCount
             };
         }
 
