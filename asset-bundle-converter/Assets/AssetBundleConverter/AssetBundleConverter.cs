@@ -856,7 +856,23 @@ namespace DCL.ABConverter
 
                     env.assetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 
+                    // Resize texture first if needed (this may modify the file)
                     ReduceTextureSizeIfNeeded(texPath, maxTextureSize);
+
+                    // Set texture importer settings based on texture type AFTER resizing
+                    // This ensures the settings are applied to the final texture file
+                    TextureInfo texInfo2 = textTypeMan.GetTextureInfo(tex.name);
+                    var importer = AssetImporter.GetAtPath(texPath) as TextureImporter;
+                    if (importer != null)
+                    {
+                        bool isNormalMap = texInfo2.HasAnyType(TextureType.BumpMap) &&
+                                          !texInfo2.HasAnyType(TextureType.MainTex | TextureType.BaseMap);
+                        if (isNormalMap)
+                        {
+                            importer.textureType = TextureImporterType.NormalMap;
+                            importer.SaveAndReimport();
+                        }
+                    }
 
                     newTextures.Add(env.assetDatabase.LoadAssetAtPath<Texture2D>(texPath));
                 }
@@ -1505,7 +1521,10 @@ namespace DCL.ABConverter
             float maxTextureSize = maxSize;
 
             if (width <= maxTextureSize && height <= maxTextureSize)
+            {
+                Object.DestroyImmediate(tmpTex);
                 return;
+            }
 
             if (width >= height)
                 factor = maxTextureSize / width;
@@ -1515,8 +1534,12 @@ namespace DCL.ABConverter
             Texture2D dstTex = Utils.ResizeTexture(tmpTex, (int)(width * factor), (int)(height * factor));
             byte[] endTex = dstTex.EncodeToPNG();
             Object.DestroyImmediate(tmpTex);
+            Object.DestroyImmediate(dstTex);
 
             env.file.WriteAllBytes(texturePath, endTex);
+
+            // Reimport the resized texture to update the asset database
+            env.assetDatabase.ImportAsset(texturePath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
         }
 
         /// <summary>

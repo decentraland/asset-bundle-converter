@@ -79,6 +79,13 @@ namespace AssetBundleConverter
             public bool includeShaderVariants = false;
 
             public bool importGltf = true;
+
+            /// <summary>
+            /// Enable half-precision (16-bit) vertex positions for small meshes (bounds less than 16m).
+            /// This reduces position data memory by 50% (12 bytes -> 6 bytes per vertex).
+            /// </summary>
+            public bool useHalfPrecisionPositions = true;
+
             public string targetHash;
             public Vector2Int? targetPointer = null;
             public bool reportErrors = false;

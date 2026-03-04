@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using AssetBundleConverter.MeshOptimization;
 using AssetBundleConverter.Wrappers.Implementations.Default;
 using DCL.ABConverter;
 using GLTFast.Editor;
@@ -137,6 +138,29 @@ namespace AssetBundleConverter.Editor
             {
                 if (r.name.Contains("_collider", StringComparison.OrdinalIgnoreCase))
                     DestroyImmediate(r);
+            }
+
+            // Optimize mesh vertex formats for small meshes (half-precision positions)
+            OptimizeMeshFormats(sceneGo);
+        }
+
+        /// <summary>
+        /// Optimizes mesh vertex formats by converting positions to half-precision
+        /// for meshes with bounds smaller than 16 meters in all dimensions.
+        /// This reduces position data memory by 50% (12 bytes -> 6 bytes per vertex).
+        /// </summary>
+        private void OptimizeMeshFormats(GameObject sceneGo)
+        {
+            foreach (var filter in sceneGo.GetComponentsInChildren<MeshFilter>())
+            {
+                if (filter.sharedMesh != null)
+                    MeshOptimizer.ConvertToHalfPrecisionPositions(filter.sharedMesh);
+            }
+
+            foreach (var renderer in sceneGo.GetComponentsInChildren<SkinnedMeshRenderer>())
+            {
+                if (renderer.sharedMesh != null)
+                    MeshOptimizer.ConvertToHalfPrecisionPositions(renderer.sharedMesh);
             }
         }
 
