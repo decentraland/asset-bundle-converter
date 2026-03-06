@@ -1,17 +1,16 @@
 using AssetBundleConverter;
-using AssetBundleConverter.Wrappers.Implementations.Default;
 using AssetBundleConverter.Wrappers.Interfaces;
-using System.Collections;
+using DCL.Helpers;
+using System;
 using System.Collections.Generic;
 using System.IO;
-using System;
-using System.Threading.Tasks;
-using DCL.Helpers;
 using System.Linq;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Networking;
+using UnityEngine.SceneManagement;
 using Environment = AssetBundleConverter.Environment;
 using Object = UnityEngine.Object;
 
@@ -19,16 +18,16 @@ namespace DCL.ABConverter
 {
     public static class VisualTests
     {
-        static readonly string BASELINE_IMAGES_PATH = AssetBundlesVisualTestUtils.baselineImagesPath;
-        static readonly string TEST_IMAGES_PATH = AssetBundlesVisualTestUtils.testImagesPath;
-        static readonly string SCENE_NAME = "Assets/AssetBundleConverter/VisualTestScene.unity";
+        private static readonly string BASELINE_IMAGES_PATH = AssetBundlesVisualTestUtils.baselineImagesPath;
+        private static readonly string TEST_IMAGES_PATH = AssetBundlesVisualTestUtils.testImagesPath;
+        private static readonly string SCENE_NAME = "Assets/AssetBundleConverter/VisualTestScene.unity";
 
-        static string abPath = Application.dataPath + "/../AssetBundles/";
-        static int skippedAssets = 0;
+        private static string abPath = Application.dataPath + "/../AssetBundles/";
+        private static int skippedAssets;
 
         /// <summary>
-        /// Instantiate all locally-converted GLTFs in both formats (GLTF and Asset Bundle) and
-        /// compare them visually. If a visual test fails, the AB is deleted to avoid uploading it
+        ///     Instantiate all locally-converted GLTFs in both formats (GLTF and Asset Bundle) and
+        ///     compare them visually. If a visual test fails, the AB is deleted to avoid uploading it
         /// </summary>
         public static async Task TestConvertedAssetsAsync(Environment env, ClientSettings clientSettings, List<AssetPath> assetsToMark, IErrorReporter errorReporter)
         {
@@ -38,7 +37,8 @@ namespace DCL.ABConverter
 
                 Debug.Log($"Visual Test Detection: -output PATH param found, setting ABPath as '{abPath}'");
             }
-            else { Debug.Log($"Visual Test Detection: -output PATH param NOT found, setting ABPath as '{abPath}'"); }
+            else
+                Debug.Log($"Visual Test Detection: -output PATH param NOT found, setting ABPath as '{abPath}'");
 
             if (!Directory.Exists(abPath))
             {
@@ -49,7 +49,7 @@ namespace DCL.ABConverter
 
             Debug.Log("Visual Test Detection: Starting converted assets testing...");
 
-            var scene = EditorSceneManager.OpenScene(SCENE_NAME, OpenSceneMode.Single);
+            Scene scene = EditorSceneManager.OpenScene(SCENE_NAME, OpenSceneMode.Single);
             await WaitUntil(() => scene.isLoaded);
 
             // Update visual tests path that will be used internally for the snapshots
@@ -57,7 +57,7 @@ namespace DCL.ABConverter
             AssetBundlesVisualTestUtils.testImagesPath += "ABConverter/";
             skippedAssets = 0;
 
-            var gltfs = LoadAndInstantiateAllGltfAssets(clientSettings, assetsToMark);
+            GameObject[] gltfs = LoadAndInstantiateAllGltfAssets(clientSettings, assetsToMark);
 
             if (gltfs.Length == 0)
             {
@@ -67,11 +67,12 @@ namespace DCL.ABConverter
             }
 
             // Take prewarm snapshot to make sure the scene is correctly loaded
-            await TakeObjectSnapshot(new GameObject(), $"ABConverter_Warmup.png");
+            await TakeObjectSnapshot(new GameObject(), "ABConverter_Warmup.png");
 
             AssetBundlesVisualTestUtils.generateBaseline = true;
 
-            foreach (GameObject go in gltfs) { go.SetActive(false); }
+            foreach (GameObject go in gltfs)
+                go.SetActive(false);
 
             foreach (GameObject go in gltfs)
             {
@@ -84,7 +85,7 @@ namespace DCL.ABConverter
 
             AssetBundlesVisualTestUtils.generateBaseline = false;
 
-            var abs = LoadAndInstantiateAllAssetBundles(clientSettings);
+            GameObject[] abs = LoadAndInstantiateAllAssetBundles(clientSettings);
 
             if (abs.Length == 0)
             {
@@ -95,29 +96,28 @@ namespace DCL.ABConverter
 
             foreach (GameObject go in abs)
             {
-                var renderers = go.GetComponentsInChildren<Renderer>(true);
+                Renderer[] renderers = go.GetComponentsInChildren<Renderer>(true);
 
                 foreach (Renderer renderer in renderers)
-                {
-                    if (renderer.name.ToLower().Contains("_collider")) { renderer.enabled = false; }
-                }
+                    if (renderer.name.ToLower().Contains("_collider"))
+                        renderer.enabled = false;
 
                 go.SetActive(false);
             }
 
             foreach (GameObject go in abs)
             {
-                string testName = $"ABConverter_{go.name}.png";
+                var testName = $"ABConverter_{go.name}.png";
 
                 go.SetActive(true);
 
                 await TakeObjectSnapshot(go, testName);
 
-                var result = AssetBundlesVisualTestUtils.TestSnapshot(
+                float result = AssetBundlesVisualTestUtils.TestSnapshot(
                     AssetBundlesVisualTestUtils.baselineImagesPath + testName,
                     AssetBundlesVisualTestUtils.testImagesPath + testName);
 
-                var isValid = result >= 95;
+                bool isValid = result >= 95;
 
                 // Delete failed AB files to avoid uploading them
                 if (!isValid && env != null)
@@ -134,6 +134,7 @@ namespace DCL.ABConverter
 
                     string message = "Visual test failed on " + go.name + $" with {result}% affinity";
                     Debug.LogError(message, go);
+
                     //errorReporter.ReportError(message, clientSettings);
                 }
 
@@ -149,27 +150,28 @@ namespace DCL.ABConverter
 
         public static async Task WaitUntil(Func<bool> predicate, int sleep = 50)
         {
-            while (!predicate()) { await Task.Delay(sleep); }
+            while (!predicate())
+                await Task.Delay(sleep);
         }
 
         /// <summary>
-        /// Set skippedAssets to the amount of target assets
+        ///     Set skippedAssets to the amount of target assets
         /// </summary>
         private static void SkipAllAssets()
         {
-            skippedAssets = AssetDatabase.FindAssets($"t:GameObject", new[] { "Assets/_Downloaded" }).Length;
+            skippedAssets = AssetDatabase.FindAssets("t:GameObject", new[] { "Assets/_Downloaded" }).Length;
         }
 
         /// <summary>
-        /// Position camera based on renderer bounds and take snapshot
+        ///     Position camera based on renderer bounds and take snapshot
         /// </summary>
         private static async Task TakeObjectSnapshot(GameObject targetGO, string testName)
         {
             Vector3 originalScale = targetGO.transform.localScale;
-            var renderers = targetGO.GetComponentsInChildren<Renderer>();
+            Renderer[] renderers = targetGO.GetComponentsInChildren<Renderer>();
 
             // unify all child renderer bounds and use that to position the snapshot camera
-            var mergedBounds = MeshUtils.BuildMergedBounds(renderers);
+            Bounds mergedBounds = MeshUtils.BuildMergedBounds(renderers);
 
             // Some objects are imported super small (like 0.00x in scale) and we can barely see them in the snapshots
             if (mergedBounds.size.magnitude < 1f)
@@ -183,7 +185,7 @@ namespace DCL.ABConverter
             offset.y = Mathf.Max(1, offset.y);
             offset.z = Mathf.Max(1, offset.z);
 
-            Vector3 cameraPosition = new Vector3(mergedBounds.min.x - offset.x, mergedBounds.max.y + offset.y, mergedBounds.min.z - offset.z);
+            var cameraPosition = new Vector3(mergedBounds.min.x - offset.x, mergedBounds.max.y + offset.y, mergedBounds.min.z - offset.z);
 
             await AssetBundlesVisualTestUtils.TakeSnapshot(testName, Camera.main, cameraPosition, mergedBounds.center);
 
@@ -191,13 +193,13 @@ namespace DCL.ABConverter
         }
 
         /// <summary>
-        /// Instantiate all local GLTFs found in the "_Downloaded" directory
+        ///     Instantiate all local GLTFs found in the "_Downloaded" directory
         /// </summary>
         /// <param name="clientSettings"></param>
         /// <param name="assetsToMark"></param>
         private static GameObject[] LoadAndInstantiateAllGltfAssets(ClientSettings clientSettings, List<AssetPath> assetsToMark)
         {
-            List<GameObject> importedGltFs = new List<GameObject>();
+            var importedGltFs = new List<GameObject>();
 
             if (!string.IsNullOrEmpty(clientSettings.importOnlyEntity))
                 importedGltFs.Add(ImportSingleGltfFromPath(clientSettings, assetsToMark));
@@ -209,13 +211,13 @@ namespace DCL.ABConverter
 
         private static List<GameObject> ImportGltfsFromDownloadedAssets()
         {
-            List<GameObject> importedGltFs = new List<GameObject>();
-            string[] assets = AssetDatabase.FindAssets($"t:GameObject", new[] { "Assets/_Downloaded" });
+            var importedGltFs = new List<GameObject>();
+            string[] assets = AssetDatabase.FindAssets("t:GameObject", new[] { "Assets/_Downloaded" });
 
             foreach (string guid in assets)
             {
                 GameObject gltf = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(guid));
-                var importedGltf = Object.Instantiate(gltf);
+                GameObject importedGltf = Object.Instantiate(gltf);
                 SetupGameObjectGltf(importedGltf);
                 importedGltFs.Add(importedGltf);
             }
@@ -225,14 +227,14 @@ namespace DCL.ABConverter
 
         private static GameObject ImportSingleGltfFromPath(ClientSettings clientSettings, List<AssetPath> AssetsToMark)
         {
-            var assetPath = AssetsToMark.First(p =>
+            AssetPath assetPath = AssetsToMark.First(p =>
                 string.Equals(p.hash, clientSettings.importOnlyEntity, StringComparison.CurrentCultureIgnoreCase));
 
-            var path = assetPath.finalPath;
+            string path = assetPath.finalPath;
             string relativePathTo = PathUtils.GetRelativePathTo(Application.dataPath, path);
 
             GameObject gltf = AssetDatabase.LoadAssetAtPath<GameObject>(relativePathTo);
-            var importedGltf = Object.Instantiate(gltf);
+            GameObject importedGltf = Object.Instantiate(gltf);
             SetupGameObjectGltf(importedGltf);
 
             return importedGltf;
@@ -244,7 +246,7 @@ namespace DCL.ABConverter
 
             PatchSkeletonlessSkinnedMeshRenderer(importedGLTF.gameObject.GetComponentInChildren<SkinnedMeshRenderer>());
 
-            var renderers = importedGLTF.GetComponentsInChildren<Renderer>(true);
+            Renderer[] renderers = importedGLTF.GetComponentsInChildren<Renderer>(true);
 
             foreach (Renderer renderer in renderers)
                 if (renderer.name.ToLower().Contains("_collider"))
@@ -252,47 +254,47 @@ namespace DCL.ABConverter
         }
 
         /// <summary>
-        /// Search for local GLTFs in "_Downloaded" and use those hashes to find their corresponding
-        /// Asset Bundle files, then instantiate those ABs in the Unity scene
+        ///     Search for local GLTFs in "_Downloaded" and use those hashes to find their corresponding
+        ///     Asset Bundle files, then instantiate those ABs in the Unity scene
         /// </summary>
         /// <param name="ClientSettings"></param>
         public static GameObject[] LoadAndInstantiateAllAssetBundles(ClientSettings ClientSettings)
         {
             Caching.ClearCache();
 
-            string workingFolderName = "_Downloaded";
+            var workingFolderName = "_Downloaded";
 
-            var pathList = Directory.GetDirectories(Application.dataPath + "/" + workingFolderName);
+            string[] pathList = Directory.GetDirectories(Application.dataPath + "/" + workingFolderName);
 
-            List<string> dependencyAbs = new List<string>();
-            List<string> mainAbs = new List<string>();
+            var dependencyAbs = new List<string>();
+            var mainAbs = new List<string>();
 
-            foreach (var paths in pathList)
+            foreach (string paths in pathList)
             {
-                var hash = new DirectoryInfo(paths).Name;
-                var path = "Assets/" + workingFolderName + "/" + hash;
-                var guids = AssetDatabase.FindAssets("t:GameObject", new[] { path });
+                string hash = new DirectoryInfo(paths).Name;
+                string path = "Assets/" + workingFolderName + "/" + hash;
+                string[] guids = AssetDatabase.FindAssets("t:GameObject", new[] { path });
 
                 // NOTE(Brian): If no gameObjects are found, we assume they are dependency assets (textures, etc).
                 if (guids.Length == 0)
                 {
                     // We need to avoid adding dependencies that are NOT converted to ABs (like .bin files)
-                    if (AssetDatabase.FindAssets("t:Texture", new[] { path }).Length != 0) { dependencyAbs.Add(hash); }
+                    if (AssetDatabase.FindAssets("t:Texture", new[] { path }).Length != 0)
+                        dependencyAbs.Add(hash);
                 }
                 else
-                {
+
                     // Otherwise we assume they are gltfs.
                     mainAbs.Add(hash);
-                }
             }
 
             // NOTE(Brian): We need to store the asset bundles so they can be unloaded later.
-            List<AssetBundle> loadedAbs = new List<AssetBundle>();
+            var loadedAbs = new List<AssetBundle>();
 
-            foreach (var hash in dependencyAbs)
+            foreach (string hash in dependencyAbs)
             {
                 string path = abPath + hash;
-                var req = UnityWebRequestAssetBundle.GetAssetBundle(path);
+                UnityWebRequest req = UnityWebRequestAssetBundle.GetAssetBundle(path);
 
                 if (SystemInfo.operatingSystemFamily == OperatingSystemFamily.MacOSX || SystemInfo.operatingSystemFamily == OperatingSystemFamily.Linux)
                     req.url = req.url.Replace("http://localhost", "file:///");
@@ -307,17 +309,17 @@ namespace DCL.ABConverter
                     continue;
                 }
 
-                var assetBundle = DownloadHandlerAssetBundle.GetContent(req);
+                AssetBundle assetBundle = DownloadHandlerAssetBundle.GetContent(req);
                 assetBundle.LoadAllAssets();
                 loadedAbs.Add(assetBundle);
             }
 
-            List<GameObject> results = new List<GameObject>();
+            var results = new List<GameObject>();
 
-            foreach (var hash in mainAbs)
+            foreach (string hash in mainAbs)
             {
                 string path = abPath + hash;
-                var req = UnityWebRequestAssetBundle.GetAssetBundle(path);
+                UnityWebRequest req = UnityWebRequestAssetBundle.GetAssetBundle(path);
 
                 if (SystemInfo.operatingSystemFamily == OperatingSystemFamily.MacOSX || SystemInfo.operatingSystemFamily == OperatingSystemFamily.Linux)
                     req.url = req.url.Replace("http://localhost", "file:///");
@@ -333,7 +335,7 @@ namespace DCL.ABConverter
                     continue;
                 }
 
-                var assetBundle = DownloadHandlerAssetBundle.GetContent(req);
+                AssetBundle assetBundle = DownloadHandlerAssetBundle.GetContent(req);
                 Object[] assets = assetBundle.LoadAllAssets();
 
                 foreach (Object asset in assets)
@@ -341,16 +343,9 @@ namespace DCL.ABConverter
                     if (asset is Material material)
                     {
                         if (ClientSettings.shaderType == ShaderType.Dcl)
-                        {
-                            material.shader = Shader.Find("DCL/Universal Render Pipeline/Lit");
-                        }
+                            material.shader = Shader.Find("DCL/Scene");
                         else
-                        {
                             material.shader = Shader.Find("Shader Graphs/glTF-pbrMetallicRoughness");
-                        }
-
-                        if (ClientSettings.buildTarget == BuildTarget.WebGL)
-                            SRPBatchingHelper.OptimizeMaterial(material);
                     }
 
                     if (asset is GameObject assetAsGameObject)
@@ -367,16 +362,17 @@ namespace DCL.ABConverter
                 loadedAbs.Add(assetBundle);
             }
 
-            foreach (var ab in loadedAbs) { ab.Unload(false); }
+            foreach (AssetBundle ab in loadedAbs)
+                ab.Unload(false);
 
             return results.ToArray();
         }
 
         /// <summary>
-        /// Wearables that are not body-shapes are optimized getting rid of the skeleton, so if this
-        /// SkinnedMeshRenderer is missing its root bone, we replace the renderer to make it rendereable
-        /// for the visual tests. In runtime, WearableController.SetAnimatorBones() takes care of the
-        /// root bone setup.
+        ///     Wearables that are not body-shapes are optimized getting rid of the skeleton, so if this
+        ///     SkinnedMeshRenderer is missing its root bone, we replace the renderer to make it rendereable
+        ///     for the visual tests. In runtime, WearableController.SetAnimatorBones() takes care of the
+        ///     root bone setup.
         /// </summary>
         private static void PatchSkeletonlessSkinnedMeshRenderer(SkinnedMeshRenderer skinnedMeshRenderer)
         {

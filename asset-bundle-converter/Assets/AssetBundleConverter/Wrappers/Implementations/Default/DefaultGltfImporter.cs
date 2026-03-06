@@ -12,9 +12,9 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 {
     public class DefaultGltfImporter : IGltfImporter
     {
+        private readonly IAssetDatabase assetDatabase;
         private readonly ConsoleLogger gltfLogger = new ();
-        private IAssetDatabase assetDatabase;
-        private UninterruptedDeferAgent uninterruptedDeferAgent;
+        private readonly UninterruptedDeferAgent uninterruptedDeferAgent;
         private IMaterialGenerator getNewMaterialGenerator;
 
         public DefaultGltfImporter(IAssetDatabase assetDatabase)
@@ -34,15 +34,11 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
                 gltfLogger);
         }
 
-        private static IMaterialGenerator GetNewMaterialGenerator(ShaderType shaderType, BuildTarget buildTarget) =>
-            shaderType == ShaderType.Dcl
-                ? new AssetBundleConverterMaterialGenerator(AssetBundleConverterMaterialGenerator.UseNewShader(buildTarget), buildTarget == BuildTarget.WebGL)
-                : null;
-
         public bool ConfigureImporter(string relativePath, ContentMap[] contentMap, string fileRootPath, string hash, ShaderType shaderType,
             AnimationMethod animationMethod)
         {
             var gltfImporter = AssetImporter.GetAtPath(relativePath) as CustomGltfImporter;
+
             if (gltfImporter != null)
             {
                 gltfImporter.SetupCustomFileProvider(contentMap, fileRootPath, hash);
@@ -57,5 +53,10 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
             return false;
         }
+
+        private static IMaterialGenerator GetNewMaterialGenerator(ShaderType shaderType, BuildTarget buildTarget) =>
+            shaderType == ShaderType.Dcl
+                ? new AssetBundleConverterMaterialGenerator(AssetBundleConverterMaterialGenerator.UseNewShader(buildTarget))
+                : null;
     }
 }
