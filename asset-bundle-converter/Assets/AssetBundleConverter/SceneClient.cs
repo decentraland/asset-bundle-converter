@@ -1,10 +1,9 @@
+using System;
+using System.Linq;
+using System.Threading.Tasks;
 using AssetBundleConverter;
 using AssetBundleConverter.Wearables;
 using GLTFast;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 using Environment = AssetBundleConverter.Environment;
@@ -13,7 +12,7 @@ namespace DCL.ABConverter
 {
     public static class SceneClient
     {
-        private static readonly ABLogger log = new ("ABConverter.SceneClient");
+        private static readonly ABLogger log = new ABLogger("ABConverter.SceneClient");
 
         public static Environment env;
 
@@ -26,7 +25,7 @@ namespace DCL.ABConverter
         }
 
         /// <summary>
-        ///     Scenes conversion batch-mode entry point
+        /// Scenes conversion batch-mode entry point
         /// </summary>
         public static void ExportSceneToAssetBundles()
         {
@@ -50,7 +49,7 @@ namespace DCL.ABConverter
         }
 
         /// <summary>
-        ///     Wearables collection conversion batch-mode entry point
+        /// Wearables collection conversion batch-mode entry point
         /// </summary>
         public static void ExportWearablesCollectionToAssetBundles()
         {
@@ -73,15 +72,14 @@ namespace DCL.ABConverter
         }
 
         /// <summary>
-        ///     Start the scene conversion process with the given commandLineArgs.
+        /// Start the scene conversion process with the given commandLineArgs.
         /// </summary>
         /// <param name="commandLineArgs">An array with the command line arguments.</param>
         /// <exception cref="System.ArgumentException">When an invalid argument is passed</exception>
-        public static async void ExportSceneToAssetBundles(string[] commandLineArgs, ClientSettings settings = default)
+        public async static void ExportSceneToAssetBundles(string[] commandLineArgs, ClientSettings settings = default)
         {
             settings ??= new ClientSettings();
             settings.reportErrors = true;
-
             try
             {
                 ParseCommonSettings(commandLineArgs, settings);
@@ -94,23 +92,24 @@ namespace DCL.ABConverter
                                           {
                                               "dcl" => ShaderType.Dcl,
                                               "gltfast" => ShaderType.GlTFast,
-                                              _ => settings.shaderType,
+                                              _ => settings.shaderType
                                           };
                 }
 
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_BUILD_SCENE_SYNTAX, 1, out string[] sceneCid))
                 {
                     if (sceneCid == null || string.IsNullOrEmpty(sceneCid[0]))
+                    {
                         throw new ArgumentException("Invalid sceneCid argument! Please use -sceneCid <id> to establish the desired id to process.");
+                    }
 
                     settings.targetHash = sceneCid[0];
                     await ConvertEntityById(settings);
                     return;
                 }
 
-                var isPointerValid = true;
+                bool isPointerValid = true;
                 var targetPoint = new Vector2Int();
-
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_POSITION_X, 1, out string[] posX))
                 {
                     isPointerValid &= int.TryParse(posX[0].Replace("\"", string.Empty), out int resultX);
@@ -133,10 +132,12 @@ namespace DCL.ABConverter
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_BUILD_PARCELS_RANGE_SYNTAX, 4, out string[] xywh))
                 {
                     if (xywh == null)
+                    {
                         throw new ArgumentException("Invalid parcelsXYWH argument! Please use -parcelsXYWH x y w h to establish the desired parcels range to process.");
+                    }
 
                     int x, y, w, h;
-                    var parseSuccess = false;
+                    bool parseSuccess = false;
 
                     parseSuccess |= int.TryParse(xywh[0], out x);
                     parseSuccess |= int.TryParse(xywh[1], out y);
@@ -144,10 +145,14 @@ namespace DCL.ABConverter
                     parseSuccess |= int.TryParse(xywh[3], out h);
 
                     if (!parseSuccess)
+                    {
                         throw new ArgumentException("Invalid parcelsXYWH argument! Please use -parcelsXYWH x y w h to establish the desired parcels range to process.");
+                    }
 
                     if (w > 10 || h > 10 || w < 0 || h < 0)
+                    {
                         throw new ArgumentException("Invalid parcelsXYWH argument! Please don't use negative width/height values, and ensure any given width/height doesn't exceed 10.");
+                    }
 
                     log.Error("-parcelsXYWH is deprecated!");
                     return;
@@ -164,14 +169,13 @@ namespace DCL.ABConverter
         }
 
         /// <summary>
-        ///     Start the wearables collection conversion process with the given commandLineArgs.
+        /// Start the wearables collection conversion process with the given commandLineArgs.
         /// </summary>
         /// <param name="commandLineArgs">An array with the command line arguments.</param>
         /// <exception cref="System.ArgumentException">When an invalid argument is passed</exception>
         public static async void ExportWearablesCollectionToAssetBundles(string[] commandLineArgs)
         {
-            var settings = new ClientSettings();
-
+            ClientSettings settings = new ClientSettings();
             try
             {
                 ParseCommonSettings(commandLineArgs, settings);
@@ -179,7 +183,9 @@ namespace DCL.ABConverter
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_BUILD_WEARABLES_COLLECTION_SYNTAX, 1, out string[] collectionId))
                 {
                     if (collectionId == null || string.IsNullOrEmpty(collectionId[0]))
+                    {
                         throw new ArgumentException("Invalid wearablesCollectionUrnId argument! Please use -wearablesCollectionUrnId <id> to establish the desired collection id to process.");
+                    }
 
                     log.Info("found 'wearablesCollectionUrnId' param, will try to convert collection with id: " + collectionId[0]);
 
@@ -194,16 +200,17 @@ namespace DCL.ABConverter
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_BUILD_WEARABLES_COLLECTION_RANGE_START_SYNTAX, 1, out string[] firstCollectionIndex))
                 {
                     if (firstCollectionIndex == null || string.IsNullOrEmpty(firstCollectionIndex[0]))
+                    {
                         throw new ArgumentException("Invalid firstCollectionIndex argument! Please use -firstCollectionIndex <index> to define the first collection to convert in the batch");
-
-                    var firstCollectionIndexInt = int.Parse(firstCollectionIndex[0]);
+                    }
+                    int firstCollectionIndexInt = Int32.Parse(firstCollectionIndex[0]);
 
                     if (Utils.ParseOption(commandLineArgs, Config.CLI_BUILD_WEARABLES_COLLECTION_RANGE_END_SYNTAX, 1, out string[] lastCollectionIndex))
                     {
                         if (lastCollectionIndex == null || string.IsNullOrEmpty(lastCollectionIndex[0]))
                             throw new ArgumentException("Invalid wearablesLastCollectionIndex argument! Please use -wearablesLastCollectionIndex <index> to define the last collection to convert in the batch");
 
-                        var lastCollectionIndexInt = int.Parse(lastCollectionIndex[0]);
+                        int lastCollectionIndexInt = Int32.Parse(lastCollectionIndex[0]);
 
                         if (lastCollectionIndexInt < firstCollectionIndexInt)
                             throw new ArgumentException("Invalid wearablesLastCollectionIndex argument! Please use a wearablesLastCollectionIndex that's equal or higher than the first collection index");
@@ -216,7 +223,10 @@ namespace DCL.ABConverter
 
                 throw new ArgumentException("Invalid arguments! You must pass -wearablesCollectionUrnId for dump to work!");
             }
-            catch (Exception e) { log.Error(e.Message); }
+            catch (Exception e)
+            {
+                log.Error(e.Message);
+            }
         }
 
         private static void ParseCommonSettings(string[] commandLineArgs, ClientSettings settings)
@@ -227,28 +237,26 @@ namespace DCL.ABConverter
             if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_CUSTOM_BASE_URL, 1, out string[] customBaseUrl))
                 settings.baseUrl = customBaseUrl[0];
 
+
             if (Utils.ParseOption(commandLineArgs, Config.CLI_ANIMATION_METHOD, 1, out string[] animationMethod))
             {
-                string animMethod = animationMethod[0];
+                var animMethod = animationMethod[0];
 
                 settings.AnimationMethod =
-                    animMethod switch
-                    {
-                        "mecanim" => AnimationMethod.Mecanim,
-                        _ => AnimationMethod.Legacy,
-                    };
+                    animMethod switch { "mecanim" => AnimationMethod.Mecanim, _ => AnimationMethod.Legacy };
+
             }
 
             if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_SHADER, 1, out string[] shaderParam))
 
             {
-                string shader = shaderParam[0];
+                var shader = shaderParam[0];
 
                 settings.shaderType = shader switch
                                       {
                                           "dcl" => ShaderType.Dcl,
                                           "gltfast" => ShaderType.GlTFast,
-                                          _ => settings.shaderType,
+                                          _ => settings.shaderType
                                       };
             }
 
@@ -271,7 +279,7 @@ namespace DCL.ABConverter
         }
 
         /// <summary>
-        ///     Dump a single decentraland entity given an id.
+        /// Dump a single decentraland entity given an id.
         /// </summary>
         /// <param name="entityId">The scene cid in the multi-hash format (i.e. Qm...etc)</param>
         /// <param name="settings">Conversion settings</param>
@@ -280,9 +288,9 @@ namespace DCL.ABConverter
         {
             EnsureEnvironment(settings.BuildPipelineType);
 
-            ContentServerUtils.EntityMappingsDTO[] apiResponse = await Utils.GetEntityMappingsAsync(settings.targetHash, settings, env.webRequest);
+            var apiResponse = await Utils.GetEntityMappingsAsync(settings.targetHash, settings, env.webRequest);
             if (apiResponse == null) return GetUnexpectedResult();
-            IEnumerable<ContentServerUtils.MappingPair> mappings = apiResponse.SelectMany(m => m.content);
+            var mappings = apiResponse.SelectMany(m => m.content);
 
             return await ConvertEntitiesToAssetBundles(new AssetBundleConverter.ConversionParams
             {
@@ -295,7 +303,6 @@ namespace DCL.ABConverter
         {
             EnsureEnvironment(settings.BuildPipelineType);
             ContentServerUtils.MappingPair[] emptyScenesMapping = await Utils.GetEmptyScenesMappingAsync(settings.targetHash, settings, env.webRequest);
-
             return await ConvertEntitiesToAssetBundles(new AssetBundleConverter.ConversionParams
             {
                 rawContents = emptyScenesMapping,
@@ -303,7 +310,7 @@ namespace DCL.ABConverter
         }
 
         /// <summary>
-        ///     Dump a single decentraland entity given a pointer
+        /// Dump a single decentraland entity given a pointer
         /// </summary>
         /// <param name="pointer">The entity position in world</param>
         /// <param name="settings">Conversion settings</param>
@@ -312,9 +319,9 @@ namespace DCL.ABConverter
         {
             EnsureEnvironment(settings.BuildPipelineType);
 
-            ContentServerUtils.EntityMappingsDTO[] apiResponse = await Utils.GetEntityMappings(settings.targetPointer.Value, settings, env.webRequest);
+            var apiResponse = await Utils.GetEntityMappings(settings.targetPointer.Value, settings, env.webRequest);
             if (apiResponse == null) return GetUnexpectedResult();
-            IEnumerable<ContentServerUtils.MappingPair> mappings = apiResponse.SelectMany(m => m.content);
+            var mappings = apiResponse.SelectMany(m => m.content);
 
             return await ConvertEntitiesToAssetBundles(new AssetBundleConverter.ConversionParams
             {
@@ -324,7 +331,7 @@ namespace DCL.ABConverter
         }
 
         private static ConversionState GetUnexpectedResult() =>
-            new () { step = ConversionState.Step.IDLE, lastErrorCode = ErrorCodes.UNEXPECTED_ERROR };
+            new (){step = ConversionState.Step.IDLE, lastErrorCode = ErrorCodes.UNEXPECTED_ERROR};
 
         public static async Task<ConversionState> ConvertWearablesCollection(ClientSettings settings)
         {
@@ -332,8 +339,7 @@ namespace DCL.ABConverter
 
             settings.isWearable = true;
 
-            IReadOnlyList<ContentServerUtils.MappingPair> mappings = await WearablesClient.GetCollectionMappingsAsync(settings.targetHash, ContentServerUtils.ApiTLD.ORG, env.webRequest);
-
+            var mappings = await WearablesClient.GetCollectionMappingsAsync(settings.targetHash, ContentServerUtils.ApiTLD.ORG, env.webRequest);
             return await ConvertEntitiesToAssetBundles(new AssetBundleConverter.ConversionParams
             {
                 rawContents = mappings.ToArray(),
@@ -341,15 +347,14 @@ namespace DCL.ABConverter
         }
 
         /// <summary>
-        ///     This will start the asset bundle conversion for a given scene list, given a scene cids list.
+        /// This will start the asset bundle conversion for a given scene list, given a scene cids list.
         /// </summary>
         /// <param name="entitiesId">The cid list for the scenes to gather from the catalyst's content server</param>
         /// <param name="settings">Any conversion settings object, if its null, a new one will be created</param>
         /// <returns>A state context object useful for tracking the conversion progress</returns>
         private static async Task<ConversionState> ConvertEntitiesToAssetBundles(AssetBundleConverter.ConversionParams conversionParams, ClientSettings settings)
         {
-            IReadOnlyList<ContentServerUtils.MappingPair> mappingPairs = conversionParams.rawContents;
-
+            var mappingPairs = conversionParams.rawContents;
             if (mappingPairs == null || mappingPairs.Count == 0)
             {
                 log.Error("Entity list is null or count == 0! Maybe this sector lacks scenes or content requests failed?");
@@ -358,7 +363,7 @@ namespace DCL.ABConverter
 
             log.Info($"Converting {mappingPairs.Count} entities...");
 
-            log.Info(string.Join('\n', mappingPairs.Select(mp => mp.file)));
+            log.Info(string.Join('\n',mappingPairs.Select(mp => mp.file)));
 
             EnsureEnvironment(settings.BuildPipelineType);
 
