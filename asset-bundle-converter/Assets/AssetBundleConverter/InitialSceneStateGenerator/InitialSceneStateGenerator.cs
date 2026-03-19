@@ -150,11 +150,20 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
             string staticSceneABName = $"staticScene_{entityDTO.id}{PlatformUtils.GetPlatform()}";
             var asset = ScriptableObject.CreateInstance<StaticSceneDescriptor>();
 
+            // Track hashes that have been marked as static to prevent duplicate paths with the same hash
+            // from overwriting the static bundle marking (e.g., "models/win.glb" and "mini-game-assets/models/win.glb" 
+            // can have the same hash but only one path matches the manifest)
+            var hashesMarkedAsStatic = new HashSet<string>();
+
             foreach (var assetPath in assetPaths)
             {
                 if (assetPath == null) continue;
 
                 if (assetPath.finalPath.EndsWith(".bin")) continue;
+
+                // Skip if this hash was already processed as static (prevents non-matching duplicate paths from overwriting)
+                if (hashesMarkedAsStatic.Contains(assetPath.hash))
+                    continue;
 
                 // Check if this asset matches a GltfContainer source
                 // Emotes should not be added to the static asset bundle
@@ -202,6 +211,8 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
                         }
                     }
 
+                    // Remember this hash was marked as static
+                    hashesMarkedAsStatic.Add(assetPath.hash);
                 }
 
                 bool isStaticTexture = textureComponents.Contains(assetPath.filePath);
