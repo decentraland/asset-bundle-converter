@@ -30,7 +30,7 @@ namespace AssetBundleConverter.Editor
     [ScriptedImporter(1, new[] { "gltf", "glb" })]
     public class CustomGltfImporter : GltfImporter
     {
-        [SerializeField] private bool useCustomFileProvider = false;
+        [SerializeField] private bool useCustomFileProvider;
         [SerializeField] public bool useOriginalMaterials;
         [HideInInspector] [SerializeField] private ContentMap[] contentMaps;
         [SerializeField] private string fileRootPath;
@@ -74,7 +74,7 @@ namespace AssetBundleConverter.Editor
             }
 
             if (!useOriginalMaterials)
-                SetupCustomMaterialGenerator(new AssetBundleConverterMaterialGenerator(AssetBundleConverterMaterialGenerator.UseNewShader(EditorUserBuildSettings.activeBuildTarget)));
+                SetupCustomMaterialGenerator(new AssetBundleConverterMaterialGenerator());
 
             try
             {
@@ -343,7 +343,7 @@ namespace AssetBundleConverter.Editor
         {
             if (mat == null)
             {
-                Debug.LogError("FATAL!");
+                Debug.LogError("FATAL! Missing Missing Material");
                 return;
             }
 
@@ -457,11 +457,6 @@ namespace AssetBundleConverter.Editor
 
         private static bool IsNormalMap(string propertyName) =>
             propertyName is "_BumpMap" or "normalTexture";
-
-        protected override void CreateTextureAssets(AssetImportContext ctx)
-        {
-            // intended nothingness
-        }
 
         private string PatchInvalidFileNameChars(string fileName)
         {

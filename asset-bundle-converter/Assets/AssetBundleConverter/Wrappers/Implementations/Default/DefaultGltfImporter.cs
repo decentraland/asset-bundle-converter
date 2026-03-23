@@ -25,7 +25,7 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
         public IGltfImport GetImporter(AssetPath filePath, Dictionary<string, string> contentTable, ShaderType shaderType, BuildTarget buildTarget)
         {
-            getNewMaterialGenerator = GetNewMaterialGenerator(shaderType, buildTarget);
+            getNewMaterialGenerator = GetNewMaterialGenerator(shaderType);
 
             return new GltfImportWrapper(
                 new GltFastFileProvider(filePath.fileRootPath, filePath.hash, contentTable),
@@ -34,9 +34,9 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
                 gltfLogger);
         }
 
-        private static IMaterialGenerator GetNewMaterialGenerator(ShaderType shaderType, BuildTarget buildTarget) =>
+        private static IMaterialGenerator GetNewMaterialGenerator(ShaderType shaderType) =>
             shaderType == ShaderType.Dcl
-                ? new AssetBundleConverterMaterialGenerator(AssetBundleConverterMaterialGenerator.UseNewShader(buildTarget))
+                ? new AssetBundleConverterMaterialGenerator()
                 : null;
 
         public bool ConfigureImporter(string relativePath, ContentMap[] contentMap, string fileRootPath, string hash, ShaderType shaderType,

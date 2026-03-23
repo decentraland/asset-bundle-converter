@@ -233,12 +233,7 @@ namespace DCL.ABConverter
             var universalRendererData = Resources.FindObjectsOfTypeAll<UniversalRendererData>().First();
             var rendererDataPath = AssetDatabase.GetAssetPath(universalRendererData);
 
-            universalRendererData.renderingMode = targetPlatform switch
-                                                  {
-                                                      BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX or BuildTarget.WebGL => RenderingMode.ForwardPlus,
-                                                      _ => universalRendererData.renderingMode
-                                                  };
-
+            universalRendererData.renderingMode =  RenderingMode.ForwardPlus;
             AssetDatabase.ImportAsset(rendererDataPath);
         }
 
@@ -850,16 +845,13 @@ namespace DCL.ABConverter
 
                     ReduceTextureSizeIfNeeded(texPath, maxTextureSize);
 
-                    if (settings.buildTarget == BuildTarget.WebGL)
-                    {
-                        var importer = env.assetDatabase.GetImporterAtPath(texPath) as TextureImporter;
+                    var importer = env.assetDatabase.GetImporterAtPath(texPath) as TextureImporter;
 
-                        if (importer != null)
-                        {
-                            TextureUtils.ApplyWebGLTexturePlatformSettings(importer);
-                            EditorUtility.SetDirty(importer);
-                            env.assetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
-                        }
+                    if (importer != null)
+                    {
+                        ApplyBuildTargetTextureSettings(importer);
+                        EditorUtility.SetDirty(importer);
+                        env.assetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
                     }
 
                     newTextures.Add(env.assetDatabase.LoadAssetAtPath<Texture2D>(texPath));
@@ -867,6 +859,14 @@ namespace DCL.ABConverter
             }
 
             return newTextures;
+        }
+
+        private void ApplyBuildTargetTextureSettings(TextureImporter importer)
+        {
+            if (settings.buildTarget == BuildTarget.WebGL)
+                TextureUtils.ApplyWebGLTexturePlatformSettings(importer);
+            else
+                importer.crunchedCompression = true;
         }
 
         private void OnFinish()
@@ -1379,10 +1379,7 @@ namespace DCL.ABConverter
 
                     ReduceTextureSizeIfNeeded(finalTexturePath, maxTextureSize);
 
-                    if (settings.buildTarget == BuildTarget.WebGL)
-                        TextureUtils.ApplyWebGLTexturePlatformSettings(texImporter);
-                    else
-                        texImporter.crunchedCompression = true;
+                    ApplyBuildTargetTextureSettings(texImporter);
 
                     texImporter.textureCompression = TextureImporterCompression.CompressedHQ;
                     texImporter.isReadable = true;
