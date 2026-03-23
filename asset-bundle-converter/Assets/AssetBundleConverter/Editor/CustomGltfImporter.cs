@@ -343,7 +343,7 @@ namespace AssetBundleConverter.Editor
         {
             if (mat == null)
             {
-                Debug.LogError("FATAL! Missing Missing Material");
+                Debug.LogError("FATAL! Missing Material");
                 return;
             }
 
