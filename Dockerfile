@@ -1,4 +1,4 @@
-ARG UNITY_DOCKER_IMAGE=unityci/editor:2022.3.12f1-webgl-3.0.0
+ARG UNITY_DOCKER_IMAGE=unityci/editor:6000.3.9f1-webgl-3
 
 FROM node:18 AS builderenv
 
