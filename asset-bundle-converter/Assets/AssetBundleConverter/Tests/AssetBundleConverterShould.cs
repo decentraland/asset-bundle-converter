@@ -75,7 +75,6 @@ namespace AssetBundleConverter.Tests
         public void TearDown()
         {
             Object.DestroyImmediate(dummyGo);
-            PlatformUtils.currentTarget = default;
         }
 
         private void ThrowIfExitCodeIsNotZero(int exitCode)
