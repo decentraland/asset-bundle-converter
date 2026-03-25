@@ -8,6 +8,11 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 {
     public class AssetBundleConverterMaterialGenerator : DecentralandMaterialGenerator
     {
+        private const string LIT_SHADER = "DCL/Universal Render Pipeline/Lit";
+
+        public AssetBundleConverterMaterialGenerator() : base(LIT_SHADER)
+        { }
+
         public override Material GenerateMaterial(int materialIndex, GLTFast.Schema.Material gltfMaterial, IGltfReadable gltf, bool pointsSupport = false)
         {
             Material mat = base.GenerateMaterial(materialIndex, gltfMaterial, gltf, pointsSupport);
