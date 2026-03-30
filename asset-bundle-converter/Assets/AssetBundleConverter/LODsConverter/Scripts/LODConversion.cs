@@ -40,7 +40,7 @@ public class LODConversion
         {
             downloadedFilePaths = await webRequestManager.DownloadAndSaveFiles(urlsToConvert, lodPathHandler.tempPath);
         }
-        catch (Exception e)
+        catch (Exception)
         {
             Debug.Log("Could not download all files. Exiting");
             Utils.Exit(1);
@@ -224,7 +224,7 @@ public class LODConversion
 
         if (manifest == null)
         {
-            string message = "Error generating asset bundle!";
+            Debug.LogError("Error generating asset bundle!");
             Utils.Exit(1);
         }
 

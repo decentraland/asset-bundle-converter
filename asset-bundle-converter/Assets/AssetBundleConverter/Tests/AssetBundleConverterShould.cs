@@ -116,7 +116,7 @@ namespace AssetBundleConverter.Tests
             await converter.ConvertAsync(GetParams(exampleAsset));
 
             // Ensure that web request is done
-            webRequest.Received().Get(Arg.Is(exampleBaseURL));
+            _ = webRequest.Received().Get(Arg.Is(exampleBaseURL));
 
             // Ensure that a directory is created for this asset
             directory.Received().CreateDirectory(Arg.Is(directoryName));
@@ -177,7 +177,7 @@ namespace AssetBundleConverter.Tests
             await converter.ConvertAsync(GetParams(exampleAsset));
 
             // Ensure that web request is done
-            webRequest.Received().Get(Arg.Is(exampleBaseURL));
+            _ = webRequest.Received().Get(Arg.Is(exampleBaseURL));
 
             // Ensure that a directory is created for this asset
             directory.Received().CreateDirectory(Arg.Is(directoryName));
