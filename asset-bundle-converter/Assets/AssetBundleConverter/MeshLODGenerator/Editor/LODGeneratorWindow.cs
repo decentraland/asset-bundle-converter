@@ -1,36 +1,42 @@
 using AssetBundleConverter;
+using AssetBundleConverter.Wrappers.Implementations.Default;
+using AssetBundleConverter.Wrappers.Interfaces;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
+using System.Threading.Tasks;
 using Cysharp.Threading.Tasks;
 using DCL;
 using DCL.ABConverter;
-using Newtonsoft.Json;
+using GLTFast.Export;
+using GLTFast.Logging;
 using UnityEditor;
 using UnityEngine;
-using UnityEngine.Networking;
 using Debug = UnityEngine.Debug;
 using Environment = AssetBundleConverter.Environment;
+using SystemFile = AssetBundleConverter.Wrappers.Implementations.Default.SystemWrappers.File;
 
 namespace DCL.ABConverter.Editor
 {
     /// <summary>
     /// Editor window that takes a Decentraland scene pointer (coordinates),
     /// generates the scene manifest, downloads and imports all scene assets via
-    /// the existing AssetBundleConverter pipeline, and instances them in the Unity scene.
+    /// the existing AssetBundleConverter pipeline, instances ISS assets in the Unity scene,
+    /// and exports the result as a GLB file.
     /// </summary>
     public class LODGeneratorWindow : EditorWindow
     {
         private const string MANIFEST_BUILDER_RELATIVE_PATH = "../scene-lod-entities-manifest-builder";
         private const string OUTPUT_MANIFESTS_FOLDER = "output-manifests";
         private const string SCENE_MANIFEST_FOLDER = "Assets/_SceneManifest";
+        private const string EXPORTED_FOLDER = "Assets/_ExportedLODs";
         private const string DEFAULT_CATALYST_URL = "https://peer.decentraland.org";
 
         private int xCoord = 0;
         private int yCoord = 0;
         private string catalystUrl = DEFAULT_CATALYST_URL;
+        private bool cleanDownloadedFolder = true;
 
         private Vector2 scrollPosition;
         private string processLog = "";
@@ -54,8 +60,8 @@ namespace DCL.ABConverter.Editor
             EditorGUILayout.HelpBox(
                 "Enter a scene pointer (parcel coordinates) to:\n" +
                 "1. Generate the scene manifest\n" +
-                "2. Download and import all scene assets\n" +
-                "3. Instance them in the Unity scene",
+                "2. Download, import, and instance ISS assets\n" +
+                "3. Export the scene as a GLB file",
                 MessageType.Info);
 
             EditorGUILayout.Space();
@@ -78,6 +84,8 @@ namespace DCL.ABConverter.Editor
             if (GUILayout.Button("Reset", GUILayout.Width(50)))
                 catalystUrl = DEFAULT_CATALYST_URL;
             EditorGUILayout.EndHorizontal();
+
+            cleanDownloadedFolder = EditorGUILayout.Toggle("Clean _Downloaded before run", cleanDownloadedFolder);
 
             EditorGUILayout.Space();
 
@@ -115,8 +123,17 @@ namespace DCL.ABConverter.Editor
 
             try
             {
+                // Clean _Downloaded folder before starting
+                if (cleanDownloadedFolder && Directory.Exists("Assets/_Downloaded"))
+                {
+                    Log("Cleaning _Downloaded folder...");
+                    Directory.Delete("Assets/_Downloaded", true);
+                    AssetDatabase.Refresh();
+                    Log("_Downloaded folder deleted.");
+                }
+
                 // Step 1: Generate the scene manifest
-                Log("=== Step 1/2: Generating Scene Manifest ===");
+                Log("=== Step 1/3: Generating Scene Manifest ===");
                 EditorUtility.DisplayProgressBar("LOD Generator", "Generating scene manifest...", 0.1f);
 
                 string sceneId = await GenerateManifest();
@@ -129,16 +146,25 @@ namespace DCL.ABConverter.Editor
                 currentSceneId = sceneId;
                 Log($"Manifest generated for scene: {sceneId}");
 
-                // Step 2: Use the existing AssetBundleConverter pipeline to download,
-                // import, and instance all scene assets
-                Log("\n=== Step 2/2: Downloading, Importing & Instancing via AssetBundleConverter ===");
+                // Step 2: Run the AssetBundleConverter pipeline (download, import, instance ISS assets)
+                Log("\n=== Step 2/3: Running AssetBundleConverter ===");
                 EditorUtility.DisplayProgressBar("LOD Generator", "Running asset conversion...", 0.3f);
 
-                await RunAssetBundleConverter(sceneId);
+                await RunAssetBundleConverter();
+
+                Log("AssetBundleConverter finished.");
+
+                // Step 3: Export instanced scene to GLB
+                Log("\n=== Step 3/3: Exporting scene to GLB ===");
+                EditorUtility.DisplayProgressBar("LOD Generator", "Exporting GLB...", 0.8f);
+
+                string exportPath = await ExportSceneToGlb(sceneId);
 
                 Log("\n=== LOD Generation Complete ===");
-                EditorUtility.DisplayDialog("LOD Generator",
-                    $"LOD generation complete for pointer ({xCoord},{yCoord}).\nScene ID: {sceneId}", "OK");
+                string message = $"LOD generation complete for pointer ({xCoord},{yCoord}).\nScene ID: {sceneId}";
+                if (!string.IsNullOrEmpty(exportPath))
+                    message += $"\nExported to: {exportPath}";
+                EditorUtility.DisplayDialog("LOD Generator", message, "OK");
             }
             catch (Exception e)
             {
@@ -166,11 +192,9 @@ namespace DCL.ABConverter.Editor
                 return null;
             }
 
-            // Clean output folder
             string outputPath = Path.Combine(manifestBuilderPath, OUTPUT_MANIFESTS_FOLDER);
             CleanFolder(outputPath);
 
-            // Build and run npm process
             string arguments = $"--catalyst={catalystUrl} --coords={xCoord},{yCoord} --overwrite";
             Log($"Running: npm run start {arguments}");
 
@@ -183,7 +207,6 @@ namespace DCL.ABConverter.Editor
                 return null;
             }
 
-            // Find generated manifest
             if (!Directory.Exists(outputPath))
             {
                 Log("Output folder not created by npm process.");
@@ -197,7 +220,6 @@ namespace DCL.ABConverter.Editor
                 return null;
             }
 
-            // Import manifest into Unity project
             EnsureFolderExists(SCENE_MANIFEST_FOLDER);
 
             string manifestFile = manifestFiles[0];
@@ -217,16 +239,21 @@ namespace DCL.ABConverter.Editor
         #region Step 2: AssetBundleConverter pipeline
 
         /// <summary>
-        /// Uses SceneClient.ConvertEntityByPointer to run the full ABConverter pipeline:
-        /// download, GLTF import (with texture/material extraction), and scene instancing.
-        /// We disable asset bundle building and visual tests since we only need the imported assets in-scene.
+        /// Runs the full AssetBundleConverter pipeline via SceneClient.ConvertEntityByPointer.
+        ///
+        /// Key points:
+        /// - We inject a custom Environment with a NoSceneLoadEditor to prevent
+        ///   ConvertAsync from replacing the current scene with VisualTestScene.
+        /// - placeOnScene = true triggers the ISS placement path in ProcessAllGltfs,
+        ///   which uses PlaceAssetFromManifest (ISS-only, at ISS positions).
+        /// - createAssetBundle = false skips asset bundle building.
         /// </summary>
-        private async UniTask RunAssetBundleConverter(string sceneId)
+        private async UniTask RunAssetBundleConverter()
         {
             var settings = new ClientSettings
             {
                 targetPointer = new Vector2Int(xCoord, yCoord),
-                baseUrl = catalystUrl,
+                baseUrl = catalystUrl + "/content/contents/",
                 buildTarget = EditorUserBuildSettings.activeBuildTarget,
                 BuildPipelineType = EditorUserBuildSettings.activeBuildTarget == BuildTarget.WebGL
                     ? BuildPipelineType.Default
@@ -242,6 +269,9 @@ namespace DCL.ABConverter.Editor
                 importGltf = true,
             };
 
+            // Inject a custom Environment that does NOT load the visual test scene
+            SceneClient.env = CreateEnvironmentWithNoSceneLoad(settings.BuildPipelineType);
+
             Log($"Running AssetBundleConverter for pointer ({xCoord},{yCoord})...");
 
             var conversionState = await SceneClient.ConvertEntityByPointer(settings);
@@ -251,6 +281,123 @@ namespace DCL.ABConverter.Editor
             if (conversionState.lastErrorCode != ErrorCodes.SUCCESS)
             {
                 Log($"WARNING: Conversion reported error code: {conversionState.lastErrorCode}");
+            }
+        }
+
+        /// <summary>
+        /// Creates an Environment identical to the default, except the IEditor
+        /// does NOT open the VisualTestScene (which would destroy the current scene).
+        /// </summary>
+        private static Environment CreateEnvironmentWithNoSceneLoad(BuildPipelineType buildPipelineType)
+        {
+            var database = new UnityEditorWrappers.AssetDatabase();
+
+            IBuildPipeline pipeline =
+                buildPipelineType == BuildPipelineType.Scriptable
+                    ? new ScriptableBuildPipeline()
+                    : (IBuildPipeline)new UnityEditorWrappers.BuildPipeline();
+
+            return new Environment(
+                directory: new DCL.SystemWrappers.Directory(),
+                file: new SystemFile(),
+                assetDatabase: database,
+                webRequest: new UnityEditorWrappers.WebRequest(),
+                buildPipeline: pipeline,
+                gltfImporter: new DefaultGltfImporter(database),
+                editor: new NoSceneLoadEditor(),
+                logger: new ABLogger("[LODGenerator]"),
+                errorReporter: new ErrorReporter(),
+                buildPipelineType: buildPipelineType
+            );
+        }
+
+        #endregion
+
+        #region Step 3: Export GLB
+
+        /// <summary>
+        /// Collects all root GameObjects in the scene (excluding cameras and lights),
+        /// disables SkinnedMeshRenderers to avoid bone/joint export issues,
+        /// and exports as a single GLB file using glTFast's GameObjectExport.
+        /// </summary>
+        private async UniTask<string> ExportSceneToGlb(string sceneId)
+        {
+            // Collect all root GameObjects that were instanced (skip cameras/lights)
+            var rootObjects = new List<GameObject>();
+            var allRootObjects = UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetRootGameObjects();
+
+            foreach (var go in allRootObjects)
+            {
+                if (go.GetComponent<Camera>() != null || go.GetComponent<Light>() != null)
+                    continue;
+
+                rootObjects.Add(go);
+            }
+
+            if (rootObjects.Count == 0)
+            {
+                Log("WARNING: No objects found in scene to export.");
+                return null;
+            }
+
+            Log($"Exporting {rootObjects.Count} root object(s) to GLB...");
+
+            // Disable SkinnedMeshRenderers before export to avoid bone/joints issues
+            var disabledSkinned = new List<SkinnedMeshRenderer>();
+            foreach (var go in rootObjects)
+            {
+                foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                {
+                    if (smr.enabled)
+                    {
+                        smr.enabled = false;
+                        disabledSkinned.Add(smr);
+                    }
+                }
+            }
+
+            if (disabledSkinned.Count > 0)
+                Log($"Disabled {disabledSkinned.Count} SkinnedMeshRenderer(s) before export.");
+
+            EnsureFolderExists(EXPORTED_FOLDER);
+
+            string exportFileName = $"{sceneId}_scene.glb";
+            string exportPath = Path.Combine(EXPORTED_FOLDER, exportFileName);
+            string fullExportPath = Path.GetFullPath(exportPath);
+
+            var exportSettings = new ExportSettings
+            {
+                Format = GltfFormat.Binary,
+                FileConflictResolution = FileConflictResolution.Overwrite,
+            };
+
+            var gameObjectExportSettings = new GameObjectExportSettings
+            {
+                OnlyActiveInHierarchy = true,
+            };
+
+            var export = new GameObjectExport(exportSettings, gameObjectExportSettings: gameObjectExportSettings, logger: new ConsoleLogger());
+            export.AddScene(rootObjects.ToArray(), sceneId);
+
+            bool success = await export.SaveToFileAndDispose(fullExportPath);
+
+            // Re-enable SkinnedMeshRenderers
+            foreach (var smr in disabledSkinned)
+            {
+                if (smr != null)
+                    smr.enabled = true;
+            }
+
+            if (success)
+            {
+                Log($"GLB exported to: {exportPath}");
+                AssetDatabase.Refresh();
+                return exportPath;
+            }
+            else
+            {
+                Log("ERROR: GLB export failed.");
+                return null;
             }
         }
 
@@ -368,5 +515,36 @@ namespace DCL.ABConverter.Editor
         }
 
         #endregion
+    }
+
+    /// <summary>
+    /// IEditor implementation that delegates everything to AssetBundleEditor
+    /// except LoadVisualTestSceneAsync, which is a no-op.
+    /// This prevents the AssetBundleConverter from replacing the current scene.
+    /// </summary>
+    internal class NoSceneLoadEditor : IEditor
+    {
+        private readonly AssetBundleEditor inner = new();
+
+        public void DisplayProgressBar(string title, string body, float progress) =>
+            inner.DisplayProgressBar(title, body, progress);
+
+        public void ClearProgressBar() =>
+            inner.ClearProgressBar();
+
+        public void Exit(int errorCode) =>
+            inner.Exit(errorCode);
+
+        public Task LoadVisualTestSceneAsync() =>
+            Task.CompletedTask; // No-op: keep the current scene
+
+        public Task TestConvertedAssetsAsync(Environment env, ClientSettings settings, List<AssetPath> assetsToMark, IErrorReporter errorReporter) =>
+            Task.CompletedTask; // No-op: skip visual tests
+
+        public Task Delay(TimeSpan time) =>
+            inner.Delay(time);
+
+        public bool SwitchBuildTarget(BuildTarget targetPlatform) =>
+            inner.SwitchBuildTarget(targetPlatform);
     }
 }

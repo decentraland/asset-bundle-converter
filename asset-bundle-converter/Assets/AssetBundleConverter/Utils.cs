@@ -354,8 +354,18 @@ namespace DCL.ABConverter
         public static async Task<EntityMappingsDTO[]> GetEntityMappings(Vector2Int entityPointer, ClientSettings settings,
             IWebRequest webRequest)
         {
-
-            string url = "https://peer.decentraland.org/content/entities/active/";
+            // Derive the entities endpoint from baseUrl if available, otherwise default to .org
+            string baseHost = "https://peer.decentraland.org";
+            if (!string.IsNullOrEmpty(settings.baseUrl))
+            {
+                try
+                {
+                    var uri = new Uri(settings.baseUrl);
+                    baseHost = $"{uri.Scheme}://{uri.Host}";
+                }
+                catch { /* fallback to default */ }
+            }
+            string url = $"{baseHost}/content/entities/active/";
             DownloadHandler downloadHandler = null;
 
             try

@@ -396,8 +396,8 @@ namespace DCL.ABConverter
                         if (originalGltf != null)
                             try
                             {
-                                // Always instantiate - uses manifest transforms if available, otherwise at origin
-                                env.sceneStateGenerator.InstantiateAsset(gltf.AssetPath.filePath, originalGltf);
+                                // Only place assets that are part of the ISS manifest, at their ISS positions
+                                env.sceneStateGenerator.PlaceAssetFromManifest(gltf.AssetPath.filePath, originalGltf);
                             }
                             catch (Exception e)
                             {
