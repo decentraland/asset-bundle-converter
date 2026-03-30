@@ -393,7 +393,7 @@ export async function executeConversion(
 
     // Upload index.js and main.crdt to CDN so the desktop Explorer client
     // can fetch them from S3 instead of the catalyst (see issue #7625).
-    if (entity && exitCode === 0) {
+    if (entity && exitCode === 0 && entityType === 'scene') {
       await uploadSceneSourceFilesToCDN(components, entity, contentServerUrl, uploadPath, cdnBucket)
     }
 
