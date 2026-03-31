@@ -717,16 +717,16 @@ namespace DCL.ABConverter
 
             if (!textureProperties.ContainsKey(shader))
             {
-                int count = shader.GetPropertyCount();
+                int count = ShaderUtil.GetPropertyCount(shader);
                 List<int> properties = new ();
                 for (var i = 0; i < count; ++i)
                 {
-                    UnityEngine.Rendering.ShaderPropertyType shaderPropertyType = shader.GetPropertyType(i);
+                    ShaderUtil.ShaderPropertyType shaderPropertyType = ShaderUtil.GetPropertyType(shader, i);
 
-                    if (shaderPropertyType != UnityEngine.Rendering.ShaderPropertyType.Texture)
+                    if (shaderPropertyType != ShaderUtil.ShaderPropertyType.TexEnv)
                         continue;
 
-                    string propertyName = shader.GetPropertyName(i);
+                    string propertyName = ShaderUtil.GetPropertyName(shader, i);
                     properties.Add(Shader.PropertyToID(propertyName));
                 }
 

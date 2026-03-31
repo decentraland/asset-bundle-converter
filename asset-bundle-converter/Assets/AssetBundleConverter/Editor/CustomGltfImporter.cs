@@ -211,18 +211,6 @@ namespace AssetBundleConverter.Editor
 
             var textures = materials.SelectMany(GetTexturesFromMaterial).ToList();
 
-            if (TextureAtlasOrchestrator.IsEnabled)
-            {
-                // Collapse duplicate textures across all slots (base colour, normals, metallics …)
-                // before any downstream processing so both atlasing and import-setting fixup operate
-                // on canonical textures only.
-                textures = TextureAtlasOrchestrator.DeduplicateAndRedirect(textures, texMaterialMap);
-
-                // Atlas base-colour textures that are POT and fit within 2048×2048
-                var baseColorCandidates = textures.Where(t => baseColor.Contains(t)).ToList();
-                TextureAtlasOrchestrator.BuildAtlases(baseColorCandidates, texMaterialMap, renderers, folderName);
-            }
-
             FixTextureReferences(textures, folderName, materials);
         }
 
@@ -282,11 +270,11 @@ namespace AssetBundleConverter.Editor
             var maps = new Dictionary<string, TexMaterialMap>();
             var shader = rendererSharedMaterial.shader;
 
-            for (var i = 0; i < shader.GetPropertyCount(); ++i)
+            for (var i = 0; i < ShaderUtil.GetPropertyCount(shader); ++i)
             {
-                if (shader.GetPropertyType(i) == UnityEngine.Rendering.ShaderPropertyType.Texture)
+                if (ShaderUtil.GetPropertyType(shader, i) == ShaderUtil.ShaderPropertyType.TexEnv)
                 {
-                    var propertyName = shader.GetPropertyName(i);
+                    var propertyName = ShaderUtil.GetPropertyName(shader, i);
                     var tex = rendererSharedMaterial.GetTexture(propertyName) as Texture2D;
 
                     if (!tex)
@@ -443,11 +431,11 @@ namespace AssetBundleConverter.Editor
 
             var matTextures = new List<Texture2D>();
 
-            for (var i = 0; i < shader.GetPropertyCount(); ++i)
+            for (var i = 0; i < ShaderUtil.GetPropertyCount(shader); ++i)
             {
-                if (shader.GetPropertyType(i) == UnityEngine.Rendering.ShaderPropertyType.Texture)
+                if (ShaderUtil.GetPropertyType(shader, i) == ShaderUtil.ShaderPropertyType.TexEnv)
                 {
-                    var propertyName = shader.GetPropertyName(i);
+                    var propertyName = ShaderUtil.GetPropertyName(shader, i);
                     var tex = mat.GetTexture(propertyName) as Texture2D;
 
                     if (!tex)

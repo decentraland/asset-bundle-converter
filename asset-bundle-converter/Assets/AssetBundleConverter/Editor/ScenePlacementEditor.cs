@@ -292,12 +292,12 @@ namespace DCL.ABConverter.Editor
                             continue;
                         }
 
-                        int beforeCount = GameObject.FindObjectsByType<GameObject>(FindObjectsSortMode.None).Length;
+                        int beforeCount = GameObject.FindObjectsOfType<GameObject>().Length;
 
                         // Only place assets that exist in the manifest with proper transforms
                         env.sceneStateGenerator.PlaceAssetFromManifest(manifestFilePath, asset);
 
-                        int afterCount = FindObjectsByType<GameObject>(FindObjectsSortMode.None).Length;
+                        int afterCount = FindObjectsOfType<GameObject>().Length;
                         int instancesCreated = afterCount - beforeCount;
 
                         if (instancesCreated > 0)
@@ -401,7 +401,7 @@ namespace DCL.ABConverter.Editor
 
             Debug.Log("Clearing scene...");
 
-            var allObjects = GameObject.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
+            var allObjects = GameObject.FindObjectsOfType<GameObject>();
             int deletedCount = 0;
 
             foreach (var obj in allObjects)

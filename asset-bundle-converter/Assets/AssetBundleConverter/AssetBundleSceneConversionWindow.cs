@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
-using AssetBundleConverter.Editor;
 using AssetBundleConverter.Persistence;
 using DCL.ABConverter;
 using GLTFast;
@@ -72,7 +71,6 @@ namespace AssetBundleConverter
         private bool showDebugOptions;
         private bool stripShaders = true;
         private bool importGltf = true;
-        private bool useTextureAtlas;
 
         [MenuItem("Decentraland/Asset Bundle Converter")]
         private static void Init()
@@ -87,7 +85,6 @@ namespace AssetBundleConverter
 
         private void OnEnable()
         {
-            useTextureAtlas = TextureAtlasOrchestrator.IsEnabled;
             createAssetBundle = PersistentSetting.CreateBool(nameof(createAssetBundle), true);
             verbose = PersistentSetting.CreateBool(nameof(verbose), false);
             xCoord = PersistentSetting.CreateInt(nameof(xCoord), -110);
@@ -213,14 +210,6 @@ namespace AssetBundleConverter
             debugEntity = EditorGUILayout.TextField("Import only hash", debugEntity);
             stripShaders = EditorGUILayout.Toggle("Strip Shaders", stripShaders);
             importGltf = EditorGUILayout.Toggle("Import GLTFs", importGltf);
-
-            bool newUseTextureAtlas = EditorGUILayout.Toggle("Texture Atlasing", useTextureAtlas);
-            if (newUseTextureAtlas != useTextureAtlas)
-            {
-                useTextureAtlas = newUseTextureAtlas;
-                TextureAtlasOrchestrator.IsEnabled = useTextureAtlas;
-            }
-
             shader = (ShaderType)EditorGUILayout.EnumPopup("Shader Type", shader);
             verbose.Value = EditorGUILayout.Toggle("Verbose", verbose);
             GUI.color = defaultColor;
