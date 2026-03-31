@@ -292,10 +292,7 @@ namespace AssetBundleConverter.Editor
                         TextureImporterType targetImportType = GetTextureImporterType(tImporter, isNormalMap);
                         tImporter.textureType = targetImportType;
 
-                        if (EditorUserBuildSettings.activeBuildTarget == BuildTarget.WebGL)
-                            TextureUtils.ApplyWebGLTexturePlatformSettings(tImporter);
-                        else
-                            tImporter.crunchedCompression = true;
+                        TextureUtils.ApplyBuildTargetTextureSettings(tImporter, EditorUserBuildSettings.activeBuildTarget);
                         tImporter.sRGBTexture = !metallics.Contains(tex);
                         tImporter.compressionQuality = 100;
                         tImporter.textureCompression = TextureImporterCompression.CompressedHQ;

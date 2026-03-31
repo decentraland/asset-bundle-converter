@@ -849,7 +849,7 @@ namespace DCL.ABConverter
 
                     if (importer != null)
                     {
-                        ApplyBuildTargetTextureSettings(importer);
+                        TextureUtils.ApplyBuildTargetTextureSettings(importer, settings.buildTarget);
                         EditorUtility.SetDirty(importer);
                         env.assetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
                     }
@@ -861,13 +861,6 @@ namespace DCL.ABConverter
             return newTextures;
         }
 
-        private void ApplyBuildTargetTextureSettings(TextureImporter importer)
-        {
-            if (settings.buildTarget == BuildTarget.WebGL)
-                TextureUtils.ApplyWebGLTexturePlatformSettings(importer);
-            else
-                importer.crunchedCompression = true;
-        }
 
         private void OnFinish()
         {
@@ -1379,7 +1372,7 @@ namespace DCL.ABConverter
 
                     ReduceTextureSizeIfNeeded(finalTexturePath, maxTextureSize);
 
-                    ApplyBuildTargetTextureSettings(texImporter);
+                    TextureUtils.ApplyBuildTargetTextureSettings(texImporter, settings.buildTarget);
 
                     texImporter.textureCompression = TextureImporterCompression.CompressedHQ;
                     texImporter.isReadable = true;

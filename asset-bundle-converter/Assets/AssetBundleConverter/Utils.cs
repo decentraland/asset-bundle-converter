@@ -176,20 +176,25 @@ namespace DCL.ABConverter
     public static class TextureUtils
     {
         /// <summary>
-        ///     Applies WebGL-specific texture compression: DXT5 non-crunched.
-        ///     All textures use DXT5 for texture array compatibility (wearables copy directly without runtime conversion).
+        ///     Applies build-target-specific texture compression settings.
+        ///     WebGL uses DXT5 non-crunched for texture array compatibility (wearables copy directly without runtime conversion).
+        ///     All other targets use crunched compression.
         /// </summary>
-        /// <param name="importer">Texture importer to configure</param>
-        public static void ApplyWebGLTexturePlatformSettings(TextureImporter importer)
+        public static void ApplyBuildTargetTextureSettings(TextureImporter importer, BuildTarget buildTarget)
         {
-            importer.crunchedCompression = false;
+            if (buildTarget == BuildTarget.WebGL)
+            {
+                importer.crunchedCompression = false;
 
-            TextureImporterPlatformSettings webglSettings = importer.GetPlatformTextureSettings("WebGL");
-            webglSettings.overridden = true;
-            webglSettings.format = TextureImporterFormat.DXT5;
-            webglSettings.textureCompression = TextureImporterCompression.Compressed;
-            webglSettings.crunchedCompression = false;
-            importer.SetPlatformTextureSettings(webglSettings);
+                TextureImporterPlatformSettings webglSettings = importer.GetPlatformTextureSettings("WebGL");
+                webglSettings.overridden = true;
+                webglSettings.format = TextureImporterFormat.DXT5;
+                webglSettings.textureCompression = TextureImporterCompression.Compressed;
+                webglSettings.crunchedCompression = false;
+                importer.SetPlatformTextureSettings(webglSettings);
+            }
+            else
+                importer.crunchedCompression = true;
         }
 
         public static bool IsCompressedFormat(TextureFormat format)
