@@ -9,6 +9,7 @@ import * as path from 'path'
 import { hasContentChange } from './has-content-changed-task'
 import { getUnityBuildTarget } from '../utils'
 import { getActiveEntity } from './fetch-entity-by-pointer'
+import fetch from 'node-fetch'
 
 type Manifest = {
   version: string
@@ -27,6 +28,81 @@ function manifestKeyForEntity(entityId: string, target: string | undefined) {
     return `manifest/${entityId}_${target}.json`
   } else {
     return `manifest/${entityId}.json`
+  }
+}
+
+/**
+ * Downloads index.js (main scene script) and main.crdt from the catalyst and uploads them to the CDN bucket.
+ * This allows the Explorer desktop client to fetch these critical scene files from S3 instead of the catalyst,
+ * avoiding a class of failures where files are missing from the catalyst.
+ *
+ * Only runs for non-webgl targets (Mac/Windows desktop builds) since those clients use this CDN path.
+ */
+async function uploadSceneSourceFilesToCDN(
+  components: Pick<AppComponents, 'logs' | 'cdnS3'>,
+  entity: Awaited<ReturnType<typeof getActiveEntity>>,
+  contentServerUrl: string,
+  uploadPath: string,
+  cdnBucket: string
+): Promise<void> {
+  const logger = components.logs.getLogger('UploadSceneSourceFiles')
+
+  // Collect the filenames to upload: main.crdt, scene.json, and the main scene script (usually index.js)
+  const filesToUpload: string[] = ['main.crdt', 'scene.json']
+  const mainScript = typeof entity?.metadata?.main === 'string' ? entity.metadata.main : undefined
+  if (mainScript) {
+    filesToUpload.push(mainScript)
+  }
+
+  // Normalize content server URL to the /contents/ endpoint
+  let contentsBaseUrl = contentServerUrl
+  if (!contentsBaseUrl.endsWith('/')) contentsBaseUrl += '/'
+  if (contentsBaseUrl !== 'https://sdk-team-cdn.decentraland.org/ipfs/' && !contentsBaseUrl.endsWith('contents/')) {
+    contentsBaseUrl += 'contents/'
+  }
+
+  for (const fileName of filesToUpload) {
+    const contentDef = entity?.content?.find((c) => c.file === fileName)
+    if (!contentDef) {
+      logger.info(`${fileName} not found in entity content, skipping CDN upload`)
+      continue
+    }
+
+    const s3Key = `${uploadPath}/${fileName}`
+
+    try {
+      const fileUrl = `${contentsBaseUrl}${contentDef.hash}`
+      const response = await fetch(fileUrl)
+
+      if (!response.ok) {
+        logger.error(
+          `Failed to download ${fileName} from catalyst (${fileUrl}): ${response.status} ${response.statusText}`
+        )
+        continue
+      }
+
+      const content = await response.buffer()
+      const contentType = fileName.endsWith('.js')
+        ? 'application/javascript'
+        : fileName.endsWith('.json')
+          ? 'application/json'
+          : 'application/octet-stream'
+
+      await components.cdnS3
+        .upload({
+          Bucket: cdnBucket,
+          Key: s3Key,
+          Body: content,
+          ContentType: contentType,
+          ACL: 'public-read',
+          CacheControl: 'public, max-age=31536000, immutable'
+        })
+        .promise()
+
+      logger.info(`Uploaded ${fileName} to CDN at ${s3Key} (${content.length} bytes)`)
+    } catch (err: any) {
+      logger.error(`Failed to upload ${fileName} to CDN: ${err.message}`)
+    }
   }
 }
 
@@ -237,9 +313,10 @@ export async function executeConversion(
   logger.info(`HasContentChanged for ${entityId} result was ${hasContentChanged}`)
 
   let entityType = 'undefined'
+  let entity: Awaited<ReturnType<typeof getActiveEntity>> | null = null
   try {
-    // Fetch the entity to get its type
-    const entity = await getActiveEntity(entityId, contentServerUrl)
+    // Fetch the entity to get its type and content list (also used to upload source files to CDN)
+    entity = await getActiveEntity(entityId, contentServerUrl)
     entityType = entity.type
   } catch (e) {
     logger.info(`Could not determine entity type for ${entityId}, scene manifest wont be generated`)
@@ -313,6 +390,12 @@ export async function executeConversion(
     })
 
     logger.debug('Content files uploaded', defaultLoggerMetadata)
+
+    // Upload index.js and main.crdt to CDN so the desktop Explorer client
+    // can fetch them from S3 instead of the catalyst (see issue #7625).
+    if (entity && exitCode === 0 && entityType === 'scene') {
+      await uploadSceneSourceFilesToCDN(components, entity, contentServerUrl, uploadPath, cdnBucket)
+    }
 
     // and then replace the manifest
     await components.cdnS3
