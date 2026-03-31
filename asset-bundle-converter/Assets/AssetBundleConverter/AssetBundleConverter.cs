@@ -856,23 +856,7 @@ namespace DCL.ABConverter
 
                     env.assetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 
-                    // Resize texture first if needed (this may modify the file)
                     ReduceTextureSizeIfNeeded(texPath, maxTextureSize);
-
-                    // Set texture importer settings based on texture type AFTER resizing
-                    // This ensures the settings are applied to the final texture file
-                    TextureInfo texInfo2 = textTypeMan.GetTextureInfo(tex.name);
-                    var importer = AssetImporter.GetAtPath(texPath) as TextureImporter;
-                    if (importer != null)
-                    {
-                        bool isNormalMap = texInfo2.HasAnyType(TextureType.BumpMap) &&
-                                          !texInfo2.HasAnyType(TextureType.MainTex | TextureType.BaseMap);
-                        if (isNormalMap)
-                        {
-                            importer.textureType = TextureImporterType.NormalMap;
-                            importer.SaveAndReimport();
-                        }
-                    }
 
                     newTextures.Add(env.assetDatabase.LoadAssetAtPath<Texture2D>(texPath));
                 }
