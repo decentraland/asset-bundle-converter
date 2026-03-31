@@ -60,23 +60,25 @@ namespace AssetBundleConverter.MeshOptimization
         /// - Normals, Tangents, Colors, UVs: Always Float16
         /// </summary>
         /// <param name="mesh">The mesh to optimize</param>
-        public static void ConvertToHalfPrecisionPositions(Mesh mesh)
+        /// <returns>Bytes saved, or 0 if mesh was skipped or conversion failed.</returns>
+        public static int ConvertToHalfPrecisionPositions(Mesh mesh)
         {
             if (!IsEligibleForOptimization(mesh))
-                return;
+                return 0;
 
             try
             {
                 bool useHalfPositions = CanUseHalfPrecisionPositions(mesh);
-                ConvertUsingMeshDataApi(mesh, useHalfPositions);
+                return ConvertUsingMeshDataApi(mesh, useHalfPositions);
             }
             catch (Exception e)
             {
                 Debug.LogWarning($"MeshOptimizer: Failed to optimize mesh '{mesh.name}': {e.Message}\n{e.StackTrace}");
+                return 0;
             }
         }
 
-        private static void ConvertUsingMeshDataApi(Mesh mesh, bool useHalfPositions)
+        private static int ConvertUsingMeshDataApi(Mesh mesh, bool useHalfPositions)
         {
             int vertexCount = mesh.vertexCount;
 
@@ -208,7 +210,18 @@ namespace AssetBundleConverter.MeshOptimization
             // Get the vertex data as a native array and write to it
             var vertexData = meshData.GetVertexData<byte>(0);
 
-            // Calculate stride (bytes per vertex)
+            // Calculate original stride (bytes per vertex, all Float32)
+            int originalStride = 12; // Position Float32 x 3
+            if (hasNormals) originalStride += 12; // Float32 x 3
+            if (hasTangents) originalStride += 16; // Float32 x 4
+            if (hasColors) originalStride += 16; // Float32 x 4
+            else if (hasColors32) originalStride += 4; // byte x 4
+            if (hasUV) originalStride += 8; // Float32 x 2
+            if (hasUV2) originalStride += 8;
+            if (hasUV3) originalStride += 8;
+            if (hasUV4) originalStride += 8;
+
+            // Calculate new stride (bytes per vertex)
             int stride = useHalfPositions ? 8 : 12; // Position
             if (hasNormals) stride += 8; // Float16 x 4
             if (hasTangents) stride += 8; // Float16 x 4
@@ -218,6 +231,12 @@ namespace AssetBundleConverter.MeshOptimization
             if (hasUV2) stride += 4;
             if (hasUV3) stride += 4;
             if (hasUV4) stride += 4;
+
+            int savedBytes = (originalStride - stride) * vertexCount;
+            Debug.Log($"[MeshOptimizer] '{mesh.name}': {vertexCount} verts, " +
+                      $"{originalStride}B -> {stride}B per vertex " +
+                      $"({(useHalfPositions ? "pos16" : "pos32")}, norm16, tan16, uv16), " +
+                      $"saved {savedBytes / 1024f:F1} KB ({savedBytes} bytes)");
 
             // Write vertex data
             unsafe
@@ -383,6 +402,8 @@ namespace AssetBundleConverter.MeshOptimization
 
             // Upload to GPU
             mesh.UploadMeshData(false);
+
+            return savedBytes;
         }
 
         // Helper structs for blend shape data preservation

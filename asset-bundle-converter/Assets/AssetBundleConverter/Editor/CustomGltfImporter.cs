@@ -151,17 +151,29 @@ namespace AssetBundleConverter.Editor
         /// </summary>
         private void OptimizeMeshFormats(GameObject sceneGo)
         {
+            int totalSavedBytes = 0;
+            int meshCount = 0;
+
             foreach (var filter in sceneGo.GetComponentsInChildren<MeshFilter>())
             {
                 if (filter.sharedMesh != null)
-                    MeshOptimizer.ConvertToHalfPrecisionPositions(filter.sharedMesh);
+                {
+                    totalSavedBytes += MeshOptimizer.ConvertToHalfPrecisionPositions(filter.sharedMesh);
+                    meshCount++;
+                }
             }
 
             foreach (var renderer in sceneGo.GetComponentsInChildren<SkinnedMeshRenderer>())
             {
                 if (renderer.sharedMesh != null)
-                    MeshOptimizer.ConvertToHalfPrecisionPositions(renderer.sharedMesh);
+                {
+                    totalSavedBytes += MeshOptimizer.ConvertToHalfPrecisionPositions(renderer.sharedMesh);
+                    meshCount++;
+                }
             }
+
+            Debug.Log($"[MeshOptimizer] Total savings for '{sceneGo.name}': " +
+                      $"{totalSavedBytes / 1024f:F1} KB across {meshCount} mesh(es)");
         }
 
         private static void ConfigureColliders(Transform transform, MeshFilter filter)
