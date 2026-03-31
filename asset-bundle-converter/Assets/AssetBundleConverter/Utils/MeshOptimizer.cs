@@ -205,7 +205,8 @@ namespace AssetBundleConverter.MeshOptimization
             var meshData = meshDataArray[0];
 
             meshData.SetVertexBufferParams(vertexCount, vertexAttributes.ToArray());
-            meshData.SetIndexBufferParams(totalIndices, IndexFormat.UInt32);
+            bool useUInt16Indices = vertexCount <= 65535;
+            meshData.SetIndexBufferParams(totalIndices, useUInt16Indices ? IndexFormat.UInt16 : IndexFormat.UInt32);
 
             // Get the vertex data as a native array and write to it
             var vertexData = meshData.GetVertexData<byte>(0);
@@ -232,11 +233,13 @@ namespace AssetBundleConverter.MeshOptimization
             if (hasUV3) stride += 4;
             if (hasUV4) stride += 4;
 
-            int savedBytes = (originalStride - stride) * vertexCount;
-            Debug.Log($"[MeshOptimizer] '{mesh.name}': {vertexCount} verts, " +
-                      $"{originalStride}B -> {stride}B per vertex " +
-                      $"({(useHalfPositions ? "pos16" : "pos32")}, norm16, tan16, uv16), " +
-                      $"saved {savedBytes / 1024f:F1} KB ({savedBytes} bytes)");
+            int savedVertexBytes = (originalStride - stride) * vertexCount;
+            int savedIndexBytes = useUInt16Indices ? totalIndices * 2 : 0;
+            int savedBytes = savedVertexBytes + savedIndexBytes;
+            Debug.Log($"[MeshOptimizer] '{mesh.name}': {vertexCount} verts / {totalIndices} indices, " +
+                      $"vtx {originalStride}B -> {stride}B ({(useHalfPositions ? "pos16" : "pos32")}, norm16, tan16, uv16), " +
+                      $"idx {(useUInt16Indices ? "UInt16" : "UInt32")}, " +
+                      $"saved {savedBytes / 1024f:F1} KB total");
 
             // Write vertex data
             unsafe
@@ -349,16 +352,28 @@ namespace AssetBundleConverter.MeshOptimization
             }
 
             // Write index data
-            var indexData = meshData.GetIndexData<int>();
             int indexOffset = 0;
-            for (int i = 0; i < subMeshCount; i++)
+            if (useUInt16Indices)
             {
-                var indices = subMeshIndices[i];
-                for (int j = 0; j < indices.Length; j++)
+                var indexData = meshData.GetIndexData<ushort>();
+                for (int i = 0; i < subMeshCount; i++)
                 {
-                    indexData[indexOffset + j] = indices[j];
+                    var indices = subMeshIndices[i];
+                    for (int j = 0; j < indices.Length; j++)
+                        indexData[indexOffset + j] = (ushort)indices[j];
+                    indexOffset += indices.Length;
                 }
-                indexOffset += indices.Length;
+            }
+            else
+            {
+                var indexData = meshData.GetIndexData<int>();
+                for (int i = 0; i < subMeshCount; i++)
+                {
+                    var indices = subMeshIndices[i];
+                    for (int j = 0; j < indices.Length; j++)
+                        indexData[indexOffset + j] = indices[j];
+                    indexOffset += indices.Length;
+                }
             }
 
             // Set submesh descriptors
