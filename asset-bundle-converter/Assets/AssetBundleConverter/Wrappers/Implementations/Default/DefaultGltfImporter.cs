@@ -5,6 +5,7 @@ using DCL.ABConverter;
 using GLTFast;
 using GLTFast.Logging;
 using GLTFast.Materials;
+using System;
 using System.Collections.Generic;
 using UnityEditor;
 
@@ -25,7 +26,10 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
         public IGltfImport GetImporter(AssetPath filePath, Dictionary<string, string> contentTable, ShaderType shaderType, BuildTarget buildTarget)
         {
-            getNewMaterialGenerator = GetNewMaterialGenerator(shaderType);
+            if (shaderType != ShaderType.Dcl)
+                throw new ArgumentException($"Shader type: {shaderType} cannot be used with this importer, it must be ShaderType.Dcl");
+
+            getNewMaterialGenerator = new AssetBundleConverterMaterialGenerator();
 
             return new GltfImportWrapper(
                 new GltFastFileProvider(filePath.fileRootPath, filePath.hash, contentTable),
@@ -33,11 +37,6 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
                 getNewMaterialGenerator,
                 gltfLogger);
         }
-
-        private static IMaterialGenerator GetNewMaterialGenerator(ShaderType shaderType) =>
-            shaderType == ShaderType.Dcl
-                ? new AssetBundleConverterMaterialGenerator()
-                : null;
 
         public bool ConfigureImporter(string relativePath, ContentMap[] contentMap, string fileRootPath, string hash, ShaderType shaderType,
             AnimationMethod animationMethod)
