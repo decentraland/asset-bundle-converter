@@ -69,10 +69,14 @@ namespace DCL.ABConverter
                 return "_windows";
             if (currentTarget == BuildTarget.StandaloneOSX)
                 return "_mac";
+
+            if (currentTarget == BuildTarget.WebGL)
+                return "_webgl";
+
             if (Application.platform == RuntimePlatform.LinuxPlayer)
                 return "_linux";
 
-            return ""; //Means we are in WebGL, no extra parameters needed
+            return "";
         }
 
         //This method removes the platform from the path, since they are absolute in the downloaded project
@@ -171,6 +175,26 @@ namespace DCL.ABConverter
 
     public static class TextureUtils
     {
+        /// <summary>
+        ///     Applies build-target-specific texture compression settings.
+        ///     WebGL uses DXT5 non-crunched for texture array compatibility (wearables copy directly without runtime conversion).
+        ///     All other targets use crunched compression.
+        /// </summary>
+        public static void ApplyBuildTargetTextureSettings(TextureImporter importer, BuildTarget buildTarget)
+        {
+            if (buildTarget == BuildTarget.WebGL)
+            {
+                TextureImporterPlatformSettings webglSettings = importer.GetPlatformTextureSettings("WebGL");
+                webglSettings.overridden = true;
+                webglSettings.format = TextureImporterFormat.DXT5;
+                webglSettings.textureCompression = TextureImporterCompression.Compressed;
+                webglSettings.crunchedCompression = false;
+                importer.SetPlatformTextureSettings(webglSettings);
+            }
+            else
+                importer.crunchedCompression = true;
+        }
+
         public static bool IsCompressedFormat(TextureFormat format)
         {
             switch (format)
@@ -495,7 +519,18 @@ namespace DCL.ABConverter
                     {
                         suffix = "_windows";
                         assetBundleName = assetBundleName.Replace("_windows", "");
-                    } else if (assetBundleName.EndsWith("_osx"))
+                    }
+                    else if (assetBundleName.EndsWith("_mac"))
+                    {
+                        suffix = "_mac";
+                        assetBundleName = assetBundleName.Replace("_mac", "");
+                    }
+                    else if (assetBundleName.EndsWith("_webgl"))
+                    {
+                        suffix = "_webgl";
+                        assetBundleName = assetBundleName.Replace("_webgl", "");
+                    }
+                    else if (assetBundleName.EndsWith("_osx"))
                     {
                         suffix = "_osx";
                         assetBundleName = assetBundleName.Replace("_osx", "");

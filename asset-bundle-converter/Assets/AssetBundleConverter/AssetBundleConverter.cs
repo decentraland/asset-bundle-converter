@@ -7,11 +7,8 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using AssetBundleConverter;
 using AssetBundleConverter.Editor;
-using AssetBundleConverter.StaticSceneAssetBundle;
 using AssetBundleConverter.Wrappers.Interfaces;
-using Cysharp.Threading.Tasks;
 using GLTFast;
-using Newtonsoft.Json;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -47,18 +44,18 @@ namespace DCL.ABConverter
 
         private readonly Dictionary<string, string> lowerCaseHashes = new ();
         public ConversionState CurrentState { get; } = new ();
-        private Environment env;
-        private ClientSettings settings;
+        private readonly Environment env;
+        private readonly ClientSettings settings;
         private readonly string finalDownloadedPath;
         private readonly string finalDownloadedAssetDbPath;
-        private List<AssetPath> assetsToMark = new ();
-        private List<GltfImportSettings> gltfToWait = new ();
-        private Dictionary<string, string> contentTable = new ();
-        private Dictionary<string, string> gltfOriginalNames = new ();
-        private Dictionary<string, IGltfImport> gltfImporters = new ();
+        private readonly List<AssetPath> assetsToMark = new ();
+        private readonly List<GltfImportSettings> gltfToWait = new ();
+        private readonly Dictionary<string, string> contentTable = new ();
+        private readonly Dictionary<string, string> gltfOriginalNames = new ();
+        private readonly Dictionary<string, IGltfImport> gltfImporters = new ();
         private string logBuffer;
         private int skippedAssets;
-        private IErrorReporter errorReporter;
+        private readonly IErrorReporter errorReporter;
 
         private double conversionStartupTime;
         private double downloadStartupTime;
@@ -236,13 +233,7 @@ namespace DCL.ABConverter
             var universalRendererData = Resources.FindObjectsOfTypeAll<UniversalRendererData>().First();
             var rendererDataPath = AssetDatabase.GetAssetPath(universalRendererData);
 
-            universalRendererData.renderingMode = targetPlatform switch
-                                                  {
-                                                      BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX => RenderingMode.ForwardPlus,
-                                                      BuildTarget.WebGL => RenderingMode.Forward,
-                                                      _ => universalRendererData.renderingMode
-                                                  };
-
+            universalRendererData.renderingMode =  RenderingMode.ForwardPlus;
             AssetDatabase.ImportAsset(rendererDataPath);
         }
 
@@ -631,11 +622,7 @@ namespace DCL.ABConverter
             if (entityDTO == null) return AnimationMethod.Legacy;
             if (isWearable) return AnimationMethod.None;
             if (isEmote) return AnimationMethod.Mecanim;
-            if (settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX)
-                return settings.AnimationMethod;
-
-            //WebGL platform fallback is always Legacy
-            return AnimationMethod.Legacy;
+            return settings.AnimationMethod;
         }
 
         private void ExtractEmbedMaterialsFromGltf(List<Texture2D> textures, GltfImportSettings gltf, IGltfImport gltfImport, string gltfUrl)
@@ -858,12 +845,22 @@ namespace DCL.ABConverter
 
                     ReduceTextureSizeIfNeeded(texPath, maxTextureSize);
 
+                    var importer = env.assetDatabase.GetImporterAtPath(texPath) as TextureImporter;
+
+                    if (importer != null)
+                    {
+                        TextureUtils.ApplyBuildTargetTextureSettings(importer, settings.buildTarget);
+                        EditorUtility.SetDirty(importer);
+                        env.assetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+                    }
+
                     newTextures.Add(env.assetDatabase.LoadAssetAtPath<Texture2D>(texPath));
                 }
             }
 
             return newTextures;
         }
+
 
         private void OnFinish()
         {
@@ -1374,11 +1371,11 @@ namespace DCL.ABConverter
                     string finalTexturePath = finalDownloadedPath + assetPath.hash + "/" + assetPath.hash + Path.GetExtension(assetPath.filePath);
 
                     ReduceTextureSizeIfNeeded(finalTexturePath, maxTextureSize);
-
-                    texImporter.crunchedCompression = true;
                     texImporter.textureCompression = TextureImporterCompression.CompressedHQ;
                     texImporter.isReadable = true;
                     texImporter.alphaIsTransparency = true;
+
+                    TextureUtils.ApplyBuildTargetTextureSettings(texImporter, settings.buildTarget);
                     EditorUtility.SetDirty(texImporter);
                 }
 

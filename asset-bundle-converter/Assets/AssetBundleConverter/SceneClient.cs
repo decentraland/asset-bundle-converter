@@ -12,7 +12,7 @@ namespace DCL.ABConverter
 {
     public static class SceneClient
     {
-        private static ABLogger log = new ABLogger("ABConverter.SceneClient");
+        private static readonly ABLogger log = new ABLogger("ABConverter.SceneClient");
 
         public static Environment env;
 
@@ -275,7 +275,7 @@ namespace DCL.ABConverter
             // Target is setup during the commandline argument -buildTarget
             settings.buildTarget = EditorUserBuildSettings.activeBuildTarget;
 
-            settings.BuildPipelineType = settings.buildTarget == BuildTarget.WebGL ? BuildPipelineType.Default : BuildPipelineType.Scriptable;
+            settings.BuildPipelineType = BuildPipelineType.Scriptable;
         }
 
         /// <summary>

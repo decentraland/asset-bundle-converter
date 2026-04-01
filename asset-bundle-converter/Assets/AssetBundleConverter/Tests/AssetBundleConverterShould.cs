@@ -128,7 +128,7 @@ namespace AssetBundleConverter.Tests
             assetDatabase.Received().ImportAsset(Arg.Is(assetPath.finalPath), Arg.Is(ImportAssetOptions.ForceUpdate));
 
             // Ensure that asset was marked for asset bundle build
-            directory.Received().MarkFolderForAssetBundleBuild(assetPath.finalPath, assetPath.hash);
+            directory.Received().MarkFolderForAssetBundleBuild(assetPath.finalPath, assetPath.hash + PlatformUtils.GetPlatform());
 
             // Ensure that asset bundles are being built
             buildPipeline.Received().BuildAssetBundles(Arg.Any<string>(), Arg.Any<BuildAssetBundleOptions>(), Arg.Any<BuildTarget>());
@@ -195,7 +195,7 @@ namespace AssetBundleConverter.Tests
             gltfImporter.Received().ConfigureImporter(Arg.Any<string>(), Arg.Any<ContentMap[]>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ShaderType>(), Arg.Any<AnimationMethod>());
 
             // Ensure that asset was marked for asset bundle build
-            directory.Received().MarkFolderForAssetBundleBuild(assetPath.finalPath, assetPath.hash);
+            directory.Received().MarkFolderForAssetBundleBuild(assetPath.finalPath, assetPath.hash + PlatformUtils.GetPlatform());
 
             // Ensure that asset bundles are being built
             buildPipeline.Received().BuildAssetBundles(Arg.Any<string>(), Arg.Any<BuildAssetBundleOptions>(), Arg.Any<BuildTarget>());

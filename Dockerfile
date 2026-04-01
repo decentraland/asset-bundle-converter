@@ -1,4 +1,4 @@
-ARG UNITY_DOCKER_IMAGE=unityci/editor:2022.3.12f1-webgl-3.0.0
+ARG UNITY_DOCKER_IMAGE=unityci/editor:6000.3.9f1-webgl-3
 
 FROM node:18 AS builderenv
 
@@ -69,7 +69,7 @@ ENV NODE_PATH=$NVM_DIR/versions/node/$NODE_VERSION/lib/node_modules
 ENV PATH=$NVM_DIR/versions/node/$NODE_VERSION/bin:$PATH
 
 # Change this value ONLY if we have done breaking changes for every material, doing so is VERY costly
-ENV AB_VERSION=v13
+ENV AB_VERSION=v45
 ENV AB_VERSION_WINDOWS=v45
 ENV AB_VERSION_MAC=v45
 
