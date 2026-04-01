@@ -184,8 +184,6 @@ namespace DCL.ABConverter
         {
             if (buildTarget == BuildTarget.WebGL)
             {
-                importer.crunchedCompression = false;
-
                 TextureImporterPlatformSettings webglSettings = importer.GetPlatformTextureSettings("WebGL");
                 webglSettings.overridden = true;
                 webglSettings.format = TextureImporterFormat.DXT5;

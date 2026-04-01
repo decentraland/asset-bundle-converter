@@ -1371,12 +1371,11 @@ namespace DCL.ABConverter
                     string finalTexturePath = finalDownloadedPath + assetPath.hash + "/" + assetPath.hash + Path.GetExtension(assetPath.filePath);
 
                     ReduceTextureSizeIfNeeded(finalTexturePath, maxTextureSize);
-
-                    TextureUtils.ApplyBuildTargetTextureSettings(texImporter, settings.buildTarget);
-
                     texImporter.textureCompression = TextureImporterCompression.CompressedHQ;
                     texImporter.isReadable = true;
                     texImporter.alphaIsTransparency = true;
+
+                    TextureUtils.ApplyBuildTargetTextureSettings(texImporter, settings.buildTarget);
                     EditorUtility.SetDirty(texImporter);
                 }
 

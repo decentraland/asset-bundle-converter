@@ -291,12 +291,12 @@ namespace AssetBundleConverter.Editor
 
                         TextureImporterType targetImportType = GetTextureImporterType(tImporter, isNormalMap);
                         tImporter.textureType = targetImportType;
-
-                        TextureUtils.ApplyBuildTargetTextureSettings(tImporter, EditorUserBuildSettings.activeBuildTarget);
                         tImporter.sRGBTexture = !metallics.Contains(tex);
                         tImporter.compressionQuality = 100;
                         tImporter.textureCompression = TextureImporterCompression.CompressedHQ;
                         tImporter.mipmapEnabled = true;
+
+                        TextureUtils.ApplyBuildTargetTextureSettings(tImporter, EditorUserBuildSettings.activeBuildTarget);
 
                         // With this we avoid re-importing this glb as it may contain invalid references to textures
                         EditorUtility.SetDirty(tImporter);
