@@ -9,10 +9,13 @@ using System.Threading.Tasks;
 using Cysharp.Threading.Tasks;
 using DCL;
 using DCL.ABConverter;
+using GLTFast;
 using GLTFast.Export;
 using GLTFast.Logging;
 using UnityEditor;
 using UnityEngine;
+using DigitalOpus.MB.Core;
+using DigitalOpus.MB.MBEditor; // for MB3_EditorMethods
 using Debug = UnityEngine.Debug;
 using Environment = AssetBundleConverter.Environment;
 using SystemFile = AssetBundleConverter.Wrappers.Implementations.Default.SystemWrappers.File;
@@ -61,7 +64,9 @@ namespace DCL.ABConverter.Editor
                 "Enter a scene pointer (parcel coordinates) to:\n" +
                 "1. Generate the scene manifest\n" +
                 "2. Download, import, and instance ISS assets\n" +
-                "3. Export the scene as a GLB file",
+                "3. Export the scene as a GLB file\n" +
+                "4. Run gltfpack to decimate\n" +
+                "5. Import decimated GLB & MeshBaker (atlas + combine) → prefab",
                 MessageType.Info);
 
             EditorGUILayout.Space();
@@ -133,7 +138,7 @@ namespace DCL.ABConverter.Editor
                 }
 
                 // Step 1: Generate the scene manifest
-                Log("=== Step 1/3: Generating Scene Manifest ===");
+                Log("=== Step 1/5: Generating Scene Manifest ===");
                 EditorUtility.DisplayProgressBar("LOD Generator", "Generating scene manifest...", 0.1f);
 
                 string sceneId = await GenerateManifest();
@@ -147,23 +152,60 @@ namespace DCL.ABConverter.Editor
                 Log($"Manifest generated for scene: {sceneId}");
 
                 // Step 2: Run the AssetBundleConverter pipeline (download, import, instance ISS assets)
-                Log("\n=== Step 2/3: Running AssetBundleConverter ===");
-                EditorUtility.DisplayProgressBar("LOD Generator", "Running asset conversion...", 0.3f);
+                Log("\n=== Step 2/5: Running AssetBundleConverter ===");
+                EditorUtility.DisplayProgressBar("LOD Generator", "Running asset conversion...", 0.2f);
 
                 await RunAssetBundleConverter();
 
                 Log("AssetBundleConverter finished.");
 
                 // Step 3: Export instanced scene to GLB
-                Log("\n=== Step 3/3: Exporting scene to GLB ===");
-                EditorUtility.DisplayProgressBar("LOD Generator", "Exporting GLB...", 0.8f);
+                Log("\n=== Step 3/5: Exporting scene to GLB ===");
+                EditorUtility.DisplayProgressBar("LOD Generator", "Exporting GLB...", 0.4f);
 
                 string exportPath = await ExportSceneToGlb(sceneId);
+
+                if (string.IsNullOrEmpty(exportPath))
+                {
+                    Log("ERROR: GLB export failed. Aborting.");
+                    return;
+                }
+
+                // Step 4: Run gltfpack to decimate
+                Log("\n=== Step 4/5: Running gltfpack (decimate to 10%) ===");
+                EditorUtility.DisplayProgressBar("LOD Generator", "Running gltfpack decimation...", 0.55f);
+
+                string decimatedPath = RunGltfpack(exportPath, sceneId);
+
+                if (string.IsNullOrEmpty(decimatedPath))
+                {
+                    Log("ERROR: gltfpack decimation failed. Aborting.");
+                    return;
+                }
+
+                // Step 5: Import decimated GLB back and run MeshBaker
+                Log("\n=== Step 5/5: MeshBaker (atlas + combine → prefab) ===");
+                EditorUtility.DisplayProgressBar("LOD Generator", "Importing decimated GLB...", 0.7f);
+
+                // Clear the scene of original objects
+                ClearSceneObjects();
+
+                // Import the decimated GLB into the scene
+                await ImportGlbIntoScene(decimatedPath);
+
+                Log("Running MeshBaker on decimated mesh...");
+                EditorUtility.DisplayProgressBar("LOD Generator", "Baking textures & combining meshes...", 0.8f);
+
+                string prefabPath = RunMeshBaker(sceneId);
 
                 Log("\n=== LOD Generation Complete ===");
                 string message = $"LOD generation complete for pointer ({xCoord},{yCoord}).\nScene ID: {sceneId}";
                 if (!string.IsNullOrEmpty(exportPath))
-                    message += $"\nExported to: {exportPath}";
+                    message += $"\nOriginal GLB: {exportPath}";
+                if (!string.IsNullOrEmpty(decimatedPath))
+                    message += $"\nDecimated GLB: {decimatedPath}";
+                if (!string.IsNullOrEmpty(prefabPath))
+                    message += $"\nCombined prefab: {prefabPath}";
                 EditorUtility.DisplayDialog("LOD Generator", message, "OK");
             }
             catch (Exception e)
@@ -313,6 +355,154 @@ namespace DCL.ABConverter.Editor
 
         #endregion
 
+        #region Step 5: MeshBaker (texture atlas + mesh combine → prefab)
+
+        /// <summary>
+        /// Uses MeshBaker to bake all scene textures into a single atlas
+        /// and combine all meshes into a single prefab with one material.
+        /// Mirrors the MeshBaker editor workflow:
+        ///   1. "Create Empty Assets" → material + TextureBakeResults on disk
+        ///   2. "Bake Materials" → CreateAtlases populates those assets
+        ///   3. "Bake" (BakeIntoCombined with bakeIntoPrefab)
+        /// </summary>
+        private string RunMeshBaker(string sceneId)
+        {
+            // Collect all GameObjects with renderers (skip cameras/lights)
+            var objectsToCombine = new List<GameObject>();
+            var allRootObjects = UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetRootGameObjects();
+
+            foreach (var root in allRootObjects)
+            {
+                if (root.GetComponent<Camera>() != null || root.GetComponent<Light>() != null)
+                    continue;
+
+                foreach (var renderer in root.GetComponentsInChildren<MeshRenderer>(true))
+                {
+                    if (renderer.gameObject.GetComponent<MeshFilter>() != null)
+                        objectsToCombine.Add(renderer.gameObject);
+                }
+            }
+
+            if (objectsToCombine.Count == 0)
+            {
+                Log("WARNING: No renderers found in scene for MeshBaker.");
+                return null;
+            }
+
+            Log($"Found {objectsToCombine.Count} mesh object(s) to combine.");
+
+            // Log material info for diagnostics
+            foreach (var go in objectsToCombine)
+            {
+                var r = go.GetComponent<Renderer>();
+                if (r != null)
+                {
+                    var mats = r.sharedMaterials;
+                    foreach (var m in mats)
+                    {
+                        Log($"  - {go.name}: mat={m?.name ?? "NULL"}, shader={m?.shader?.name ?? "NULL"}");
+                    }
+                }
+            }
+
+            // Create a temporary host GameObject for MeshBaker components
+            var bakerHost = new GameObject("_MeshBakerTemp");
+
+            try
+            {
+                EnsureFolderExists(EXPORTED_FOLDER);
+
+                // =====================================================
+                // Step A: "Create Empty Assets" — persistent material + TextureBakeResults on disk
+                //         (same as clicking "Create Empty Assets For Combined Material" in MeshBaker UI)
+                // =====================================================
+                string bakeResultsPath = Path.Combine(EXPORTED_FOLDER, $"{sceneId}_TextureBakeResult.asset");
+                string materialPath = Path.Combine(EXPORTED_FOLDER, $"{sceneId}_combined_mat.mat");
+                string prefabPath = Path.Combine(EXPORTED_FOLDER, $"{sceneId}_LOD.prefab");
+
+                // Use CreateCombinedMaterialAssets — the same code MeshBaker's UI button calls
+                var textureBaker = bakerHost.AddComponent<MB3_TextureBaker>();
+                textureBaker.objsToMesh = objectsToCombine;
+                MB3_TextureBakerEditorInternal.CreateCombinedMaterialAssets(textureBaker, bakeResultsPath);
+                AssetDatabase.Refresh();
+
+                Log($"Created empty assets: {bakeResultsPath}, material: {textureBaker.resultMaterial?.name ?? "NULL"}");
+                Log($"TextureBakeResults: {textureBaker.textureBakeResults != null}, ResultMaterial: {textureBaker.resultMaterial != null}");
+
+                // =====================================================
+                // Step B: "Bake Materials Into Combined Material"
+                //         (same as clicking "Bake Materials Into Combined Material" in MeshBaker UI)
+                // =====================================================
+                textureBaker.atlasPadding = 2;
+                textureBaker.maxAtlasSize = 4096;
+                textureBaker.fixOutOfBoundsUVs = true;
+
+                Log("Baking textures into atlas...");
+                textureBaker.CreateAtlases(null, true, new MB3_EditorMethods());
+
+                if (textureBaker.textureBakeResults != null)
+                    EditorUtility.SetDirty(textureBaker.textureBakeResults);
+
+                AssetDatabase.SaveAssets();
+                Log($"Texture atlas baked. TextureBakeResults materialsAndUVRects count: {textureBaker.textureBakeResults?.materialsAndUVRects?.Length ?? 0}");
+
+                // =====================================================
+                // Step C: Create empty result prefab
+                // =====================================================
+                var tempGo = new GameObject($"{sceneId}_LOD");
+                PrefabUtility.SaveAsPrefabAsset(tempGo, prefabPath);
+                UnityEngine.Object.DestroyImmediate(tempGo);
+                AssetDatabase.Refresh();
+
+                // =====================================================
+                // Step D: "Bake" mesh into prefab
+                //         (same as clicking "Bake" in the MeshBaker UI)
+                // =====================================================
+                var meshBakerGo = new GameObject("MeshBaker");
+                meshBakerGo.transform.SetParent(bakerHost.transform);
+
+                var meshBaker = meshBakerGo.AddComponent<MB3_MeshBaker>();
+                meshBaker.textureBakeResults = textureBaker.textureBakeResults;
+                meshBaker.meshCombiner.outputOption = MB2_OutputOptions.bakeIntoPrefab;
+                meshBaker.resultPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+                meshBaker.resultPrefabLeaveInstanceInSceneAfterBake = false;
+
+                Log($"MeshBaker setup: outputOption={meshBaker.meshCombiner.outputOption}, resultPrefab={meshBaker.resultPrefab != null}, textureBakeResults={meshBaker.textureBakeResults != null}");
+                Log($"MeshBaker GetObjectsToCombine count: {meshBaker.GetObjectsToCombine()?.Count ?? 0}");
+
+                Log("Combining meshes into prefab...");
+
+                bool createdDummy;
+                var so = new SerializedObject(meshBaker);
+                bool success = MB3_MeshBakerEditorFunctions.BakeIntoCombined(meshBaker, out createdDummy, ref so);
+
+                if (success)
+                {
+                    Log($"Prefab saved to: {prefabPath}");
+                    AssetDatabase.SaveAssets();
+                    AssetDatabase.Refresh();
+                    return prefabPath;
+                }
+                else
+                {
+                    Log("WARNING: MeshBaker BakeIntoCombined failed. Check console for errors.");
+                    return null;
+                }
+            }
+            catch (Exception e)
+            {
+                Log($"ERROR: MeshBaker failed: {e.Message}\n{e.StackTrace}");
+                Debug.LogError($"MeshBaker error: {e.Message}\n{e.StackTrace}");
+                return null;
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(bakerHost);
+            }
+        }
+
+        #endregion
+
         #region Step 3: Export GLB
 
         /// <summary>
@@ -320,7 +510,7 @@ namespace DCL.ABConverter.Editor
         /// disables SkinnedMeshRenderers to avoid bone/joint export issues,
         /// and exports as a single GLB file using glTFast's GameObjectExport.
         /// </summary>
-        private async UniTask<string> ExportSceneToGlb(string sceneId)
+        private async UniTask<string> ExportSceneToGlb(string sceneId, string overrideFileName = null)
         {
             // Collect all root GameObjects that were instanced (skip cameras/lights)
             var rootObjects = new List<GameObject>();
@@ -361,7 +551,7 @@ namespace DCL.ABConverter.Editor
 
             EnsureFolderExists(EXPORTED_FOLDER);
 
-            string exportFileName = $"{sceneId}_scene.glb";
+            string exportFileName = overrideFileName ?? $"{sceneId}_scene.glb";
             string exportPath = Path.Combine(EXPORTED_FOLDER, exportFileName);
             string fullExportPath = Path.GetFullPath(exportPath);
 
@@ -399,6 +589,205 @@ namespace DCL.ABConverter.Editor
                 Log("ERROR: GLB export failed.");
                 return null;
             }
+        }
+
+        #endregion
+
+        #region Step 4: gltfpack decimation
+
+        private string RunGltfpack(string inputGlbPath, string sceneId)
+        {
+            string gltfpackPath = Path.GetFullPath(Path.Combine(Application.dataPath, "gltfpack"));
+
+            if (!File.Exists(gltfpackPath))
+            {
+                Log($"ERROR: gltfpack not found at: {gltfpackPath}");
+                return null;
+            }
+
+            string outputFileName = $"{sceneId}_scene_lod.glb";
+            string outputPath = Path.Combine(EXPORTED_FOLDER, outputFileName);
+            string fullInputPath = Path.GetFullPath(inputGlbPath);
+            string fullOutputPath = Path.GetFullPath(outputPath);
+
+            // -si 0.1 = simplify to 10% of original triangles
+            string arguments = $"-i \"{fullInputPath}\" -o \"{fullOutputPath}\" -si 0.1";
+            Log($"Running: gltfpack {arguments}");
+
+            try
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = gltfpackPath,
+                    Arguments = arguments,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using (var process = new Process { StartInfo = startInfo })
+                {
+                    var output = new System.Text.StringBuilder();
+
+                    process.OutputDataReceived += (sender, e) =>
+                    {
+                        if (!string.IsNullOrEmpty(e.Data))
+                            output.AppendLine(e.Data);
+                    };
+
+                    process.ErrorDataReceived += (sender, e) =>
+                    {
+                        if (!string.IsNullOrEmpty(e.Data))
+                            output.AppendLine(e.Data);
+                    };
+
+                    process.Start();
+                    process.BeginOutputReadLine();
+                    process.BeginErrorReadLine();
+
+                    bool completed = process.WaitForExit(120000);
+
+                    if (!completed)
+                    {
+                        process.Kill();
+                        Log("ERROR: gltfpack timed out after 2 minutes.");
+                        return null;
+                    }
+
+                    string processOutput = output.ToString();
+                    if (!string.IsNullOrEmpty(processOutput))
+                        Log(processOutput);
+
+                    if (process.ExitCode != 0)
+                    {
+                        Log($"ERROR: gltfpack failed with exit code {process.ExitCode}");
+                        return null;
+                    }
+                }
+
+                Log($"Decimated LOD exported to: {outputPath}");
+                AssetDatabase.Refresh();
+                return outputPath;
+            }
+            catch (Exception e)
+            {
+                Log($"ERROR: Failed to run gltfpack: {e.Message}");
+                Debug.LogError($"gltfpack error: {e.Message}");
+                return null;
+            }
+        }
+
+        #endregion
+
+        #region Import & Scene helpers
+
+        /// <summary>
+        /// Destroys all non-camera/non-light root GameObjects in the active scene.
+        /// </summary>
+        private void ClearSceneObjects()
+        {
+            var allRootObjects = UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetRootGameObjects();
+            int count = 0;
+
+            foreach (var go in allRootObjects)
+            {
+                if (go.GetComponent<Camera>() != null || go.GetComponent<Light>() != null)
+                    continue;
+
+                UnityEngine.Object.DestroyImmediate(go);
+                count++;
+            }
+
+            Log($"Cleared {count} object(s) from scene.");
+        }
+
+        /// <summary>
+        /// Imports a GLB file into the active scene using glTFast.
+        /// </summary>
+        private async UniTask ImportGlbIntoScene(string glbPath)
+        {
+            string fullPath = Path.GetFullPath(glbPath);
+
+            Log($"Importing GLB: {fullPath}");
+
+            var gltfImport = new GltfImport(deferAgent: new UninterruptedDeferAgent(), logger: new ConsoleLogger());
+            bool loaded = await gltfImport.LoadFile(fullPath);
+
+            if (!loaded)
+            {
+                Log("ERROR: Failed to load decimated GLB.");
+                return;
+            }
+
+            var parent = new GameObject("_ImportedDecimated");
+            bool instantiated = await gltfImport.InstantiateMainSceneAsync(parent.transform);
+
+            if (!instantiated)
+            {
+                Log("ERROR: Failed to instantiate decimated GLB scene.");
+                UnityEngine.Object.DestroyImmediate(parent);
+                return;
+            }
+
+            Log($"Decimated GLB imported with {parent.GetComponentsInChildren<MeshRenderer>().Length} renderer(s).");
+
+            // Make all textures readable so MeshBaker can build atlases
+            MakeAllTexturesReadable(parent);
+        }
+
+        /// <summary>
+        /// glTFast imports textures as non-readable. MeshBaker needs readable textures
+        /// to build atlases. This copies each texture via RenderTexture to make it readable.
+        /// </summary>
+        private void MakeAllTexturesReadable(GameObject root)
+        {
+            int count = 0;
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+
+            foreach (var renderer in renderers)
+            {
+                foreach (var mat in renderer.sharedMaterials)
+                {
+                    if (mat == null) continue;
+
+                    var texProps = mat.GetTexturePropertyNameIDs();
+                    foreach (int propId in texProps)
+                    {
+                        var tex = mat.GetTexture(propId) as Texture2D;
+                        if (tex == null || tex.isReadable) continue;
+
+                        var readable = CopyTextureToReadable(tex);
+                        if (readable != null)
+                        {
+                            mat.SetTexture(propId, readable);
+                            count++;
+                        }
+                    }
+                }
+            }
+
+            if (count > 0)
+                Log($"Made {count} texture(s) readable for MeshBaker.");
+        }
+
+        private Texture2D CopyTextureToReadable(Texture2D source)
+        {
+            var rt = RenderTexture.GetTemporary(source.width, source.height, 0, RenderTextureFormat.ARGB32);
+            Graphics.Blit(source, rt);
+
+            var previous = RenderTexture.active;
+            RenderTexture.active = rt;
+
+            var readable = new Texture2D(source.width, source.height, TextureFormat.RGBA32, false);
+            readable.ReadPixels(new Rect(0, 0, source.width, source.height), 0, 0);
+            readable.Apply();
+            readable.name = source.name;
+
+            RenderTexture.active = previous;
+            RenderTexture.ReleaseTemporary(rt);
+
+            return readable;
         }
 
         #endregion
