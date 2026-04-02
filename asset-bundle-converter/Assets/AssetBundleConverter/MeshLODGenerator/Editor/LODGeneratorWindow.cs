@@ -39,7 +39,7 @@ namespace DCL.ABConverter.Editor
         private int xCoord = 0;
         private int yCoord = 0;
         private string catalystUrl = DEFAULT_CATALYST_URL;
-        private bool cleanDownloadedFolder = true;
+        private bool cleanBeforeRun = true;
 
         private Vector2 scrollPosition;
         private string processLog = "";
@@ -90,7 +90,7 @@ namespace DCL.ABConverter.Editor
                 catalystUrl = DEFAULT_CATALYST_URL;
             EditorGUILayout.EndHorizontal();
 
-            cleanDownloadedFolder = EditorGUILayout.Toggle("Clean _Downloaded before run", cleanDownloadedFolder);
+            cleanBeforeRun = EditorGUILayout.Toggle("Clean folders before run", cleanBeforeRun);
 
             EditorGUILayout.Space();
 
@@ -128,13 +128,28 @@ namespace DCL.ABConverter.Editor
 
             try
             {
-                // Clean _Downloaded folder before starting
-                if (cleanDownloadedFolder && Directory.Exists("Assets/_Downloaded"))
+                // Clean all working folders before starting
+                if (cleanBeforeRun)
                 {
-                    Log("Cleaning _Downloaded folder...");
-                    Directory.Delete("Assets/_Downloaded", true);
+                    Log("Cleaning folders...");
+
+                    string[] foldersToClean = { "Assets/_Downloaded", SCENE_MANIFEST_FOLDER, EXPORTED_FOLDER };
+
+                    foreach (string folder in foldersToClean)
+                    {
+                        if (Directory.Exists(folder))
+                        {
+                            Directory.Delete(folder, true);
+                            // Delete the .meta file too so Unity doesn't get confused
+                            string metaFile = folder + ".meta";
+                            if (File.Exists(metaFile))
+                                File.Delete(metaFile);
+
+                            Log($"  Deleted: {folder}");
+                        }
+                    }
+
                     AssetDatabase.Refresh();
-                    Log("_Downloaded folder deleted.");
                 }
 
                 // Step 1: Generate the scene manifest
