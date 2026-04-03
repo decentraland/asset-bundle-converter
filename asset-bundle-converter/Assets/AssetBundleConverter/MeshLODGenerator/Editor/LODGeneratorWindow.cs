@@ -150,6 +150,9 @@ namespace DCL.ABConverter.Editor
                     }
 
                     AssetDatabase.Refresh();
+
+                    // Clear scene objects to prevent material leaks from previous runs
+                    ClearSceneObjects();
                 }
 
                 // Step 1: Generate the scene manifest
@@ -406,20 +409,6 @@ namespace DCL.ABConverter.Editor
 
             Log($"Found {objectsToCombine.Count} mesh object(s) to combine.");
 
-            // Log material info for diagnostics
-            foreach (var go in objectsToCombine)
-            {
-                var r = go.GetComponent<Renderer>();
-                if (r != null)
-                {
-                    var mats = r.sharedMaterials;
-                    foreach (var m in mats)
-                    {
-                        Log($"  - {go.name}: mat={m?.name ?? "NULL"}, shader={m?.shader?.name ?? "NULL"}");
-                    }
-                }
-            }
-
             // Create a temporary host GameObject for MeshBaker components
             var bakerHost = new GameObject("_MeshBakerTemp");
 
@@ -427,30 +416,37 @@ namespace DCL.ABConverter.Editor
             {
                 EnsureFolderExists(EXPORTED_FOLDER);
 
-                // =====================================================
-                // Step A: "Create Empty Assets" — persistent material + TextureBakeResults on disk
-                //         (same as clicking "Create Empty Assets For Combined Material" in MeshBaker UI)
-                // =====================================================
                 string bakeResultsPath = Path.Combine(EXPORTED_FOLDER, $"{sceneId}_TextureBakeResult.asset");
-                string materialPath = Path.Combine(EXPORTED_FOLDER, $"{sceneId}_combined_mat.mat");
                 string prefabPath = Path.Combine(EXPORTED_FOLDER, $"{sceneId}_LOD.prefab");
 
-                // Use CreateCombinedMaterialAssets — the same code MeshBaker's UI button calls
+                // =====================================================
+                // Step A: Configure TextureBaker + "Create Empty Assets"
+                // =====================================================
                 var textureBaker = bakerHost.AddComponent<MB3_TextureBaker>();
                 textureBaker.objsToMesh = objectsToCombine;
-                MB3_TextureBakerEditorInternal.CreateCombinedMaterialAssets(textureBaker, bakeResultsPath);
-                AssetDatabase.Refresh();
-
-                Log($"Created empty assets: {bakeResultsPath}, material: {textureBaker.resultMaterial?.name ?? "NULL"}");
-                Log($"TextureBakeResults: {textureBaker.textureBakeResults != null}, ResultMaterial: {textureBaker.resultMaterial != null}");
-
-                // =====================================================
-                // Step B: "Bake Materials Into Combined Material"
-                //         (same as clicking "Bake Materials Into Combined Material" in MeshBaker UI)
-                // =====================================================
                 textureBaker.atlasPadding = 2;
                 textureBaker.maxAtlasSize = 4096;
                 textureBaker.fixOutOfBoundsUVs = true;
+
+                // Only bake the base color texture, ignore everything else
+                textureBaker.texturePropNamesToIgnore = new List<string>
+                {
+                    "_BumpMap",           // Normal map
+                    "_MetallicGlossMap",  // Metallic
+                    "_SpecGlossMap",      // Specular
+                    "_OcclusionMap",      // Ambient Occlusion
+                    "_EmissionMap",       // Emission
+                    "_ParallaxMap",       // Height
+                    "_DetailMask",        // Detail mask
+                    "_DetailAlbedoMap",   // Detail albedo
+                    "_DetailNormalMap",   // Detail normal
+                };
+
+                // Create persistent assets on disk (material + TextureBakeResults)
+                MB3_TextureBakerEditorInternal.CreateCombinedMaterialAssets(textureBaker, bakeResultsPath);
+                AssetDatabase.Refresh();
+
+                Log($"TextureBakeResults={textureBaker.textureBakeResults != null}, ResultMaterial={textureBaker.resultMaterial != null}");
 
                 Log("Baking textures into atlas...");
                 textureBaker.CreateAtlases(null, true, new MB3_EditorMethods());
