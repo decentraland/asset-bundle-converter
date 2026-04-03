@@ -596,6 +596,12 @@ namespace DCL.ABConverter.Editor
                             if (entry.combinedMaterial != null)
                                 SwitchToDclScene(entry.combinedMaterial);
                         }
+
+                        // Re-apply opaque/transparent settings AFTER shader swap
+                        // (shader swap resets render queue and other properties)
+                        SetMaterialOpaque(textureBaker.resultMaterials[0].combinedMaterial);
+                        if (textureBaker.resultMaterials.Length > 1)
+                            SetMaterialTransparent(textureBaker.resultMaterials[1].combinedMaterial);
                     }
                     else if (textureBaker.resultMaterial != null)
                     {
@@ -704,6 +710,12 @@ namespace DCL.ABConverter.Editor
             mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
             mat.DisableKeyword("_ALPHATEST_ON");
             mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+
+            // Re-enable DepthOnly pass (disabled by the glTFast shader copy)
+            mat.SetShaderPassEnabled("DepthOnly", true);
+            mat.SetShaderPassEnabled("TransparentDepthPrepass", true);
+            mat.SetShaderPassEnabled("TransparentDepthPostpass", true);
+            mat.SetShaderPassEnabled("TransparentBackface", true);
         }
 
         private static bool IsTransparentMaterial(Material mat)
