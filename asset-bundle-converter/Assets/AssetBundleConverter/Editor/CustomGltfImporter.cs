@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using AssetBundleConverter.Wrappers.Implementations.Default;
 using DCL.ABConverter;
+using GLTFast;
 using GLTFast.Editor;
 using System.Text.RegularExpressions;
 using UnityEditor;
@@ -123,6 +124,8 @@ namespace AssetBundleConverter.Editor
 
         protected override void PreProcessGameObjects(GameObject sceneGo)
         {
+            SpringBoneUtils.ApplySpringBoneJoints(m_Gltf, sceneGo);
+
             var meshFilters = sceneGo.GetComponentsInChildren<MeshFilter>();
 
             foreach (MeshFilter filter in meshFilters)
