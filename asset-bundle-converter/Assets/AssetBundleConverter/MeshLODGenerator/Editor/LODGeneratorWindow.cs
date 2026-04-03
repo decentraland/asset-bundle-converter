@@ -409,6 +409,32 @@ namespace DCL.ABConverter.Editor
 
             Log($"Found {objectsToCombine.Count} mesh object(s) to combine.");
 
+            // Classify all unique source materials as opaque or transparent
+            var opaqueMaterials = new List<Material>();
+            var transparentMaterials = new List<Material>();
+            var seenMaterials = new HashSet<Material>();
+
+            foreach (var go in objectsToCombine)
+            {
+                var r = go.GetComponent<Renderer>();
+                if (r == null) continue;
+
+                foreach (var mat in r.sharedMaterials)
+                {
+                    if (mat == null || seenMaterials.Contains(mat)) continue;
+                    seenMaterials.Add(mat);
+
+                    if (IsTransparentMaterial(mat))
+                        transparentMaterials.Add(mat);
+                    else
+                        opaqueMaterials.Add(mat);
+                }
+            }
+
+            Log($"Materials: {opaqueMaterials.Count} opaque, {transparentMaterials.Count} transparent.");
+
+            bool useMultiMaterial = opaqueMaterials.Count > 0 && transparentMaterials.Count > 0;
+
             // Create a temporary host GameObject for MeshBaker components
             var bakerHost = new GameObject("_MeshBakerTemp");
 
@@ -427,6 +453,13 @@ namespace DCL.ABConverter.Editor
                 textureBaker.atlasPadding = 2;
                 textureBaker.maxAtlasSize = 4096;
                 textureBaker.fixOutOfBoundsUVs = true;
+                textureBaker.resizePowerOfTwoTextures = true;
+
+                // glTFast uses "baseColorTexture" instead of "_BaseMap" — tell MeshBaker about it
+                textureBaker.customShaderProperties = new List<ShaderTextureProperty>
+                {
+                    new ShaderTextureProperty("baseColorTexture", false, true, false),
+                };
 
                 // Only bake the base color texture, ignore everything else
                 textureBaker.texturePropNamesToIgnore = new List<string>
@@ -442,11 +475,50 @@ namespace DCL.ABConverter.Editor
                     "_DetailNormalMap",   // Detail normal
                 };
 
-                // Create persistent assets on disk (material + TextureBakeResults)
+                // Create assets in single-material mode — MeshBaker copies the shader from
+                // the first source object.
                 MB3_TextureBakerEditorInternal.CreateCombinedMaterialAssets(textureBaker, bakeResultsPath);
                 AssetDatabase.Refresh();
 
-                Log($"TextureBakeResults={textureBaker.textureBakeResults != null}, ResultMaterial={textureBaker.resultMaterial != null}");
+                // Then: if both opaque and transparent materials exist, switch to multi-material mode
+                if (useMultiMaterial)
+                {
+                    textureBaker.doMultiMaterial = true;
+
+                    // Duplicate the material MeshBaker created for the transparent submesh
+                    string opaquePath = AssetDatabase.GetAssetPath(textureBaker.resultMaterial);
+                    string transparentPath = opaquePath.Replace(".mat", "-transparent.mat");
+                    AssetDatabase.CopyAsset(opaquePath, transparentPath);
+                    AssetDatabase.Refresh();
+
+                    // Fix the opaque material — CreateCombinedMaterialAssets may have copied
+                    // transparency properties if the first source object was transparent
+                    var opaqueMat = textureBaker.resultMaterial;
+                    SetMaterialOpaque(opaqueMat);
+                    EditorUtility.SetDirty(opaqueMat);
+
+                    // Configure the transparent material
+                    var transparentMat = AssetDatabase.LoadAssetAtPath<Material>(transparentPath);
+                    SetMaterialTransparent(transparentMat);
+                    EditorUtility.SetDirty(transparentMat);
+
+                    AssetDatabase.SaveAssets();
+
+                    var opaqueEntry = new MB_MultiMaterial();
+                    opaqueEntry.combinedMaterial = opaqueMat;
+                    opaqueEntry.sourceMaterials = opaqueMaterials;
+                    opaqueEntry.considerMeshUVs = true;
+
+                    var transparentEntry = new MB_MultiMaterial();
+                    transparentEntry.combinedMaterial = transparentMat;
+                    transparentEntry.considerMeshUVs = true;
+                    transparentEntry.sourceMaterials = transparentMaterials;
+
+                    textureBaker.resultMaterials = new MB_MultiMaterial[] { opaqueEntry, transparentEntry };
+                    Log("Using multi-material mode (opaque + transparent).");
+                }
+
+                Log($"TextureBakeResults={textureBaker.textureBakeResults != null}");
 
                 Log("Baking textures into atlas...");
                 textureBaker.CreateAtlases(null, true, new MB3_EditorMethods());
@@ -456,6 +528,87 @@ namespace DCL.ABConverter.Editor
 
                 AssetDatabase.SaveAssets();
                 Log($"Texture atlas baked. TextureBakeResults materialsAndUVRects count: {textureBaker.textureBakeResults?.materialsAndUVRects?.Length ?? 0}");
+
+                // Diagnostic: log what textures MeshBaker assigned to each combined material
+                if (useMultiMaterial)
+                {
+                    for (int i = 0; i < textureBaker.resultMaterials.Length; i++)
+                    {
+                        var mat = textureBaker.resultMaterials[i].combinedMaterial;
+                        if (mat == null) { Log($"  resultMaterials[{i}]: combinedMaterial is NULL"); continue; }
+                        var texPropIds = mat.GetTexturePropertyNameIDs();
+                        Log($"  resultMaterials[{i}] ({mat.name}, shader={mat.shader.name}):");
+                        foreach (int id in texPropIds)
+                        {
+                            var tex = mat.GetTexture(id);
+                            string propName = mat.GetTexturePropertyNames()[System.Array.IndexOf(mat.GetTexturePropertyNameIDs(), id)];
+                            if (tex != null)
+                                Log($"    {propName} = {tex.name} ({tex.width}x{tex.height})");
+                            else
+                                Log($"    {propName} = (none)");
+                        }
+                    }
+                }
+                else if (textureBaker.resultMaterial != null)
+                {
+                    var mat = textureBaker.resultMaterial;
+                    var texPropIds = mat.GetTexturePropertyNameIDs();
+                    Log($"  resultMaterial ({mat.name}, shader={mat.shader.name}):");
+                    foreach (int id in texPropIds)
+                    {
+                        var tex = mat.GetTexture(id);
+                        string propName = mat.GetTexturePropertyNames()[System.Array.IndexOf(mat.GetTexturePropertyNameIDs(), id)];
+                        if (tex != null)
+                            Log($"    {propName} = {tex.name} ({tex.width}x{tex.height})");
+                        else
+                            Log($"    {propName} = (none)");
+                    }
+                }
+
+                // Switch all combined materials to DCL/Scene shader AFTER atlas is baked
+                // (so MeshBaker writes textures with the original shader, then we swap —
+                // _BaseMap is the same property name in both shaders, so the texture is preserved)
+                var dclShader = Shader.Find("DCL/Scene");
+                if (dclShader != null)
+                {
+                    void SwitchToDclScene(Material mat)
+                    {
+                        // MeshBaker wrote the atlas to "baseColorTexture" (glTFast's property name).
+                        // DCL/Scene uses "_BaseMap". Grab the texture before swapping shader.
+                        var atlas = mat.HasProperty("baseColorTexture") ? mat.GetTexture("baseColorTexture") : null;
+                        // Also try _BaseMap in case MeshBaker wrote to that
+                        if (atlas == null && mat.HasProperty("_BaseMap"))
+                            atlas = mat.GetTexture("_BaseMap");
+
+                        mat.shader = dclShader;
+
+                        // Re-assign the atlas to _BaseMap on the DCL/Scene shader
+                        if (atlas != null && mat.HasProperty("_BaseMap"))
+                            mat.SetTexture("_BaseMap", atlas);
+
+                        EditorUtility.SetDirty(mat);
+                    }
+
+                    if (useMultiMaterial)
+                    {
+                        foreach (var entry in textureBaker.resultMaterials)
+                        {
+                            if (entry.combinedMaterial != null)
+                                SwitchToDclScene(entry.combinedMaterial);
+                        }
+                    }
+                    else if (textureBaker.resultMaterial != null)
+                    {
+                        SwitchToDclScene(textureBaker.resultMaterial);
+                    }
+
+                    AssetDatabase.SaveAssets();
+                    Log("Switched combined material(s) to DCL/Scene shader.");
+                }
+                else
+                {
+                    Log("WARNING: DCL/Scene shader not found, using default.");
+                }
 
                 // =====================================================
                 // Step C: Create empty result prefab
@@ -474,6 +627,7 @@ namespace DCL.ABConverter.Editor
 
                 var meshBaker = meshBakerGo.AddComponent<MB3_MeshBaker>();
                 meshBaker.textureBakeResults = textureBaker.textureBakeResults;
+                meshBaker.meshCombiner.lightmapOption = MB2_LightmapOptions.copy_UV2_unchanged;
                 meshBaker.meshCombiner.outputOption = MB2_OutputOptions.bakeIntoPrefab;
                 meshBaker.resultPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
                 meshBaker.resultPrefabLeaveInstanceInSceneAfterBake = false;
@@ -510,6 +664,67 @@ namespace DCL.ABConverter.Editor
             {
                 UnityEngine.Object.DestroyImmediate(bakerHost);
             }
+        }
+
+        private static void SetMaterialOpaque(Material mat)
+        {
+            if (!mat.HasProperty("_Surface")) return;
+
+            mat.SetFloat("_Surface", 0);
+            mat.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.One);
+            mat.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.Zero);
+            if (mat.HasProperty("_SrcBlendAlpha"))
+                mat.SetFloat("_SrcBlendAlpha", (float)UnityEngine.Rendering.BlendMode.One);
+            if (mat.HasProperty("_DstBlendAlpha"))
+                mat.SetFloat("_DstBlendAlpha", (float)UnityEngine.Rendering.BlendMode.Zero);
+            mat.SetFloat("_ZWrite", 1);
+            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry;
+            mat.SetOverrideTag("RenderType", "Opaque");
+            mat.DisableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            mat.DisableKeyword("_ALPHABLEND_ON");
+        }
+
+        private static void SetMaterialTransparent(Material mat)
+        {
+            if (!mat.HasProperty("_Surface")) return;
+
+            mat.SetFloat("_Surface", 1);
+            mat.SetFloat("_Blend", 0); // Alpha
+            mat.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            mat.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            if (mat.HasProperty("_SrcBlendAlpha"))
+                mat.SetFloat("_SrcBlendAlpha", (float)UnityEngine.Rendering.BlendMode.One);
+            if (mat.HasProperty("_DstBlendAlpha"))
+                mat.SetFloat("_DstBlendAlpha", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            mat.SetFloat("_ZWrite", 0);
+            mat.SetFloat("_AlphaClip", 0);
+            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            mat.SetOverrideTag("RenderType", "Transparent");
+            mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            mat.DisableKeyword("_ALPHATEST_ON");
+            mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+        }
+
+        private static bool IsTransparentMaterial(Material mat)
+        {
+            if (mat == null) return false;
+
+            // URP _Surface property: 0 = Opaque, 1 = Transparent
+            if (mat.HasProperty("_Surface") && mat.GetFloat("_Surface") >= 1f)
+                return true;
+
+            // Common transparency keywords
+            if (mat.IsKeywordEnabled("_ALPHABLEND_ON") ||
+                mat.IsKeywordEnabled("_ALPHATEST_ON") ||
+                mat.IsKeywordEnabled("_SURFACE_TYPE_TRANSPARENT"))
+                return true;
+
+            // Render queue >= AlphaTest (2450+)
+            if (mat.renderQueue >= (int)UnityEngine.Rendering.RenderQueue.AlphaTest)
+                return true;
+
+            return false;
         }
 
         #endregion
