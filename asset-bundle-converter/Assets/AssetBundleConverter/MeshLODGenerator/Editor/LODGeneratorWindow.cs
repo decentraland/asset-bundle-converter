@@ -9,7 +9,6 @@ using System.Threading.Tasks;
 using Cysharp.Threading.Tasks;
 using DCL;
 using DCL.ABConverter;
-using GLTFast;
 using GLTFast.Export;
 using GLTFast.Logging;
 using UnityEditor;
@@ -64,9 +63,9 @@ namespace DCL.ABConverter.Editor
                 "Enter a scene pointer (parcel coordinates) to:\n" +
                 "1. Generate the scene manifest\n" +
                 "2. Download, import, and instance ISS assets\n" +
-                "3. Export the scene as a GLB file\n" +
-                "4. Run gltfpack to decimate\n" +
-                "5. Import decimated GLB & MeshBaker (atlas + combine) → prefab",
+                "3. MeshBaker (atlas + combine → prefab)\n" +
+                "4. Export combined scene as GLB\n" +
+                "5. Run gltfpack to decimate",
                 MessageType.Info);
 
             EditorGUILayout.Space();
@@ -177,9 +176,19 @@ namespace DCL.ABConverter.Editor
 
                 Log("AssetBundleConverter finished.");
 
-                // Step 3: Export instanced scene to GLB
-                Log("\n=== Step 3/5: Exporting scene to GLB ===");
-                EditorUtility.DisplayProgressBar("LOD Generator", "Exporting GLB...", 0.4f);
+                // Copy non-readable textures to standalone PNGs and swap material references
+                EditorUtility.DisplayProgressBar("LOD Generator", "Copying textures as readable...", 0.35f);
+                CopyTexturesAsReadable();
+
+                // Step 3: MeshBaker (atlas + combine)
+                Log("\n=== Step 3/5: MeshBaker (atlas + combine → prefab) ===");
+                EditorUtility.DisplayProgressBar("LOD Generator", "Baking textures & combining meshes...", 0.4f);
+
+                string prefabPath = RunMeshBaker(sceneId);
+
+                // Step 4: Export combined scene to GLB
+                Log("\n=== Step 4/5: Exporting scene to GLB ===");
+                EditorUtility.DisplayProgressBar("LOD Generator", "Exporting GLB...", 0.6f);
 
                 string exportPath = await ExportSceneToGlb(sceneId);
 
@@ -189,41 +198,20 @@ namespace DCL.ABConverter.Editor
                     return;
                 }
 
-                // Step 4: Run gltfpack to decimate
-                Log("\n=== Step 4/5: Running gltfpack (decimate to 10%) ===");
-                EditorUtility.DisplayProgressBar("LOD Generator", "Running gltfpack decimation...", 0.55f);
+                // Step 5: Run gltfpack to decimate
+                Log("\n=== Step 5/5: Running gltfpack (decimate to 10%) ===");
+                EditorUtility.DisplayProgressBar("LOD Generator", "Running gltfpack decimation...", 0.8f);
 
                 string decimatedPath = RunGltfpack(exportPath, sceneId);
 
-                if (string.IsNullOrEmpty(decimatedPath))
-                {
-                    Log("ERROR: gltfpack decimation failed. Aborting.");
-                    return;
-                }
-
-                // Step 5: Import decimated GLB back and run MeshBaker
-                Log("\n=== Step 5/5: MeshBaker (atlas + combine → prefab) ===");
-                EditorUtility.DisplayProgressBar("LOD Generator", "Importing decimated GLB...", 0.7f);
-
-                // Clear the scene of original objects
-                ClearSceneObjects();
-
-                // Import the decimated GLB into the scene
-                await ImportGlbIntoScene(decimatedPath);
-
-                Log("Running MeshBaker on decimated mesh...");
-                EditorUtility.DisplayProgressBar("LOD Generator", "Baking textures & combining meshes...", 0.8f);
-
-                string prefabPath = RunMeshBaker(sceneId);
-
                 Log("\n=== LOD Generation Complete ===");
                 string message = $"LOD generation complete for pointer ({xCoord},{yCoord}).\nScene ID: {sceneId}";
-                if (!string.IsNullOrEmpty(exportPath))
-                    message += $"\nOriginal GLB: {exportPath}";
-                if (!string.IsNullOrEmpty(decimatedPath))
-                    message += $"\nDecimated GLB: {decimatedPath}";
                 if (!string.IsNullOrEmpty(prefabPath))
                     message += $"\nCombined prefab: {prefabPath}";
+                if (!string.IsNullOrEmpty(exportPath))
+                    message += $"\nCombined GLB: {exportPath}";
+                if (!string.IsNullOrEmpty(decimatedPath))
+                    message += $"\nDecimated GLB: {decimatedPath}";
                 EditorUtility.DisplayDialog("LOD Generator", message, "OK");
             }
             catch (Exception e)
@@ -592,6 +580,13 @@ namespace DCL.ABConverter.Editor
                         if (atlas != null && mat.HasProperty("_BaseMap"))
                             mat.SetTexture("_BaseMap", atlas);
 
+                        // Zero out emission so it doesn't blow out the material
+                        if (mat.HasProperty("_EmissionColor"))
+                            mat.SetColor("_EmissionColor", Color.black);
+                        if (mat.HasProperty("_EmissionMap"))
+                            mat.SetTexture("_EmissionMap", null);
+                        mat.DisableKeyword("_EMISSION");
+
                         EditorUtility.SetDirty(mat);
                     }
 
@@ -946,92 +941,92 @@ namespace DCL.ABConverter.Editor
             Log($"Cleared {count} object(s) from scene.");
         }
 
-        /// <summary>
-        /// Imports a GLB file into the active scene using glTFast.
-        /// </summary>
-        private async UniTask ImportGlbIntoScene(string glbPath)
-        {
-            string fullPath = Path.GetFullPath(glbPath);
-
-            Log($"Importing GLB: {fullPath}");
-
-            var gltfImport = new GltfImport(deferAgent: new UninterruptedDeferAgent(), logger: new ConsoleLogger());
-            bool loaded = await gltfImport.LoadFile(fullPath);
-
-            if (!loaded)
-            {
-                Log("ERROR: Failed to load decimated GLB.");
-                return;
-            }
-
-            var parent = new GameObject("_ImportedDecimated");
-            bool instantiated = await gltfImport.InstantiateMainSceneAsync(parent.transform);
-
-            if (!instantiated)
-            {
-                Log("ERROR: Failed to instantiate decimated GLB scene.");
-                UnityEngine.Object.DestroyImmediate(parent);
-                return;
-            }
-
-            Log($"Decimated GLB imported with {parent.GetComponentsInChildren<MeshRenderer>().Length} renderer(s).");
-
-            // Make all textures readable so MeshBaker can build atlases
-            MakeAllTexturesReadable(parent);
-        }
+        private const string READABLE_TEXTURES_FOLDER = "Assets/_ReadableTextures";
 
         /// <summary>
-        /// glTFast imports textures as non-readable. MeshBaker needs readable textures
-        /// to build atlases. This copies each texture via RenderTexture to make it readable.
+        /// Finds all non-readable textures on scene materials, blits them to new standalone PNGs
+        /// in _ReadableTextures folder with isReadable=true, and swaps the material references.
         /// </summary>
-        private void MakeAllTexturesReadable(GameObject root)
+        private void CopyTexturesAsReadable()
         {
-            int count = 0;
-            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            EnsureFolderExists(READABLE_TEXTURES_FOLDER);
 
-            foreach (var renderer in renderers)
+            var allRootObjects = UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetRootGameObjects();
+            var copied = new Dictionary<Texture2D, Texture2D>();
+            int swapCount = 0;
+
+            foreach (var root in allRootObjects)
             {
-                foreach (var mat in renderer.sharedMaterials)
+                if (root.GetComponent<Camera>() != null || root.GetComponent<Light>() != null)
+                    continue;
+
+                foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
                 {
-                    if (mat == null) continue;
-
-                    var texProps = mat.GetTexturePropertyNameIDs();
-                    foreach (int propId in texProps)
+                    foreach (var mat in renderer.sharedMaterials)
                     {
-                        var tex = mat.GetTexture(propId) as Texture2D;
-                        if (tex == null || tex.isReadable) continue;
+                        if (mat == null) continue;
 
-                        var readable = CopyTextureToReadable(tex);
-                        if (readable != null)
+                        foreach (string propName in mat.GetTexturePropertyNames())
                         {
-                            mat.SetTexture(propId, readable);
-                            count++;
+                            var tex = mat.GetTexture(propName) as Texture2D;
+                            if (tex == null || tex.isReadable) continue;
+
+                            // Already copied this texture
+                            if (copied.TryGetValue(tex, out var existing))
+                            {
+                                mat.SetTexture(propName, existing);
+                                swapCount++;
+                                continue;
+                            }
+
+                            // Blit via RenderTexture to get pixels
+                            var rt = RenderTexture.GetTemporary(tex.width, tex.height, 0, RenderTextureFormat.ARGB32);
+                            Graphics.Blit(tex, rt);
+                            var prev = RenderTexture.active;
+                            RenderTexture.active = rt;
+
+                            var tmp = new Texture2D(tex.width, tex.height, TextureFormat.RGBA32, false);
+                            tmp.ReadPixels(new Rect(0, 0, tex.width, tex.height), 0, 0);
+                            tmp.Apply();
+
+                            RenderTexture.active = prev;
+                            RenderTexture.ReleaseTemporary(rt);
+
+                            // Save as standalone PNG
+                            string safeName = tex.name.Replace("/", "_").Replace("\\", "_");
+                            string pngPath = Path.Combine(READABLE_TEXTURES_FOLDER, $"{safeName}.png");
+
+                            // Avoid name collisions
+                            if (File.Exists(pngPath))
+                                pngPath = Path.Combine(READABLE_TEXTURES_FOLDER, $"{safeName}_{tex.GetInstanceID()}.png");
+
+                            File.WriteAllBytes(pngPath, tmp.EncodeToPNG());
+                            UnityEngine.Object.DestroyImmediate(tmp);
+
+                            AssetDatabase.ImportAsset(pngPath);
+
+                            // Set readable on the standalone PNG
+                            var importer = AssetImporter.GetAtPath(pngPath) as TextureImporter;
+                            if (importer != null)
+                            {
+                                importer.isReadable = true;
+                                importer.sRGBTexture = true;
+                                importer.SaveAndReimport();
+                            }
+
+                            var readableTex = AssetDatabase.LoadAssetAtPath<Texture2D>(pngPath);
+                            if (readableTex != null)
+                            {
+                                copied[tex] = readableTex;
+                                mat.SetTexture(propName, readableTex);
+                                swapCount++;
+                            }
                         }
                     }
                 }
             }
 
-            if (count > 0)
-                Log($"Made {count} texture(s) readable for MeshBaker.");
-        }
-
-        private Texture2D CopyTextureToReadable(Texture2D source)
-        {
-            var rt = RenderTexture.GetTemporary(source.width, source.height, 0, RenderTextureFormat.ARGB32);
-            Graphics.Blit(source, rt);
-
-            var previous = RenderTexture.active;
-            RenderTexture.active = rt;
-
-            var readable = new Texture2D(source.width, source.height, TextureFormat.RGBA32, false);
-            readable.ReadPixels(new Rect(0, 0, source.width, source.height), 0, 0);
-            readable.Apply();
-            readable.name = source.name;
-
-            RenderTexture.active = previous;
-            RenderTexture.ReleaseTemporary(rt);
-
-            return readable;
+            Log($"Copied {copied.Count} texture(s) as readable PNGs, swapped {swapCount} material reference(s).");
         }
 
         #endregion
