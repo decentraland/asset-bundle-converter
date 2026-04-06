@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Cysharp.Threading.Tasks;
 using DCL;
 using DCL.ABConverter;
+using GLTFast;
 using GLTFast.Export;
 using GLTFast.Logging;
 using UnityEditor;
@@ -186,6 +187,39 @@ namespace DCL.ABConverter.Editor
 
                 string prefabPath = RunMeshBaker(sceneId);
 
+                // Clear the entire scene and instantiate only the prefab for export
+                ClearSceneObjects();
+                if (!string.IsNullOrEmpty(prefabPath))
+                {
+                    var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+                    if (prefab != null)
+                    {
+                        PrefabUtility.InstantiatePrefab(prefab);
+                        Log("Instantiated combined prefab for export.");
+                    }
+                }
+
+                // Swap DCL/Scene to URP/Lit on scene instances only for GLB export
+                // (glTFast can't export DCL/Scene). Uses material instances so the
+                // prefab's asset materials keep DCL/Scene shader.
+                var urpLitShader = Shader.Find("Universal Render Pipeline/Lit");
+                if (urpLitShader != null)
+                {
+                    foreach (var renderer in UnityEngine.Object.FindObjectsOfType<Renderer>())
+                    {
+                        var mats = renderer.sharedMaterials;
+                        for (int i = 0; i < mats.Length; i++)
+                        {
+                            if (mats[i] != null && mats[i].shader.name == "DCL/Scene")
+                            {
+                                mats[i] = new Material(mats[i]);
+                                mats[i].shader = urpLitShader;
+                            }
+                        }
+                        renderer.sharedMaterials = mats;
+                    }
+                }
+
                 // Step 4: Export combined scene to GLB
                 Log("\n=== Step 4/5: Exporting scene to GLB ===");
                 EditorUtility.DisplayProgressBar("LOD Generator", "Exporting GLB...", 0.6f);
@@ -204,14 +238,26 @@ namespace DCL.ABConverter.Editor
 
                 string decimatedPath = RunGltfpack(exportPath, sceneId);
 
+                // Step 6: Import decimated GLB with DCL/Scene shader and save as persistent prefab
+                string finalPrefabPath = null;
+                if (!string.IsNullOrEmpty(decimatedPath))
+                {
+                    Log("\n=== Step 6: Creating prefab from decimated GLB ===");
+                    EditorUtility.DisplayProgressBar("LOD Generator", "Importing and creating prefab...", 0.9f);
+
+                    ClearSceneObjects();
+                    await ImportGlbIntoScene(decimatedPath);
+                    finalPrefabPath = CreatePrefabFromGlb(decimatedPath, sceneId);
+                }
+
                 Log("\n=== LOD Generation Complete ===");
                 string message = $"LOD generation complete for pointer ({xCoord},{yCoord}).\nScene ID: {sceneId}";
-                if (!string.IsNullOrEmpty(prefabPath))
-                    message += $"\nCombined prefab: {prefabPath}";
                 if (!string.IsNullOrEmpty(exportPath))
                     message += $"\nCombined GLB: {exportPath}";
                 if (!string.IsNullOrEmpty(decimatedPath))
                     message += $"\nDecimated GLB: {decimatedPath}";
+                if (!string.IsNullOrEmpty(finalPrefabPath))
+                    message += $"\nFinal prefab: {finalPrefabPath}";
                 EditorUtility.DisplayDialog("LOD Generator", message, "OK");
             }
             catch (Exception e)
@@ -922,7 +968,7 @@ namespace DCL.ABConverter.Editor
         #region Import & Scene helpers
 
         /// <summary>
-        /// Destroys all non-camera/non-light root GameObjects in the active scene.
+        /// Destroys all root GameObjects in the active scene.
         /// </summary>
         private void ClearSceneObjects()
         {
@@ -931,14 +977,161 @@ namespace DCL.ABConverter.Editor
 
             foreach (var go in allRootObjects)
             {
-                if (go.GetComponent<Camera>() != null || go.GetComponent<Light>() != null)
-                    continue;
-
                 UnityEngine.Object.DestroyImmediate(go);
                 count++;
             }
 
             Log($"Cleared {count} object(s) from scene.");
+        }
+
+        /// <summary>
+        /// Imports a GLB file into the active scene using glTFast.
+        /// </summary>
+        private async UniTask ImportGlbIntoScene(string glbPath)
+        {
+            string fullPath = Path.GetFullPath(glbPath);
+            Log($"Importing GLB: {fullPath}");
+
+            var materialGenerator = new global::AssetBundleConverter.Wrappers.Implementations.Default.AssetBundleConverterMaterialGenerator(
+                useSceneShader: true,
+                isWebGLPlatform: EditorUserBuildSettings.activeBuildTarget == BuildTarget.WebGL
+            );
+            var gltfImport = new GltfImport(
+                deferAgent: new UninterruptedDeferAgent(),
+                materialGenerator: materialGenerator,
+                logger: new ConsoleLogger()
+            );
+            bool loaded = await gltfImport.LoadFile(fullPath);
+
+            if (!loaded)
+            {
+                Log("ERROR: Failed to load GLB.");
+                return;
+            }
+
+            var parent = new GameObject(Path.GetFileNameWithoutExtension(glbPath));
+            bool instantiated = await gltfImport.InstantiateMainSceneAsync(parent.transform);
+
+            if (!instantiated)
+            {
+                Log("ERROR: Failed to instantiate GLB scene.");
+                UnityEngine.Object.DestroyImmediate(parent);
+                return;
+            }
+
+            Log($"GLB imported with {parent.GetComponentsInChildren<MeshRenderer>().Length} renderer(s).");
+        }
+
+        /// <summary>
+        /// Imports a GLB via glTFast runtime API with DCL/Scene shader,
+        /// saves all meshes/materials/textures as persistent assets, and creates a prefab.
+        /// </summary>
+        private string CreatePrefabFromGlb(string glbPath, string sceneId)
+        {
+            // The GLB was already imported into the scene by ImportGlbIntoScene with DCL/Scene materials.
+            // Now save all in-memory assets (meshes, materials, textures) to disk and create a prefab.
+
+            string assetFolder = Path.Combine(EXPORTED_FOLDER, "LOD_Assets");
+            EnsureFolderExists(assetFolder);
+
+            var sceneRoots = UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetRootGameObjects();
+            GameObject root = null;
+            foreach (var go in sceneRoots)
+            {
+                if (go.GetComponent<Camera>() == null && go.GetComponent<Light>() == null)
+                {
+                    root = go;
+                    break;
+                }
+            }
+
+            if (root == null)
+            {
+                Log("WARNING: No imported object found in scene.");
+                return null;
+            }
+
+            // Save meshes, materials, and textures as persistent assets
+            var savedMeshes = new Dictionary<Mesh, Mesh>();
+            var savedMaterials = new Dictionary<Material, Material>();
+            int meshIdx = 0, matIdx = 0, texIdx = 0;
+
+            foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                // Save meshes
+                var mf = renderer.GetComponent<MeshFilter>();
+                if (mf != null && mf.sharedMesh != null && !AssetDatabase.Contains(mf.sharedMesh))
+                {
+                    if (!savedMeshes.TryGetValue(mf.sharedMesh, out var savedMesh))
+                    {
+                        string meshPath = Path.Combine(assetFolder, $"{sceneId}_mesh{meshIdx++}.asset");
+                        savedMesh = UnityEngine.Object.Instantiate(mf.sharedMesh);
+                        AssetDatabase.CreateAsset(savedMesh, meshPath);
+                        savedMeshes[mf.sharedMesh] = savedMesh;
+                    }
+                    mf.sharedMesh = savedMesh;
+                }
+
+                // Save materials and their textures
+                var mats = renderer.sharedMaterials;
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    var mat = mats[i];
+                    if (mat == null) continue;
+
+                    if (savedMaterials.TryGetValue(mat, out var savedMat))
+                    {
+                        mats[i] = savedMat;
+                        continue;
+                    }
+
+                    Log($"  Material: {mat.name}, shader={mat.shader?.name}, persistent={AssetDatabase.Contains(mat)}");
+
+                    // Always create a new copy to save — even if the material is somehow persistent
+                    var newMat = new Material(mat);
+                    newMat.CopyPropertiesFromMaterial(mat);
+
+                    // Save textures (blit via RenderTexture for non-readable textures)
+                    foreach (string propName in newMat.GetTexturePropertyNames())
+                    {
+                        var tex = newMat.GetTexture(propName) as Texture2D;
+                        if (tex != null && !AssetDatabase.Contains(tex))
+                        {
+                            // Blit to get pixel data since glTFast textures are non-readable
+                            var rt = RenderTexture.GetTemporary(tex.width, tex.height, 0, RenderTextureFormat.ARGB32);
+                            Graphics.Blit(tex, rt);
+                            var prev = RenderTexture.active;
+                            RenderTexture.active = rt;
+
+                            var texCopy = new Texture2D(tex.width, tex.height, TextureFormat.RGBA32, false);
+                            texCopy.ReadPixels(new Rect(0, 0, tex.width, tex.height), 0, 0);
+                            texCopy.Apply();
+                            texCopy.name = tex.name;
+
+                            RenderTexture.active = prev;
+                            RenderTexture.ReleaseTemporary(rt);
+
+                            string texPath = Path.Combine(assetFolder, $"{sceneId}_tex{texIdx++}.asset");
+                            AssetDatabase.CreateAsset(texCopy, texPath);
+                            newMat.SetTexture(propName, texCopy);
+                        }
+                    }
+
+                    string matPath = Path.Combine(assetFolder, $"{sceneId}_mat{matIdx++}.mat");
+                    AssetDatabase.CreateAsset(newMat, matPath);
+                    savedMaterials[mat] = newMat;
+                    mats[i] = newMat;
+                }
+                renderer.sharedMaterials = mats;
+            }
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            string prefabPath = Path.Combine(EXPORTED_FOLDER, $"{sceneId}_LOD.prefab");
+            PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
+            Log($"Prefab saved to: {prefabPath} ({savedMeshes.Count} meshes, {savedMaterials.Count} materials)");
+            return prefabPath;
         }
 
         private const string READABLE_TEXTURES_FOLDER = "Assets/_ReadableTextures";
