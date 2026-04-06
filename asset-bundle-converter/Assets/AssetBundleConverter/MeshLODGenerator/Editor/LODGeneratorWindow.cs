@@ -473,6 +473,12 @@ namespace DCL.ABConverter.Editor
                     "_DetailMask",        // Detail mask
                     "_DetailAlbedoMap",   // Detail albedo
                     "_DetailNormalMap",   // Detail normal
+                    // glTFast property names
+                    "metallicRoughnessTexture",
+                    "normalTexture",
+                    "occlusionTexture",
+                    "emissiveTexture",
+                    "transmissionTexture",
                 };
 
                 // Create assets in single-material mode — MeshBaker copies the shader from
