@@ -34,10 +34,10 @@ namespace DCL.ABConverter.Editor
         private const string OUTPUT_MANIFESTS_FOLDER = "output-manifests";
         private const string SCENE_MANIFEST_FOLDER = "Assets/_SceneManifest";
         private const string EXPORTED_FOLDER = "Assets/_ExportedLODs";
-        private const string DEFAULT_CATALYST_URL = "https://peer.decentraland.org";
+        private const string DEFAULT_CATALYST_URL = "https://peer.decentraland.zone";
 
-        private int xCoord = 0;
-        private int yCoord = 0;
+        private int xCoord = 20;
+        private int yCoord = 4;
         private string catalystUrl = DEFAULT_CATALYST_URL;
         private bool cleanBeforeRun = true;
 
