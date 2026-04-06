@@ -814,7 +814,7 @@ namespace DCL.ABConverter
                         if (loadedAsset != null)
                         {
                             newTextures.Add(loadedAsset);
-                            budgetEnforcer?.TrackTexture(env.assetDatabase.GetAssetPath(loadedAsset), loadedAsset.width, loadedAsset.height, textTypeMan.GetTextureInfo(tex.name).Types);
+                            budgetEnforcer?.TrackTexture(env.assetDatabase.GetAssetPath(loadedAsset), texName, loadedAsset.width, loadedAsset.height, textTypeMan.GetTextureInfo(tex.name).Types);
                             continue;
                         }
                     }
@@ -826,7 +826,7 @@ namespace DCL.ABConverter
                         if (loadedAsset != null)
                         {
                             newTextures.Add(loadedAsset);
-                            budgetEnforcer?.TrackTexture(texturePath, loadedAsset.width, loadedAsset.height, textTypeMan.GetTextureInfo(tex.name).Types);
+                            budgetEnforcer?.TrackTexture(texturePath, texName, loadedAsset.width, loadedAsset.height, textTypeMan.GetTextureInfo(tex.name).Types);
                             continue;
                         }
                     }
@@ -874,7 +874,7 @@ namespace DCL.ABConverter
                     newTextures.Add(extractedTex);
 
                     if (budgetEnforcer != null && extractedTex != null)
-                        budgetEnforcer.TrackTexture(texPath, extractedTex.width, extractedTex.height, textTypeMan.GetTextureInfo(tex.name).Types);
+                        budgetEnforcer.TrackTexture(texPath, texName, extractedTex.width, extractedTex.height, textTypeMan.GetTextureInfo(tex.name).Types);
                 }
             }
 

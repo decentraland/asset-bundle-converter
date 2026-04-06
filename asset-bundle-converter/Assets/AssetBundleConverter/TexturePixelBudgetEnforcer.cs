@@ -9,7 +9,7 @@ using Object = UnityEngine.Object;
 
 namespace AssetBundleConverter
 {
-    internal enum TextureLayer
+    public enum TextureLayer
     {
         ALBEDO,
         NORMAL,
@@ -17,9 +17,10 @@ namespace AssetBundleConverter
         OTHER,
     }
 
-    internal sealed class TrackedTexture
+    public class TrackedTexture
     {
         public string FilePath;
+        public string Name;
         public int Width;
         public int Height;
         public long PixelCount => (long)Width * Height;
@@ -34,7 +35,7 @@ namespace AssetBundleConverter
 
         private static readonly TextureLayer[] ALL_LAYERS = (TextureLayer[])Enum.GetValues(typeof(TextureLayer));
 
-        private readonly Dictionary<string, TrackedTexture> trackedTextures = new();
+        protected readonly Dictionary<string, TrackedTexture> trackedTextures = new();
         private readonly long budgetPerLayer;
         private readonly IFile file;
         private readonly IAssetDatabase assetDatabase;
@@ -42,13 +43,13 @@ namespace AssetBundleConverter
 
         public TexturePixelBudgetEnforcer(int parcelCount, IFile file, IAssetDatabase assetDatabase, IABLogger log)
         {
-            budgetPerLayer = PER_PARCEL_MAX_TEXTURE_SIZE * PER_PARCEL_MAX_TEXTURE_SIZE * parcelCount;
+            budgetPerLayer = (long)PER_PARCEL_MAX_TEXTURE_SIZE * PER_PARCEL_MAX_TEXTURE_SIZE * parcelCount;
             this.file = file;
             this.assetDatabase = assetDatabase;
             this.log = log;
         }
 
-        public void TrackTexture(string filePath, int width, int height, TextureType types)
+        public void TrackTexture(string filePath, string name, int width, int height, TextureType types)
         {
             if (types == TextureType.None)
                 return;
@@ -63,6 +64,7 @@ namespace AssetBundleConverter
                 trackedTextures[filePath] = new TrackedTexture
                 {
                     FilePath = filePath,
+                    Name = name,
                     Width = width,
                     Height = height,
                     Types = types,
@@ -73,20 +75,13 @@ namespace AssetBundleConverter
         {
             foreach (var layer in ALL_LAYERS)
             {
-                // new
-
                 List<TrackedTexture> candidates = trackedTextures.Values
                                                 .Where(t => GetLayers(t.Types).Contains(layer))
                                                 .ToList();
 
                 if (candidates.Count == 0) continue;
 
-                // Sort by size descending, and same size alphabetically
-                candidates.Sort((a, b) =>
-                {
-                    int cmp = b.PixelCount.CompareTo(a.PixelCount);
-                    return cmp != 0 ? cmp : string.Compare(a.FilePath, b.FilePath, StringComparison.Ordinal); // TODO (Maurizio) is this correct?
-                });
+                candidates.Sort(CompareTextures);
 
                 long totalPixels = candidates.Sum(c => c.PixelCount);
 
@@ -130,60 +125,10 @@ namespace AssetBundleConverter
 
                     index = (index + 1) % candidates.Count;
                 }
-
-                // end new
-
-                // var candidates = trackedTextures.Values
-                //     .Where(t => GetLayers(t.Types).Contains(layer))
-                //     .ToList();
-                //
-                // long totalPixels = candidates.Sum(c => c.PixelCount);
-                //
-                // while (totalPixels > budgetPerLayer)
-                // {
-                //     candidates.Sort((a, b) =>
-                //     {
-                //         int cmp = b.PixelCount.CompareTo(a.PixelCount);
-                //         return cmp != 0 ? cmp : string.Compare(a.FilePath, b.FilePath, StringComparison.Ordinal);
-                //     });
-                //
-                //     var largest = candidates[0];
-                //
-                //     if (largest.Width <= 1 && largest.Height <= 1)
-                //     {
-                //         log.Warning($"Texture budget for layer {layer} cannot be met, largest texture already at 1x1");
-                //         break;
-                //     }
-                //
-                //     long excess = totalPixels - budgetPerLayer;
-                //     long currentPixels = largest.PixelCount;
-                //     long targetPixels = Math.Max(1, currentPixels - excess);
-                //
-                //     // targetPixels = w*h*f^2 => f = sqrt(targetPixels / currentPixels)
-                //     float factor = Mathf.Sqrt((float)targetPixels / currentPixels);
-                //
-                //     // If factor < 0.5, only halve — the next iteration will pick
-                //     // the new largest texture and continue reducing
-                //     if (factor < 0.5f)
-                //         factor = 0.5f;
-                //
-                //     int newWidth = Mathf.Max(1, (int)(largest.Width * factor));
-                //     int newHeight = Mathf.Max(1, (int)(largest.Height * factor));
-                //
-                //     if (newWidth == largest.Width && newHeight == largest.Height)
-                //     {
-                //         log.Warning($"Texture budget for layer {layer} cannot be met, no further reduction possible for {largest.FilePath}");
-                //         break;
-                //     }
-                //
-                //     long oldPixels = largest.PixelCount;
-                //     ResizeTrackedTexture(largest, newWidth, newHeight);
-                //     totalPixels -= oldPixels - largest.PixelCount;
-                //}
             }
         }
 
-        private void ResizeTrackedTexture(TrackedTexture texture, int newWidth, int newHeight)
+        protected virtual void ResizeTrackedTexture(TrackedTexture texture, int newWidth, int newHeight)
         {
             byte[] image = file.ReadAllBytes(texture.FilePath);
 
@@ -209,6 +154,17 @@ namespace AssetBundleConverter
 
             texture.Width = newWidth;
             texture.Height = newHeight;
+        }
+
+        /// <summary>
+        /// Sort by pixel count descending, then by name, then by full path for determinism.
+        /// </summary>
+        private static int CompareTextures(TrackedTexture a, TrackedTexture b)
+        {
+            int cmp = b.PixelCount.CompareTo(a.PixelCount);
+            if (cmp != 0) return cmp;
+            cmp = string.Compare(a.Name, b.Name, StringComparison.Ordinal);
+            return cmp != 0 ? cmp : string.Compare(a.FilePath, b.FilePath, StringComparison.Ordinal);
         }
 
         private static HashSet<TextureLayer> GetLayers(TextureType types)
