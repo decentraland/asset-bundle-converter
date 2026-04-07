@@ -16,6 +16,8 @@ using UnityEditor;
 using UnityEngine;
 using DigitalOpus.MB.Core;
 using DigitalOpus.MB.MBEditor; // for MB3_EditorMethods
+using Newtonsoft.Json;
+using UnityEngine.Networking;
 using Debug = UnityEngine.Debug;
 using Environment = AssetBundleConverter.Environment;
 using SystemFile = AssetBundleConverter.Wrappers.Implementations.Default.SystemWrappers.File;
@@ -205,18 +207,22 @@ namespace DCL.ABConverter.Editor
                     currentSceneId = sceneId;
                     Log($"Reusing scene: {sceneId}");
 
-                    // Still need to run the converter to instance ISS assets in scene
-                    Log("\n=== Step 2/5: Running AssetBundleConverter (reusing downloads) ===");
+                    // Instance ISS assets from existing downloads (same as ScenePlacementEditor)
+                    Log("\n=== Step 2/5: Instancing assets from _Downloaded ===");
                     EditorUtility.DisplayProgressBar("LOD Generator", "Instancing assets...", 0.2f);
 
-                    await RunAssetBundleConverter();
+                    await PlaceAssetsFromDownloaded(sceneId);
 
-                    Log("AssetBundleConverter finished.");
+                    Log("Assets instanced.");
 
                     // Copy non-readable textures
                     EditorUtility.DisplayProgressBar("LOD Generator", "Copying textures as readable...", 0.35f);
                     CopyTexturesAsReadable();
                 }
+
+                // Deduplicate identical textures across materials to reduce atlas size
+                EditorUtility.DisplayProgressBar("LOD Generator", "Deduplicating textures...", 0.38f);
+                DeduplicateTextures();
 
                 // Step 3: MeshBaker (atlas + combine)
                 Log("\n=== Step 3/5: MeshBaker (atlas + combine → prefab) ===");
@@ -522,7 +528,7 @@ namespace DCL.ABConverter.Editor
                 var textureBaker = bakerHost.AddComponent<MB3_TextureBaker>();
                 textureBaker.objsToMesh = objectsToCombine;
                 textureBaker.atlasPadding = 2;
-                textureBaker.maxAtlasSize = 4096;
+                textureBaker.maxAtlasSize = 1024;
                 textureBaker.fixOutOfBoundsUVs = true;
                 textureBaker.resizePowerOfTwoTextures = true;
 
@@ -1043,6 +1049,185 @@ namespace DCL.ABConverter.Editor
         }
 
         /// <summary>
+        /// Finds duplicate textures across scene materials by hashing file content,
+        /// and replaces duplicates with a single shared reference.
+        /// This reduces atlas size since MeshBaker only includes unique textures.
+        /// </summary>
+        private void DeduplicateTextures()
+        {
+            var hashToTexture = new Dictionary<string, Texture2D>(); // file hash → canonical texture
+            var allRootObjects = UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetRootGameObjects();
+            int deduped = 0;
+            int total = 0;
+
+            using (var md5 = System.Security.Cryptography.MD5.Create())
+            {
+                foreach (var root in allRootObjects)
+                {
+                    if (root.GetComponent<Camera>() != null || root.GetComponent<Light>() != null)
+                        continue;
+
+                    foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
+                    {
+                        foreach (var mat in renderer.sharedMaterials)
+                        {
+                            if (mat == null) continue;
+
+                            foreach (string propName in mat.GetTexturePropertyNames())
+                            {
+                                var tex = mat.GetTexture(propName) as Texture2D;
+                                if (tex == null) continue;
+
+                                total++;
+
+                                // Try to hash by file on disk (fast)
+                                string assetPath = AssetDatabase.GetAssetPath(tex);
+                                string hash = null;
+
+                                if (!string.IsNullOrEmpty(assetPath) && File.Exists(assetPath))
+                                {
+                                    byte[] fileBytes = File.ReadAllBytes(assetPath);
+                                    byte[] hashBytes = md5.ComputeHash(fileBytes);
+                                    hash = System.BitConverter.ToString(hashBytes).Replace("-", "");
+                                }
+
+                                if (hash == null) continue;
+
+                                if (hashToTexture.TryGetValue(hash, out var canonical))
+                                {
+                                    if (canonical != tex)
+                                    {
+                                        mat.SetTexture(propName, canonical);
+                                        deduped++;
+                                    }
+                                }
+                                else
+                                {
+                                    hashToTexture[hash] = tex;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Log($"Texture deduplication: {total} references, {deduped} replaced, {hashToTexture.Count} unique textures.");
+        }
+
+        /// <summary>
+        /// Places assets from _Downloaded folder into the scene using the ISS manifest,
+        /// same approach as ScenePlacementEditor ("Instantiate Initial Scene State").
+        /// </summary>
+        private async UniTask PlaceAssetsFromDownloaded(string sceneId)
+        {
+            string manifestPath = $"Assets/_SceneManifest/{sceneId}-lod-manifest.json";
+
+            if (!File.Exists(manifestPath))
+            {
+                Log($"ERROR: Manifest not found at {manifestPath}");
+                return;
+            }
+
+            // Download entity mapping to get hash → file path mapping
+            string entityUrl = $"{catalystUrl}/content/entities/active";
+            string jsonBody = "{\"ids\":[\"" + sceneId + "\"]}";
+
+            Log($"Downloading entity mapping for {sceneId}...");
+
+            string entityMappingJson;
+            using (var request = UnityWebRequest.Post(entityUrl, jsonBody, "application/json"))
+            {
+                await request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    Log($"ERROR: Failed to download entity mapping: {request.error}");
+                    return;
+                }
+
+                entityMappingJson = request.downloadHandler.text;
+            }
+
+            var entityDTOArray = JsonConvert.DeserializeObject<ContentServerUtils.EntityMappingsDTO[]>(entityMappingJson);
+            if (entityDTOArray == null || entityDTOArray.Length == 0)
+            {
+                Log("ERROR: Failed to parse entity mapping.");
+                return;
+            }
+
+            var entityDTO = entityDTOArray[0];
+
+            // Build hash → file mapping
+            var hashToFileMap = new Dictionary<string, string>();
+            if (entityDTO.content != null)
+            {
+                foreach (var mapping in entityDTO.content)
+                {
+                    if (!string.IsNullOrEmpty(mapping.hash) && !string.IsNullOrEmpty(mapping.file))
+                        hashToFileMap[mapping.hash] = mapping.file;
+                }
+            }
+
+            // Initialize scene state generator
+            var env = Environment.CreateWithDefaultImplementations(BuildPipelineType.Scriptable);
+            env.InitializeSceneStateGenerator(entityDTO);
+            env.sceneStateGenerator.GenerateInitialSceneState();
+
+            // Find GLB assets in _Downloaded and place them
+            string downloadedFolder = "Assets/_Downloaded/";
+            int placedCount = 0;
+
+            if (!Directory.Exists(downloadedFolder))
+            {
+                Log("ERROR: _Downloaded folder does not exist.");
+                return;
+            }
+
+            string[] allFiles = Directory.GetFiles(downloadedFolder, "*.*", SearchOption.AllDirectories);
+
+            foreach (string filePath in allFiles)
+            {
+                if (!filePath.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) &&
+                    !filePath.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string assetPath = filePath.Replace("\\", "/");
+                GameObject asset = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+
+                if (asset == null) continue;
+
+                // Extract hash from path: Assets/_Downloaded/hash/hash.glb
+                string[] pathParts = assetPath.Split('/');
+                string hash = null;
+                for (int i = 0; i < pathParts.Length - 1; i++)
+                {
+                    if (pathParts[i] == "_Downloaded" && i + 1 < pathParts.Length)
+                    {
+                        hash = pathParts[i + 1];
+                        break;
+                    }
+                }
+
+                if (hash == null) continue;
+
+                if (!hashToFileMap.TryGetValue(hash, out string manifestFilePath))
+                    continue;
+
+                try
+                {
+                    env.sceneStateGenerator.PlaceAssetFromManifest(manifestFilePath, asset);
+                    placedCount++;
+                }
+                catch (Exception e)
+                {
+                    Log($"WARNING: Failed to place {hash}: {e.Message}");
+                }
+            }
+
+            Log($"Placed {placedCount} asset(s) from _Downloaded.");
+        }
+
+        /// <summary>
         /// Imports a GLB file into the active scene using glTFast.
         /// </summary>
         private async UniTask ImportGlbIntoScene(string glbPath)
@@ -1150,6 +1335,13 @@ namespace DCL.ABConverter.Editor
                     // Always create a new copy to save — even if the material is somehow persistent
                     var newMat = new Material(mat);
                     newMat.CopyPropertiesFromMaterial(mat);
+
+                    // Clear normal map (not needed for LOD, comes from glTFast import)
+                    if (newMat.HasProperty("_BumpMap"))
+                        newMat.SetTexture("_BumpMap", null);
+                    if (newMat.HasProperty("normalTexture"))
+                        newMat.SetTexture("normalTexture", null);
+                    newMat.DisableKeyword("_NORMALMAP");
 
                     // Save textures (blit via RenderTexture for non-readable textures)
                     foreach (string propName in newMat.GetTexturePropertyNames())
