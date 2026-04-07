@@ -1171,9 +1171,16 @@ namespace DCL.ABConverter.Editor
                             RenderTexture.active = prev;
                             RenderTexture.ReleaseTemporary(rt);
 
-                            // Save as PNG (much smaller than .asset)
-                            string texPath = Path.Combine(assetFolder, $"{sceneId}_tex{texIdx++}.png");
-                            File.WriteAllBytes(texPath, texCopy.EncodeToPNG());
+                            // Save as JPEG for opaque (smaller), PNG for transparent (needs alpha)
+                            bool isTransparent = newMat.HasProperty("_Surface") && newMat.GetFloat("_Surface") >= 1f;
+                            string ext = isTransparent ? "png" : "jpg";
+                            string texPath = Path.Combine(assetFolder, $"{sceneId}_tex{texIdx++}.{ext}");
+
+                            byte[] bytes = isTransparent
+                                ? texCopy.EncodeToPNG()
+                                : texCopy.EncodeToJPG(85);
+
+                            File.WriteAllBytes(texPath, bytes);
                             UnityEngine.Object.DestroyImmediate(texCopy);
 
                             AssetDatabase.ImportAsset(texPath);
