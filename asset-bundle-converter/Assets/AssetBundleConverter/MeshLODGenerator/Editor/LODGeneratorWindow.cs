@@ -40,6 +40,7 @@ namespace DCL.ABConverter.Editor
         private int yCoord = 4;
         private string catalystUrl = DEFAULT_CATALYST_URL;
         private bool cleanBeforeRun = true;
+        private bool skipDownload = false;
 
         private Vector2 scrollPosition;
         private string processLog = "";
@@ -91,6 +92,7 @@ namespace DCL.ABConverter.Editor
             EditorGUILayout.EndHorizontal();
 
             cleanBeforeRun = EditorGUILayout.Toggle("Clean folders before run", cleanBeforeRun);
+            skipDownload = EditorGUILayout.Toggle("Skip download (reuse _Downloaded)", skipDownload);
 
             EditorGUILayout.Space();
 
@@ -155,31 +157,66 @@ namespace DCL.ABConverter.Editor
                     ClearSceneObjects();
                 }
 
-                // Step 1: Generate the scene manifest
-                Log("=== Step 1/5: Generating Scene Manifest ===");
-                EditorUtility.DisplayProgressBar("LOD Generator", "Generating scene manifest...", 0.1f);
+                string sceneId;
 
-                string sceneId = await GenerateManifest();
-                if (string.IsNullOrEmpty(sceneId))
+                if (!skipDownload)
                 {
-                    Log("ERROR: Failed to generate manifest. Aborting.");
-                    return;
+                    // Step 1: Generate the scene manifest
+                    Log("=== Step 1/5: Generating Scene Manifest ===");
+                    EditorUtility.DisplayProgressBar("LOD Generator", "Generating scene manifest...", 0.1f);
+
+                    sceneId = await GenerateManifest();
+                    if (string.IsNullOrEmpty(sceneId))
+                    {
+                        Log("ERROR: Failed to generate manifest. Aborting.");
+                        return;
+                    }
+
+                    currentSceneId = sceneId;
+                    Log($"Manifest generated for scene: {sceneId}");
+
+                    // Step 2: Run the AssetBundleConverter pipeline (download, import, instance ISS assets)
+                    Log("\n=== Step 2/5: Running AssetBundleConverter ===");
+                    EditorUtility.DisplayProgressBar("LOD Generator", "Running asset conversion...", 0.2f);
+
+                    await RunAssetBundleConverter();
+
+                    Log("AssetBundleConverter finished.");
+
+                    // Copy non-readable textures to standalone PNGs and swap material references
+                    EditorUtility.DisplayProgressBar("LOD Generator", "Copying textures as readable...", 0.35f);
+                    CopyTexturesAsReadable();
                 }
+                else
+                {
+                    // Reuse existing downloads — find sceneId from manifest folder
+                    Log("Skipping download, reusing existing _Downloaded folder.");
+                    string[] manifests = Directory.Exists(SCENE_MANIFEST_FOLDER)
+                        ? Directory.GetFiles(SCENE_MANIFEST_FOLDER, "*-lod-manifest.json")
+                        : new string[0];
 
-                currentSceneId = sceneId;
-                Log($"Manifest generated for scene: {sceneId}");
+                    if (manifests.Length == 0)
+                    {
+                        Log("ERROR: No manifest found. Run without skip first.");
+                        return;
+                    }
 
-                // Step 2: Run the AssetBundleConverter pipeline (download, import, instance ISS assets)
-                Log("\n=== Step 2/5: Running AssetBundleConverter ===");
-                EditorUtility.DisplayProgressBar("LOD Generator", "Running asset conversion...", 0.2f);
+                    sceneId = Path.GetFileName(manifests[0]).Replace("-lod-manifest.json", "");
+                    currentSceneId = sceneId;
+                    Log($"Reusing scene: {sceneId}");
 
-                await RunAssetBundleConverter();
+                    // Still need to run the converter to instance ISS assets in scene
+                    Log("\n=== Step 2/5: Running AssetBundleConverter (reusing downloads) ===");
+                    EditorUtility.DisplayProgressBar("LOD Generator", "Instancing assets...", 0.2f);
 
-                Log("AssetBundleConverter finished.");
+                    await RunAssetBundleConverter();
 
-                // Copy non-readable textures to standalone PNGs and swap material references
-                EditorUtility.DisplayProgressBar("LOD Generator", "Copying textures as readable...", 0.35f);
-                CopyTexturesAsReadable();
+                    Log("AssetBundleConverter finished.");
+
+                    // Copy non-readable textures
+                    EditorUtility.DisplayProgressBar("LOD Generator", "Copying textures as readable...", 0.35f);
+                    CopyTexturesAsReadable();
+                }
 
                 // Step 3: MeshBaker (atlas + combine)
                 Log("\n=== Step 3/5: MeshBaker (atlas + combine → prefab) ===");
@@ -626,12 +663,33 @@ namespace DCL.ABConverter.Editor
                         if (atlas != null && mat.HasProperty("_BaseMap"))
                             mat.SetTexture("_BaseMap", atlas);
 
-                        // Zero out emission so it doesn't blow out the material
+                        // Reset material properties for LOD (flat, no reflections, no emission)
+                        if (mat.HasProperty("_Metallic"))
+                            mat.SetFloat("_Metallic", 0f);
+                        if (mat.HasProperty("_Smoothness"))
+                            mat.SetFloat("_Smoothness", 0f);
+                        if (mat.HasProperty("_MetallicGlossMap"))
+                            mat.SetTexture("_MetallicGlossMap", null);
+                        if (mat.HasProperty("_SpecularHighlights"))
+                            mat.SetFloat("_SpecularHighlights", 0f);
+                        if (mat.HasProperty("_EnvironmentReflections"))
+                            mat.SetFloat("_EnvironmentReflections", 0f);
+                        if (mat.HasProperty("_GlossMapScale"))
+                            mat.SetFloat("_GlossMapScale", 0f);
                         if (mat.HasProperty("_EmissionColor"))
                             mat.SetColor("_EmissionColor", Color.black);
                         if (mat.HasProperty("_EmissionMap"))
                             mat.SetTexture("_EmissionMap", null);
                         mat.DisableKeyword("_EMISSION");
+                        mat.DisableKeyword("_SPECGLOSSMAP");
+                        mat.DisableKeyword("_METALLICSPECGLOSSMAP");
+
+                        // Clear lighting keywords to match flat LOD appearance
+                        mat.DisableKeyword("_ADDITIONAL_LIGHT_SHADOWS");
+                        mat.DisableKeyword("_FORWARD_PLUS");
+                        mat.DisableKeyword("_MAIN_LIGHT_SHADOWS_CASCADE");
+                        mat.DisableKeyword("_SHADOWS_SOFT");
+                        mat.DisableKeyword("_NORMALMAP");
 
                         EditorUtility.SetDirty(mat);
                     }
@@ -896,7 +954,7 @@ namespace DCL.ABConverter.Editor
             string fullOutputPath = Path.GetFullPath(outputPath);
 
             // -si 0.1 = simplify to 10% of original triangles
-            string arguments = $"-i \"{fullInputPath}\" -o \"{fullOutputPath}\" -si 0.1";
+            string arguments = $"-i \"{fullInputPath}\" -o \"{fullOutputPath}\" -si 0.1 -noq";
             Log($"Running: gltfpack {arguments}");
 
             try
@@ -1058,18 +1116,20 @@ namespace DCL.ABConverter.Editor
 
             foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
             {
-                // Save meshes
+                // Save meshes (directly, no copy — they're in-memory from glTFast runtime import)
                 var mf = renderer.GetComponent<MeshFilter>();
                 if (mf != null && mf.sharedMesh != null && !AssetDatabase.Contains(mf.sharedMesh))
                 {
                     if (!savedMeshes.TryGetValue(mf.sharedMesh, out var savedMesh))
                     {
                         string meshPath = Path.Combine(assetFolder, $"{sceneId}_mesh{meshIdx++}.asset");
-                        savedMesh = UnityEngine.Object.Instantiate(mf.sharedMesh);
-                        AssetDatabase.CreateAsset(savedMesh, meshPath);
-                        savedMeshes[mf.sharedMesh] = savedMesh;
+                        AssetDatabase.CreateAsset(mf.sharedMesh, meshPath);
+                        savedMeshes[mf.sharedMesh] = mf.sharedMesh;
                     }
-                    mf.sharedMesh = savedMesh;
+                    else
+                    {
+                        mf.sharedMesh = savedMesh;
+                    }
                 }
 
                 // Save materials and their textures
@@ -1111,9 +1171,14 @@ namespace DCL.ABConverter.Editor
                             RenderTexture.active = prev;
                             RenderTexture.ReleaseTemporary(rt);
 
-                            string texPath = Path.Combine(assetFolder, $"{sceneId}_tex{texIdx++}.asset");
-                            AssetDatabase.CreateAsset(texCopy, texPath);
-                            newMat.SetTexture(propName, texCopy);
+                            // Save as PNG (much smaller than .asset)
+                            string texPath = Path.Combine(assetFolder, $"{sceneId}_tex{texIdx++}.png");
+                            File.WriteAllBytes(texPath, texCopy.EncodeToPNG());
+                            UnityEngine.Object.DestroyImmediate(texCopy);
+
+                            AssetDatabase.ImportAsset(texPath);
+                            var savedTex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
+                            newMat.SetTexture(propName, savedTex);
                         }
                     }
 
