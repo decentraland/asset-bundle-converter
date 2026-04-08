@@ -1,0 +1,82 @@
+name: Run LOD Generation
+
+on:
+  workflow_dispatch:
+    inputs:
+      coords:
+        required: true
+        default: "20,4"
+        type: string
+        description: "Scene parcel coordinates (x,y)"
+      baseUrl:
+        required: true
+        default: "https://peer.decentraland.zone"
+        type: string
+        description: "Catalyst server URL"
+      build:
+        type: boolean
+        default: false
+        description: "Build Docker image before running"
+
+jobs:
+  generate-lod:
+    strategy:
+      matrix:
+        include:
+        - unity_docker_image: unityci/editor:6000.2.6f2-webgl-3
+          service_name: asset-bundle-converter
+          platform_target: webgl
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        id: docker_build
+        if: ${{ inputs.build }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: quay.io/decentraland/${{ matrix.service_name }}:next
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            COMMIT_HASH=${{ github.sha }}
+            UNITY_DOCKER_IMAGE=${{ matrix.unity_docker_image }}
+            PLATFORM_TARGET=${{ matrix.platform_target }}
+
+      - name: Create Unity license
+        run: mkdir -p $(pwd)/tmp/Unity && echo "$UNITY_2021_ULF" > $(pwd)/tmp/Unity/Unity_lic.ulf
+        env:
+          UNITY_2021_ULF: ${{ secrets.UNITY_2021_ULF }}
+
+      - name: Run LOD Generation
+        run: |
+          mkdir -p $(pwd)/artifact &&
+          docker run \
+            -v $(pwd)/artifact:/artifact \
+            -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
+            -e COORDS="${{ inputs.coords }}" \
+            -e CONTENT_URL="${{ inputs.baseUrl }}" \
+            -e OUTPUT_DIR="/artifact" \
+            quay.io/decentraland/${{ matrix.service_name }}${{ inputs.build && format('@{0}', steps.docker_build.outputs.digest) || ':next' }} \
+              bash -c "cd /app && ./generate-lod.sh"
+
+      - name: Upload LOD artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lod-${{ inputs.coords }}
+          path: |
+            artifact/**/*

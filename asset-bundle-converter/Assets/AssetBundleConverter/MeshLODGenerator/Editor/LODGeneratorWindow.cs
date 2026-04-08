@@ -43,6 +43,7 @@ namespace DCL.ABConverter.Editor
         private string catalystUrl = DEFAULT_CATALYST_URL;
         private bool cleanBeforeRun = true;
         private bool skipDownload = false;
+        private bool exitOnFinish = false;
 
         private Vector2 scrollPosition;
         private string processLog = "";
@@ -56,6 +57,57 @@ namespace DCL.ABConverter.Editor
             var window = GetWindow<LODGeneratorWindow>("LOD Generator");
             window.minSize = new Vector2(500, 500);
             window.Show();
+        }
+
+        /// <summary>
+        /// Batch-mode entry point. Invoke with:
+        ///   Unity -batchmode -executeMethod DCL.ABConverter.Editor.LODGeneratorWindow.GenerateLODBatchMode
+        ///     -coords "20,4"
+        ///     -baseUrl "https://peer.decentraland.zone"
+        ///     -output "path/to/output"
+        /// </summary>
+        public static void GenerateLODBatchMode()
+        {
+            try
+            {
+                string[] args = System.Environment.GetCommandLineArgs();
+
+                int x = 20, y = 4;
+                string catalystUrl = DEFAULT_CATALYST_URL;
+                string outputDir = null;
+
+                if (Utils.ParseOption(args, "coords", 1, out string[] coordsArg))
+                {
+                    string[] parts = coordsArg[0].Split(',');
+                    if (parts.Length == 2)
+                    {
+                        int.TryParse(parts[0].Trim(), out x);
+                        int.TryParse(parts[1].Trim(), out y);
+                    }
+                }
+
+                if (Utils.ParseOption(args, "baseUrl", 1, out string[] urlArg))
+                    catalystUrl = urlArg[0];
+
+                if (Utils.ParseOption(args, "output", 1, out string[] outputArg))
+                    outputDir = outputArg[0];
+
+                Debug.Log($"[LOD Generator] Batch mode: coords=({x},{y}), catalyst={catalystUrl}, output={outputDir}");
+
+                var window = CreateInstance<LODGeneratorWindow>();
+                window.xCoord = x;
+                window.yCoord = y;
+                window.catalystUrl = catalystUrl;
+                window.cleanBeforeRun = true;
+                window.skipDownload = false;
+                window.exitOnFinish = true;
+                window.RunFullPipeline();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LOD Generator] Batch mode failed: {e.Message}\n{e.StackTrace}");
+                EditorApplication.Exit(1);
+            }
         }
 
         private void OnGUI()
@@ -307,13 +359,20 @@ namespace DCL.ABConverter.Editor
             {
                 Log($"\nERROR: {e.Message}\n{e.StackTrace}");
                 Debug.LogError($"LOD Generator error: {e.Message}\n{e.StackTrace}");
-                EditorUtility.DisplayDialog("LOD Generator Error", e.Message, "OK");
+
+                if (exitOnFinish)
+                    EditorApplication.Exit(1);
+                else
+                    EditorUtility.DisplayDialog("LOD Generator Error", e.Message, "OK");
             }
             finally
             {
                 EditorUtility.ClearProgressBar();
                 isRunning = false;
                 Repaint();
+
+                if (exitOnFinish)
+                    EditorApplication.Exit(0);
             }
         }
 
@@ -1392,7 +1451,7 @@ namespace DCL.ABConverter.Editor
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
-            string prefabPath = Path.Combine(EXPORTED_FOLDER, $"{sceneId}_LOD.prefab");
+            string prefabPath = Path.Combine(assetFolder, $"{sceneId}_LOD.prefab");
             PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
             Log($"Prefab saved to: {prefabPath} ({savedMeshes.Count} meshes, {savedMaterials.Count} materials)");
             return prefabPath;
