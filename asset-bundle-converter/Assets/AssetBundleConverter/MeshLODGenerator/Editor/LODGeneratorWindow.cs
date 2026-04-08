@@ -662,13 +662,27 @@ namespace DCL.ABConverter.Editor
                     // Fix the opaque material — CreateCombinedMaterialAssets may have copied
                     // transparency properties if the first source object was transparent
                     var opaqueMat = textureBaker.resultMaterial;
-                    SetMaterialOpaque(opaqueMat);
-                    EditorUtility.SetDirty(opaqueMat);
+                    if (opaqueMat != null)
+                    {
+                        SetMaterialOpaque(opaqueMat);
+                        EditorUtility.SetDirty(opaqueMat);
+                    }
+                    else
+                    {
+                        Log("WARNING: Opaque combined material is null.");
+                    }
 
                     // Configure the transparent material
                     var transparentMat = AssetDatabase.LoadAssetAtPath<Material>(transparentPath);
-                    SetMaterialTransparent(transparentMat);
-                    EditorUtility.SetDirty(transparentMat);
+                    if (transparentMat != null)
+                    {
+                        SetMaterialTransparent(transparentMat);
+                        EditorUtility.SetDirty(transparentMat);
+                    }
+                    else
+                    {
+                        Log("WARNING: Transparent combined material is null.");
+                    }
 
                     AssetDatabase.SaveAssets();
 
@@ -924,12 +938,7 @@ namespace DCL.ABConverter.Editor
 
             // Common transparency keywords
             if (mat.IsKeywordEnabled("_ALPHABLEND_ON") ||
-                mat.IsKeywordEnabled("_ALPHATEST_ON") ||
                 mat.IsKeywordEnabled("_SURFACE_TYPE_TRANSPARENT"))
-                return true;
-
-            // Render queue >= AlphaTest (2450+)
-            if (mat.renderQueue >= (int)UnityEngine.Rendering.RenderQueue.AlphaTest)
                 return true;
 
             return false;
