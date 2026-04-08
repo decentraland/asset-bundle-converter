@@ -16,20 +16,9 @@ on:
         default: "https://peer.decentraland.zone"
         type: string
         description: "Catalyst server URL"
-      build:
-        type: boolean
-        default: false
-        description: "Build Docker image before running"
 
 jobs:
   generate-lod:
-    strategy:
-      matrix:
-        include:
-        - unity_docker_image: unityci/editor:6000.2.6f2-webgl-3
-          service_name: asset-bundle-converter
-          platform_target: webgl
-
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,49 +27,33 @@ jobs:
           lfs: true
           token: ${{ secrets.PRIVATE_SUBMODULE_TOKEN || github.token }}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build image
-        id: docker_build
-        if: ${{ inputs.build || github.event_name == 'push' }}
-        uses: docker/build-push-action@v6
+      - name: Install Node.js
+        uses: actions/setup-node@v4
         with:
-          context: .
-          push: false
-          tags: quay.io/decentraland/${{ matrix.service_name }}:next
-          load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            COMMIT_HASH=${{ github.sha }}
-            UNITY_DOCKER_IMAGE=${{ matrix.unity_docker_image }}
-            PLATFORM_TARGET=${{ matrix.platform_target }}
+          node-version: 18
 
-      - name: Create Unity license
-        run: mkdir -p $(pwd)/tmp/Unity && echo "$UNITY_2021_ULF" > $(pwd)/tmp/Unity/Unity_lic.ulf
-        env:
-          UNITY_2021_ULF: ${{ secrets.UNITY_2021_ULF }}
+      - name: Install scene-lod-entities-manifest-builder
+        run: |
+          cd scene-lod-entities-manifest-builder
+          npm ci
 
       - name: Run LOD Generation
-        run: |
-          mkdir -p $(pwd)/artifact &&
-          docker run \
-            -v $(pwd)/artifact:/artifact \
-            -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
-            -e COORDS="${{ inputs.coords || '20,4' }}" \
-            -e CONTENT_URL="${{ inputs.baseUrl || 'https://peer.decentraland.zone' }}" \
-            -e OUTPUT_DIR="/artifact" \
-            quay.io/decentraland/${{ matrix.service_name }}@${{ steps.docker_build.outputs.digest }} \
-              bash -c "cd /app && ./generate-lod.sh"
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: asset-bundle-converter
+          unityVersion: 6000.2.6f2
+          targetPlatform: WebGL
+          buildMethod: DCL.ABConverter.Editor.LODGeneratorWindow.GenerateLODBatchMode
+          customParameters: -coords ${{ inputs.coords || '20,4' }} -baseUrl ${{ inputs.baseUrl || 'https://peer.decentraland.zone' }}
 
       - name: Upload LOD artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: lod-${{ inputs.coords }}
+          name: lod-${{ inputs.coords || '20,4' }}
           path: |
-            artifact/**/*
+            asset-bundle-converter/Assets/_ExportedLODs/LOD_Assets/**/*
