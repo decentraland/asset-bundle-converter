@@ -91,6 +91,8 @@ namespace AssetBundleConverter
                 {
                     TrackedTexture candidate = candidates[index];
 
+                    log.Verbose($"Texture budget: optimizing {candidate.FilePath}");
+
                     // Knowing that candidates[index + 1] would be same or less size that candidates[index]
                     // then safely assume this layer cannot be optimized further
                     if (candidate.Width <= 1 && candidate.Height <= 1)
@@ -106,7 +108,7 @@ namespace AssetBundleConverter
                     float factor = Mathf.Sqrt((float)targetPixels / currentPixels);
 
                     // If factor < 0.5, limit to halving the size, it will continue reducing on next iteration,
-                    // this way not a single pixel of budget is wasted
+                    // this way we reduce the number of wasted pixels
                     if (factor < 0.5f)
                         factor = 0.5f;
 
