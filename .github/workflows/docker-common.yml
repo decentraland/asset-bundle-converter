@@ -40,7 +40,7 @@ on:
         required: true
       QUAY_TOKEN:
         required: true
-      PRIVATE_SUBMODULE_TOKEN:
+      REPOS_READ_ONLY_TOKEN:
         required: false
 
 env:
@@ -55,7 +55,7 @@ jobs:
         with:
           submodules: recursive
           lfs: true
-          token: ${{ secrets.PRIVATE_SUBMODULE_TOKEN || github.token }}
+          token: ${{ secrets.REPOS_READ_ONLY_TOKEN || github.token }}
 
       - name: Move Docker data-root to /mnt/docker
         run: |
