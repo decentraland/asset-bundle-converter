@@ -475,10 +475,8 @@ namespace DCL.ABConverter.Editor
             {
                 targetPointer = new Vector2Int(xCoord, yCoord),
                 baseUrl = catalystUrl + "/content/contents/",
-                buildTarget = EditorUserBuildSettings.activeBuildTarget,
-                BuildPipelineType = EditorUserBuildSettings.activeBuildTarget == BuildTarget.WebGL
-                    ? BuildPipelineType.Default
-                    : BuildPipelineType.Scriptable,
+                buildTarget = BuildTarget.WebGL,
+                BuildPipelineType = BuildPipelineType.Default,
                 createAssetBundle = false,
                 visualTest = false,
                 cleanAndExitOnFinish = false,
