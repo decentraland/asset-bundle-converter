@@ -5,8 +5,8 @@ set -u
 
 source ci-setup.sh
 
-: "${COORDS:=0,0}"
-: "${CONTENT_URL:=https://peer.decentraland.org}"
+: "${COORDS:=20,4}"
+: "${CONTENT_URL:=https://peer.decentraland.zone}"
 : "${OUTPUT_DIR:=./lod-output}"
 : "${LOCAL_LOG_FILE:=-}"
 

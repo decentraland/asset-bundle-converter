@@ -378,7 +378,10 @@ namespace DCL.ABConverter.Editor
                     message += $"\nDecimated GLB: {decimatedPath}";
                 if (!string.IsNullOrEmpty(finalPrefabPath))
                     message += $"\nFinal prefab: {finalPrefabPath}";
-                EditorUtility.DisplayDialog("LOD Generator", message, "OK");
+
+                Log(message);
+                if (!exitOnFinish)
+                    EditorUtility.DisplayDialog("LOD Generator", message, "OK");
             }
             catch (Exception e)
             {
