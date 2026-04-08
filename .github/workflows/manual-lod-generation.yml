@@ -1,6 +1,9 @@
 name: Run LOD Generation
 
 on:
+  push:
+    branches:
+      - feature/lod-generator-editor
   workflow_dispatch:
     inputs:
       coords:
@@ -43,7 +46,7 @@ jobs:
 
       - name: Build image
         id: docker_build
-        if: ${{ inputs.build }}
+        if: ${{ inputs.build || github.event_name == 'push' }}
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -68,10 +71,10 @@ jobs:
           docker run \
             -v $(pwd)/artifact:/artifact \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
-            -e COORDS="${{ inputs.coords }}" \
-            -e CONTENT_URL="${{ inputs.baseUrl }}" \
+            -e COORDS="${{ inputs.coords || '20,4' }}" \
+            -e CONTENT_URL="${{ inputs.baseUrl || 'https://peer.decentraland.zone' }}" \
             -e OUTPUT_DIR="/artifact" \
-            quay.io/decentraland/${{ matrix.service_name }}${{ inputs.build && format('@{0}', steps.docker_build.outputs.digest) || ':next' }} \
+            quay.io/decentraland/${{ matrix.service_name }}@${{ steps.docker_build.outputs.digest }} \
               bash -c "cd /app && ./generate-lod.sh"
 
       - name: Upload LOD artifacts
