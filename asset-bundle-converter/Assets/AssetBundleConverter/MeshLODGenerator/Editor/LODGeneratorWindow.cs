@@ -44,6 +44,7 @@ namespace DCL.ABConverter.Editor
         private bool cleanBeforeRun = true;
         private bool skipDownload = false;
         private bool skipManifest = false;
+        private bool skipMeshBaker = false;
         private bool exitOnFinish = false;
 
         private Vector2 scrollPosition;
@@ -100,10 +101,12 @@ namespace DCL.ABConverter.Editor
                 window.yCoord = y;
                 window.catalystUrl = catalystUrl;
                 bool skipManifestFlag = Utils.ParseOption(args, "skipManifest", 0, out _);
+                bool skipMeshBakerFlag = Utils.ParseOption(args, "skipMeshBaker", 0, out _);
 
                 window.cleanBeforeRun = !skipManifestFlag;
                 window.skipDownload = false;
                 window.skipManifest = skipManifestFlag;
+                window.skipMeshBaker = skipMeshBakerFlag;
                 window.exitOnFinish = true;
                 window.RunFullPipeline();
             }
@@ -297,50 +300,59 @@ namespace DCL.ABConverter.Editor
                     CopyTexturesAsReadable();
                 }
 
-                // Deduplicate identical textures across materials to reduce atlas size
-                EditorUtility.DisplayProgressBar("LOD Generator", "Deduplicating textures...", 0.38f);
-                DeduplicateTextures();
+                string prefabPath = null;
 
-                // Step 3: MeshBaker (atlas + combine)
-                Log("\n=== Step 3/5: MeshBaker (atlas + combine → prefab) ===");
-                EditorUtility.DisplayProgressBar("LOD Generator", "Baking textures & combining meshes...", 0.4f);
-
-                string prefabPath = RunMeshBaker(sceneId);
-
-                // Clear the entire scene and instantiate only the prefab for export
-                ClearSceneObjects();
-                if (!string.IsNullOrEmpty(prefabPath))
+                if (!skipMeshBaker)
                 {
-                    var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
-                    if (prefab != null)
-                    {
-                        PrefabUtility.InstantiatePrefab(prefab);
-                        Log("Instantiated combined prefab for export.");
-                    }
-                }
+                    // Deduplicate identical textures across materials to reduce atlas size
+                    EditorUtility.DisplayProgressBar("LOD Generator", "Deduplicating textures...", 0.38f);
+                    DeduplicateTextures();
 
-                // Swap DCL/Scene to URP/Lit on scene instances only for GLB export
-                // (glTFast can't export DCL/Scene). Uses material instances so the
-                // prefab's asset materials keep DCL/Scene shader.
-                var urpLitShader = Shader.Find("Universal Render Pipeline/Lit");
-                if (urpLitShader != null)
-                {
-                    foreach (var renderer in UnityEngine.Object.FindObjectsOfType<Renderer>())
+                    // Step 3: MeshBaker (atlas + combine)
+                    Log("\n=== Step 3/5: MeshBaker (atlas + combine → prefab) ===");
+                    EditorUtility.DisplayProgressBar("LOD Generator", "Baking textures & combining meshes...", 0.4f);
+
+                    prefabPath = RunMeshBaker(sceneId);
+
+                    // Clear the entire scene and instantiate only the prefab for export
+                    ClearSceneObjects();
+                    if (!string.IsNullOrEmpty(prefabPath))
                     {
-                        var mats = renderer.sharedMaterials;
-                        for (int i = 0; i < mats.Length; i++)
+                        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+                        if (prefab != null)
                         {
-                            if (mats[i] != null && mats[i].shader.name == "DCL/Scene")
-                            {
-                                mats[i] = new Material(mats[i]);
-                                mats[i].shader = urpLitShader;
-                            }
+                            PrefabUtility.InstantiatePrefab(prefab);
+                            Log("Instantiated combined prefab for export.");
                         }
-                        renderer.sharedMaterials = mats;
+                    }
+
+                    // Swap DCL/Scene to URP/Lit on scene instances only for GLB export
+                    // (glTFast can't export DCL/Scene). Uses material instances so the
+                    // prefab's asset materials keep DCL/Scene shader.
+                    var urpLitShader = Shader.Find("Universal Render Pipeline/Lit");
+                    if (urpLitShader != null)
+                    {
+                        foreach (var renderer in UnityEngine.Object.FindObjectsOfType<Renderer>())
+                        {
+                            var mats = renderer.sharedMaterials;
+                            for (int i = 0; i < mats.Length; i++)
+                            {
+                                if (mats[i] != null && mats[i].shader.name == "DCL/Scene")
+                                {
+                                    mats[i] = new Material(mats[i]);
+                                    mats[i].shader = urpLitShader;
+                                }
+                            }
+                            renderer.sharedMaterials = mats;
+                        }
                     }
                 }
+                else
+                {
+                    Log("Skipping MeshBaker (no GPU available).");
+                }
 
-                // Step 4: Export combined scene to GLB
+                // Step 4: Export scene to GLB
                 Log("\n=== Step 4/5: Exporting scene to GLB ===");
                 EditorUtility.DisplayProgressBar("LOD Generator", "Exporting GLB...", 0.6f);
 
@@ -360,7 +372,7 @@ namespace DCL.ABConverter.Editor
 
                 // Step 6: Import decimated GLB with DCL/Scene shader and save as persistent prefab
                 string finalPrefabPath = null;
-                if (!string.IsNullOrEmpty(decimatedPath))
+                if (!string.IsNullOrEmpty(decimatedPath) && !skipMeshBaker)
                 {
                     Log("\n=== Step 6: Creating prefab from decimated GLB ===");
                     EditorUtility.DisplayProgressBar("LOD Generator", "Importing and creating prefab...", 0.9f);

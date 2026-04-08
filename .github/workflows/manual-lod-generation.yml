@@ -55,6 +55,7 @@ jobs:
                 -executeMethod DCL.ABConverter.Editor.LODGeneratorWindow.GenerateLODBatchMode \
                 -coords "${{ inputs.coords || '20,4' }}" \
                 -baseUrl "${{ inputs.baseUrl || 'https://peer.decentraland.zone' }}" \
+                -skipMeshBaker \
                 -logFile -
         timeout-minutes: 45
 
