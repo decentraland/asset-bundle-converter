@@ -32,10 +32,11 @@ jobs:
         with:
           node-version: 18
 
-      - name: Install scene-lod-entities-manifest-builder
+      - name: Build scene-lod-entities-manifest-builder
         run: |
           cd scene-lod-entities-manifest-builder
           npm ci
+          npm run build
 
       - name: Run LOD Generation
         uses: game-ci/unity-builder@v4

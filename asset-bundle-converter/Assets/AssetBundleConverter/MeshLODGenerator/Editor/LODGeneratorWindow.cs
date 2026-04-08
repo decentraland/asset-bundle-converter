@@ -1604,7 +1604,7 @@ namespace DCL.ABConverter.Editor
                 }
                 else
                 {
-                    string shell = System.Environment.GetEnvironmentVariable("SHELL") ?? "/bin/zsh";
+                    string shell = System.Environment.GetEnvironmentVariable("SHELL") ?? "/bin/bash";
                     string command = $"cd \"{workingDirectory}\" && npm run start {arguments}";
 
                     startInfo = new ProcessStartInfo
