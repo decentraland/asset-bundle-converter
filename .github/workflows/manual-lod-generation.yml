@@ -32,8 +32,8 @@ jobs:
         run: |
           docker build \
             --build-arg COMMIT_HASH=${{ github.sha }} \
-            --build-arg UNITY_DOCKER_IMAGE=unityci/editor:6000.2.6f2-linux-il2cpp-3 \
-            --build-arg PLATFORM_TARGET=linux \
+            --build-arg UNITY_DOCKER_IMAGE=unityci/editor:6000.2.6f2-webgl-3 \
+            --build-arg PLATFORM_TARGET=webgl \
             -t asset-bundle-converter:lod-gen \
             .
 
