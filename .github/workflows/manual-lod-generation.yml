@@ -21,8 +21,6 @@ jobs:
   generate-lod:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    container:
-      image: unityci/editor:6000.2.6f2-linux-il2cpp-3
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,46 +28,50 @@ jobs:
           lfs: true
           token: ${{ secrets.REPOS_READ_ONLY_TOKEN || github.token }}
 
-      - name: Activate Unity license
-        run: |
-          mkdir -p /root/.local/share/unity3d/Unity
-          echo "$UNITY_LICENSE" > /root/.local/share/unity3d/Unity/Unity_lic.ulf
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build Image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: asset-bundle-converter
+          layers: true
+          tags: lod-gen
+          dockerfiles: |
+            ./Dockerfile
+          build-args: |
+            COMMIT_HASH=${{ github.sha }}
+            UNITY_DOCKER_IMAGE=unityci/editor:6000.2.6f2-linux-il2cpp-3
+            PLATFORM_TARGET=linux
+
+      - name: Create Unity license
+        run: mkdir -p $(pwd)/tmp/Unity && echo "$UNITY_2021_ULF" > $(pwd)/tmp/Unity/Unity_lic.ulf
         env:
-          UNITY_LICENSE: ${{ secrets.UNITY_2021_ULF }}
-
-      - name: Install Node.js
-        run: |
-          curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-          apt-get install -y nodejs
-
-      - name: Build and run scene-lod-entities-manifest-builder
-        run: |
-          cd scene-lod-entities-manifest-builder
-          npm ci
-          npm run build
-          COORDS="${{ inputs.coords || '20,4' }}"
-          CATALYST="${{ inputs.baseUrl || 'https://peer.decentraland.zone' }}"
-          node dist/index.js --catalyst=$CATALYST --coords=$COORDS --overwrite
-          ls -la output-manifests/
-
-      - name: Copy manifest to Unity project
-        run: |
-          mkdir -p asset-bundle-converter/Assets/_SceneManifest
-          cp scene-lod-entities-manifest-builder/output-manifests/*-lod-manifest.json asset-bundle-converter/Assets/_SceneManifest/
+          UNITY_2021_ULF: ${{ secrets.UNITY_2021_ULF }}
 
       - name: Run LOD Generation
         run: |
-          xvfb-run --auto-servernum --server-args='-screen 0 640x480x24' \
-            unity-editor \
-            -batchmode \
-            -nographics \
-            -projectPath "$GITHUB_WORKSPACE/asset-bundle-converter" \
-            -executeMethod DCL.ABConverter.Editor.LODGeneratorWindow.GenerateLODBatchMode \
-            -coords "${{ inputs.coords || '20,4' }}" \
-            -baseUrl "${{ inputs.baseUrl || 'https://peer.decentraland.zone' }}" \
-            -skipManifest \
-            -logFile -
+          mkdir -p $(pwd)/artifact
+          docker run --name lod-gen \
+            -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
+            localhost/asset-bundle-converter:lod-gen \
+              xvfb-run --auto-servernum --server-args='-screen 0 640x480x24' \
+                unity-editor \
+                -batchmode \
+                -nographics \
+                -projectPath /asset-bundle-converter \
+                -executeMethod DCL.ABConverter.Editor.LODGeneratorWindow.GenerateLODBatchMode \
+                -coords "${{ inputs.coords || '20,4' }}" \
+                -baseUrl "${{ inputs.baseUrl || 'https://peer.decentraland.zone' }}" \
+                -logFile -
         timeout-minutes: 45
+
+      - name: Copy LOD results
+        if: always()
+        run: |
+          docker cp lod-gen:/asset-bundle-converter/Assets/_ExportedLODs/LOD_Assets $(pwd)/artifact/LOD_Assets || true
+          docker cp lod-gen:/asset-bundle-converter/Assets/_ExportedLODs $(pwd)/artifact/ExportedLODs || true
+          ls -laR $(pwd)/artifact/ || echo "No artifacts found"
 
       - name: Upload LOD artifacts
         uses: actions/upload-artifact@v4
@@ -77,4 +79,4 @@ jobs:
         with:
           name: lod-${{ inputs.coords || '20,4' }}
           path: |
-            asset-bundle-converter/Assets/_ExportedLODs/LOD_Assets/**/*
+            artifact/**/*
