@@ -28,21 +28,14 @@ jobs:
           lfs: true
           token: ${{ secrets.REPOS_READ_ONLY_TOKEN || github.token }}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Build Image
-        uses: redhat-actions/buildah-build@v2
-        with:
-          image: asset-bundle-converter
-          layers: true
-          tags: lod-gen
-          dockerfiles: |
-            ./Dockerfile
-          build-args: |
-            COMMIT_HASH=${{ github.sha }}
-            UNITY_DOCKER_IMAGE=unityci/editor:6000.2.6f2-linux-il2cpp-3
-            PLATFORM_TARGET=linux
+      - name: Build Docker Image
+        run: |
+          docker build \
+            --build-arg COMMIT_HASH=${{ github.sha }} \
+            --build-arg UNITY_DOCKER_IMAGE=unityci/editor:6000.2.6f2-linux-il2cpp-3 \
+            --build-arg PLATFORM_TARGET=linux \
+            -t asset-bundle-converter:lod-gen \
+            .
 
       - name: Create Unity license
         run: mkdir -p $(pwd)/tmp/Unity && echo "$UNITY_2021_ULF" > $(pwd)/tmp/Unity/Unity_lic.ulf
@@ -54,7 +47,7 @@ jobs:
           mkdir -p $(pwd)/artifact
           docker run --name lod-gen \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
-            localhost/asset-bundle-converter:lod-gen \
+            asset-bundle-converter:lod-gen \
               xvfb-run --auto-servernum --server-args='-screen 0 640x480x24' \
                 unity-editor \
                 -batchmode \
