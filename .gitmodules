@@ -7,3 +7,6 @@
 [submodule "scene-lod-entities-manifest-builder"]
 	path = scene-lod-entities-manifest-builder
 	url = git@github.com:decentraland/scene-lod-entities-manifest-builder.git
+[submodule "asset-bundle-converter/Assets/git-submodules/ab-converter-private-assets"]
+	path = asset-bundle-converter/Assets/git-submodules/ab-converter-private-assets
+	url = git@github.com:decentraland/asset-bundle-converter-private-assets.git

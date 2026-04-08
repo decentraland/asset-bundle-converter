@@ -24,6 +24,7 @@ jobs:
         with:
           submodules: recursive
           lfs: true
+          token: ${{ secrets.PRIVATE_SUBMODULE_TOKEN || github.token }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

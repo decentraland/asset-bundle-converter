@@ -1005,7 +1005,7 @@ namespace DCL.ABConverter.Editor
 
         private string RunGltfpack(string inputGlbPath, string sceneId)
         {
-            string gltfpackPath = Path.GetFullPath(Path.Combine(Application.dataPath, "gltfpack"));
+            string gltfpackPath = Path.GetFullPath(Path.Combine(Application.dataPath, "git-submodules/ab-converter-private-assets/gltfpack"));
 
             if (!File.Exists(gltfpackPath))
             {

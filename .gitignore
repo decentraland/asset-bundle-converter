@@ -70,16 +70,15 @@ asset-bundle-converter/Assets/git-submodules/unity-shared-dependencies/Runtime/S
 asset-bundle-converter/Assets/AssetBundleConverter/LODsConverter/ExportLODToAssetBundle/
 asset-bundle-converter/Assets/AssetBundleConverter/LODsConverter/ExportLODToAssetBundle.meta
 
-# MeshBaker (commercial asset, not committed)
+# MeshBaker/gltfpack local copies (canonical source is the private submodule)
 asset-bundle-converter/Assets/MeshBaker/
 asset-bundle-converter/Assets/MeshBaker.meta
-
-
-# gltfpack binary
 asset-bundle-converter/Assets/gltfpack
 asset-bundle-converter/Assets/gltfpack.meta
 
 # LOD Generator output
+asset-bundle-converter/Assets/_ReadableTextures/
+asset-bundle-converter/Assets/_ReadableTextures.meta
 asset-bundle-converter/Assets/_ExportedLODs/
 asset-bundle-converter/Assets/_ExportedLODs.meta
 asset-bundle-converter/_ExportedLODs/
