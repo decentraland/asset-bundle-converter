@@ -43,6 +43,7 @@ namespace DCL.ABConverter.Editor
         private string catalystUrl = DEFAULT_CATALYST_URL;
         private bool cleanBeforeRun = true;
         private bool skipDownload = false;
+        private bool skipManifest = false;
         private bool exitOnFinish = false;
 
         private Vector2 scrollPosition;
@@ -98,8 +99,11 @@ namespace DCL.ABConverter.Editor
                 window.xCoord = x;
                 window.yCoord = y;
                 window.catalystUrl = catalystUrl;
-                window.cleanBeforeRun = true;
+                bool skipManifestFlag = Utils.ParseOption(args, "skipManifest", 0, out _);
+
+                window.cleanBeforeRun = !skipManifestFlag;
                 window.skipDownload = false;
+                window.skipManifest = skipManifestFlag;
                 window.exitOnFinish = true;
                 window.RunFullPipeline();
             }
@@ -216,18 +220,39 @@ namespace DCL.ABConverter.Editor
                 if (!skipDownload)
                 {
                     // Step 1: Generate the scene manifest
-                    Log("=== Step 1/5: Generating Scene Manifest ===");
-                    EditorUtility.DisplayProgressBar("LOD Generator", "Generating scene manifest...", 0.1f);
-
-                    sceneId = await GenerateManifest();
-                    if (string.IsNullOrEmpty(sceneId))
+                    if (!skipManifest)
                     {
-                        Log("ERROR: Failed to generate manifest. Aborting.");
-                        return;
-                    }
+                        Log("=== Step 1/5: Generating Scene Manifest ===");
+                        EditorUtility.DisplayProgressBar("LOD Generator", "Generating scene manifest...", 0.1f);
 
-                    currentSceneId = sceneId;
-                    Log($"Manifest generated for scene: {sceneId}");
+                        sceneId = await GenerateManifest();
+                        if (string.IsNullOrEmpty(sceneId))
+                        {
+                            Log("ERROR: Failed to generate manifest. Aborting.");
+                            return;
+                        }
+
+                        currentSceneId = sceneId;
+                        Log($"Manifest generated for scene: {sceneId}");
+                    }
+                    else
+                    {
+                        // Manifest already generated externally — find sceneId from existing manifest
+                        Log("Skipping manifest generation (pre-generated externally).");
+                        string[] manifests = Directory.Exists(SCENE_MANIFEST_FOLDER)
+                            ? Directory.GetFiles(SCENE_MANIFEST_FOLDER, "*-lod-manifest.json")
+                            : new string[0];
+
+                        if (manifests.Length == 0)
+                        {
+                            Log("ERROR: No manifest found in _SceneManifest. Generate it first.");
+                            return;
+                        }
+
+                        sceneId = Path.GetFileName(manifests[0]).Replace("-lod-manifest.json", "");
+                        currentSceneId = sceneId;
+                        Log($"Using existing manifest for scene: {sceneId}");
+                    }
 
                     // Step 2: Run the AssetBundleConverter pipeline (download, import, instance ISS assets)
                     Log("\n=== Step 2/5: Running AssetBundleConverter ===");

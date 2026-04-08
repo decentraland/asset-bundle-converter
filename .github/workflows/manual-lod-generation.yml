@@ -32,11 +32,20 @@ jobs:
         with:
           node-version: 18
 
-      - name: Build scene-lod-entities-manifest-builder
+      - name: Build and run scene-lod-entities-manifest-builder
         run: |
           cd scene-lod-entities-manifest-builder
           npm ci
           npm run build
+          COORDS="${{ inputs.coords || '20,4' }}"
+          CATALYST="${{ inputs.baseUrl || 'https://peer.decentraland.zone' }}"
+          node dist/index.js --catalyst=$CATALYST --coords=$COORDS --overwrite
+          ls -la output-manifests/
+
+      - name: Copy manifest to Unity project
+        run: |
+          mkdir -p asset-bundle-converter/Assets/_SceneManifest
+          cp scene-lod-entities-manifest-builder/output-manifests/*-lod-manifest.json asset-bundle-converter/Assets/_SceneManifest/
 
       - name: Run LOD Generation
         uses: game-ci/unity-builder@v4
@@ -49,7 +58,7 @@ jobs:
           unityVersion: 6000.2.6f2
           targetPlatform: StandaloneLinux64
           buildMethod: DCL.ABConverter.Editor.LODGeneratorWindow.GenerateLODBatchMode
-          customParameters: -coords ${{ inputs.coords || '20,4' }} -baseUrl ${{ inputs.baseUrl || 'https://peer.decentraland.zone' }}
+          customParameters: -coords ${{ inputs.coords || '20,4' }} -baseUrl ${{ inputs.baseUrl || 'https://peer.decentraland.zone' }} -skipManifest
 
       - name: Upload LOD artifacts
         uses: actions/upload-artifact@v4
