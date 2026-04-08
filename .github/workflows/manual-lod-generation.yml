@@ -46,7 +46,7 @@ jobs:
         with:
           projectPath: asset-bundle-converter
           unityVersion: 6000.2.6f2
-          targetPlatform: WebGL
+          targetPlatform: StandaloneLinux64
           buildMethod: DCL.ABConverter.Editor.LODGeneratorWindow.GenerateLODBatchMode
           customParameters: -coords ${{ inputs.coords || '20,4' }} -baseUrl ${{ inputs.baseUrl || 'https://peer.decentraland.zone' }}
 
