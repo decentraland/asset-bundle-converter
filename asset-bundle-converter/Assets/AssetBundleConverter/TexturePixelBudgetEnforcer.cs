@@ -9,12 +9,13 @@ using Object = UnityEngine.Object;
 
 namespace AssetBundleConverter
 {
+    [Flags]
     public enum TextureLayer
     {
-        ALBEDO,
-        NORMAL,
-        EMISSIVE,
-        OTHER,
+        ALBEDO   = 1 << 0,
+        NORMAL   = 1 << 1,
+        EMISSIVE = 1 << 2,
+        OTHER    = 1 << 3,
     }
 
     public class TrackedTexture
@@ -76,56 +77,36 @@ namespace AssetBundleConverter
             foreach (var layer in ALL_LAYERS)
             {
                 List<TrackedTexture> candidates = trackedTextures.Values
-                                                .Where(t => GetLayers(t.Types).Contains(layer))
-                                                .ToList();
+                                                                 .Where(t => (GetLayers(t.Types) & layer) != 0)
+                                                                 .ToList();
 
                 if (candidates.Count == 0) continue;
 
-                candidates.Sort(CompareTextures);
-
                 long totalPixels = candidates.Sum(c => c.PixelCount);
-
-                int index = 0;
 
                 while (totalPixels > budgetPerLayer)
                 {
-                    TrackedTexture candidate = candidates[index];
+                    // Sort each time and check biggest texture
+                    candidates.Sort(CompareTextures);
+                    TrackedTexture candidate = candidates[0];
 
                     log.Verbose($"Texture budget: optimizing {candidate.FilePath}");
 
-                    // Knowing that candidates[index + 1] would be same or less size that candidates[index]
-                    // then safely assume this layer cannot be optimized further
+                    // Knowing that candidates[index + 1] would be same or less size than candidates[index]
+                    // safely assume this layer cannot be optimized further
                     if (candidate.Width <= 1 && candidate.Height <= 1)
                     {
                         log.Warning($"Texture budget for layer {layer} cannot be met, largest texture already at 1x1");
                         break;
                     }
 
-                    long excess = totalPixels - budgetPerLayer;
-                    long currentPixels = candidate.PixelCount;
-                    long targetPixels = Math.Max(1, currentPixels - excess);
+                    // Halve the texture
+                    int newWidth = Mathf.Max(1, (int)(candidate.Width * .5f));
+                    int newHeight = Mathf.Max(1, (int)(candidate.Height * .5f));
 
-                    float factor = Mathf.Sqrt((float)targetPixels / currentPixels);
-
-                    // If factor < 0.5, limit to halving the size, it will continue reducing on next iteration,
-                    // this way we reduce the number of wasted pixels
-                    if (factor < 0.5f)
-                        factor = 0.5f;
-
-                    int newWidth = Mathf.Max(1, (int)(candidate.Width * factor));
-                    int newHeight = Mathf.Max(1, (int)(candidate.Height * factor));
-
-                    if (newWidth == candidate.Width && newHeight == candidate.Height)
-                    {
-                        log.Warning($"Texture budget for layer {layer} cannot be met, no further reduction possible for {candidate.FilePath}");
-                        break;
-                    }
-
-                    long oldPixels = candidate.PixelCount;
+                    long oldPixelCount = candidate.PixelCount;
                     ResizeTrackedTexture(candidate, newWidth, newHeight);
-                    totalPixels -= oldPixels - candidate.PixelCount;
-
-                    index = (index + 1) % candidates.Count;
+                    totalPixels -= oldPixelCount - candidate.PixelCount;
                 }
             }
         }
@@ -169,21 +150,21 @@ namespace AssetBundleConverter
             return cmp != 0 ? cmp : string.Compare(a.FilePath, b.FilePath, StringComparison.Ordinal);
         }
 
-        private static HashSet<TextureLayer> GetLayers(TextureType types)
+        private static TextureLayer GetLayers(TextureType types)
         {
-            var layers = new HashSet<TextureLayer>();
+            TextureLayer layers = 0;
 
             if ((types & (TextureType.MainTex | TextureType.BaseMap)) != 0)
-                layers.Add(TextureLayer.ALBEDO);
+                layers |= TextureLayer.ALBEDO;
 
             if ((types & TextureType.BumpMap) != 0)
-                layers.Add(TextureLayer.NORMAL);
+                layers |= TextureLayer.NORMAL;
 
             if ((types & TextureType.EmissionMap) != 0)
-                layers.Add(TextureLayer.EMISSIVE);
+                layers |= TextureLayer.EMISSIVE;
 
             if ((types & (TextureType.MetallicGlossMap | TextureType.OcclusionMap | TextureType.ParallaxMap | TextureType.SpecGlossMap)) != 0)
-                layers.Add(TextureLayer.OTHER);
+                layers |= TextureLayer.OTHER;
 
             return layers;
         }
