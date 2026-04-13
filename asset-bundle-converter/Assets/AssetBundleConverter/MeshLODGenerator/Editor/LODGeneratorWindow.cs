@@ -490,7 +490,7 @@ namespace DCL.ABConverter.Editor
             {
                 targetPointer = new Vector2Int(xCoord, yCoord),
                 baseUrl = catalystUrl + "/content/contents/",
-                buildTarget = BuildTarget.WebGL,
+                buildTarget = BuildTarget.StandaloneOSX,
                 BuildPipelineType = BuildPipelineType.Default,
                 createAssetBundle = false,
                 visualTest = false,
@@ -1449,37 +1449,45 @@ namespace DCL.ABConverter.Editor
                         newMat.SetTexture("normalTexture", null);
                     newMat.DisableKeyword("_NORMALMAP");
 
-                    // Save textures (blit via RenderTexture for non-readable textures)
+                    // Save textures — try file copy first, fall back to GPU blit
                     foreach (string propName in newMat.GetTexturePropertyNames())
                     {
                         var tex = newMat.GetTexture(propName) as Texture2D;
                         if (tex != null && !AssetDatabase.Contains(tex))
                         {
-                            // Blit to get pixel data since glTFast textures are non-readable
-                            var rt = RenderTexture.GetTemporary(tex.width, tex.height, 0, RenderTextureFormat.ARGB32);
-                            Graphics.Blit(tex, rt);
-                            var prev = RenderTexture.active;
-                            RenderTexture.active = rt;
-
-                            var texCopy = new Texture2D(tex.width, tex.height, TextureFormat.RGBA32, false);
-                            texCopy.ReadPixels(new Rect(0, 0, tex.width, tex.height), 0, 0);
-                            texCopy.Apply();
-                            texCopy.name = tex.name;
-
-                            RenderTexture.active = prev;
-                            RenderTexture.ReleaseTemporary(rt);
-
-                            // Save as JPEG for opaque (smaller), PNG for transparent (needs alpha)
+                            // Try to find source file on disk (no GPU needed)
+                            string sourcePath = AssetDatabase.GetAssetPath(tex);
                             bool isTransparent = newMat.HasProperty("_Surface") && newMat.GetFloat("_Surface") >= 1f;
-                            string ext = isTransparent ? "png" : "jpg";
-                            string texPath = Path.Combine(assetFolder, $"{sceneId}_tex{texIdx++}.{ext}");
+                            string texPath;
 
-                            byte[] bytes = isTransparent
-                                ? texCopy.EncodeToPNG()
-                                : texCopy.EncodeToJPG(85);
+                            if (!string.IsNullOrEmpty(sourcePath) && File.Exists(sourcePath))
+                            {
+                                string srcExt = Path.GetExtension(sourcePath);
+                                texPath = Path.Combine(assetFolder, $"{sceneId}_tex{texIdx++}{srcExt}");
+                                File.Copy(sourcePath, texPath, true);
+                            }
+                            else
+                            {
+                                // Fallback: blit via RenderTexture (needs GPU)
+                                var rt = RenderTexture.GetTemporary(tex.width, tex.height, 0, RenderTextureFormat.ARGB32);
+                                Graphics.Blit(tex, rt);
+                                var prev = RenderTexture.active;
+                                RenderTexture.active = rt;
 
-                            File.WriteAllBytes(texPath, bytes);
-                            UnityEngine.Object.DestroyImmediate(texCopy);
+                                var texCopy = new Texture2D(tex.width, tex.height, TextureFormat.RGBA32, false);
+                                texCopy.ReadPixels(new Rect(0, 0, tex.width, tex.height), 0, 0);
+                                texCopy.Apply();
+                                texCopy.name = tex.name;
+
+                                RenderTexture.active = prev;
+                                RenderTexture.ReleaseTemporary(rt);
+
+                                string ext = isTransparent ? "png" : "jpg";
+                                texPath = Path.Combine(assetFolder, $"{sceneId}_tex{texIdx++}.{ext}");
+                                byte[] bytes = isTransparent ? texCopy.EncodeToPNG() : texCopy.EncodeToJPG(85);
+                                File.WriteAllBytes(texPath, bytes);
+                                UnityEngine.Object.DestroyImmediate(texCopy);
+                            }
 
                             AssetDatabase.ImportAsset(texPath);
                             var savedTex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
@@ -1507,8 +1515,9 @@ namespace DCL.ABConverter.Editor
         private const string READABLE_TEXTURES_FOLDER = "Assets/_ReadableTextures";
 
         /// <summary>
-        /// Finds all non-readable textures on scene materials, blits them to new standalone PNGs
-        /// in _ReadableTextures folder with isReadable=true, and swaps the material references.
+        /// Finds all non-readable textures on scene materials, copies their source files
+        /// to _ReadableTextures folder with isReadable=true, and swaps the material references.
+        /// No GPU needed — uses pure file I/O instead of Graphics.Blit.
         /// </summary>
         private void CopyTexturesAsReadable()
         {
@@ -1542,34 +1551,29 @@ namespace DCL.ABConverter.Editor
                                 continue;
                             }
 
-                            // Blit via RenderTexture to get pixels
-                            var rt = RenderTexture.GetTemporary(tex.width, tex.height, 0, RenderTextureFormat.ARGB32);
-                            Graphics.Blit(tex, rt);
-                            var prev = RenderTexture.active;
-                            RenderTexture.active = rt;
+                            // Find the source file on disk
+                            string sourcePath = AssetDatabase.GetAssetPath(tex);
+                            if (string.IsNullOrEmpty(sourcePath))
+                            {
+                                Log($"  WARNING: No asset path for texture {tex.name}, skipping.");
+                                continue;
+                            }
 
-                            var tmp = new Texture2D(tex.width, tex.height, TextureFormat.RGBA32, false);
-                            tmp.ReadPixels(new Rect(0, 0, tex.width, tex.height), 0, 0);
-                            tmp.Apply();
-
-                            RenderTexture.active = prev;
-                            RenderTexture.ReleaseTemporary(rt);
-
-                            // Save as standalone PNG
+                            // Copy the source file to _ReadableTextures
+                            string ext = Path.GetExtension(sourcePath);
+                            if (string.IsNullOrEmpty(ext)) ext = ".png";
                             string safeName = tex.name.Replace("/", "_").Replace("\\", "_");
-                            string pngPath = Path.Combine(READABLE_TEXTURES_FOLDER, $"{safeName}.png");
+                            string destPath = Path.Combine(READABLE_TEXTURES_FOLDER, $"{safeName}{ext}");
 
                             // Avoid name collisions
-                            if (File.Exists(pngPath))
-                                pngPath = Path.Combine(READABLE_TEXTURES_FOLDER, $"{safeName}_{tex.GetInstanceID()}.png");
+                            if (File.Exists(destPath))
+                                destPath = Path.Combine(READABLE_TEXTURES_FOLDER, $"{safeName}_{tex.GetInstanceID()}{ext}");
 
-                            File.WriteAllBytes(pngPath, tmp.EncodeToPNG());
-                            UnityEngine.Object.DestroyImmediate(tmp);
+                            File.Copy(sourcePath, destPath, true);
+                            AssetDatabase.ImportAsset(destPath);
 
-                            AssetDatabase.ImportAsset(pngPath);
-
-                            // Set readable on the standalone PNG
-                            var importer = AssetImporter.GetAtPath(pngPath) as TextureImporter;
+                            // Set readable on the copy
+                            var importer = AssetImporter.GetAtPath(destPath) as TextureImporter;
                             if (importer != null)
                             {
                                 importer.isReadable = true;
@@ -1577,7 +1581,7 @@ namespace DCL.ABConverter.Editor
                                 importer.SaveAndReimport();
                             }
 
-                            var readableTex = AssetDatabase.LoadAssetAtPath<Texture2D>(pngPath);
+                            var readableTex = AssetDatabase.LoadAssetAtPath<Texture2D>(destPath);
                             if (readableTex != null)
                             {
                                 copied[tex] = readableTex;
