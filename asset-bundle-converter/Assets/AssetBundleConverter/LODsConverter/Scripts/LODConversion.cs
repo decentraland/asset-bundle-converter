@@ -197,6 +197,64 @@ public class LODConversion
         }
     }
 
+    private Dictionary<int, Mesh> ExtractMeshes(LODPathHandler pathHandler)
+    {
+        string meshesFolder = Path.Combine(pathHandler.fileDirectory, "Meshes");
+        Directory.CreateDirectory(meshesFolder);
+        string meshesFolderRelative = PathUtils.GetRelativePathTo(Application.dataPath, meshesFolder);
+
+        var lookup = new Dictionary<int, Mesh>(); // instanceID -> extracted mesh
+        var allAssets = AssetDatabase.LoadAllAssetsAtPath(pathHandler.filePathRelativeToDataPath);
+        int meshIdx = 0;
+
+        foreach (var asset in allAssets)
+        {
+            if (asset is Mesh mesh)
+            {
+                string meshName = string.IsNullOrEmpty(mesh.name) ? $"mesh_{meshIdx}" : mesh.name;
+                string destPath = $"{meshesFolderRelative}/{meshName}_{meshIdx}.asset";
+
+                var clone = Object.Instantiate(mesh);
+                clone.name = meshName;
+                AssetDatabase.CreateAsset(clone, destPath);
+
+                lookup[mesh.GetInstanceID()] = clone;
+                Debug.Log($"[LOD] Extracted mesh: {meshName} ({mesh.vertexCount} verts) -> {destPath}");
+                meshIdx++;
+            }
+        }
+
+        if (meshIdx > 0)
+        {
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            Debug.Log($"[LOD] Extracted {meshIdx} meshes to {meshesFolderRelative}");
+        }
+
+        return lookup;
+    }
+
+    private void RemapMeshReferences(GameObject root, Dictionary<int, Mesh> meshLookup)
+    {
+        foreach (var meshFilter in root.GetComponentsInChildren<MeshFilter>())
+        {
+            if (meshFilter.sharedMesh != null && meshLookup.TryGetValue(meshFilter.sharedMesh.GetInstanceID(), out var extracted))
+            {
+                meshFilter.sharedMesh = extracted;
+            }
+        }
+
+        foreach (var skinnedRenderer in root.GetComponentsInChildren<SkinnedMeshRenderer>())
+        {
+            if (skinnedRenderer.sharedMesh != null && meshLookup.TryGetValue(skinnedRenderer.sharedMesh.GetInstanceID(), out var extracted))
+            {
+                skinnedRenderer.sharedMesh = extracted;
+            }
+        }
+
+        Debug.Log($"[LOD] Remapped mesh references ({meshLookup.Count} meshes)");
+    }
+
     /// <summary>
     /// Builds a lookup from texture name to extracted standalone texture asset.
     /// </summary>
@@ -253,6 +311,10 @@ public class LODConversion
         var instantiated = GameObject.Instantiate(prefab);
         Debug.Log($"[LOD] Instantiated. Renderers: {instantiated.GetComponentsInChildren<Renderer>().Length}");
 
+        // Extract meshes as standalone assets so the GLB can be removed
+        var meshLookup = ExtractMeshes(pathHandler);
+        RemapMeshReferences(instantiated, meshLookup);
+
         var extractedTextures = BuildExtractedTextureLookup(pathHandler);
         EnsureTextureFormat(pathHandler);
 
@@ -283,6 +345,10 @@ public class LODConversion
         Debug.Log($"[LOD] Saving prefab to: {prefabPath}");
         PrefabUtility.SaveAsPrefabAsset(instantiated, prefabPath);
         Object.DestroyImmediate(instantiated);
+
+        // Remove GLB so it's not included in the asset bundle
+        Debug.Log($"[LOD] Removing GLB: {pathHandler.filePathRelativeToDataPath}");
+        AssetDatabase.DeleteAsset(pathHandler.filePathRelativeToDataPath);
         AssetDatabase.Refresh();
 
         Debug.Log($"[LOD] Setting AB name on folder: {pathHandler.fileDirectoryRelativeToDataPath} -> {pathHandler.assetBundleFileName}");
