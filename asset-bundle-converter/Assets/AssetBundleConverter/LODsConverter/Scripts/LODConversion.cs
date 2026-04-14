@@ -57,6 +57,9 @@ public class LODConversion
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
+            Debug.Log("[LOD] Clearing stale shader bundle names...");
+            ClearAllShaderBundleNames();
+
             Debug.Log("[LOD] Assigning shader asset bundle...");
             assetDatabase.AssignAssetBundle(lodShader, false);
 
@@ -66,16 +69,13 @@ public class LODConversion
         catch (Exception e)
         {
             Debug.LogError($"[LOD] Conversion failed: {e.Message}\n{e.StackTrace}");
-            Debug.Log("[LOD] Keeping temp folder for inspection: " + lodPathHandler.tempPathRelativeToDataPath);
-            // NOT deleting temp folder so you can inspect
+            AssetDatabase.DeleteAsset(lodPathHandler.tempPathRelativeToDataPath);
             return;
         }
 
         Debug.Log("[LOD] Relocating output folder...");
         lodPathHandler.RelocateOutputFolder();
-
-        // NOT deleting temp folder so you can inspect
-        Debug.Log("[LOD] Temp folder kept at: " + lodPathHandler.tempPathRelativeToDataPath);
+        AssetDatabase.DeleteAsset(lodPathHandler.tempPathRelativeToDataPath);
 
         foreach (string glbPath in glbPaths)
             Debug.Log($"[LOD] Asset bundle built for {Path.GetFileName(glbPath)}");
@@ -493,6 +493,25 @@ public class LODConversion
         return tex;
     }
 
+    private void ClearAllShaderBundleNames()
+    {
+        string[] allBundleNames = AssetDatabase.GetAllAssetBundleNames();
+        foreach (string bundleName in allBundleNames)
+        {
+            string[] assetPaths = AssetDatabase.GetAssetPathsFromAssetBundle(bundleName);
+            foreach (string assetPath in assetPaths)
+            {
+                var importer = AssetImporter.GetAtPath(assetPath);
+                if (importer != null && assetPath.EndsWith(".shader", StringComparison.OrdinalIgnoreCase))
+                {
+                    Debug.Log($"[LOD] Clearing bundle name on: {assetPath} (was '{importer.assetBundleName}')");
+                    importer.SetAssetBundleNameAndVariant("", "");
+                }
+            }
+        }
+        AssetDatabase.RemoveUnusedAssetBundleNames();
+    }
+
     public void BuildAssetBundles(BuildTarget target)
     {
         Debug.Log($"[LOD] === BuildAssetBundles START (target={target}, output={lodPathHandler.outputPath}) ===");
@@ -529,8 +548,17 @@ public class LODConversion
             Debug.Log($"[LOD]   Generating metadata for: {assetBundle} (lodName={lodName})");
             string[] deps = manifest.GetAllDependencies(assetBundle);
             Debug.Log($"[LOD]     Dependencies: [{string.Join(", ", deps)}]");
-            AssetBundleMetadataBuilder.GenerateLODMetadata(lodPathHandler.tempPath,
-                deps, $"{lodName}.prefab", lodName);
+
+            // Write metadata directly to the file directory (no subfolder)
+            var metadata = new AssetBundleMetadata
+            {
+                timestamp = DateTime.UtcNow.Ticks,
+                mainAsset = $"{lodName}.prefab",
+                dependencies = deps
+            };
+            string metadataPath = Path.Combine(lodPathHandler.fileDirectory, "metadata.json");
+            File.WriteAllText(metadataPath, JsonUtility.ToJson(metadata));
+            Debug.Log($"[LOD]     Metadata written to: {metadataPath}");
         }
 
         AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
