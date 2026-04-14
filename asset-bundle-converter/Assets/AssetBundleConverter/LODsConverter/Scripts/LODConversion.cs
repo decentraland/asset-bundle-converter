@@ -20,6 +20,8 @@ public class LODConversion
     private readonly LODPathHandler lodPathHandler;
     private readonly string[] glbPaths;
     private readonly Shader lodShader;
+    // Maps AB name -> file directory for metadata writing
+    private readonly Dictionary<string, string> bundleToDirectory = new();
 
     public LODConversion(string customOutputPath, string[] glbPaths)
     {
@@ -52,6 +54,7 @@ public class LODConversion
 
                 var parcel = await FetchParcel(lodPathHandler.fileName);
                 BuildPrefab(lodPathHandler, parcel);
+                bundleToDirectory[lodPathHandler.assetBundleFileName] = lodPathHandler.fileDirectory;
             }
 
             AssetDatabase.SaveAssets();
@@ -86,11 +89,20 @@ public class LODConversion
     private string CopyGLBToTemp(string sourcePath)
     {
         string fileName = Path.GetFileName(sourcePath);
-        string destPath = Path.Combine(lodPathHandler.tempPath, fileName);
+        string folderName = Path.GetFileNameWithoutExtension(sourcePath).ToLower();
+
+        // Each GLB gets its own subfolder to avoid collisions
+        string subFolder = Path.Combine(lodPathHandler.tempPath, folderName);
+        Directory.CreateDirectory(subFolder);
+
+        // Create the subfolder via AssetDatabase so Unity tracks it
+        string tempRelative = lodPathHandler.tempPathRelativeToDataPath;
+        if (!AssetDatabase.IsValidFolder(Path.Combine(tempRelative, folderName)))
+            AssetDatabase.CreateFolder(tempRelative, folderName);
+
+        string destPath = Path.Combine(subFolder, fileName);
         Debug.Log($"[LOD] CopyGLBToTemp: {sourcePath} -> {destPath}");
-        Debug.Log($"[LOD]   Source exists: {File.Exists(sourcePath)}");
         File.Copy(sourcePath, destPath, true);
-        Debug.Log($"[LOD]   Dest exists after copy: {File.Exists(destPath)}");
         AssetDatabase.Refresh();
         return destPath;
     }
@@ -549,16 +561,23 @@ public class LODConversion
             string[] deps = manifest.GetAllDependencies(assetBundle);
             Debug.Log($"[LOD]     Dependencies: [{string.Join(", ", deps)}]");
 
-            // Write metadata directly to the file directory (no subfolder)
-            var metadata = new AssetBundleMetadata
+            // Write metadata to the correct GLB's subfolder
+            if (bundleToDirectory.TryGetValue(assetBundle, out string directory))
             {
-                timestamp = DateTime.UtcNow.Ticks,
-                mainAsset = $"{lodName}.prefab",
-                dependencies = deps
-            };
-            string metadataPath = Path.Combine(lodPathHandler.fileDirectory, "metadata.json");
-            File.WriteAllText(metadataPath, JsonUtility.ToJson(metadata));
-            Debug.Log($"[LOD]     Metadata written to: {metadataPath}");
+                var metadata = new AssetBundleMetadata
+                {
+                    timestamp = DateTime.UtcNow.Ticks,
+                    mainAsset = $"{lodName}.prefab",
+                    dependencies = deps
+                };
+                string metadataPath = Path.Combine(directory, "metadata.json");
+                File.WriteAllText(metadataPath, JsonUtility.ToJson(metadata));
+                Debug.Log($"[LOD]     Metadata written to: {metadataPath}");
+            }
+            else
+            {
+                Debug.LogWarning($"[LOD]     No directory found for bundle: {assetBundle}");
+            }
         }
 
         AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
