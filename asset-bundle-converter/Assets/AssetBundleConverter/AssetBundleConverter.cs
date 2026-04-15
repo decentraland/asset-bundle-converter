@@ -845,15 +845,6 @@ namespace DCL.ABConverter
 
                     ReduceTextureSizeIfNeeded(texPath, maxTextureSize);
 
-                    var importer = env.assetDatabase.GetImporterAtPath(texPath) as TextureImporter;
-
-                    if (importer != null)
-                    {
-                        TextureUtils.ApplyBuildTargetTextureSettings(importer, settings.buildTarget);
-                        EditorUtility.SetDirty(importer);
-                        env.assetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
-                    }
-
                     newTextures.Add(env.assetDatabase.LoadAssetAtPath<Texture2D>(texPath));
                 }
             }
