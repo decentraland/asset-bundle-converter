@@ -360,12 +360,7 @@ export async function executeConversion(
       logger.error('Empty conversion', { ...defaultLoggerMetadata, manifest } as any)
     }
 
-    let uploadPath: string = ''
-    if ($BUILD_TARGET === 'webgl') {
-      uploadPath = abVersion
-    } else {
-      uploadPath = abVersion + '/' + entityId
-    }
+    const uploadPath = abVersion + '/' + entityId
 
     // first upload the content
     await uploadDir(components.cdnS3, cdnBucket, outDirectory, uploadPath, {
