@@ -340,17 +340,7 @@ namespace DCL.ABConverter
                 {
                     if (asset is Material material)
                     {
-                        if (ClientSettings.shaderType == ShaderType.Dcl)
-                        {
-                            material.shader = Shader.Find("DCL/Universal Render Pipeline/Lit");
-                        }
-                        else
-                        {
-                            material.shader = Shader.Find("Shader Graphs/glTF-pbrMetallicRoughness");
-                        }
-
-                        if (ClientSettings.buildTarget == BuildTarget.WebGL)
-                            SRPBatchingHelper.OptimizeMaterial(material);
+                        material.shader = Shader.Find("DCL/Scene");
                     }
 
                     if (asset is GameObject assetAsGameObject)

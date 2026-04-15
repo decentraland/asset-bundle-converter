@@ -75,7 +75,7 @@ namespace AssetBundleConverter.Editor
             }
 
             if (!useOriginalMaterials)
-                SetupCustomMaterialGenerator(new AssetBundleConverterMaterialGenerator(AssetBundleConverterMaterialGenerator.UseNewShader(EditorUserBuildSettings.activeBuildTarget), EditorUserBuildSettings.activeBuildTarget == BuildTarget.WebGL));
+                SetupCustomMaterialGenerator(new AssetBundleConverterMaterialGenerator());
 
             try
             {
@@ -247,7 +247,7 @@ namespace AssetBundleConverter.Editor
                     if (!tex)
                         continue;
 
-                    maps[$"{rendererSharedMaterial.name}_{propertyName}"] = new TexMaterialMap(rendererSharedMaterial, propertyName, false);
+                    maps[$"{rendererSharedMaterial.name}_{propertyName}"] = new TexMaterialMap(rendererSharedMaterial, propertyName, IsNormalMap(propertyName));
                 }
             }
 
@@ -295,11 +295,12 @@ namespace AssetBundleConverter.Editor
                         TextureImporterType targetImportType = GetTextureImporterType(tImporter, isNormalMap);
                         tImporter.textureType = targetImportType;
 
-                        tImporter.crunchedCompression = true;
                         tImporter.sRGBTexture = !metallics.Contains(tex);
                         tImporter.compressionQuality = 100;
                         tImporter.textureCompression = TextureImporterCompression.CompressedHQ;
                         tImporter.mipmapEnabled = true;
+
+                        TextureUtils.ApplyBuildTargetTextureSettings(tImporter, EditorUserBuildSettings.activeBuildTarget);
 
                         // With this we avoid re-importing this glb as it may contain invalid references to textures
                         EditorUtility.SetDirty(tImporter);
@@ -457,11 +458,6 @@ namespace AssetBundleConverter.Editor
 
         private static bool IsNormalMap(string propertyName) =>
             propertyName is "_BumpMap" or "normalTexture";
-
-        protected override void CreateTextureAssets(AssetImportContext ctx)
-        {
-            // intended nothingness
-        }
 
         private string PatchInvalidFileNameChars(string fileName)
         {

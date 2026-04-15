@@ -7,11 +7,8 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using AssetBundleConverter;
 using AssetBundleConverter.Editor;
-using AssetBundleConverter.StaticSceneAssetBundle;
 using AssetBundleConverter.Wrappers.Interfaces;
-using Cysharp.Threading.Tasks;
 using GLTFast;
-using Newtonsoft.Json;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -236,13 +233,7 @@ namespace DCL.ABConverter
             var universalRendererData = Resources.FindObjectsOfTypeAll<UniversalRendererData>().First();
             var rendererDataPath = AssetDatabase.GetAssetPath(universalRendererData);
 
-            universalRendererData.renderingMode = targetPlatform switch
-                                                  {
-                                                      BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX => RenderingMode.ForwardPlus,
-                                                      BuildTarget.WebGL => RenderingMode.Forward,
-                                                      _ => universalRendererData.renderingMode
-                                                  };
-
+            universalRendererData.renderingMode =  RenderingMode.ForwardPlus;
             AssetDatabase.ImportAsset(rendererDataPath);
         }
 
@@ -631,11 +622,7 @@ namespace DCL.ABConverter
             if (entityDTO == null) return AnimationMethod.Legacy;
             if (isWearable) return AnimationMethod.None;
             if (isEmote) return AnimationMethod.Mecanim;
-            if (settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX)
-                return settings.AnimationMethod;
-
-            //WebGL platform fallback is always Legacy
-            return AnimationMethod.Legacy;
+            return settings.AnimationMethod;
         }
 
         private void ExtractEmbedMaterialsFromGltf(List<Texture2D> textures, GltfImportSettings gltf, IGltfImport gltfImport, string gltfUrl)
@@ -1375,10 +1362,11 @@ namespace DCL.ABConverter
 
                     ReduceTextureSizeIfNeeded(finalTexturePath, maxTextureSize);
 
-                    texImporter.crunchedCompression = true;
                     texImporter.textureCompression = TextureImporterCompression.CompressedHQ;
                     texImporter.isReadable = true;
                     texImporter.alphaIsTransparency = true;
+
+                    TextureUtils.ApplyBuildTargetTextureSettings(texImporter, settings.buildTarget);
                     EditorUtility.SetDirty(texImporter);
                 }
 
