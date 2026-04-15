@@ -31,14 +31,14 @@ namespace AssetBundleConverter.Editor
     [ScriptedImporter(1, new[] { "gltf", "glb" })]
     public class CustomGltfImporter : GltfImporter
     {
-        [SerializeField] private bool useCustomFileProvider = false;
+        [SerializeField] private bool useCustomFileProvider;
         [SerializeField] public bool useOriginalMaterials;
         [HideInInspector] [SerializeField] private ContentMap[] contentMaps;
         [SerializeField] private string fileRootPath;
         [SerializeField] private string hash;
 
         private Dictionary<string, string> contentTable;
-        private HashSet<string> assetNames = new ();
+        private readonly HashSet<string> assetNames = new ();
         private List<string> textureNames;
         private HashSet<Texture2D> textureHash;
         private Dictionary<Texture2D, List<TexMaterialMap>> texMaterialMap;
@@ -70,12 +70,12 @@ namespace AssetBundleConverter.Editor
             }
             else
             {
-                Debug.LogWarning($"Importing without file provider, there can be errors because of relative path files, please run the pipeline again");
+                Debug.LogWarning("Importing without file provider, there can be errors because of relative path files, please run the pipeline again");
                 return;
             }
 
             if (!useOriginalMaterials)
-                SetupCustomMaterialGenerator(new AssetBundleConverterMaterialGenerator(AssetBundleConverterMaterialGenerator.UseNewShader(EditorUserBuildSettings.activeBuildTarget), EditorUserBuildSettings.activeBuildTarget == BuildTarget.WebGL));
+                SetupCustomMaterialGenerator(new AssetBundleConverterMaterialGenerator());
 
             try
             {
@@ -247,7 +247,7 @@ namespace AssetBundleConverter.Editor
                     if (!tex)
                         continue;
 
-                    maps[$"{rendererSharedMaterial.name}_{propertyName}"] = new TexMaterialMap(rendererSharedMaterial, propertyName, false);
+                    maps[$"{rendererSharedMaterial.name}_{propertyName}"] = new TexMaterialMap(rendererSharedMaterial, propertyName, IsNormalMap(propertyName));
                 }
             }
 
@@ -295,11 +295,12 @@ namespace AssetBundleConverter.Editor
                         TextureImporterType targetImportType = GetTextureImporterType(tImporter, isNormalMap);
                         tImporter.textureType = targetImportType;
 
-                        tImporter.crunchedCompression = true;
                         tImporter.sRGBTexture = !metallics.Contains(tex);
                         tImporter.compressionQuality = 100;
                         tImporter.textureCompression = TextureImporterCompression.CompressedHQ;
                         tImporter.mipmapEnabled = true;
+
+                        TextureUtils.ApplyBuildTargetTextureSettings(tImporter, EditorUserBuildSettings.activeBuildTarget);
 
                         // With this we avoid re-importing this glb as it may contain invalid references to textures
                         EditorUtility.SetDirty(tImporter);
@@ -343,7 +344,7 @@ namespace AssetBundleConverter.Editor
         {
             if (mat == null)
             {
-                Debug.LogError("FATAL!");
+                Debug.LogError("FATAL! Missing Material");
                 return;
             }
 
@@ -457,11 +458,6 @@ namespace AssetBundleConverter.Editor
 
         private static bool IsNormalMap(string propertyName) =>
             propertyName is "_BumpMap" or "normalTexture";
-
-        protected override void CreateTextureAssets(AssetImportContext ctx)
-        {
-            // intended nothingness
-        }
 
         private string PatchInvalidFileNameChars(string fileName)
         {

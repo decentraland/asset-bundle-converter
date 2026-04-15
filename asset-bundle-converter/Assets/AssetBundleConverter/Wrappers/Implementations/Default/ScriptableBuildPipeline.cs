@@ -39,22 +39,23 @@ namespace DCL
             EditorSceneManager.SaveOpenScenes();
 
             var buildInput = ContentBuildInterface.GenerateAssetBundleBuilds();
-            // Address by names instead of paths for backwards compatibility.
+            // Address by file names instead of full paths for backwards compatibility.
+            // Fall back to the full path for any asset whose file name is not unique within its bundle —
+            // SBP rejects duplicate internal ids since package 2.4.3.
             for (var i = 0; i < buildInput.Length; i++)
             {
-                //TODO (JUANI) : This is done here beacuse Untiy doesnt allow anymore since 2.4.3 Scriptable pipeline package two objects with the same name in an ABs
-                buildInput[i].addressableNames = buildInput[i].assetNames
-                                                              .Select(path =>
-                                                               {
-                                                                   var fileName = Path.GetFileName(path);
-                                                                   bool keepOriginal =
-                                                                       fileName.Contains("image", StringComparison.OrdinalIgnoreCase)
-                                                                       || fileName.Contains("material", StringComparison.OrdinalIgnoreCase)
-                                                                       || fileName.Contains("DCL_Scene", StringComparison.OrdinalIgnoreCase)
-                                                                       || fileName.Contains("animatorController", StringComparison.OrdinalIgnoreCase);
-                                                                   return keepOriginal ? path : fileName;
-                                                               })
-                                                              .ToArray();
+                var assetNames = buildInput[i].assetNames;
+                var shortNames = assetNames.Select(Path.GetFileName).ToArray();
+
+                var duplicatedNames = shortNames
+                    .GroupBy(n => n, StringComparer.OrdinalIgnoreCase)
+                    .Where(g => g.Count() > 1)
+                    .Select(g => g.Key)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                buildInput[i].addressableNames = assetNames
+                    .Select((path, idx) => duplicatedNames.Contains(shortNames[idx]) ? path : shortNames[idx])
+                    .ToArray();
             }
 
             var group = BuildPipeline.GetBuildTargetGroup(targetPlatform);
