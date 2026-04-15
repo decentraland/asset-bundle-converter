@@ -44,18 +44,18 @@ namespace DCL.ABConverter
 
         private readonly Dictionary<string, string> lowerCaseHashes = new ();
         public ConversionState CurrentState { get; } = new ();
-        private readonly Environment env;
-        private readonly ClientSettings settings;
+        private Environment env;
+        private ClientSettings settings;
         private readonly string finalDownloadedPath;
         private readonly string finalDownloadedAssetDbPath;
-        private readonly List<AssetPath> assetsToMark = new ();
-        private readonly List<GltfImportSettings> gltfToWait = new ();
-        private readonly Dictionary<string, string> contentTable = new ();
-        private readonly Dictionary<string, string> gltfOriginalNames = new ();
-        private readonly Dictionary<string, IGltfImport> gltfImporters = new ();
+        private List<AssetPath> assetsToMark = new ();
+        private List<GltfImportSettings> gltfToWait = new ();
+        private Dictionary<string, string> contentTable = new ();
+        private Dictionary<string, string> gltfOriginalNames = new ();
+        private Dictionary<string, IGltfImport> gltfImporters = new ();
         private string logBuffer;
         private int skippedAssets;
-        private readonly IErrorReporter errorReporter;
+        private IErrorReporter errorReporter;
 
         private double conversionStartupTime;
         private double downloadStartupTime;

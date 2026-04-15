@@ -14,8 +14,8 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
     public class DefaultGltfImporter : IGltfImporter
     {
         private readonly ConsoleLogger gltfLogger = new ();
-        private readonly IAssetDatabase assetDatabase;
-        private readonly UninterruptedDeferAgent uninterruptedDeferAgent;
+        private IAssetDatabase assetDatabase;
+        private UninterruptedDeferAgent uninterruptedDeferAgent;
         private IMaterialGenerator getNewMaterialGenerator;
 
         public DefaultGltfImporter(IAssetDatabase assetDatabase)

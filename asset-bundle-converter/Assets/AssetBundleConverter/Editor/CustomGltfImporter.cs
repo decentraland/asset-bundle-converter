@@ -31,14 +31,14 @@ namespace AssetBundleConverter.Editor
     [ScriptedImporter(1, new[] { "gltf", "glb" })]
     public class CustomGltfImporter : GltfImporter
     {
-        [SerializeField] private bool useCustomFileProvider;
+        [SerializeField] private bool useCustomFileProvider = false;
         [SerializeField] public bool useOriginalMaterials;
         [HideInInspector] [SerializeField] private ContentMap[] contentMaps;
         [SerializeField] private string fileRootPath;
         [SerializeField] private string hash;
 
         private Dictionary<string, string> contentTable;
-        private readonly HashSet<string> assetNames = new ();
+        private HashSet<string> assetNames = new ();
         private List<string> textureNames;
         private HashSet<Texture2D> textureHash;
         private Dictionary<Texture2D, List<TexMaterialMap>> texMaterialMap;
@@ -70,7 +70,7 @@ namespace AssetBundleConverter.Editor
             }
             else
             {
-                Debug.LogWarning("Importing without file provider, there can be errors because of relative path files, please run the pipeline again");
+                Debug.LogWarning($"Importing without file provider, there can be errors because of relative path files, please run the pipeline again");
                 return;
             }
 
@@ -344,7 +344,7 @@ namespace AssetBundleConverter.Editor
         {
             if (mat == null)
             {
-                Debug.LogError("FATAL! Missing Material");
+                Debug.LogError("FATAL!");
                 return;
             }
 
