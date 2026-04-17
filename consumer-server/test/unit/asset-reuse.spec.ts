@@ -347,19 +347,6 @@ describe('checkAssetCache', () => {
       expect(v49Run.calls.map((c) => c.Key)).toEqual(['v49/assets/h1_windows'])
     })
 
-    it('should expire hits after the TTL', async () => {
-      probeHitCache.add('v48/assets/h1_windows')
-      expect(probeHitCache.has('v48/assets/h1_windows')).toBe(true)
-
-      const realNow = Date.now
-      try {
-        Date.now = () => realNow() + probeHitCache.ttlMs + 1
-        expect(probeHitCache.has('v48/assets/h1_windows')).toBe(false)
-      } finally {
-        Date.now = realNow
-      }
-    })
-
     it('should keep working when methods are called without the object receiver', () => {
       // Guards against destructuring-style usage or accidental re-binding.
       const { has, add } = probeHitCache
@@ -367,19 +354,70 @@ describe('checkAssetCache', () => {
       expect(has('k')).toBe(true)
     })
 
-    it('should evict oldest entry when the cache is full', () => {
+    it('should evict the least-recently-used entry when full (insertion order)', () => {
       const originalMax = probeHitCache.maxSize
       try {
         probeHitCache.maxSize = 3
         probeHitCache.add('k1')
         probeHitCache.add('k2')
         probeHitCache.add('k3')
-        probeHitCache.add('k4') // should push k1 out
+        probeHitCache.add('k4') // k1 is LRU → evicted
 
         expect(probeHitCache.has('k1')).toBe(false)
         expect(probeHitCache.has('k2')).toBe(true)
         expect(probeHitCache.has('k3')).toBe(true)
         expect(probeHitCache.has('k4')).toBe(true)
+      } finally {
+        probeHitCache.maxSize = originalMax
+      }
+    })
+
+    it('should promote a key to MRU on has() so it survives the next eviction', () => {
+      const originalMax = probeHitCache.maxSize
+      try {
+        probeHitCache.maxSize = 3
+        probeHitCache.add('k1')
+        probeHitCache.add('k2')
+        probeHitCache.add('k3')
+        // Touch k1 — now the LRU is k2, not k1.
+        expect(probeHitCache.has('k1')).toBe(true)
+        probeHitCache.add('k4') // k2 should be evicted, not k1.
+
+        expect(probeHitCache.has('k1')).toBe(true)
+        expect(probeHitCache.has('k2')).toBe(false)
+        expect(probeHitCache.has('k3')).toBe(true)
+        expect(probeHitCache.has('k4')).toBe(true)
+      } finally {
+        probeHitCache.maxSize = originalMax
+      }
+    })
+
+    it('should refresh the LRU position when add() is called on an existing key', () => {
+      const originalMax = probeHitCache.maxSize
+      try {
+        probeHitCache.maxSize = 3
+        probeHitCache.add('k1')
+        probeHitCache.add('k2')
+        probeHitCache.add('k3')
+        // Re-adding k1 promotes it to MRU, making k2 the new LRU.
+        probeHitCache.add('k1')
+        probeHitCache.add('k4') // k2 should be evicted.
+
+        expect(probeHitCache.has('k1')).toBe(true)
+        expect(probeHitCache.has('k2')).toBe(false)
+        expect(probeHitCache.has('k3')).toBe(true)
+        expect(probeHitCache.has('k4')).toBe(true)
+      } finally {
+        probeHitCache.maxSize = originalMax
+      }
+    })
+
+    it('should not grow past maxSize no matter how many unique keys are added', () => {
+      const originalMax = probeHitCache.maxSize
+      try {
+        probeHitCache.maxSize = 5
+        for (let i = 0; i < 100; i++) probeHitCache.add(`key-${i}`)
+        expect(probeHitCache.hits.size).toBe(5)
       } finally {
         probeHitCache.maxSize = originalMax
       }

@@ -29,38 +29,43 @@ function canonicalAssetKey(abVersion: string, hash: string, target: string): str
   return `${abVersion}/assets/${hash}_${target}`
 }
 
-// Process-local cache of canonical keys confirmed to exist in S3. Canonical
+// Process-local LRU cache of canonical keys confirmed to exist in S3. Canonical
 // bundles are immutable once written (immutable Cache-Control, content-addressed
-// path), so remembering a HIT across multiple conversions in the same worker is
-// safe — the asset can't disappear underneath us. MISSES are intentionally NOT
-// cached: another worker racing the same asset may have just uploaded it, and a
-// stale-miss would force pointless Unity re-conversion.
+// path), so a HIT is valid forever — we evict purely on usage pressure, not on
+// time. MISSES are intentionally NOT cached: another worker racing the same asset
+// may have just uploaded it, and a stale-miss would force pointless Unity
+// re-conversion.
 //
 // The entries are plain canonical keys (`{abVersion}/assets/{hash}_{target}`) so
 // that a version bump or a different build target never returns a false positive.
+// LRU ordering is maintained via JS Set insertion order — on every hit we
+// delete + re-add the key so it becomes the most-recently-used entry, and on
+// eviction we drop the first (least-recently-used) element.
 // Arrow fields (not methods) so destructured references don't lose `this`.
 // Exported for unit testing.
 export const probeHitCache = {
-  hits: new Map<string, number>(),
-  ttlMs: 30 * 60_000, // 30 minutes
+  hits: new Set<string>(),
   maxSize: 20_000,
   has: function (key: string): boolean {
-    const ts = probeHitCache.hits.get(key)
-    if (ts === undefined) return false
-    if (Date.now() - ts > probeHitCache.ttlMs) {
-      probeHitCache.hits.delete(key)
-      return false
-    }
+    if (!probeHitCache.hits.has(key)) return false
+    // Touch: move the key to the back of the Set so it's now the MRU entry.
+    probeHitCache.hits.delete(key)
+    probeHitCache.hits.add(key)
     return true
   },
   add: function (key: string) {
-    // Simple bound: when full, drop the oldest insertion (Map preserves insertion
-    // order, so `keys().next().value` is the oldest entry).
-    if (probeHitCache.hits.size >= probeHitCache.maxSize) {
-      const oldest = probeHitCache.hits.keys().next().value
-      if (oldest !== undefined) probeHitCache.hits.delete(oldest)
+    // If the key is already present, just refresh its LRU position.
+    if (probeHitCache.hits.has(key)) {
+      probeHitCache.hits.delete(key)
+      probeHitCache.hits.add(key)
+      return
     }
-    probeHitCache.hits.set(key, Date.now())
+    // New key + at capacity: evict the least-recently-used entry (front of Set).
+    if (probeHitCache.hits.size >= probeHitCache.maxSize) {
+      const lru = probeHitCache.hits.values().next().value
+      if (lru !== undefined) probeHitCache.hits.delete(lru)
+    }
+    probeHitCache.hits.add(key)
   },
   clear: function () {
     probeHitCache.hits.clear()
