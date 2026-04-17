@@ -464,6 +464,22 @@ describe('purgeCachedBundlesFromOutput', () => {
     })
   })
 
+  describe('when fs.unlink throws for some entries', () => {
+    it('should log a warning and count only the successful unlinks', async () => {
+      // A file + a directory that share the cached-hash prefix. unlink on a dir
+      // throws EISDIR, which exercises the error branch without mocking fs.
+      await fs.writeFile(path.join(tmpDir, 'cached_windows'), 'x')
+      await fs.mkdir(path.join(tmpDir, 'cached_windows.br'))
+
+      const { logger, messages } = makeMockLogger()
+      const removed = await purgeCachedBundlesFromOutput(tmpDir, ['cached'], logger)
+
+      expect(removed).toBe(1)
+      const warn = messages.find((m) => m.level === 'warn')
+      expect(warn?.msg).toContain('Failed to purge cached bundle cached_windows.br')
+    })
+  })
+
   describe('when Unity emits generic artifacts without a hash prefix', () => {
     it('should leave them alone regardless of cachedHashes content', async () => {
       // Generic Unity output files that do not carry a content hash.

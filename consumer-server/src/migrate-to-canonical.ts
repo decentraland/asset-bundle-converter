@@ -36,14 +36,15 @@ type Stats = {
 
 // Matches bundle filenames Unity emits under an entity prefix. The leading segment
 // is a CID; the trailing portion encodes target and optional variant suffixes.
-function buildBundlePattern(target: string): RegExp {
+// Exported for unit testing.
+export function buildBundlePattern(target: string): RegExp {
   return new RegExp(`^[^/]+_${target}(\\.br|\\.manifest|\\.manifest\\.br)?$`)
 }
 
 // Manifests live at `manifest/{entityId}.json` (WebGL) or
 // `manifest/{entityId}_{target}.json` (desktop). `_failed.json` sentinels are
-// skipped.
-function parseManifestKey(key: string): { entityId: string; target: string } | null {
+// skipped. Exported for unit testing.
+export function parseManifestKey(key: string): { entityId: string; target: string } | null {
   const base = key.replace(/^manifest\//, '').replace(/\.json$/, '')
   if (!base || base.endsWith('_failed')) return null
 
@@ -53,7 +54,8 @@ function parseManifestKey(key: string): { entityId: string; target: string } | n
   return { entityId: base, target: 'webgl' }
 }
 
-function isNotFound(err: any): boolean {
+// Exported for unit testing.
+export function isNotFound(err: any): boolean {
   return !!err && (err.statusCode === 404 || err.code === 'NotFound' || err.code === 'NoSuchKey')
 }
 
@@ -222,7 +224,11 @@ Options:
   console.log(JSON.stringify(stats, null, 2))
 }
 
-main().catch((err) => {
-  console.error(err)
-  process.exit(1)
-})
+// Only execute when run directly (`node dist/migrate-to-canonical.js`). Leaves the
+// module importable from tests without firing off a real migration.
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err)
+    process.exit(1)
+  })
+}
