@@ -10,6 +10,7 @@ import { hasContentChange } from './has-content-changed-task'
 import { getUnityBuildTarget } from '../utils'
 import { getActiveEntity } from './fetch-entity-by-pointer'
 import fetch from 'node-fetch'
+import { checkAssetCache, purgeCachedBundlesFromOutput, AssetCacheResult } from './asset-reuse'
 
 type Manifest = {
   version: string
@@ -21,6 +22,18 @@ type Manifest = {
 
 async function getCdnBucket(components: Pick<AppComponents, 'config'>) {
   return (await components.config.getString('CDN_BUCKET')) || 'CDN_BUCKET'
+}
+
+// Case-insensitive boolean env var parser. Treats the common false-y spellings
+// (`false`, `0`, `no`, `off`) as false and the common truthy spellings
+// (`true`, `1`, `yes`, `on`) as true; anything else (including unset/empty) falls
+// back to `defaultValue`. Exported for unit testing.
+export function parseBooleanFlag(raw: string | undefined, defaultValue: boolean): boolean {
+  if (raw === undefined || raw === '') return defaultValue
+  const normalized = raw.trim().toLowerCase()
+  if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'off') return false
+  if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on') return true
+  return defaultValue
 }
 
 function manifestKeyForEntity(entityId: string, target: string | undefined) {
@@ -61,49 +74,53 @@ async function uploadSceneSourceFilesToCDN(
     contentsBaseUrl += 'contents/'
   }
 
-  for (const fileName of filesToUpload) {
-    const contentDef = entity?.content?.find((c) => c.file === fileName)
-    if (!contentDef) {
-      logger.info(`${fileName} not found in entity content, skipping CDN upload`)
-      continue
-    }
-
-    const s3Key = `${uploadPath}/${fileName}`
-
-    try {
-      const fileUrl = `${contentsBaseUrl}${contentDef.hash}`
-      const response = await fetch(fileUrl)
-
-      if (!response.ok) {
-        logger.error(
-          `Failed to download ${fileName} from catalyst (${fileUrl}): ${response.status} ${response.statusText}`
-        )
-        continue
+  // Fetch+upload all source files in parallel. Independent files, each a catalyst
+  // round-trip + S3 PUT; serializing them was tens-of-ms × N files of tail latency.
+  await Promise.all(
+    filesToUpload.map(async (fileName) => {
+      const contentDef = entity?.content?.find((c) => c.file === fileName)
+      if (!contentDef) {
+        logger.info(`${fileName} not found in entity content, skipping CDN upload`)
+        return
       }
 
-      const content = await response.buffer()
-      const contentType = fileName.endsWith('.js')
-        ? 'application/javascript'
-        : fileName.endsWith('.json')
-          ? 'application/json'
-          : 'application/octet-stream'
+      const s3Key = `${uploadPath}/${fileName}`
 
-      await components.cdnS3
-        .upload({
-          Bucket: cdnBucket,
-          Key: s3Key,
-          Body: content,
-          ContentType: contentType,
-          ACL: 'public-read',
-          CacheControl: 'public, max-age=31536000, immutable'
-        })
-        .promise()
+      try {
+        const fileUrl = `${contentsBaseUrl}${contentDef.hash}`
+        const response = await fetch(fileUrl)
 
-      logger.info(`Uploaded ${fileName} to CDN at ${s3Key} (${content.length} bytes)`)
-    } catch (err: any) {
-      logger.error(`Failed to upload ${fileName} to CDN: ${err.message}`)
-    }
-  }
+        if (!response.ok) {
+          logger.error(
+            `Failed to download ${fileName} from catalyst (${fileUrl}): ${response.status} ${response.statusText}`
+          )
+          return
+        }
+
+        const content = await response.buffer()
+        const contentType = fileName.endsWith('.js')
+          ? 'application/javascript'
+          : fileName.endsWith('.json')
+            ? 'application/json'
+            : 'application/octet-stream'
+
+        await components.cdnS3
+          .upload({
+            Bucket: cdnBucket,
+            Key: s3Key,
+            Body: content,
+            ContentType: contentType,
+            ACL: 'public-read',
+            CacheControl: 'public, max-age=31536000, immutable'
+          })
+          .promise()
+
+        logger.info(`Uploaded ${fileName} to CDN at ${s3Key} (${content.length} bytes)`)
+      } catch (err: any) {
+        logger.error(`Failed to upload ${fileName} to CDN: ${err.message}`)
+      }
+    })
+  )
 }
 
 // returns true if the asset was converted and uploaded with the same version of the converter
@@ -264,6 +281,7 @@ export async function executeConversion(
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
   const $PROJECT_PATH = await components.config.requireString('PROJECT_PATH')
   const $BUILD_TARGET = await components.config.requireString('BUILD_TARGET')
+  const $ASSET_REUSE_ENABLED = parseBooleanFlag(await components.config.getString('ASSET_REUSE_ENABLED'), true)
 
   const logger = components.logs.getLogger(`ExecuteConversion`)
 
@@ -293,9 +311,117 @@ export async function executeConversion(
   const defaultLoggerMetadata = { entityId, contentServerUrl, version: abVersion, logFile: s3LogKey }
 
   logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
-  let hasContentChanged = true
 
-  if ($BUILD_TARGET !== 'webgl' && !force && !doISS) {
+  // Fetch the entity up-front — needed both for the per-asset cache probe (when
+  // enabled) and for uploading scene source files regardless of whether Unity runs.
+  let entityType = 'undefined'
+  let entity: Awaited<ReturnType<typeof getActiveEntity>> | null = null
+  try {
+    entity = await getActiveEntity(entityId, contentServerUrl)
+    entityType = entity.type
+  } catch (e) {
+    logger.info(`Could not determine entity type for ${entityId}, scene manifest wont be generated`)
+  }
+
+  // Per-asset reuse: non-WebGL scenes with the kill switch on and no force/ISS
+  // short-circuit the pipeline when every asset hash is already canonicalized at
+  // `{abVersion}/assets/{hash}_{target}`. Partial hits feed Unity a `-cachedHashes`
+  // list so it skips re-converting those GLTFs/buffers.
+  const useAssetReuse =
+    $ASSET_REUSE_ENABLED && $BUILD_TARGET !== 'webgl' && !force && !doISS && entityType === 'scene' && !!entity
+  const assetReuseUploadPath = abVersion + '/assets'
+  const entityScopedUploadPath = abVersion + '/' + entityId
+
+  let cacheResult: AssetCacheResult | null = null
+  let fullCacheHit = false
+  if (useAssetReuse && entity) {
+    try {
+      cacheResult = await checkAssetCache(components, {
+        entity,
+        abVersion,
+        buildTarget: $BUILD_TARGET,
+        cdnBucket
+      })
+      const totalProbed = cacheResult.cachedHashes.length + cacheResult.missingHashes.length
+      fullCacheHit = totalProbed > 0 && cacheResult.missingHashes.length === 0
+    } catch (e: any) {
+      logger.warn(`Asset cache probe failed, falling back to full conversion: ${e.message}`)
+      cacheResult = null
+    }
+  }
+
+  if (useAssetReuse && fullCacheHit && cacheResult && entity) {
+    // Full short-circuit: every referenced asset hash is already canonical. Publish
+    // the entity manifest pointing at the canonical paths and upload scene source
+    // files. No Unity run, no output directory.
+    logger.info('All assets cached — skipping Unity', {
+      entityId,
+      cached: cacheResult.cachedHashes.length
+    } as any)
+
+    const files = cacheResult.cachedHashes.map((h) => `${h}_${$BUILD_TARGET}`)
+    const manifest: Manifest = {
+      version: abVersion,
+      files,
+      exitCode: 0,
+      contentServerUrl,
+      date: new Date().toISOString()
+    }
+
+    try {
+      // Scene source files first, then manifest — matches the main path's ordering
+      // so a client that sees a freshly-published manifest never races against a
+      // missing main.crdt / scene.json / index.js.
+      if (entityType === 'scene') {
+        await uploadSceneSourceFilesToCDN(components, entity, contentServerUrl, entityScopedUploadPath, cdnBucket)
+      }
+
+      await components.cdnS3
+        .upload({
+          Bucket: cdnBucket,
+          Key: manifestFile,
+          ContentType: 'application/json',
+          Body: JSON.stringify(manifest),
+          CacheControl: 'private, max-age=0, no-cache',
+          ACL: 'public-read'
+        })
+        .promise()
+    } catch (err: any) {
+      // Short-circuit failed post-probe. SQS will retry; we capture for visibility
+      // because the main-path error handler below never runs.
+      components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
+      logger.error(err, defaultLoggerMetadata as any)
+      components.sentry.captureMessage(`Error during ab short-circuit`, {
+        level: 'error',
+        tags: {
+          entityId,
+          contentServerUrl,
+          unityBuildTarget,
+          version: abVersion,
+          shortCircuit: 'true',
+          date: new Date().toISOString()
+        }
+      })
+      throw err
+    }
+
+    components.metrics.increment('ab_converter_asset_reuse_short_circuit_total', {
+      build_target: $BUILD_TARGET,
+      ab_version: abVersion
+    })
+    components.metrics.increment('ab_converter_exit_codes', { exit_code: '0' })
+
+    return 0
+  }
+
+  // Secondary legacy fast-path (scene-level content-match check). Only runs when the
+  // new per-asset reuse didn't short-circuit. Gated on `entityType === 'scene'`
+  // because `hasContentChange` immediately returns true for non-scenes after a
+  // duplicate catalyst fetch — we skip the wasted round-trip here. Left in place
+  // intentionally — removing it is a separate follow-up after the new path is
+  // proven in production.
+  let hasContentChanged = true
+  if ($BUILD_TARGET !== 'webgl' && !force && !doISS && !useAssetReuse && entityType === 'scene') {
     try {
       hasContentChanged = await hasContentChange(
         entityId,
@@ -308,18 +434,7 @@ export async function executeConversion(
     } catch (e) {
       logger.info('HasContentChanged failed with error ' + e)
     }
-  }
-
-  logger.info(`HasContentChanged for ${entityId} result was ${hasContentChanged}`)
-
-  let entityType = 'undefined'
-  let entity: Awaited<ReturnType<typeof getActiveEntity>> | null = null
-  try {
-    // Fetch the entity to get its type and content list (also used to upload source files to CDN)
-    entity = await getActiveEntity(entityId, contentServerUrl)
-    entityType = entity.type
-  } catch (e) {
-    logger.info(`Could not determine entity type for ${entityId}, scene manifest wont be generated`)
+    logger.info(`HasContentChanged for ${entityId} result was ${hasContentChanged}`)
   }
 
   let exitCode
@@ -336,7 +451,8 @@ export async function executeConversion(
         timeout: 120 * 60 * 1000, // 120min temporarily doubled
         unityBuildTarget: unityBuildTarget,
         animation: animation,
-        doISS: doISS
+        doISS: doISS,
+        cachedHashes: useAssetReuse && cacheResult ? cacheResult.unitySkippableHashes : undefined
       })
     } else {
       exitCode = 0
@@ -344,12 +460,33 @@ export async function executeConversion(
 
     components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })
 
+    // When asset reuse is active, drop any cached-hash bundles that Unity produced
+    // anyway (either because the extension was not in the skippable set, or because
+    // the list bypass didn't cover every artifact). The canonical object already
+    // exists, so re-uploading would just be wasted work.
+    if (useAssetReuse && cacheResult && cacheResult.cachedHashes.length > 0) {
+      const purged = await purgeCachedBundlesFromOutput(outDirectory, cacheResult.cachedHashes, logger)
+      if (purged > 0) {
+        logger.info(`Purged ${purged} already-canonical bundle file(s) from output directory`)
+      }
+    }
+
     const manifest: Manifest = {
       version: abVersion,
       files: await promises.readdir(outDirectory),
       exitCode,
       contentServerUrl,
       date: new Date().toISOString()
+    }
+
+    // Top-level entity manifest must advertise every hash that resolves — including
+    // the cached ones we intentionally did not produce locally.
+    if (useAssetReuse && cacheResult && cacheResult.cachedHashes.length > 0) {
+      const seen = new Set(manifest.files)
+      for (const hash of cacheResult.cachedHashes) {
+        const bundleName = `${hash}_${$BUILD_TARGET}`
+        if (!seen.has(bundleName)) manifest.files.push(bundleName)
+      }
     }
 
     logger.debug('Manifest', { ...defaultLoggerMetadata, manifest } as any)
@@ -360,10 +497,10 @@ export async function executeConversion(
       logger.error('Empty conversion', { ...defaultLoggerMetadata, manifest } as any)
     }
 
-    const uploadPath = abVersion + '/' + entityId
+    const bundleUploadPath = useAssetReuse ? assetReuseUploadPath : entityScopedUploadPath
 
-    // first upload the content
-    await uploadDir(components.cdnS3, cdnBucket, outDirectory, uploadPath, {
+    // first upload the content (bundles go to the canonical prefix when reuse is on)
+    await uploadDir(components.cdnS3, cdnBucket, outDirectory, bundleUploadPath, {
       concurrency: 10,
       matches: [
         {
@@ -388,8 +525,9 @@ export async function executeConversion(
 
     // Upload index.js and main.crdt to CDN so the desktop Explorer client
     // can fetch them from S3 instead of the catalyst (see issue #7625).
+    // Scene source files stay entity-scoped regardless of reuse mode.
     if (entity && exitCode === 0 && entityType === 'scene') {
-      await uploadSceneSourceFilesToCDN(components, entity, contentServerUrl, uploadPath, cdnBucket)
+      await uploadSceneSourceFilesToCDN(components, entity, contentServerUrl, entityScopedUploadPath, cdnBucket)
     }
 
     // and then replace the manifest

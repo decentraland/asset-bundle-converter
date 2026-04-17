@@ -147,6 +147,7 @@ export async function runConversion(
     unityBuildTarget: string
     animation: string | undefined
     doISS: boolean | undefined
+    cachedHashes?: string[]
   }
 ) {
   await setupStartDirectories(options)
@@ -191,6 +192,10 @@ export async function runConversion(
     '-animation',
     options.animation || 'legacy'
   ]
+
+  if (options.cachedHashes && options.cachedHashes.length > 0) {
+    childArguments.push('-cachedHashes', options.cachedHashes.join(';'))
+  }
 
   return await executeProgram({
     logger,

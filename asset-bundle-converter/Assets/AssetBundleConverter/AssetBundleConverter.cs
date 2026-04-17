@@ -1061,6 +1061,17 @@ namespace DCL.ABConverter
                 List<AssetPath> bufferPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.bufferExtensions);
                 List<AssetPath> texturePaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
 
+                // Skip GLTFs/buffers whose canonical asset bundle already exists on the CDN.
+                // Textures are never skipped here — they may still be referenced from within
+                // non-cached GLTFs and are required to be in the contentTable for import.
+                if (settings.cachedHashes != null && settings.cachedHashes.Count > 0)
+                {
+                    int gltfSkipped = gltfPaths.RemoveAll(p => settings.cachedHashes.Contains(p.hash));
+                    int bufferSkipped = bufferPaths.RemoveAll(p => settings.cachedHashes.Contains(p.hash));
+
+                    log.Info($"Skipped {gltfSkipped} cached GLTF(s) and {bufferSkipped} cached buffer(s).");
+                }
+
                 if (!FilterDumpList(ref gltfPaths))
                     return false;
 

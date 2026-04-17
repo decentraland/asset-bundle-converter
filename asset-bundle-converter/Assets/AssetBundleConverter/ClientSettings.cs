@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using DCL.ABConverter;
 using GLTFast;
@@ -81,6 +82,14 @@ namespace AssetBundleConverter
             public bool importGltf = true;
             public string targetHash;
             public Vector2Int? targetPointer = null;
+
+            /// <summary>
+            /// Content hashes whose asset bundles are already available at the canonical CDN
+            /// location. GLTF/GLB and BIN entries whose hash appears here are skipped during
+            /// the asset-bundle build step; textures are intentionally not filtered because
+            /// they can still be referenced from non-cached GLTFs.
+            /// </summary>
+            public HashSet<string> cachedHashes = new HashSet<string>();
             public bool reportErrors = false;
             public bool isWearable;
             public BuildTarget buildTarget = BuildTarget.WebGL;
