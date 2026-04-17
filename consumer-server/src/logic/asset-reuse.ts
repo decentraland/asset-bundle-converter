@@ -92,7 +92,7 @@ async function headExists(s3: AppComponents['cdnS3'], bucket: string, key: strin
   }
 }
 
-async function runBounded<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+export async function runBounded<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   if (items.length === 0) return []
   const results: R[] = new Array(items.length)
   let cursor = 0
