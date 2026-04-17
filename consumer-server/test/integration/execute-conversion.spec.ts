@@ -272,4 +272,160 @@ describe('executeConversion: asset-reuse flows', () => {
       expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/hOnlyGlb_windows')).toBeNull()
     })
   })
+
+  describe('when force=true and the canonical prefix is fully populated', () => {
+    let exitCode: number
+
+    beforeEach(async () => {
+      // Seed canonical for every hash in the scene — this is the full-cache
+      // short-circuit scenario. With force=true, that must be bypassed.
+      await components.cdnS3
+        .putObject({ Bucket: 'test-bucket', Key: 'v48/assets/hGlb_windows', Body: 'cached-glb' })
+        .promise()
+
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-force',
+        type: 'scene',
+        content: [{ file: 'model.glb', hash: 'hGlb' }],
+        metadata: {}
+      })
+
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        await fs.mkdir(options.outDirectory, { recursive: true })
+        await fs.writeFile(path.join(options.outDirectory, 'hGlb_windows'), 'freshly-converted')
+        return 0
+      })
+
+      exitCode = await executeConversion(
+        components,
+        'bafy-force',
+        'https://peer.decentraland.org/content',
+        /* force */ true,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should return exit code 0', () => {
+      expect(exitCode).toBe(0)
+    })
+
+    it('should invoke Unity despite the cache being warm', () => {
+      expect(mockedRunConversion).toHaveBeenCalledTimes(1)
+    })
+
+    it('should NOT pass a cachedHashes list to Unity', () => {
+      expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
+    })
+
+    it('should upload the freshly-converted bundle to the entity-scoped path (reuse path is gated off by force)', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/bafy-force/hGlb_windows')).toContain('freshly-converted')
+    })
+
+    it('should leave the pre-seeded canonical bytes untouched', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/hGlb_windows')).toBe('cached-glb')
+    })
+  })
+
+  describe('when the entity is not a scene (wearable/emote)', () => {
+    let exitCode: number
+
+    beforeEach(async () => {
+      // Seed canonical to make the full-cache scenario available — but it
+      // should be ignored because reuse is scene-only.
+      await components.cdnS3
+        .putObject({ Bucket: 'test-bucket', Key: 'v48/assets/hWearableGlb_windows', Body: 'cached' })
+        .promise()
+
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-wearable',
+        type: 'wearable',
+        content: [{ file: 'model.glb', hash: 'hWearableGlb' }],
+        metadata: {}
+      })
+
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        await fs.mkdir(options.outDirectory, { recursive: true })
+        await fs.writeFile(path.join(options.outDirectory, 'hWearableGlb_windows'), 'new-bundle')
+        return 0
+      })
+
+      exitCode = await executeConversion(
+        components,
+        'bafy-wearable',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should return exit code 0', () => {
+      expect(exitCode).toBe(0)
+    })
+
+    it('should invoke Unity because the reuse path is scene-only', () => {
+      expect(mockedRunConversion).toHaveBeenCalledTimes(1)
+    })
+
+    it('should NOT pass a cachedHashes list to Unity', () => {
+      expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
+    })
+
+    it('should upload the bundle to the entity-scoped path', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/bafy-wearable/hWearableGlb_windows')).toContain(
+        'new-bundle'
+      )
+    })
+
+    it('should leave the canonical prefix untouched', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/hWearableGlb_windows')).toBe('cached')
+    })
+  })
+
+  describe('when fetching the entity fails', () => {
+    let exitCode: number
+
+    beforeEach(async () => {
+      mockedGetActiveEntity.mockRejectedValue(new Error('catalyst unavailable'))
+
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        await fs.mkdir(options.outDirectory, { recursive: true })
+        await fs.writeFile(path.join(options.outDirectory, 'hNoEntity_windows'), 'bundle')
+        return 0
+      })
+
+      exitCode = await executeConversion(
+        components,
+        'bafy-no-entity',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should return exit code 0 instead of throwing', () => {
+      expect(exitCode).toBe(0)
+    })
+
+    it('should still invoke Unity so the scene gets converted', () => {
+      expect(mockedRunConversion).toHaveBeenCalledTimes(1)
+    })
+
+    it('should NOT pass a cachedHashes list to Unity (reuse path requires the entity)', () => {
+      expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
+    })
+
+    it('should upload the bundle to the entity-scoped path', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/bafy-no-entity/hNoEntity_windows')).toContain('bundle')
+    })
+
+    it('should leave the canonical prefix untouched', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/hNoEntity_windows')).toBeNull()
+    })
+  })
 })
