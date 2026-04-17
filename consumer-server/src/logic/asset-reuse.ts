@@ -97,7 +97,7 @@ async function headExists(s3: AppComponents['cdnS3'], bucket: string, key: strin
   }
 }
 
-export async function runBounded<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+export async function mapBounded<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   if (items.length === 0) return []
   const results: R[] = new Array(items.length)
   let cursor = 0
@@ -166,7 +166,7 @@ export async function checkAssetCache(
 
   const hitCacheServed = probes.length - pendingIdx.length
   if (pendingIdx.length > 0) {
-    const fetched = await runBounded(pendingIdx, concurrency, (i) => headExists(components.cdnS3, cdnBucket, keys[i]))
+    const fetched = await mapBounded(pendingIdx, concurrency, (i) => headExists(components.cdnS3, cdnBucket, keys[i]))
     for (let j = 0; j < pendingIdx.length; j++) {
       hits[pendingIdx[j]] = fetched[j]
       if (fetched[j]) probeHitCache.add(keys[pendingIdx[j]])
@@ -252,18 +252,18 @@ export async function purgeCachedBundlesFromOutput(
     toUnlink.push(entry)
   }
 
-  // Parallel unlink — each syscall is cheap but node holds them serially otherwise.
-  const results = await Promise.all(
-    toUnlink.map(async (entry) => {
-      try {
-        await fs.unlink(path.join(outDirectory, entry))
-        return true
-      } catch (err: any) {
-        logger.warn(`Failed to purge cached bundle ${entry}: ${err.message}`)
-        return false
-      }
-    })
-  )
+  // Parallel unlink with a concurrency cap. Scenes with hundreds of cached assets
+  // could otherwise fire that many simultaneous syscalls and hit ENFILE on
+  // low-ulimit containers; 50 mirrors the S3 HEAD probe concurrency.
+  const results = await mapBounded(toUnlink, 50, async (entry) => {
+    try {
+      await fs.unlink(path.join(outDirectory, entry))
+      return true
+    } catch (err: any) {
+      logger.warn(`Failed to purge cached bundle ${entry}: ${err.message}`)
+      return false
+    }
+  })
 
   return results.filter(Boolean).length
 }

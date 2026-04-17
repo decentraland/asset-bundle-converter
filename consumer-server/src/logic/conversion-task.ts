@@ -76,6 +76,8 @@ async function uploadSceneSourceFilesToCDN(
 
   // Fetch+upload all source files in parallel. Independent files, each a catalyst
   // round-trip + S3 PUT; serializing them was tens-of-ms × N files of tail latency.
+  // Unbounded Promise.all is safe here because `filesToUpload` is capped at 3
+  // (main.crdt + scene.json + optional `entity.metadata.main`).
   await Promise.all(
     filesToUpload.map(async (fileName) => {
       const contentDef = entity?.content?.find((c) => c.file === fileName)

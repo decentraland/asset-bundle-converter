@@ -1,9 +1,19 @@
 /* eslint-disable no-console */
 // One-off migration: copy existing `{AB_VERSION}/{entityId}/{hash}_{target}*`
 // bundles into the new canonical `{AB_VERSION}/assets/{hash}_{target}*` layout
-// introduced by the per-asset reuse PR. Re-runnable and idempotent — each target
-// object is probed with HEAD before copy, and same-bucket CopyObject is
-// server-side (no egress through this process).
+// introduced by the per-asset reuse PR.
+//
+// Re-runnable and idempotent:
+//   - Per-item errors are caught and counted (stats.errors); they don't abort
+//     the enclosing manifest's remaining items or the outer manifest loop.
+//   - Every candidate is HEAD-probed before copy, so already-canonical bundles
+//     are a no-op.
+//   - There is no checkpointing. If the process crashes mid-run, restart from
+//     the beginning — the replay cost is ~1 HEAD per previously-processed
+//     bundle plus one GetObject per previously-processed manifest, no
+//     redundant copies. For a CDN bucket, that's effectively free.
+//
+// Same-bucket CopyObject is server-side (no egress through this process).
 //
 // Usage:
 //   yarn build
@@ -15,7 +25,7 @@
 import arg from 'arg'
 import AWS from 'aws-sdk'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
-import { runBounded } from './logic/asset-reuse'
+import { mapBounded } from './logic/asset-reuse'
 
 type Manifest = {
   version?: string
@@ -168,7 +178,7 @@ Options:
     const sourcePrefix = `${abVersion}/${parsed.entityId}`
     const candidates = manifest.files.filter((f) => bundlePattern.test(f))
 
-    await runBounded(candidates, concurrency, async (filename) => {
+    await mapBounded(candidates, concurrency, async (filename) => {
       stats.bundlesProbed++
       const canonicalKey = `${canonicalPrefix}/${filename}`
       const sourceKey = `${sourcePrefix}/${filename}`
