@@ -9,7 +9,7 @@ export interface TaskQueueMessage {
   id: string
 }
 
-export interface ITaskQueue<T> {
+export interface ITaskQueue<T> extends IBaseComponent {
   // publishes a job for the queue
   publish(job: T, prioritize?: boolean): Promise<TaskQueueMessage>
   // awaits for a job. then calls and waits for the taskRunner argument.
@@ -45,7 +45,7 @@ type SNSOverSQSMessage = {
 export function createMemoryQueueAdapter<T>(
   components: Pick<AppComponents, 'logs' | 'metrics'>,
   options: { queueName: string }
-): ITaskQueue<T> & IBaseComponent {
+): ITaskQueue<T> {
   type InternalElement = { message: TaskQueueMessage; job: T }
   const q = new AsyncQueue<InternalElement>((_action) => void 0)
   let lastJobId = 0
@@ -89,7 +89,7 @@ export function createMemoryQueueAdapter<T>(
 export function createSqsAdapter<T>(
   components: Pick<AppComponents, 'logs' | 'metrics'>,
   options: { queueUrl: string; priorityQueueUrl?: string; queueRegion?: string }
-): ITaskQueue<T> {
+): ITaskQueue<T> & IBaseComponent {
   const logger = components.logs.getLogger(options.queueUrl)
 
   const sqs = new SQS({ apiVersion: 'latest', region: options.queueRegion })
@@ -137,7 +137,25 @@ export function createSqsAdapter<T>(
     return { response, queueUsed }
   }
 
+  let currentReceiptHandle: string | null = null
+  let currentQueueUrl: string | null = null
+
   return {
+    async stop() {
+      if (currentReceiptHandle && currentQueueUrl) {
+        logger.warn('Requeuing current job due to shutdown signal', { receiptHandle: currentReceiptHandle })
+        await sqs
+          .changeMessageVisibility({
+            QueueUrl: currentQueueUrl,
+            ReceiptHandle: currentReceiptHandle,
+            VisibilityTimeout: 0
+          })
+          .promise()
+        currentReceiptHandle = null
+        currentQueueUrl = null
+        logger.info('Current job successfully requeued')
+      }
+    },
     async publish(job, prioritize?: boolean) {
       const snsOverSqs: SNSOverSQSMessage = {
         Message: JSON.stringify(job)
@@ -168,6 +186,8 @@ export function createSqsAdapter<T>(
               const { end } = components.metrics.startTimer('job_queue_duration_seconds', {
                 queue_name: options.queueUrl
               })
+              currentReceiptHandle = it.ReceiptHandle!
+              currentQueueUrl = queueUsed
               try {
                 const snsOverSqs: SNSOverSQSMessage = JSON.parse(it.Body!)
                 logger.info(`Processing job`, { id: message.id, message: snsOverSqs.Message })
@@ -181,7 +201,11 @@ export function createSqsAdapter<T>(
 
                 return { result: undefined, message }
               } finally {
-                await sqs.deleteMessage({ QueueUrl: queueUsed, ReceiptHandle: it.ReceiptHandle! }).promise()
+                if (currentReceiptHandle) {
+                  await sqs.deleteMessage({ QueueUrl: queueUsed, ReceiptHandle: it.ReceiptHandle! }).promise()
+                  currentReceiptHandle = null
+                  currentQueueUrl = null
+                }
                 end()
               }
             }
