@@ -323,12 +323,12 @@ export async function executeConversion(
     logger.info(`Could not determine entity type for ${entityId}, scene manifest wont be generated`)
   }
 
-  // Per-asset reuse: non-WebGL scenes with the kill switch on and no force/ISS
-  // short-circuit the pipeline when every asset hash is already canonicalized at
+  // Per-asset reuse: scenes with the kill switch on and no force/ISS short-circuit
+  // the pipeline when every asset hash is already canonicalized at
   // `{abVersion}/assets/{hash}_{target}`. Partial hits feed Unity a `-cachedHashes`
-  // list so it skips re-converting those GLTFs/buffers.
-  const useAssetReuse =
-    $ASSET_REUSE_ENABLED && $BUILD_TARGET !== 'webgl' && !force && !doISS && entityType === 'scene' && !!entity
+  // list so it skips re-converting those GLTFs/buffers. Rollout is staged per build
+  // target via the kill switch (each worker pool runs a single target).
+  const useAssetReuse = $ASSET_REUSE_ENABLED && !force && !doISS && entityType === 'scene' && !!entity
   const assetReuseUploadPath = abVersion + '/assets'
   const entityScopedUploadPath = abVersion + '/' + entityId
 
