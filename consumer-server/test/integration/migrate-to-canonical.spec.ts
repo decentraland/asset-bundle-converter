@@ -470,6 +470,156 @@ describe('when running the migration against a pre-rollout bucket', () => {
     })
   })
 
+  describe('and onProgress is supplied with a short progressInterval', () => {
+    let snapshots: Array<{ manifestsScanned: number }>
+
+    beforeEach(async () => {
+      // Seed three manifests so the loop scans past the interval boundary.
+      await seedObject(s3, 'manifest/bafy-p1_windows.json', makeManifest('v48', ['hashP1_windows']))
+      await seedObject(s3, 'manifest/bafy-p2_windows.json', makeManifest('v48', ['hashP2_windows']))
+      await seedObject(s3, 'manifest/bafy-p3_windows.json', makeManifest('v48', ['hashP3_windows']))
+      await seedObject(s3, 'v48/bafy-p1/hashP1_windows', 'x')
+      await seedObject(s3, 'v48/bafy-p2/hashP2_windows', 'x')
+      await seedObject(s3, 'v48/bafy-p3/hashP3_windows', 'x')
+
+      const fetchEntity = makeFetchEntityStub({
+        'bafy-p1': [{ file: 'g.bin', hash: 'hashP1' }],
+        'bafy-p2': [{ file: 'g.bin', hash: 'hashP2' }],
+        'bafy-p3': [{ file: 'g.bin', hash: 'hashP3' }]
+      })
+
+      snapshots = []
+      await runMigration({
+        s3,
+        bucket: BUCKET,
+        abVersion: 'v48',
+        target: 'windows',
+        dryRun: false,
+        concurrency: 10,
+        fetchEntity,
+        // Fire on every manifest so tests don't hang waiting for the default
+        // 100-manifest threshold. Production default stays 100; tests lower it.
+        progressInterval: 1,
+        onProgress: (snap) => snapshots.push({ manifestsScanned: snap.manifestsScanned })
+      })
+    })
+
+    it('should fire onProgress for each manifest boundary crossed', () => {
+      // `manifestsScanned % progressInterval === 0` with interval 1 fires on
+      // every scan. Three seeded manifests → three snapshots.
+      expect(snapshots.map((s) => s.manifestsScanned)).toEqual([1, 2, 3])
+    })
+  })
+
+  describe('and a manifest body is empty', () => {
+    let stats: Awaited<ReturnType<typeof runMigration>>
+
+    beforeEach(async () => {
+      // Pathological but plausible: S3 object exists but is a zero-byte file.
+      // The runMigration loop should treat it as "skippable manifest", not crash.
+      await seedObject(s3, 'manifest/bafy-empty_windows.json', '')
+
+      stats = await runMigration({
+        s3,
+        bucket: BUCKET,
+        abVersion: 'v48',
+        target: 'windows',
+        dryRun: false,
+        concurrency: 10,
+        fetchEntity: jest.fn()
+      })
+    })
+
+    it('should count the manifest as skipped without probing or erroring', () => {
+      expect(stats.manifestsSkipped).toBe(1)
+      expect(stats.errors).toBe(0)
+      expect(stats.bundlesProbed).toBe(0)
+    })
+  })
+
+  describe('and getObject throws for a manifest', () => {
+    let stats: Awaited<ReturnType<typeof runMigration>>
+    let logged: string[]
+    let originalGet: any
+
+    beforeEach(async () => {
+      await seedObject(s3, 'manifest/bafy-broken_windows.json', makeManifest('v48', ['hashB_windows']))
+
+      // Force getObject to throw for this specific key — simulates a transient
+      // S3 error on read. The loop should catch-and-count-and-continue.
+      originalGet = s3.getObject.bind(s3)
+      jest.spyOn(s3, 'getObject').mockImplementation((params: any) => {
+        if (params.Key === 'manifest/bafy-broken_windows.json') {
+          return { promise: async () => Promise.reject(new Error('simulated S3 read error')) } as any
+        }
+        return originalGet(params)
+      })
+
+      logged = []
+      stats = await runMigration({
+        s3,
+        bucket: BUCKET,
+        abVersion: 'v48',
+        target: 'windows',
+        dryRun: false,
+        concurrency: 10,
+        fetchEntity: jest.fn(),
+        log: (m) => logged.push(m)
+      })
+    })
+
+    it('should count the failure under errors and log the underlying cause', () => {
+      expect(stats.errors).toBe(1)
+      expect(logged.some((l) => l.includes('failed to read/parse manifest'))).toBe(true)
+    })
+  })
+
+  describe('and the canonical HEAD returns a non-404 error', () => {
+    let stats: Awaited<ReturnType<typeof runMigration>>
+    let logged: string[]
+
+    beforeEach(async () => {
+      await seedObject(s3, 'manifest/bafy-head500_windows.json', makeManifest('v48', ['hashH_windows']))
+      await seedObject(s3, 'v48/bafy-head500/hashH_windows', 'x')
+
+      // Make headObject reject with a 500 for canonical probes. The loop should
+      // log and increment errors, then skip the bundle instead of misclassifying
+      // it as "missing canonical" and copying over a bundle that might already
+      // exist in a degraded state.
+      const realHead = s3.headObject.bind(s3)
+      jest.spyOn(s3, 'headObject').mockImplementation((params: any) => {
+        if (params.Key.startsWith('v48/assets/')) {
+          const err: any = new Error('simulated S3 500')
+          err.statusCode = 500
+          return { promise: async () => Promise.reject(err) } as any
+        }
+        return realHead(params)
+      })
+
+      const fetchEntity = makeFetchEntityStub({
+        'bafy-head500': [{ file: 'g.bin', hash: 'hashH' }]
+      })
+
+      logged = []
+      stats = await runMigration({
+        s3,
+        bucket: BUCKET,
+        abVersion: 'v48',
+        target: 'windows',
+        dryRun: false,
+        concurrency: 10,
+        fetchEntity,
+        log: (m) => logged.push(m)
+      })
+    })
+
+    it('should count the probe failure under errors and not copy the bundle', () => {
+      expect(stats.errors).toBe(1)
+      expect(stats.bundlesCopied).toBe(0)
+      expect(logged.some((l) => l.includes('HEAD'))).toBe(true)
+    })
+  })
+
   describe('and the catalyst returns undefined for a redeployed entity', () => {
     let stats: Awaited<ReturnType<typeof runMigration>>
     let logged: string[]

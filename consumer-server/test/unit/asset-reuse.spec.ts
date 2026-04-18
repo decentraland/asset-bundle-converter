@@ -140,6 +140,37 @@ describe('when computing the deps digest', () => {
       expect(a).not.toBe(b)
     })
   })
+
+  describe('and a content entry has no file extension at all', () => {
+    it('should ignore it (not a leaf-dep kind)', () => {
+      // Defensive: a catalyst could in theory return a content entry without
+      // any dot in the filename. It's not a glb, bin, or texture — so the
+      // digest should treat it identically to having no extensions at all.
+      const withBareName = computeDepsDigest([
+        { file: 'tex.png', hash: 'hA' },
+        { file: 'weird-file-no-extension', hash: 'hB' }
+      ])
+      const withoutBareName = computeDepsDigest([{ file: 'tex.png', hash: 'hA' }])
+      expect(withBareName).toBe(withoutBareName)
+    })
+  })
+
+  describe('and a filename contains tab or newline characters', () => {
+    it('should produce different digests for differently-placed separators', () => {
+      // Regression guard on the JSON-stringify encoding: a bare
+      // `${file}\t${hash}\n` concat would collapse these two into the same
+      // digest by accident. The JSON encoding keeps them distinct.
+      const a = computeDepsDigest([
+        { file: 'a\tb.png', hash: 'h1' },
+        { file: 'c.png', hash: 'h2' }
+      ])
+      const b = computeDepsDigest([
+        { file: 'a', hash: 'b.png\th1' },
+        { file: 'c.png', hash: 'h2' }
+      ])
+      expect(a).not.toBe(b)
+    })
+  })
 })
 
 describe('when building the canonical bundle filename', () => {
