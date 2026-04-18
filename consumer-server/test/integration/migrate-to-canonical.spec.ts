@@ -370,31 +370,103 @@ describe('when running the migration against a pre-rollout bucket', () => {
   })
 
   describe('and the manifest is missing contentServerUrl', () => {
-    let stats: Awaited<ReturnType<typeof runMigration>>
+    describe('and no CLI fallback is provided', () => {
+      let stats: Awaited<ReturnType<typeof runMigration>>
 
-    beforeEach(async () => {
-      // Pre-PR manifests predate the contentServerUrl field. Without it we
-      // can't safely route glb/gltf bundles, so the script skips the manifest
-      // (and surfaces it in a dedicated counter so operators can retry later).
-      const body = JSON.stringify({ version: 'v48', files: ['hashX_windows'], exitCode: 0, date: '2026-04-17' })
-      await seedObject(s3, 'manifest/bafy-nocatalyst_windows.json', body)
-      await seedObject(s3, 'v48/bafy-nocatalyst/hashX_windows', 'bundle-bytes')
+      beforeEach(async () => {
+        // Pre-PR manifests predate the contentServerUrl field. Without it and
+        // without a CLI fallback the script skips the manifest (and surfaces
+        // it in a dedicated counter so operators can retry with --content-server-url).
+        const body = JSON.stringify({ version: 'v48', files: ['hashX_windows'], exitCode: 0, date: '2026-04-17' })
+        await seedObject(s3, 'manifest/bafy-nocatalyst_windows.json', body)
+        await seedObject(s3, 'v48/bafy-nocatalyst/hashX_windows', 'bundle-bytes')
 
-      stats = await runMigration({
-        s3,
-        bucket: BUCKET,
-        abVersion: 'v48',
-        target: 'windows',
-        dryRun: false,
-        concurrency: 10,
-        fetchEntity: jest.fn()
+        stats = await runMigration({
+          s3,
+          bucket: BUCKET,
+          abVersion: 'v48',
+          target: 'windows',
+          dryRun: false,
+          concurrency: 10,
+          fetchEntity: jest.fn()
+        })
+      })
+
+      it('should count the manifest under manifestsMissingContentServer and not copy anything', async () => {
+        expect(stats.manifestsMissingContentServer).toBe(1)
+        expect(stats.bundlesProbed).toBe(0)
+        expect(await read(s3, 'v48/assets/hashX_windows')).toBeNull()
       })
     })
 
-    it('should count the manifest under manifestsMissingContentServer and not copy anything', async () => {
-      expect(stats.manifestsMissingContentServer).toBe(1)
-      expect(stats.bundlesProbed).toBe(0)
-      expect(await read(s3, 'v48/assets/hashX_windows')).toBeNull()
+    describe('and a CLI fallback is provided', () => {
+      let stats: Awaited<ReturnType<typeof runMigration>>
+
+      beforeEach(async () => {
+        // Same pre-PR manifest, but this time the operator passes
+        // --content-server-url so the backfill can still succeed.
+        const body = JSON.stringify({ version: 'v48', files: ['hashX_windows'], exitCode: 0, date: '2026-04-17' })
+        await seedObject(s3, 'manifest/bafy-nocatalyst_windows.json', body)
+        await seedObject(s3, 'v48/bafy-nocatalyst/hashX_windows', 'bundle-bytes')
+
+        const fetchEntity = jest.fn(async (_entityId: string, url: string) => {
+          expect(url).toBe(CATALYST)
+          return { content: [{ file: 'geo.bin', hash: 'hashX' }] }
+        })
+
+        stats = await runMigration({
+          s3,
+          bucket: BUCKET,
+          abVersion: 'v48',
+          target: 'windows',
+          dryRun: false,
+          concurrency: 10,
+          contentServerUrl: CATALYST,
+          fetchEntity
+        })
+      })
+
+      it('should migrate the manifest using the fallback catalyst URL', async () => {
+        expect(stats.manifestsMissingContentServer).toBe(0)
+        expect(stats.bundlesCopied).toBe(1)
+        expect(await read(s3, 'v48/assets/hashX_windows')).toBe('bundle-bytes')
+      })
+    })
+
+    describe('and both the manifest body and the CLI fallback are set', () => {
+      let fetchEntity: jest.Mock
+
+      beforeEach(async () => {
+        // The manifest-embedded value reflects the catalyst the entity was
+        // originally resolved against — that's the one we want, not whatever
+        // the operator happens to be pointing at today.
+        await seedObject(
+          s3,
+          'manifest/bafy-both_windows.json',
+          makeManifest('v48', ['hashM_windows'], 0, 'https://original.catalyst.example')
+        )
+        await seedObject(s3, 'v48/bafy-both/hashM_windows', 'bundle-bytes')
+
+        fetchEntity = jest.fn(async (_id: string, url: string) => {
+          expect(url).toBe('https://original.catalyst.example')
+          return { content: [{ file: 'geo.bin', hash: 'hashM' }] }
+        })
+
+        await runMigration({
+          s3,
+          bucket: BUCKET,
+          abVersion: 'v48',
+          target: 'windows',
+          dryRun: false,
+          concurrency: 10,
+          contentServerUrl: 'https://cli-override.example',
+          fetchEntity
+        })
+      })
+
+      it('should prefer the manifest-embedded catalyst over the CLI fallback', () => {
+        expect(fetchEntity).toHaveBeenCalled()
+      })
     })
   })
 

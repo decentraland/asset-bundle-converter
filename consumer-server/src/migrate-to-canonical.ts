@@ -153,6 +153,13 @@ export type RunMigrationOptions = {
   /** Catalyst fetcher — normally `getActiveEntity`; tests pass a stub so they
    * don't depend on `node-fetch`. Must return the entity's `.content` array. */
   fetchEntity?: (entityId: string, contentServerUrl: string) => Promise<{ content: { file: string; hash: string }[] }>
+  /** Fallback catalyst URL used when a manifest body doesn't carry its own
+   * `contentServerUrl`. Pre-PR manifests were written before we started
+   * stamping that field, so for a backfill run the operator should pass
+   * `--content-server-url https://peer.decentraland.org/content` — otherwise
+   * every pre-PR manifest is skipped. Manifest-embedded value wins if both
+   * are present (the manifest was produced against a specific catalyst). */
+  contentServerUrl?: string
 }
 
 /**
@@ -207,9 +214,12 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
     }
 
     // Canonical keying for glb/gltf bundles includes the entity's deps digest.
-    // Without the entity's content list we can't tell glb from leaf, so skip the
-    // manifest rather than mass-migrate to paths that future probes won't hit.
-    if (!manifest.contentServerUrl) {
+    // Without the entity's content list we can't tell glb from leaf, so skip
+    // the manifest rather than mass-migrate to paths future probes won't hit.
+    // Pre-PR manifests don't carry `contentServerUrl` — rely on the CLI-supplied
+    // fallback so backfill runs on historical manifests still work.
+    const catalystUrl = manifest.contentServerUrl || opts.contentServerUrl
+    if (!catalystUrl) {
       stats.manifestsMissingContentServer++
       continue
     }
@@ -217,7 +227,7 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
     let extByHash: Map<string, string>
     let depsDigest: string
     try {
-      const entity = await fetchEntity(parsed.entityId, manifest.contentServerUrl)
+      const entity = await fetchEntity(parsed.entityId, catalystUrl)
       extByHash = new Map<string, string>()
       for (const c of entity.content ?? []) extByHash.set(c.hash, fileExtension(c.file))
       depsDigest = computeDepsDigest(entity.content ?? [])
@@ -295,6 +305,7 @@ async function main() {
   const args = arg({
     '--ab-version': String,
     '--target': String,
+    '--content-server-url': String,
     '--dry-run': Boolean,
     '--concurrency': Number,
     '--help': Boolean
@@ -305,19 +316,25 @@ async function main() {
 Usage: yarn migrate --ab-version <v> --target <webgl|windows|mac> [options]
 
 Copy existing {AB_VERSION}/{entityId}/{hash}_{target}* bundles into the
-canonical {AB_VERSION}/assets/{hash}_{target}* layout.
+canonical {AB_VERSION}/assets/ layout. glb/gltf bundles land at
+{hash}_{depsDigest}_{target}; bins and textures at {hash}_{target}.
 
 Options:
-  --ab-version <v>       AB_VERSION prefix (e.g. v48). Required.
-  --target <t>           Build target to migrate (webgl|windows|mac). Required.
-  --dry-run              Log intended copies, do not mutate the bucket.
-  --concurrency <n>      Parallel probe+copy workers per manifest (default 50).
+  --ab-version <v>            AB_VERSION prefix (e.g. v48). Required.
+  --target <t>                Build target (webgl|windows|mac). Required.
+  --content-server-url <url>  Fallback catalyst URL used when a manifest's body
+                              is missing contentServerUrl. Required for backfill
+                              of pre-PR-#258 manifests (they predate that
+                              field). Typically https://peer.decentraland.org/content.
+  --dry-run                   Log intended copies, do not mutate the bucket.
+  --concurrency <n>           Parallel probe+copy workers per manifest (default 50).
 `)
     return
   }
 
   const abVersion = args['--ab-version']
   const target = args['--target']
+  const contentServerUrl = args['--content-server-url']
   const dryRun = args['--dry-run'] === true
   const concurrency = args['--concurrency'] ?? 50
 
@@ -335,7 +352,7 @@ Options:
   const s3 = new AWS.S3({})
 
   console.log(
-    `Starting migration: bucket=${bucket} abVersion=${abVersion} target=${target} dryRun=${dryRun} concurrency=${concurrency}`
+    `Starting migration: bucket=${bucket} abVersion=${abVersion} target=${target} dryRun=${dryRun} concurrency=${concurrency} contentServerUrl=${contentServerUrl ?? '(from manifest)'}`
   )
 
   const startedAt = Date.now()
@@ -347,6 +364,7 @@ Options:
     target,
     dryRun,
     concurrency,
+    contentServerUrl,
     log: (msg) => console.warn(msg),
     onProgress: (snapshot) => {
       const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1)
