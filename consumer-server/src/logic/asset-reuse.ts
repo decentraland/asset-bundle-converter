@@ -4,6 +4,7 @@ import * as path from 'path'
 import * as fs from 'fs/promises'
 import { AppComponents } from '../types'
 import { bufferExtensions, gltfExtensions, hasValidExtension } from './has-content-changed-task'
+import { isS3NotFound } from './s3-helpers'
 
 // Unity-side extensions whose bundles have no inbound dependencies from other
 // assets, so the converter can safely skip downloading & re-building them when the
@@ -20,11 +21,15 @@ export type AssetCacheResult = {
   unitySkippableHashes: string[]
 }
 
+/** Extract the lowercase file extension (including the leading `.`) from a
+ * filename. Returns `''` when the name has no `.`. */
 function fileExtension(file: string): string {
   const idx = file.lastIndexOf('.')
   return idx < 0 ? '' : file.substring(idx).toLowerCase()
 }
 
+/** Build the canonical S3 key (`{abVersion}/assets/{hash}_{target}`) the
+ * per-asset reuse scheme writes to. The cache probe HEADs exactly this. */
 function canonicalAssetKey(abVersion: string, hash: string, target: string): string {
   return `${abVersion}/assets/${hash}_${target}`
 }
@@ -41,7 +46,11 @@ function canonicalAssetKey(abVersion: string, hash: string, target: string): str
 // LRU ordering is maintained via JS Set insertion order — on every hit we
 // delete + re-add the key so it becomes the most-recently-used entry, and on
 // eviction we drop the first (least-recently-used) element.
-// Arrow fields (not methods) so destructured references don't lose `this`.
+//
+// The members below are named function expressions that reference the
+// `probeHitCache` module binding directly (not `this`), so destructured
+// usage like `const { has, add } = probeHitCache; add(k); has(k)` still works
+// — see the unit-test covering that pattern.
 // Exported for unit testing.
 export const probeHitCache = {
   hits: new Set<string>(),
@@ -72,10 +81,22 @@ export const probeHitCache = {
   }
 }
 
-// Bundle filenames are `{hash}_{target}` optionally followed by `.br` / `.manifest`
-// / `.manifest.br`. Extract the leading `{hash}` portion so callers can match
-// against a cached-hash Set in O(1). Returns `null` when the name does not follow
-// the hash-prefixed convention (e.g. generic Unity artifacts like `AssetBundles`).
+/**
+ * Extract the leading `{hash}` portion of a Unity-emitted bundle filename.
+ *
+ * Bundle filenames Unity emits look like `{hash}_{target}` optionally followed
+ * by `.br` / `.manifest` / `.manifest.br`. Extracting the hash prefix lets
+ * callers do an O(1) `Set.has` lookup against `cachedHashes` regardless of
+ * which variant the file is.
+ *
+ * Returns `null` when the name doesn't follow the hash-prefixed convention —
+ * for instance, generic Unity artifacts like `AssetBundles` / `AssetBundles.manifest`
+ * that aren't content-addressed. Callers treat `null` as "not a cacheable
+ * bundle" and leave the file alone.
+ *
+ * @param name - A filename from `readdir(outDirectory)` (no path, no slashes).
+ * @returns The leading hash, or `null` for generic / unrecognized names.
+ */
 function extractHashFromBundleName(name: string): string | null {
   const underscore = name.indexOf('_')
   const dot = name.indexOf('.')
@@ -85,18 +106,47 @@ function extractHashFromBundleName(name: string): string | null {
   return name.substring(0, firstDelim)
 }
 
+/**
+ * S3 HEAD probe that normalizes "not found" into `false` and surfaces every
+ * other error. Uses `isS3NotFound` so the predicate is in one place.
+ *
+ * @param s3 - Configured AWS S3 client.
+ * @param bucket - Bucket to probe.
+ * @param key - Key to HEAD.
+ * @returns `true` if the object exists, `false` on 404.
+ * @throws Any non-404 error reaching the SDK (500, auth failure, etc.).
+ */
 async function headExists(s3: AppComponents['cdnS3'], bucket: string, key: string): Promise<boolean> {
   try {
     await s3.headObject({ Bucket: bucket, Key: key }).promise()
     return true
-  } catch (err: any) {
-    if (err && (err.statusCode === 404 || err.code === 'NotFound' || err.code === 'NoSuchKey')) {
-      return false
-    }
+  } catch (err: unknown) {
+    if (isS3NotFound(err)) return false
     throw err
   }
 }
 
+/**
+ * Array-map with bounded concurrency — runs `fn` over every element of `items`
+ * in parallel with at most `concurrency` in-flight promises at a time. Results
+ * come back in the same order as `items`.
+ *
+ * Used to bound S3 HEAD probes in the per-asset cache, S3 `CopyObject` calls in
+ * the migration script, and parallel `fs.unlink` calls in the purge step —
+ * enough to saturate throughput without exhausting the default HTTPS agent pool
+ * or hitting the container's `ulimit -n` on low-limit hosts.
+ *
+ * If `fn` rejects for any item, the whole promise rejects on first failure
+ * (Promise.all semantics). Workers already in flight for other items keep
+ * running until natural completion — their results are discarded. Clamps
+ * `concurrency` to at least 1 so a caller accidentally passing 0 doesn't
+ * return an array of holes.
+ *
+ * @param items - Inputs to process.
+ * @param concurrency - Maximum number of simultaneous `fn` invocations.
+ * @param fn - Per-item worker. Called with each element of `items`.
+ * @returns Array of results in input order.
+ */
 export async function mapBounded<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   if (items.length === 0) return []
   const results: R[] = new Array(items.length)
@@ -208,7 +258,7 @@ export async function checkAssetCache(
     cachedHashes.length
   )
   components.metrics.increment(
-    'ab_converter_asset_cache_miss_total',
+    'ab_converter_asset_cache_misses_total',
     { build_target: buildTarget, ab_version: abVersion },
     missingHashes.length
   )

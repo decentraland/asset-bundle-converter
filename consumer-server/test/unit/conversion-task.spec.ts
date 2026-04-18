@@ -41,5 +41,27 @@ describe('parseBooleanFlag', () => {
       expect(parseBooleanFlag('maybe', false)).toBe(false)
       expect(parseBooleanFlag('2', true)).toBe(true)
     })
+
+    it('should invoke the onUnrecognized callback so operators see the typo in the logs', () => {
+      const onUnrecognized = jest.fn()
+      parseBooleanFlag('flase', true, onUnrecognized)
+      expect(onUnrecognized).toHaveBeenCalledTimes(1)
+      expect(onUnrecognized).toHaveBeenCalledWith('flase')
+    })
+
+    it('should NOT invoke the callback for recognised values', () => {
+      const onUnrecognized = jest.fn()
+      parseBooleanFlag('true', false, onUnrecognized)
+      parseBooleanFlag('FALSE', true, onUnrecognized)
+      parseBooleanFlag('1', false, onUnrecognized)
+      expect(onUnrecognized).not.toHaveBeenCalled()
+    })
+
+    it('should NOT invoke the callback for unset / empty values (that is the default, not a mistake)', () => {
+      const onUnrecognized = jest.fn()
+      parseBooleanFlag(undefined, true, onUnrecognized)
+      parseBooleanFlag('', false, onUnrecognized)
+      expect(onUnrecognized).not.toHaveBeenCalled()
+    })
   })
 })

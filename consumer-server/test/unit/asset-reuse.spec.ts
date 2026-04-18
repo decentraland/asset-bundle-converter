@@ -107,9 +107,9 @@ describe('checkAssetCache', () => {
         labels: { build_target: 'windows', ab_version: 'v48' },
         value: 3
       })
-      const missMetric = metricsCalls.find((c) => c.name === 'ab_converter_asset_cache_miss_total')
+      const missMetric = metricsCalls.find((c) => c.name === 'ab_converter_asset_cache_misses_total')
       expect(missMetric).toEqual({
-        name: 'ab_converter_asset_cache_miss_total',
+        name: 'ab_converter_asset_cache_misses_total',
         labels: { build_target: 'windows', ab_version: 'v48' },
         value: 0
       })

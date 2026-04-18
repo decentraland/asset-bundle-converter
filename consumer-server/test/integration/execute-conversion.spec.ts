@@ -385,6 +385,124 @@ describe('executeConversion: asset-reuse flows', () => {
     })
   })
 
+  describe('when the short-circuit manifest upload fails', () => {
+    let thrown: any
+    let sentryCalls: any[]
+
+    beforeEach(async () => {
+      // Full-cache setup so we enter the short-circuit.
+      await components.cdnS3
+        .putObject({ Bucket: 'test-bucket', Key: 'v48/assets/hGlb_windows', Body: 'cached' })
+        .promise()
+
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-shortfail',
+        type: 'scene',
+        content: [{ file: 'model.glb', hash: 'hGlb' }],
+        metadata: {}
+      })
+
+      // Fail the manifest S3.upload specifically — leave getObject / headObject
+      // alone so the canonical probe still hits.
+      const realUpload = components.cdnS3.upload.bind(components.cdnS3)
+      jest.spyOn(components.cdnS3, 'upload').mockImplementation((params: any) => {
+        if (params.Key === 'manifest/bafy-shortfail_windows.json') {
+          return { promise: async () => Promise.reject(new Error('simulated S3 manifest upload failure')) } as any
+        }
+        return realUpload(params)
+      })
+
+      sentryCalls = components.sentry.captureMessage.mock.calls
+      thrown = null
+      try {
+        await executeConversion(
+          components,
+          'bafy-shortfail',
+          'https://peer.decentraland.org/content',
+          false,
+          undefined,
+          undefined,
+          'v48'
+        )
+      } catch (err) {
+        thrown = err
+      }
+    })
+
+    it('should re-throw so SQS retries the job', () => {
+      expect(thrown).toBeInstanceOf(Error)
+      expect((thrown as Error).message).toContain('simulated S3 manifest upload failure')
+    })
+
+    it('should capture a Sentry event tagged as a short-circuit failure', () => {
+      expect(sentryCalls.length).toBeGreaterThan(0)
+      const call = sentryCalls[0]
+      expect(call[0]).toContain('short-circuit')
+      expect(call[1].tags.shortCircuit).toBe('true')
+      expect(call[1].tags.entityId).toBe('bafy-shortfail')
+    })
+
+    it('should NOT publish the entity manifest', async () => {
+      // Upload was mocked to reject — nothing should actually be at that key.
+      expect(await read(components.cdnS3, 'test-bucket', 'manifest/bafy-shortfail_windows.json')).toBeNull()
+    })
+  })
+
+  describe('when the cache probe itself throws (S3 transient error)', () => {
+    let exitCode: number
+
+    beforeEach(async () => {
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-probefail',
+        type: 'scene',
+        content: [{ file: 'model.glb', hash: 'hGlb' }],
+        metadata: {}
+      })
+
+      // Fail the headObject that checkAssetCache issues — simulates a transient
+      // S3 500 or connection reset. headObject is called only by the probe; the
+      // real path continues to use putObject / getObject / upload.
+      const realHead = components.cdnS3.headObject.bind(components.cdnS3)
+      jest.spyOn(components.cdnS3, 'headObject').mockImplementation((params: any) => {
+        if (params.Key.startsWith('v48/assets/')) {
+          const err: any = new Error('simulated S3 probe failure')
+          err.statusCode = 500
+          return { promise: async () => Promise.reject(err) } as any
+        }
+        return realHead(params)
+      })
+
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        await fs.mkdir(options.outDirectory, { recursive: true })
+        await fs.writeFile(path.join(options.outDirectory, 'hGlb_windows'), 'bundle')
+        return 0
+      })
+
+      exitCode = await executeConversion(
+        components,
+        'bafy-probefail',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should fall back to a full conversion (not throw)', () => {
+      expect(exitCode).toBe(0)
+      expect(mockedRunConversion).toHaveBeenCalledTimes(1)
+    })
+
+    it('should pass no cached hashes to Unity (cacheResult was set to null)', () => {
+      expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
+    })
+
+    it('should still upload to the canonical prefix (probe failure means we do not know what is cached, not that reuse is disabled)', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/hGlb_windows')).toContain('bundle')
+    })
+  })
+
   describe('when fetching the entity fails', () => {
     let exitCode: number
 

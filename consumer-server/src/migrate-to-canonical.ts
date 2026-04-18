@@ -26,6 +26,7 @@ import arg from 'arg'
 import AWS from 'aws-sdk'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
 import { mapBounded } from './logic/asset-reuse'
+import { isS3NotFound } from './logic/s3-helpers'
 
 type Manifest = {
   version?: string
@@ -57,16 +58,35 @@ function emptyStats(): MigrationStats {
   }
 }
 
-// Matches bundle filenames Unity emits under an entity prefix. The leading segment
-// is a CID; the trailing portion encodes target and optional variant suffixes.
-// Exported for unit testing.
+/**
+ * Regex matching the bundle filenames Unity emits for a given target.
+ *
+ * Shape: `{hash}_{target}` optionally followed by `.br`, `.manifest`, or
+ * `.manifest.br`. The leading segment is any CID-shaped prefix; the trailing
+ * portion encodes target + variant. Generic artifacts like `AssetBundles`
+ * don't match because they lack the `_{target}` segment.
+ *
+ * Exported for unit testing.
+ *
+ * @param target - Build target — one of `webgl` / `windows` / `mac`.
+ */
 export function buildBundlePattern(target: string): RegExp {
   return new RegExp(`^[^/]+_${target}(\\.br|\\.manifest|\\.manifest\\.br)?$`)
 }
 
-// Manifests live at `manifest/{entityId}.json` (WebGL) or
-// `manifest/{entityId}_{target}.json` (desktop). `_failed.json` sentinels are
-// skipped. Exported for unit testing.
+/**
+ * Parse an S3 manifest key into `{ entityId, target }`.
+ *
+ * Manifests live at `manifest/{entityId}.json` (WebGL default) or
+ * `manifest/{entityId}_{target}.json` (Windows/Mac). `_failed.json` sentinels
+ * are skipped entirely — the migration doesn't touch failed conversions.
+ *
+ * Exported for unit testing.
+ *
+ * @param key - S3 object key (e.g. `manifest/bafkrei123_windows.json`).
+ * @returns `{ entityId, target }` on success; `null` when the key is empty,
+ *   unrecognized, or points at a `_failed` sentinel.
+ */
 export function parseManifestKey(key: string): { entityId: string; target: string } | null {
   const base = key.replace(/^manifest\//, '').replace(/\.json$/, '')
   if (!base || base.endsWith('_failed')) return null
@@ -77,10 +97,12 @@ export function parseManifestKey(key: string): { entityId: string; target: strin
   return { entityId: base, target: 'webgl' }
 }
 
-// Exported for unit testing.
-export function isNotFound(err: any): boolean {
-  return !!err && (err.statusCode === 404 || err.code === 'NotFound' || err.code === 'NoSuchKey')
-}
+/**
+ * @deprecated Use {@link isS3NotFound} from `./logic/s3-helpers`. This alias is
+ * kept because the pre-existing unit-test suite imports this name from here;
+ * delete once those tests are retargeted.
+ */
+export const isNotFound = isS3NotFound
 
 async function* listManifests(s3: AWS.S3, bucket: string): AsyncGenerator<AWS.S3.Object> {
   let ContinuationToken: string | undefined
@@ -160,7 +182,7 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
         stats.bundlesAlreadyCanonical++
         return
       } catch (err: any) {
-        if (!isNotFound(err)) {
+        if (!isS3NotFound(err)) {
           log(`HEAD ${canonicalKey} failed: ${err.message}`)
           stats.errors++
           return
@@ -184,7 +206,7 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
           .promise()
         stats.bundlesCopied++
       } catch (err: any) {
-        if (isNotFound(err)) {
+        if (isS3NotFound(err)) {
           // Manifest listed a file that no longer exists at the entity prefix —
           // likely a stale manifest from a partial cleanup. Skip quietly.
           stats.bundlesMissingSource++

@@ -35,7 +35,7 @@ export const metricDeclarations = {
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target', 'ab_version']
   },
-  ab_converter_asset_cache_miss_total: {
+  ab_converter_asset_cache_misses_total: {
     help: 'Counter of per-asset cache misses (asset hash needs conversion)',
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target', 'ab_version']
@@ -52,6 +52,11 @@ export const metricDeclarations = {
   },
   ab_converter_asset_probe_head_total: {
     help: 'Counter of asset cache probes that required a fresh S3 HEAD request',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['build_target', 'ab_version']
+  },
+  ab_converter_asset_cache_probe_errors_total: {
+    help: 'Counter of asset cache probe failures (S3 error propagated; conversion fell back to full Unity run)',
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target', 'ab_version']
   }

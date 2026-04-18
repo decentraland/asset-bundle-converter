@@ -24,15 +24,67 @@ async function getCdnBucket(components: Pick<AppComponents, 'config'>) {
   return (await components.config.getString('CDN_BUCKET')) || 'CDN_BUCKET'
 }
 
-// Case-insensitive boolean env var parser. Treats the common false-y spellings
-// (`false`, `0`, `no`, `off`) as false and the common truthy spellings
-// (`true`, `1`, `yes`, `on`) as true; anything else (including unset/empty) falls
-// back to `defaultValue`. Exported for unit testing.
-export function parseBooleanFlag(raw: string | undefined, defaultValue: boolean): boolean {
+/**
+ * Publish the top-level entity manifest (`manifest/{entityId}[_{target}].json`).
+ *
+ * Centralized because the `Cache-Control: private, max-age=0, no-cache` header
+ * is safety-critical: if it's ever accidentally rewritten to immutable / long
+ * max-age, clients will never pick up newly-converted scene hashes. Touching
+ * this in exactly one place prevents drift between the short-circuit path and
+ * the main path.
+ *
+ * @param components - Only needs `cdnS3`.
+ * @param cdnBucket - Target bucket.
+ * @param key - Manifest key, typically produced by `manifestKeyForEntity`.
+ * @param manifest - The manifest value to JSON-encode as the body.
+ */
+async function uploadEntityManifest(
+  components: Pick<AppComponents, 'cdnS3'>,
+  cdnBucket: string,
+  key: string,
+  manifest: Manifest
+): Promise<void> {
+  await components.cdnS3
+    .upload({
+      Bucket: cdnBucket,
+      Key: key,
+      ContentType: 'application/json',
+      Body: JSON.stringify(manifest),
+      CacheControl: 'private, max-age=0, no-cache',
+      ACL: 'public-read'
+    })
+    .promise()
+}
+
+/**
+ * Case-insensitive boolean env var parser.
+ *
+ * Accepts the common truthy spellings (`true` / `1` / `yes` / `on`) and the
+ * common falsy spellings (`false` / `0` / `no` / `off`). Unrecognized input
+ * (e.g. a typo like `ASSET_REUSE_ENABLED=flase`) falls back to `defaultValue`
+ * and — when an `onUnrecognized` callback is provided — invokes it so the
+ * operator sees the misconfiguration in the logs instead of silently getting
+ * the default.
+ *
+ * Exported for unit testing.
+ *
+ * @param raw - The raw env value, or undefined/empty for "not set".
+ * @param defaultValue - What to return when the input is unset or
+ *   unrecognized.
+ * @param onUnrecognized - Optional logger callback invoked only on
+ *   unrecognized non-empty input. Receives the original raw value.
+ * @returns The parsed boolean.
+ */
+export function parseBooleanFlag(
+  raw: string | undefined,
+  defaultValue: boolean,
+  onUnrecognized?: (raw: string) => void
+): boolean {
   if (raw === undefined || raw === '') return defaultValue
   const normalized = raw.trim().toLowerCase()
   if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'off') return false
   if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on') return true
+  if (onUnrecognized) onUnrecognized(raw)
   return defaultValue
 }
 
@@ -283,9 +335,12 @@ export async function executeConversion(
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
   const $PROJECT_PATH = await components.config.requireString('PROJECT_PATH')
   const $BUILD_TARGET = await components.config.requireString('BUILD_TARGET')
-  const $ASSET_REUSE_ENABLED = parseBooleanFlag(await components.config.getString('ASSET_REUSE_ENABLED'), true)
-
   const logger = components.logs.getLogger(`ExecuteConversion`)
+  const $ASSET_REUSE_ENABLED = parseBooleanFlag(await components.config.getString('ASSET_REUSE_ENABLED'), true, (raw) =>
+    logger.warn(
+      `Unrecognized value for ASSET_REUSE_ENABLED: "${raw}" — falling back to the default (true). Accepted values: true/false/1/0/yes/no/on/off.`
+    )
+  )
 
   const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
   if (!unityBuildTarget) {
@@ -330,6 +385,15 @@ export async function executeConversion(
   // `{abVersion}/assets/{hash}_{target}`. Partial hits feed Unity a `-cachedHashes`
   // list so it skips re-converting those GLTFs/buffers. Rollout is staged per build
   // target via the kill switch (each worker pool runs a single target).
+  //
+  // NOTE on force=true: this path uploads to the entity-scoped prefix, NOT
+  // canonical. `force` is for "re-run Unity against this entity's content,"
+  // which for content-addressed immutable storage doesn't translate to
+  // replacing the canonical bundle — the content hash is the same, so the
+  // canonical bundle is by construction the same bytes. If ops need to replace
+  // a canonical bundle (e.g. to flush a genuinely corrupt object), the escape
+  // hatch is to delete the canonical S3 object directly; the next conversion
+  // will upload a fresh copy through the normal reuse path.
   const useAssetReuse = $ASSET_REUSE_ENABLED && !force && !doISS && entityType === 'scene' && !!entity
   const assetReuseUploadPath = abVersion + '/assets'
   const entityScopedUploadPath = abVersion + '/' + entityId
@@ -348,11 +412,19 @@ export async function executeConversion(
       fullCacheHit = totalProbed > 0 && cacheResult.missingHashes.length === 0
     } catch (e: any) {
       logger.warn(`Asset cache probe failed, falling back to full conversion: ${e.message}`)
+      components.metrics.increment('ab_converter_asset_cache_probe_errors_total', {
+        build_target: $BUILD_TARGET,
+        ab_version: abVersion
+      })
       cacheResult = null
     }
   }
 
-  if (useAssetReuse && fullCacheHit && cacheResult && entity) {
+  // `fullCacheHit` is only set true inside the `if (useAssetReuse && entity)`
+  // block above, so it already implies `useAssetReuse` AND `!!entity`. The
+  // `cacheResult` and `entity` checks below are kept purely as TypeScript
+  // narrowing guards for the block body.
+  if (fullCacheHit && cacheResult && entity) {
     // Full short-circuit: every referenced asset hash is already canonical. Publish
     // the entity manifest pointing at the canonical paths and upload scene source
     // files. No Unity run, no output directory.
@@ -378,16 +450,7 @@ export async function executeConversion(
         await uploadSceneSourceFilesToCDN(components, entity, contentServerUrl, entityScopedUploadPath, cdnBucket)
       }
 
-      await components.cdnS3
-        .upload({
-          Bucket: cdnBucket,
-          Key: manifestFile,
-          ContentType: 'application/json',
-          Body: JSON.stringify(manifest),
-          CacheControl: 'private, max-age=0, no-cache',
-          ACL: 'public-read'
-        })
-        .promise()
+      await uploadEntityManifest(components, cdnBucket, manifestFile, manifest)
     } catch (err: any) {
       // Short-circuit failed post-probe. SQS will retry; we capture for visibility
       // because the main-path error handler below never runs.
@@ -533,16 +596,7 @@ export async function executeConversion(
     }
 
     // and then replace the manifest
-    await components.cdnS3
-      .upload({
-        Bucket: cdnBucket,
-        Key: manifestFile,
-        ContentType: 'application/json',
-        Body: JSON.stringify(manifest),
-        CacheControl: 'private, max-age=0, no-cache',
-        ACL: 'public-read'
-      })
-      .promise()
+    await uploadEntityManifest(components, cdnBucket, manifestFile, manifest)
 
     if (exitCode !== 0 || manifest.files.length === 0) {
       const log = await promises.readFile(logFile, 'utf8')
