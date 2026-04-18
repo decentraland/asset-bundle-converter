@@ -75,7 +75,7 @@ function probeKeyFor(abVersion: string, hash: string, ext: string, target: strin
 
 describe('when computing the deps digest', () => {
   describe('and the entity has only textures and buffers', () => {
-    it('should return a 16-hex deterministic digest', () => {
+    it('should return a 32-hex deterministic digest', () => {
       const digest = computeDepsDigest([
         { file: 'textures/a.png', hash: 'hashA' },
         { file: 'buffers/b.bin', hash: 'hashB' }
@@ -116,7 +116,7 @@ describe('when computing the deps digest', () => {
   })
 
   describe('and the entity content is empty', () => {
-    it('should still produce a well-defined 16-hex digest', () => {
+    it('should still produce a well-defined 32-hex digest', () => {
       const digest = computeDepsDigest([])
       expect(digest).toMatch(/^[0-9a-f]{32}$/)
     })

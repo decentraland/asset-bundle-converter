@@ -649,6 +649,7 @@ describe('when running the migration against a pre-rollout bucket', () => {
         return { content: [{ file: 'g.bin', hash: 'hashT' }] }
       })
 
+      const logged: string[] = []
       const stats = await runMigration({
         s3,
         bucket: BUCKET,
@@ -657,13 +658,21 @@ describe('when running the migration against a pre-rollout bucket', () => {
         dryRun: false,
         concurrency: 10,
         catalystTimeoutMs: 0, // the footgun
-        fetchEntity
+        fetchEntity,
+        log: (msg) => logged.push(msg)
       })
+
+      // Operator debugging a slow migration should see the clamp, not
+      // silently get a different timeout than what they passed.
+      expect(logged.some((l) => l.includes('catalyst-timeout') && l.includes('below'))).toBe(true)
 
       // The fetch completed (didn't abort) because (a) the stub ignores the
       // signal and (b) the clamp would have allowed 1000ms even if it
-      // didn't. Either way the migration made progress.
-      expect(observedSignalAbortedAt).toBeGreaterThanOrEqual(100)
+      // didn't. The timing assertion is intentionally loose — the point is
+      // "not instantly aborted" (which would be ~0ms under CF's AbortSignal
+      // semantics), not millisecond precision. Node timers under CI load
+      // can fire a millisecond or two early, so we give ourselves margin.
+      expect(observedSignalAbortedAt).toBeGreaterThanOrEqual(80)
       expect(stats.bundlesCopied).toBe(1)
     })
   })

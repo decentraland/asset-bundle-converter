@@ -183,6 +183,14 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
   const MIN_CATALYST_TIMEOUT_MS = 1000
   const rawTimeout = opts.catalystTimeoutMs ?? DEFAULT_CATALYST_TIMEOUT_MS
   const catalystTimeoutMs = Math.max(MIN_CATALYST_TIMEOUT_MS, rawTimeout)
+  // Surface the clamp so an operator who supplied a too-low value (or 0)
+  // doesn't spend time wondering why the effective timeout is larger than
+  // what they passed. Only fires when the clamp actually kicked in.
+  if (rawTimeout < MIN_CATALYST_TIMEOUT_MS) {
+    log(
+      `[catalyst-timeout] requested ${rawTimeout}ms is below the ${MIN_CATALYST_TIMEOUT_MS}ms floor; using ${catalystTimeoutMs}ms to avoid racing against fetch startup`
+    )
+  }
   // Default fetcher wraps `getActiveEntity` with a hard timeout so a hung
   // catalyst can't stall the migration. Custom stubs (tests) keep their own
   // timing.
