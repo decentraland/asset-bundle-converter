@@ -14,7 +14,7 @@ import { createConfigComponent } from '@well-known-components/env-config-provide
 import { createLogComponent } from '@well-known-components/logger'
 import { createMetricsComponent } from '@well-known-components/metrics'
 import { metricDeclarations } from '../../src/metrics'
-import { probeHitCache } from '../../src/logic/asset-reuse'
+import { canonicalFilename, computeDepsDigest, probeHitCache } from '../../src/logic/asset-reuse'
 
 jest.mock('../../src/logic/run-conversion', () => ({
   runConversion: jest.fn(),
@@ -118,24 +118,29 @@ describe('when executing a conversion with asset-reuse enabled', () => {
 
   describe('and every asset hash in the scene is already canonical', () => {
     it('should short-circuit without calling Unity and publish a manifest pointing at canonical paths', async () => {
-      // Seed canonical bundles.
+      const content = [
+        { file: 'model.glb', hash: 'hGlb' },
+        { file: 'texture.png', hash: 'hTex' },
+        { file: 'main.crdt', hash: 'hMainCrdt' },
+        { file: 'scene.json', hash: 'hSceneJson' },
+        { file: 'index.js', hash: 'hIndexJs' }
+      ]
+      const digest = computeDepsDigest(content)
+      const glbFilename = canonicalFilename('hGlb', '.glb', 'windows', digest)
+      const texFilename = canonicalFilename('hTex', '.png', 'windows', digest)
+
+      // Seed canonical bundles at the composite (glb) / bare (texture) paths.
       await components.cdnS3
-        .putObject({ Bucket: 'test-bucket', Key: 'v48/assets/hGlb_windows', Body: 'glb-bytes' })
+        .putObject({ Bucket: 'test-bucket', Key: `v48/assets/${glbFilename}`, Body: 'glb-bytes' })
         .promise()
       await components.cdnS3
-        .putObject({ Bucket: 'test-bucket', Key: 'v48/assets/hTex_windows', Body: 'tex-bytes' })
+        .putObject({ Bucket: 'test-bucket', Key: `v48/assets/${texFilename}`, Body: 'tex-bytes' })
         .promise()
 
       mockedGetActiveEntity.mockResolvedValue({
         id: 'bafy-entity-1',
         type: 'scene',
-        content: [
-          { file: 'model.glb', hash: 'hGlb' },
-          { file: 'texture.png', hash: 'hTex' },
-          { file: 'main.crdt', hash: 'hMainCrdt' },
-          { file: 'scene.json', hash: 'hSceneJson' },
-          { file: 'index.js', hash: 'hIndexJs' }
-        ],
+        content,
         metadata: { main: 'index.js' }
       })
 
@@ -156,7 +161,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       expect(manifestBody).not.toBeNull()
       const manifest = JSON.parse(manifestBody!)
       expect(manifest.exitCode).toBe(0)
-      expect(manifest.files.sort()).toEqual(['hGlb_windows', 'hTex_windows'])
+      expect(manifest.files.sort()).toEqual([glbFilename, texFilename].sort())
       expect(manifest.version).toBe('v48')
 
       // Scene source files uploaded to the entity prefix (not canonical).
@@ -168,11 +173,19 @@ describe('when executing a conversion with asset-reuse enabled', () => {
 
   describe('and some asset hashes are cached and others are not', () => {
     it('should pass the GLTF/BIN cached hashes to Unity as -cachedHashes and upload new bundles to the canonical prefix', async () => {
-      // Seed: hGlb (cached GLB) and hTex (cached texture). Unity will be asked to
-      // produce hNewGlb + hNewBuf. Textures are never put in unitySkippableHashes
-      // because they can be referenced from non-cached GLTFs.
+      const content = [
+        { file: 'cached.glb', hash: 'hGlb' },
+        { file: 'new.glb', hash: 'hNewGlb' },
+        { file: 'texture.png', hash: 'hTex' },
+        { file: 'geometry.bin', hash: 'hNewBuf' }
+      ]
+      const digest = computeDepsDigest(content)
+      const hGlbFilename = canonicalFilename('hGlb', '.glb', 'windows', digest)
+      const hNewGlbFilename = canonicalFilename('hNewGlb', '.glb', 'windows', digest)
+
+      // Seed: hGlb (cached GLB, composite path) and hTex (cached texture, bare path).
       await components.cdnS3
-        .putObject({ Bucket: 'test-bucket', Key: 'v48/assets/hGlb_windows', Body: 'old-glb' })
+        .putObject({ Bucket: 'test-bucket', Key: `v48/assets/${hGlbFilename}`, Body: 'old-glb' })
         .promise()
       await components.cdnS3
         .putObject({ Bucket: 'test-bucket', Key: 'v48/assets/hTex_windows', Body: 'old-tex' })
@@ -181,19 +194,17 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       mockedGetActiveEntity.mockResolvedValue({
         id: 'bafy-entity-2',
         type: 'scene',
-        content: [
-          { file: 'cached.glb', hash: 'hGlb' },
-          { file: 'new.glb', hash: 'hNewGlb' },
-          { file: 'texture.png', hash: 'hTex' },
-          { file: 'geometry.bin', hash: 'hNewBuf' }
-        ],
+        content,
         metadata: {}
       })
 
       // Mocked Unity: writes the non-cached bundles to outDirectory and returns 0.
+      // GLB output uses the composite filename (Unity-side depsDigest naming);
+      // BIN stays at the bare `{hash}_{target}` form.
       mockedRunConversion.mockImplementation(async (_logger: any, _components: any, options: any) => {
+        expect(options.depsDigest).toBe(digest)
         await fs.mkdir(options.outDirectory, { recursive: true })
-        await fs.writeFile(path.join(options.outDirectory, 'hNewGlb_windows'), 'new-glb-bundle')
+        await fs.writeFile(path.join(options.outDirectory, hNewGlbFilename), 'new-glb-bundle')
         await fs.writeFile(path.join(options.outDirectory, 'hNewBuf_windows'), 'new-buf-bundle')
         return 0
       })
@@ -211,23 +222,22 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       expect(exitCode).toBe(0)
       expect(mockedRunConversion).toHaveBeenCalledTimes(1)
 
-      // Assert -cachedHashes contained only the GLB (the BIN wasn't cached,
-      // the PNG wasn't cached either but a texture hit would never appear here).
+      // Assert -cachedHashes contained only the GLB.
       const passedOptions = mockedRunConversion.mock.calls[0][2]
       expect((passedOptions.cachedHashes ?? []).sort()).toEqual(['hGlb'])
 
-      // New bundles landed at the canonical prefix.
-      expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/hNewGlb_windows')).toContain('new-glb-bundle')
+      // New bundles landed at their canonical paths.
+      expect(await read(components.cdnS3, 'test-bucket', `v48/assets/${hNewGlbFilename}`)).toContain('new-glb-bundle')
       expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/hNewBuf_windows')).toContain('new-buf-bundle')
-      // Pre-seeded canonical bundles untouched (still the old bytes).
-      expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/hGlb_windows')).toBe('old-glb')
+      // Pre-seeded canonical glb untouched (still the old bytes).
+      expect(await read(components.cdnS3, 'test-bucket', `v48/assets/${hGlbFilename}`)).toBe('old-glb')
 
-      // Entity manifest lists all four hashes (new + cached).
+      // Entity manifest lists all four bundle filenames (new + cached).
       const manifest = JSON.parse(
         (await read(components.cdnS3, 'test-bucket', 'manifest/bafy-entity-2_windows.json')) as string
       )
       expect(manifest.files.sort()).toEqual(
-        ['hGlb_windows', 'hNewBuf_windows', 'hNewGlb_windows', 'hTex_windows'].sort()
+        [hGlbFilename, 'hNewBuf_windows', hNewGlbFilename, 'hTex_windows'].sort()
       )
     })
   })
@@ -390,15 +400,20 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     let sentryCalls: any[]
 
     beforeEach(async () => {
-      // Full-cache setup so we enter the short-circuit.
+      // Full-cache setup so we enter the short-circuit. Entity has only the glb
+      // (no textures/bins), so the digest is the sha256-truncation of an empty
+      // dep list — same for every such scene.
+      const content = [{ file: 'model.glb', hash: 'hGlb' }]
+      const digest = computeDepsDigest(content)
+      const glbFilename = canonicalFilename('hGlb', '.glb', 'windows', digest)
       await components.cdnS3
-        .putObject({ Bucket: 'test-bucket', Key: 'v48/assets/hGlb_windows', Body: 'cached' })
+        .putObject({ Bucket: 'test-bucket', Key: `v48/assets/${glbFilename}`, Body: 'cached' })
         .promise()
 
       mockedGetActiveEntity.mockResolvedValue({
         id: 'bafy-shortfail',
         type: 'scene',
-        content: [{ file: 'model.glb', hash: 'hGlb' }],
+        content,
         metadata: {}
       })
 
@@ -450,12 +465,17 @@ describe('when executing a conversion with asset-reuse enabled', () => {
 
   describe('and the cache probe itself throws (S3 transient error)', () => {
     let exitCode: number
+    let composedGlbFilename: string
 
     beforeEach(async () => {
+      const content = [{ file: 'model.glb', hash: 'hGlb' }]
+      const digest = computeDepsDigest(content)
+      composedGlbFilename = canonicalFilename('hGlb', '.glb', 'windows', digest)
+
       mockedGetActiveEntity.mockResolvedValue({
         id: 'bafy-probefail',
         type: 'scene',
-        content: [{ file: 'model.glb', hash: 'hGlb' }],
+        content,
         metadata: {}
       })
 
@@ -473,8 +493,11 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       })
 
       mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        // Probe failure must NOT zero out depsDigest — otherwise glb bundles
+        // would revert to bare names and reintroduce the cross-scene collision.
+        expect(options.depsDigest).toBe(digest)
         await fs.mkdir(options.outDirectory, { recursive: true })
-        await fs.writeFile(path.join(options.outDirectory, 'hGlb_windows'), 'bundle')
+        await fs.writeFile(path.join(options.outDirectory, composedGlbFilename), 'bundle')
         return 0
       })
 
@@ -498,8 +521,8 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
     })
 
-    it('should still upload to the canonical prefix (probe failure means we do not know what is cached, not that reuse is disabled)', async () => {
-      expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/hGlb_windows')).toContain('bundle')
+    it('should still upload to the canonical prefix at the composite glb path', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', `v48/assets/${composedGlbFilename}`)).toContain('bundle')
     })
   })
 

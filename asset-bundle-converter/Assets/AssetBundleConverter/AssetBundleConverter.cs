@@ -905,13 +905,24 @@ namespace DCL.ABConverter
                 env.sceneStateGenerator.GenerateISSAssetBundle(assetPaths, gltfImporters, finalDownloadedPath);
             else
             {
-                // Otherwise, mark each asset as its own bundle
+                // Otherwise, mark each asset as its own bundle. GLB/GLTF bundles embed
+                // dep-bundle references whose names are derived from dep content hashes.
+                // Two scenes that share a glb source hash but differ in deps therefore
+                // produce byte-different bundles — we fold the entity-wide depsDigest
+                // into the glb/gltf bundle name so those byte-different bundles land at
+                // distinct canonical paths. BIN and texture bundles are leaves (no
+                // inbound dep refs from their own bundle) so hash-only naming is safe.
+                bool useDigest = !string.IsNullOrEmpty(settings.depsDigest);
+                string platform = PlatformUtils.GetPlatform();
                 foreach (var assetPath in assetPaths)
                 {
                     if (assetPath == null) continue;
                     if (assetPath.finalPath.EndsWith(".bin")) continue;
 
-                    string assetBundleName = assetPath.hash + PlatformUtils.GetPlatform();
+                    bool isGltf = useDigest && (assetPath.finalPath.EndsWith(".glb") || assetPath.finalPath.EndsWith(".gltf"));
+                    string assetBundleName = isGltf
+                        ? $"{assetPath.hash}_{settings.depsDigest}{platform}"
+                        : assetPath.hash + platform;
                     env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, assetBundleName);
                 }
             }

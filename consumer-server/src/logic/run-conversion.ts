@@ -148,6 +148,7 @@ export async function runConversion(
     animation: string | undefined
     doISS: boolean | undefined
     cachedHashes?: string[]
+    depsDigest?: string
   }
 ) {
   await setupStartDirectories(options)
@@ -195,6 +196,12 @@ export async function runConversion(
 
   if (options.cachedHashes && options.cachedHashes.length > 0) {
     childArguments.push('-cachedHashes', options.cachedHashes.join(';'))
+  }
+
+  if (options.depsDigest) {
+    // Tells Unity to emit `{hash}_{depsDigest}_{target}` bundles for glb/gltf
+    // assets so the canonical key factors in the entity's dep set.
+    childArguments.push('-depsDigest', options.depsDigest)
   }
 
   return await executeProgram({

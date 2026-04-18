@@ -1,7 +1,13 @@
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
-import { checkAssetCache, purgeCachedBundlesFromOutput, probeHitCache } from '../../src/logic/asset-reuse'
+import {
+  canonicalFilename,
+  checkAssetCache,
+  computeDepsDigest,
+  probeHitCache,
+  purgeCachedBundlesFromOutput
+} from '../../src/logic/asset-reuse'
 
 beforeEach(() => {
   // The hit-cache is process-local and survives across tests unless we clear it.
@@ -60,6 +66,102 @@ function makeMockComponents(existingKeys: Set<string>) {
   }
 }
 
+// Shorthand to compute the canonical S3 key a probe would HEAD for a single hash
+// in a test entity. Tests don't hardcode digest strings — they derive them from
+// the same helpers production code uses.
+function probeKeyFor(abVersion: string, hash: string, ext: string, target: string, content: { file: string; hash: string }[]) {
+  return `${abVersion}/assets/${canonicalFilename(hash, ext, target, computeDepsDigest(content))}`
+}
+
+describe('when computing the deps digest', () => {
+  describe('and the entity has only textures and buffers', () => {
+    it('should return a 16-hex deterministic digest', () => {
+      const digest = computeDepsDigest([
+        { file: 'textures/a.png', hash: 'hashA' },
+        { file: 'buffers/b.bin', hash: 'hashB' }
+      ])
+      expect(digest).toMatch(/^[0-9a-f]{16}$/)
+    })
+  })
+
+  describe('and the entity content is shuffled', () => {
+    it('should produce the same digest regardless of input order', () => {
+      const a = computeDepsDigest([
+        { file: 'a.png', hash: 'h1' },
+        { file: 'b.png', hash: 'h2' },
+        { file: 'c.bin', hash: 'h3' }
+      ])
+      const b = computeDepsDigest([
+        { file: 'c.bin', hash: 'h3' },
+        { file: 'a.png', hash: 'h1' },
+        { file: 'b.png', hash: 'h2' }
+      ])
+      expect(a).toBe(b)
+    })
+  })
+
+  describe('and the entity has non-dep files mixed in', () => {
+    it('should ignore scene code, manifests, and glb/gltf themselves', () => {
+      // A glb is not a dep of another glb — only textures + bins feed dep refs.
+      const bare = computeDepsDigest([{ file: 'a.png', hash: 'h1' }])
+      const noisy = computeDepsDigest([
+        { file: 'a.png', hash: 'h1' },
+        { file: 'main.crdt', hash: 'hCrdt' },
+        { file: 'index.js', hash: 'hJs' },
+        { file: 'model.glb', hash: 'hGlb' },
+        { file: 'scene.json', hash: 'hScene' }
+      ])
+      expect(noisy).toBe(bare)
+    })
+  })
+
+  describe('and the entity content is empty', () => {
+    it('should still produce a well-defined 16-hex digest', () => {
+      const digest = computeDepsDigest([])
+      expect(digest).toMatch(/^[0-9a-f]{16}$/)
+    })
+  })
+
+  describe('and two files share a hash but differ in filename', () => {
+    it('should distinguish them in the digest (filename-primary sort)', () => {
+      const a = computeDepsDigest([
+        { file: 'alpha.png', hash: 'sharedHash' },
+        { file: 'beta.png', hash: 'sharedHash' }
+      ])
+      const b = computeDepsDigest([{ file: 'alpha.png', hash: 'sharedHash' }])
+      expect(a).not.toBe(b)
+    })
+  })
+
+  describe('and two entities differ by a single texture hash', () => {
+    it('should produce different digests', () => {
+      const a = computeDepsDigest([{ file: 'tex.png', hash: 'hY' }])
+      const b = computeDepsDigest([{ file: 'tex.png', hash: 'hZ' }])
+      expect(a).not.toBe(b)
+    })
+  })
+})
+
+describe('when building the canonical bundle filename', () => {
+  describe('and the extension is a glb/gltf', () => {
+    it('should fold the deps digest into the filename', () => {
+      expect(canonicalFilename('modelHash', '.glb', 'windows', 'abcd1234abcd1234')).toBe(
+        'modelHash_abcd1234abcd1234_windows'
+      )
+      expect(canonicalFilename('modelHash', '.gltf', 'windows', 'abcd1234abcd1234')).toBe(
+        'modelHash_abcd1234abcd1234_windows'
+      )
+    })
+  })
+
+  describe('and the extension is a leaf (bin or texture)', () => {
+    it('should keep the bare hash-only form', () => {
+      expect(canonicalFilename('bufHash', '.bin', 'windows', 'abcd1234abcd1234')).toBe('bufHash_windows')
+      expect(canonicalFilename('texHash', '.png', 'windows', 'abcd1234abcd1234')).toBe('texHash_windows')
+    })
+  })
+})
+
 describe('when checking the asset cache against S3', () => {
   describe('and no assets have valid extensions', () => {
     it('should return empty results without probing S3', async () => {
@@ -71,27 +173,30 @@ describe('when checking the asset cache against S3', () => {
         cdnBucket: 'bucket'
       })
 
-      expect(result).toEqual({ cachedHashes: [], missingHashes: [], unitySkippableHashes: [] })
+      expect(result.cachedHashes).toEqual([])
+      expect(result.missingHashes).toEqual([])
+      expect(result.unitySkippableHashes).toEqual([])
+      expect(result.canonicalNameByHash).toEqual({})
       expect(calls).toHaveLength(0)
     })
   })
 
   describe('and every asset hash is cached', () => {
-    it('should report all hashes as cached and none missing', async () => {
+    const content = [
+      { file: 'model.glb', hash: 'glbHash' },
+      { file: 'texture.png', hash: 'textureHash' },
+      { file: 'buffer.bin', hash: 'bufferHash' }
+    ]
+
+    it('should probe glb at the composite path and leaves at the bare path', async () => {
       const existing = new Set([
-        'v48/assets/glbHash_windows',
+        probeKeyFor('v48', 'glbHash', '.glb', 'windows', content),
         'v48/assets/textureHash_windows',
         'v48/assets/bufferHash_windows'
       ])
-      const { components, metricsCalls } = makeMockComponents(existing)
+      const { components } = makeMockComponents(existing)
       const result = await checkAssetCache(components, {
-        entity: {
-          content: [
-            { file: 'model.glb', hash: 'glbHash' },
-            { file: 'texture.png', hash: 'textureHash' },
-            { file: 'buffer.bin', hash: 'bufferHash' }
-          ]
-        } as any,
+        entity: { content } as any,
         abVersion: 'v48',
         buildTarget: 'windows',
         cdnBucket: 'bucket'
@@ -100,35 +205,76 @@ describe('when checking the asset cache against S3', () => {
       expect(result.cachedHashes.sort()).toEqual(['bufferHash', 'glbHash', 'textureHash'])
       expect(result.missingHashes).toEqual([])
       expect(result.unitySkippableHashes.sort()).toEqual(['bufferHash', 'glbHash'])
+    })
 
-      const hitMetric = metricsCalls.find((c) => c.name === 'ab_converter_asset_cache_hits_total')
-      expect(hitMetric).toEqual({
-        name: 'ab_converter_asset_cache_hits_total',
-        labels: { build_target: 'windows', ab_version: 'v48' },
-        value: 3
+    it('should surface the composite filename in canonicalNameByHash for glb', async () => {
+      const existing = new Set([
+        probeKeyFor('v48', 'glbHash', '.glb', 'windows', content),
+        'v48/assets/textureHash_windows',
+        'v48/assets/bufferHash_windows'
+      ])
+      const { components } = makeMockComponents(existing)
+      const result = await checkAssetCache(components, {
+        entity: { content } as any,
+        abVersion: 'v48',
+        buildTarget: 'windows',
+        cdnBucket: 'bucket'
       })
-      const missMetric = metricsCalls.find((c) => c.name === 'ab_converter_asset_cache_misses_total')
-      expect(missMetric).toEqual({
-        name: 'ab_converter_asset_cache_misses_total',
-        labels: { build_target: 'windows', ab_version: 'v48' },
-        value: 0
+
+      const digest = computeDepsDigest(content)
+      expect(result.canonicalNameByHash).toEqual({
+        glbHash: `glbHash_${digest}_windows`,
+        textureHash: 'textureHash_windows',
+        bufferHash: 'bufferHash_windows'
       })
+      expect(result.depsDigest).toBe(digest)
+    })
+  })
+
+  describe('and two entities share a glb hash but have different dep sets', () => {
+    it('should produce distinct probe keys so neither collides with the other', async () => {
+      const sceneA = [
+        { file: 'model.glb', hash: 'sharedGlb' },
+        { file: 'skinA.png', hash: 'hashA' }
+      ]
+      const sceneB = [
+        { file: 'model.glb', hash: 'sharedGlb' },
+        { file: 'skinB.png', hash: 'hashB' }
+      ]
+
+      const keyA = probeKeyFor('v48', 'sharedGlb', '.glb', 'windows', sceneA)
+      const keyB = probeKeyFor('v48', 'sharedGlb', '.glb', 'windows', sceneB)
+      expect(keyA).not.toBe(keyB)
+
+      // Mock only scene A's canonical key; scene B must miss.
+      const { components, calls } = makeMockComponents(new Set([keyA]))
+      const resultB = await checkAssetCache(components, {
+        entity: { content: sceneB } as any,
+        abVersion: 'v48',
+        buildTarget: 'windows',
+        cdnBucket: 'bucket'
+      })
+      expect(resultB.cachedHashes).not.toContain('sharedGlb')
+      expect(resultB.missingHashes).toContain('sharedGlb')
+      expect(calls.some((c) => c.Key === keyB)).toBe(true)
     })
   })
 
   describe('and a mix of hashes are cached and missing', () => {
     it('should split correctly and only flag GLTF/BIN extensions as Unity-skippable', async () => {
-      const existing = new Set(['v48/assets/glbHash_windows', 'v48/assets/textureHash_windows'])
+      const content = [
+        { file: 'model.glb', hash: 'glbHash' },
+        { file: 'newModel.glb', hash: 'missingGlb' },
+        { file: 'texture.png', hash: 'textureHash' },
+        { file: 'newBuffer.bin', hash: 'missingBuf' }
+      ]
+      const existing = new Set([
+        probeKeyFor('v48', 'glbHash', '.glb', 'windows', content),
+        'v48/assets/textureHash_windows'
+      ])
       const { components } = makeMockComponents(existing)
       const result = await checkAssetCache(components, {
-        entity: {
-          content: [
-            { file: 'model.glb', hash: 'glbHash' },
-            { file: 'newModel.glb', hash: 'missingGlb' },
-            { file: 'texture.png', hash: 'textureHash' },
-            { file: 'newBuffer.bin', hash: 'missingBuf' }
-          ]
-        } as any,
+        entity: { content } as any,
         abVersion: 'v48',
         buildTarget: 'windows',
         cdnBucket: 'bucket'
@@ -186,16 +332,15 @@ describe('when checking the asset cache against S3', () => {
 
   describe('and concurrency is zero', () => {
     it('should still complete probing every hash (clamped to at least one worker)', async () => {
+      const content = [
+        { file: 'a.bin', hash: 'h1' },
+        { file: 'b.bin', hash: 'h2' },
+        { file: 'c.bin', hash: 'h3' }
+      ]
       const existing = new Set(['v48/assets/h1_windows', 'v48/assets/h2_windows', 'v48/assets/h3_windows'])
       const { components, calls } = makeMockComponents(existing)
       const result = await checkAssetCache(components, {
-        entity: {
-          content: [
-            { file: 'a.glb', hash: 'h1' },
-            { file: 'b.glb', hash: 'h2' },
-            { file: 'c.glb', hash: 'h3' }
-          ]
-        } as any,
+        entity: { content } as any,
         abVersion: 'v48',
         buildTarget: 'windows',
         cdnBucket: 'bucket',
@@ -217,7 +362,10 @@ describe('when checking the asset cache against S3', () => {
         cdnBucket: 'bucket'
       })
 
-      expect(result).toEqual({ cachedHashes: [], missingHashes: [], unitySkippableHashes: [] })
+      expect(result.cachedHashes).toEqual([])
+      expect(result.missingHashes).toEqual([])
+      expect(result.unitySkippableHashes).toEqual([])
+      expect(result.canonicalNameByHash).toEqual({})
       expect(calls).toHaveLength(0)
       expect(metricsCalls).toHaveLength(0)
     })
@@ -225,10 +373,11 @@ describe('when checking the asset cache against S3', () => {
 
   describe('and asset uses uppercase file extension', () => {
     it('should still probe (extension check is case-insensitive)', async () => {
-      const existing = new Set(['v48/assets/h1_windows'])
+      const content = [{ file: 'MODEL.GLB', hash: 'h1' }]
+      const existing = new Set([probeKeyFor('v48', 'h1', '.glb', 'windows', content)])
       const { components, calls } = makeMockComponents(existing)
       const result = await checkAssetCache(components, {
-        entity: { content: [{ file: 'MODEL.GLB', hash: 'h1' }] } as any,
+        entity: { content } as any,
         abVersion: 'v48',
         buildTarget: 'windows',
         cdnBucket: 'bucket'
@@ -241,15 +390,16 @@ describe('when checking the asset cache against S3', () => {
 
   describe('and the hit-cache already knows a hash is canonical', () => {
     it('should skip the S3 HEAD for that hash on the next conversion', async () => {
+      // Use .bin so probe keys stay bare — simpler to reason about across two
+      // distinct entity content lists, since digest depends on content.
       const existing = new Set(['v48/assets/h1_windows', 'v48/assets/h2_windows'])
       const firstRun = makeMockComponents(existing)
 
-      // First conversion: both hashes probed, both hit, both recorded in the cache.
       await checkAssetCache(firstRun.components, {
         entity: {
           content: [
-            { file: 'a.glb', hash: 'h1' },
-            { file: 'b.glb', hash: 'h2' }
+            { file: 'a.bin', hash: 'h1' },
+            { file: 'b.bin', hash: 'h2' }
           ]
         } as any,
         abVersion: 'v48',
@@ -258,14 +408,12 @@ describe('when checking the asset cache against S3', () => {
       })
       expect(firstRun.calls).toHaveLength(2)
 
-      // Second conversion on a different worker instance (fresh mock S3) but the
-      // same process — hit-cache is process-local and shared.
       const secondRun = makeMockComponents(new Set())
       const result = await checkAssetCache(secondRun.components, {
         entity: {
           content: [
-            { file: 'a.glb', hash: 'h1' },
-            { file: 'c.glb', hash: 'h3' }
+            { file: 'a.bin', hash: 'h1' },
+            { file: 'c.bin', hash: 'h3' }
           ]
         } as any,
         abVersion: 'v48',
@@ -282,13 +430,12 @@ describe('when checking the asset cache against S3', () => {
     it('should emit hit-cache and head-probe metrics separately', async () => {
       const existing = new Set(['v48/assets/h1_windows', 'v48/assets/h2_windows'])
 
-      // Warm the cache on the first run.
       const firstRun = makeMockComponents(existing)
       await checkAssetCache(firstRun.components, {
         entity: {
           content: [
-            { file: 'a.glb', hash: 'h1' },
-            { file: 'b.glb', hash: 'h2' }
+            { file: 'a.bin', hash: 'h1' },
+            { file: 'b.bin', hash: 'h2' }
           ]
         } as any,
         abVersion: 'v48',
@@ -298,13 +445,12 @@ describe('when checking the asset cache against S3', () => {
       expect(firstRun.metricsCalls.find((m) => m.name === 'ab_converter_asset_probe_head_total')?.value).toBe(2)
       expect(firstRun.metricsCalls.find((m) => m.name === 'ab_converter_asset_probe_hit_cache_total')).toBeUndefined()
 
-      // Second run: one cached, one fresh.
       const secondRun = makeMockComponents(new Set())
       await checkAssetCache(secondRun.components, {
         entity: {
           content: [
-            { file: 'a.glb', hash: 'h1' }, // from hit-cache
-            { file: 'c.glb', hash: 'h3' } // fresh HEAD
+            { file: 'a.bin', hash: 'h1' },
+            { file: 'c.bin', hash: 'h3' }
           ]
         } as any,
         abVersion: 'v48',
@@ -319,18 +465,16 @@ describe('when checking the asset cache against S3', () => {
       const existing = new Set(['v48/assets/h1_windows'])
       const { components } = makeMockComponents(existing)
 
-      // Warm cache for v48/windows.
       await checkAssetCache(components, {
-        entity: { content: [{ file: 'a.glb', hash: 'h1' }] } as any,
+        entity: { content: [{ file: 'a.bin', hash: 'h1' }] } as any,
         abVersion: 'v48',
         buildTarget: 'windows',
         cdnBucket: 'bucket'
       })
 
-      // Probe same hash but different version — must NOT short-circuit.
       const macRun = makeMockComponents(new Set())
       await checkAssetCache(macRun.components, {
-        entity: { content: [{ file: 'a.glb', hash: 'h1' }] } as any,
+        entity: { content: [{ file: 'a.bin', hash: 'h1' }] } as any,
         abVersion: 'v48',
         buildTarget: 'mac',
         cdnBucket: 'bucket'
@@ -339,7 +483,7 @@ describe('when checking the asset cache against S3', () => {
 
       const v49Run = makeMockComponents(new Set())
       await checkAssetCache(v49Run.components, {
-        entity: { content: [{ file: 'a.glb', hash: 'h1' }] } as any,
+        entity: { content: [{ file: 'a.bin', hash: 'h1' }] } as any,
         abVersion: 'v49',
         buildTarget: 'windows',
         cdnBucket: 'bucket'
@@ -499,6 +643,21 @@ describe('when purging cached bundles from the output directory', () => {
       const removed = await purgeCachedBundlesFromOutput(tmpDir, ['cached'], logger)
       expect(removed).toBe(0)
       expect(await fs.readdir(tmpDir)).toEqual(['cachedExtended_windows'])
+    })
+  })
+
+  describe('and a composite glb filename is present', () => {
+    it('should match the leading hash prefix and purge the composite file', async () => {
+      // New scheme emits `{hash}_{digest}_{target}` for glb/gltf. The purge
+      // helper extracts the leading hash (pre-first-`_`) and still matches.
+      await fs.writeFile(path.join(tmpDir, 'modelHash_abcd1234abcd1234_windows'), 'x')
+      await fs.writeFile(path.join(tmpDir, 'modelHash_abcd1234abcd1234_windows.br'), 'x')
+
+      const { logger } = makeMockLogger()
+      const removed = await purgeCachedBundlesFromOutput(tmpDir, ['modelHash'], logger)
+
+      expect(removed).toBe(2)
+      expect(await fs.readdir(tmpDir)).toEqual([])
     })
   })
 

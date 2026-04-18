@@ -2,8 +2,9 @@ import { Entity } from '@dcl/schemas'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import * as path from 'path'
 import * as fs from 'fs/promises'
+import * as crypto from 'crypto'
 import { AppComponents } from '../types'
-import { bufferExtensions, gltfExtensions, hasValidExtension } from './has-content-changed-task'
+import { bufferExtensions, gltfExtensions, textureExtensions, hasValidExtension } from './has-content-changed-task'
 import { isS3NotFound } from './s3-helpers'
 
 // Unity-side extensions whose bundles have no inbound dependencies from other
@@ -13,12 +14,28 @@ import { isS3NotFound } from './s3-helpers'
 // downloading them regardless of cache status.
 const UNITY_SKIPPABLE_EXTENSIONS = new Set<string>([...gltfExtensions, ...bufferExtensions])
 
+// Extensions that a `.glb` / `.gltf` bundle can reference as dependencies. The
+// bundle output bytes embed the referenced dep bundle names (themselves derived
+// from dep content hashes), so two scenes that share a glb source hash but
+// differ in their dep set produce byte-different bundles — distinct canonical
+// paths prevent cross-scene collision.
+const GLB_DEP_EXTENSIONS = new Set<string>([...bufferExtensions, ...textureExtensions])
+
+const GLTF_EXTENSIONS_SET = new Set<string>(gltfExtensions)
+
 export type AssetCacheResult = {
   cachedHashes: string[]
   missingHashes: string[]
   // Hashes Unity can safely skip building. Subset of cachedHashes limited to file
   // extensions whose bundles have no inbound Unity dependencies from other assets.
   unitySkippableHashes: string[]
+  // Composite-or-bare canonical bundle filename per content hash, so callers
+  // (short-circuit manifest emit, post-Unity manifest append) don't have to
+  // reconstruct the composite form.
+  canonicalNameByHash: Record<string, string>
+  // Entity-wide deps digest — passed to Unity so it names glb/gltf bundles with
+  // the same composite key we probe and upload to.
+  depsDigest: string
 }
 
 /** Extract the lowercase file extension (including the leading `.`) from a
@@ -28,10 +45,46 @@ function fileExtension(file: string): string {
   return idx < 0 ? '' : file.substring(idx).toLowerCase()
 }
 
-/** Build the canonical S3 key (`{abVersion}/assets/{hash}_{target}`) the
- * per-asset reuse scheme writes to. The cache probe HEADs exactly this. */
-function canonicalAssetKey(abVersion: string, hash: string, target: string): string {
-  return `${abVersion}/assets/${hash}_${target}`
+/**
+ * Deterministic digest of the entity's texture + buffer set. Folded into
+ * glb/gltf canonical filenames so two scenes that share a glb source hash but
+ * differ in deps land at distinct paths.
+ *
+ * Conservative superset — digests every texture/buffer in the entity, not just
+ * the subset a specific glb actually references. Zero false-positive risk
+ * (identical digest ⇒ identical dep set ⇒ identical Unity output). May miss
+ * some cross-scene reuse when an entity carries loose non-glb textures; we
+ * accept that trade-off.
+ *
+ * Sort is filename-primary, hash-secondary so it's stable regardless of
+ * catalyst response order and robust to two different filenames sharing a hash.
+ *
+ * Exported for unit testing.
+ */
+export function computeDepsDigest(entityContent: ReadonlyArray<{ file: string; hash: string }>): string {
+  const deps = entityContent.filter((e) => GLB_DEP_EXTENSIONS.has(fileExtension(e.file)))
+  deps.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0))
+  const h = crypto.createHash('sha256')
+  for (const d of deps) h.update(`${d.file}\t${d.hash}\n`)
+  // 16 hex = 64-bit. At 10^9 unique (hash, dep-set) tuples per AB_VERSION the
+  // birthday collision probability is ~10^-20 — negligible for our domain.
+  return h.digest('hex').slice(0, 16)
+}
+
+/**
+ * Build the canonical bundle filename Unity's output drops into
+ * `{abVersion}/assets/{filename}`. glb/gltf filenames embed the entity-wide
+ * depsDigest; BINs and textures are keyed by hash alone (they're leaves with
+ * no inbound dep refs from their own bundle).
+ *
+ * Exported for unit testing and so the migration script produces keys that
+ * match this function's rules exactly.
+ */
+export function canonicalFilename(hash: string, ext: string, target: string, depsDigest: string): string {
+  if (GLTF_EXTENSIONS_SET.has(ext)) {
+    return `${hash}_${depsDigest}_${target}`
+  }
+  return `${hash}_${target}`
 }
 
 // Process-local LRU cache of canonical keys confirmed to exist in S3. Canonical
@@ -190,7 +243,9 @@ export async function checkAssetCache(
   const concurrency = params.concurrency ?? 50
   const logger = components.logs.getLogger('AssetReuse')
 
-  type Probe = { hash: string; skippable: boolean }
+  const depsDigest = computeDepsDigest(entity.content ?? [])
+
+  type Probe = { hash: string; skippable: boolean; filename: string; key: string }
   const seen = new Set<string>()
   const probes: Probe[] = []
   for (const entry of entity.content ?? []) {
@@ -198,28 +253,41 @@ export async function checkAssetCache(
     if (seen.has(entry.hash)) continue
     seen.add(entry.hash)
     const ext = fileExtension(entry.file)
-    probes.push({ hash: entry.hash, skippable: UNITY_SKIPPABLE_EXTENSIONS.has(ext) })
+    const filename = canonicalFilename(entry.hash, ext, buildTarget, depsDigest)
+    probes.push({
+      hash: entry.hash,
+      skippable: UNITY_SKIPPABLE_EXTENSIONS.has(ext),
+      filename,
+      key: `${abVersion}/assets/${filename}`
+    })
   }
 
   if (probes.length === 0) {
-    return { cachedHashes: [], missingHashes: [], unitySkippableHashes: [] }
+    return {
+      cachedHashes: [],
+      missingHashes: [],
+      unitySkippableHashes: [],
+      canonicalNameByHash: {},
+      depsDigest
+    }
   }
 
   // Fast-path: skip S3 HEAD for hashes the hit-cache already confirmed as canonical.
-  const keys = probes.map((p) => canonicalAssetKey(abVersion, p.hash, buildTarget))
   const hits: boolean[] = new Array(probes.length)
   const pendingIdx: number[] = []
   for (let i = 0; i < probes.length; i++) {
-    if (probeHitCache.has(keys[i])) hits[i] = true
+    if (probeHitCache.has(probes[i].key)) hits[i] = true
     else pendingIdx.push(i)
   }
 
   const hitCacheServed = probes.length - pendingIdx.length
   if (pendingIdx.length > 0) {
-    const fetched = await mapBounded(pendingIdx, concurrency, (i) => headExists(components.cdnS3, cdnBucket, keys[i]))
+    const fetched = await mapBounded(pendingIdx, concurrency, (i) =>
+      headExists(components.cdnS3, cdnBucket, probes[i].key)
+    )
     for (let j = 0; j < pendingIdx.length; j++) {
       hits[pendingIdx[j]] = fetched[j]
-      if (fetched[j]) probeHitCache.add(keys[pendingIdx[j]])
+      if (fetched[j]) probeHitCache.add(probes[pendingIdx[j]].key)
     }
   }
 
@@ -241,9 +309,11 @@ export async function checkAssetCache(
   const cachedHashes: string[] = []
   const missingHashes: string[] = []
   const unitySkippableHashes: string[] = []
+  const canonicalNameByHash: Record<string, string> = {}
 
   for (let i = 0; i < probes.length; i++) {
-    const { hash, skippable } = probes[i]
+    const { hash, skippable, filename } = probes[i]
+    canonicalNameByHash[hash] = filename
     if (hits[i]) {
       cachedHashes.push(hash)
       if (skippable) unitySkippableHashes.push(hash)
@@ -269,10 +339,11 @@ export async function checkAssetCache(
     missing: missingHashes.length,
     unitySkippable: unitySkippableHashes.length,
     hitCacheServed,
-    headRequests: pendingIdx.length
+    headRequests: pendingIdx.length,
+    depsDigest
   } as any)
 
-  return { cachedHashes, missingHashes, unitySkippableHashes }
+  return { cachedHashes, missingHashes, unitySkippableHashes, canonicalNameByHash, depsDigest }
 }
 
 /**

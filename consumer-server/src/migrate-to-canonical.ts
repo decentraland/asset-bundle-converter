@@ -25,22 +25,27 @@
 import arg from 'arg'
 import AWS from 'aws-sdk'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
-import { mapBounded } from './logic/asset-reuse'
+import { canonicalFilename, computeDepsDigest, mapBounded } from './logic/asset-reuse'
+import { getActiveEntity } from './logic/fetch-entity-by-pointer'
 import { isS3NotFound } from './logic/s3-helpers'
 
 type Manifest = {
   version?: string
   files?: string[]
   exitCode?: number | null
+  contentServerUrl?: string
 }
 
 export type MigrationStats = {
   manifestsScanned: number
   manifestsKept: number
   manifestsSkipped: number
+  manifestsMissingContentServer: number
+  manifestsEntityFetchFailed: number
   bundlesProbed: number
   bundlesAlreadyCanonical: number
   bundlesCopied: number
+  glbRenamedCount: number
   bundlesMissingSource: number
   errors: number
 }
@@ -50,12 +55,33 @@ function emptyStats(): MigrationStats {
     manifestsScanned: 0,
     manifestsKept: 0,
     manifestsSkipped: 0,
+    manifestsMissingContentServer: 0,
+    manifestsEntityFetchFailed: 0,
     bundlesProbed: 0,
     bundlesAlreadyCanonical: 0,
     bundlesCopied: 0,
+    glbRenamedCount: 0,
     bundlesMissingSource: 0,
     errors: 0
   }
+}
+
+function fileExtension(file: string): string {
+  const idx = file.lastIndexOf('.')
+  return idx < 0 ? '' : file.substring(idx).toLowerCase()
+}
+
+/**
+ * Split a pre-PR bundle filename into `{hash, variant}` for a given target.
+ * Pre-PR filenames are `{hash}_{target}(\.br|\.manifest|\.manifest\.br)?` where
+ * `{hash}` has no `_` — tightening the capture to `[^_]+` excludes any
+ * already-composite filename that somehow leaks in (those aren't migrateable
+ * because their canonical copies come from the new converter, not this script).
+ */
+function splitBundleName(filename: string, target: string): { hash: string; variant: string } | null {
+  const match = filename.match(new RegExp(`^([^_]+)_${target}(\\.br|\\.manifest|\\.manifest\\.br)?$`))
+  if (!match) return null
+  return { hash: match[1], variant: match[2] ?? '' }
 }
 
 /**
@@ -124,6 +150,9 @@ export type RunMigrationOptions = {
   /** How often to call `onProgress`, measured in manifests scanned.
    * Default 100. */
   progressInterval?: number
+  /** Catalyst fetcher — normally `getActiveEntity`; tests pass a stub so they
+   * don't depend on `node-fetch`. Must return the entity's `.content` array. */
+  fetchEntity?: (entityId: string, contentServerUrl: string) => Promise<{ content: { file: string; hash: string }[] }>
 }
 
 /**
@@ -136,6 +165,7 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
   const log = opts.log ?? (() => {})
   const onProgress = opts.onProgress
   const progressInterval = opts.progressInterval ?? 100
+  const fetchEntity = opts.fetchEntity ?? getActiveEntity
   const bundlePattern = buildBundlePattern(target)
   const canonicalPrefix = `${abVersion}/assets`
   const stats = emptyStats()
@@ -176,6 +206,27 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
       continue
     }
 
+    // Canonical keying for glb/gltf bundles includes the entity's deps digest.
+    // Without the entity's content list we can't tell glb from leaf, so skip the
+    // manifest rather than mass-migrate to paths that future probes won't hit.
+    if (!manifest.contentServerUrl) {
+      stats.manifestsMissingContentServer++
+      continue
+    }
+
+    let extByHash: Map<string, string>
+    let depsDigest: string
+    try {
+      const entity = await fetchEntity(parsed.entityId, manifest.contentServerUrl)
+      extByHash = new Map<string, string>()
+      for (const c of entity.content ?? []) extByHash.set(c.hash, fileExtension(c.file))
+      depsDigest = computeDepsDigest(entity.content ?? [])
+    } catch (err: any) {
+      log(`[${obj.Key}] failed to fetch entity: ${err.message}`)
+      stats.manifestsEntityFetchFailed++
+      continue
+    }
+
     stats.manifestsKept++
 
     const sourcePrefix = `${abVersion}/${parsed.entityId}`
@@ -183,8 +234,18 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
 
     await mapBounded(candidates, concurrency, async (filename) => {
       stats.bundlesProbed++
-      const canonicalKey = `${canonicalPrefix}/${filename}`
+
+      // Source file on pre-PR entity-scoped layout retains the bare filename
+      // Unity originally produced — we only rename on the canonical destination.
       const sourceKey = `${sourcePrefix}/${filename}`
+
+      const parts = splitBundleName(filename, target)
+      const ext = parts ? (extByHash.get(parts.hash) ?? '') : ''
+      const destFilename = parts
+        ? `${canonicalFilename(parts.hash, ext, target, depsDigest)}${parts.variant}`
+        : filename
+      const canonicalKey = `${canonicalPrefix}/${destFilename}`
+      if (destFilename !== filename) stats.glbRenamedCount++
 
       try {
         await s3.headObject({ Bucket: bucket, Key: canonicalKey }).promise()

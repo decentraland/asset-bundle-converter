@@ -9,9 +9,11 @@ import { rimraf } from 'rimraf'
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const MockAws = require('mock-aws-s3')
+import { canonicalFilename, computeDepsDigest } from '../../src/logic/asset-reuse'
 import { runMigration } from '../../src/migrate-to-canonical'
 
 const BUCKET = 'test-migrate-bucket'
+const CATALYST = 'https://peer.decentraland.org/content'
 
 async function read(s3: any, Key: string): Promise<string | null> {
   try {
@@ -27,8 +29,21 @@ async function seedObject(s3: any, Key: string, Body: string): Promise<void> {
   await s3.putObject({ Bucket: BUCKET, Key, Body }).promise()
 }
 
-function makeManifest(version: string, files: string[], exitCode: number = 0): string {
-  return JSON.stringify({ version, files, exitCode, date: '2026-04-17T00:00:00Z' })
+function makeManifest(version: string, files: string[], exitCode: number = 0, contentServerUrl: string = CATALYST): string {
+  return JSON.stringify({ version, files, exitCode, contentServerUrl, date: '2026-04-17T00:00:00Z' })
+}
+
+/**
+ * Build a `fetchEntity` stub the migration can use instead of hitting a live
+ * catalyst. Looks up the entity's content from a pre-built map; tests control
+ * extensions per hash by seeding this map.
+ */
+function makeFetchEntityStub(entityContentByEntityId: Record<string, { file: string; hash: string }[]>) {
+  return jest.fn(async (entityId: string) => {
+    const content = entityContentByEntityId[entityId]
+    if (!content) throw new Error(`no stubbed entity for ${entityId}`)
+    return { content }
+  })
 }
 
 describe('when running the migration against a pre-rollout bucket', () => {
@@ -60,13 +75,24 @@ describe('when running the migration against a pre-rollout bucket', () => {
       await seedObject(s3, 'v48/bafy-entity-A/hashA_windows.manifest', 'unity-manifest-bytes')
       await seedObject(s3, 'v48/bafy-entity-A/hashB_windows.br', 'brotli-B-bytes')
 
+      // Both hashes map to buffer (`.bin`) files — leaves under the composite
+      // scheme, so the canonical filenames stay the bare `{hash}_{target}` form
+      // and all the existing path assertions below keep matching.
+      const fetchEntity = makeFetchEntityStub({
+        'bafy-entity-A': [
+          { file: 'geo-A.bin', hash: 'hashA' },
+          { file: 'geo-B.bin', hash: 'hashB' }
+        ]
+      })
+
       stats = await runMigration({
         s3,
         bucket: BUCKET,
         abVersion: 'v48',
         target: 'windows',
         dryRun: false,
-        concurrency: 10
+        concurrency: 10,
+        fetchEntity
       })
     })
 
@@ -110,13 +136,18 @@ describe('when running the migration against a pre-rollout bucket', () => {
       await seedObject(s3, 'manifest/bafy-entity-A_windows.json', makeManifest('v48', ['hashA_windows']))
       await seedObject(s3, 'v48/bafy-entity-A/hashA_windows', 'bundle-A-bytes')
 
+      const fetchEntity = makeFetchEntityStub({
+        'bafy-entity-A': [{ file: 'geo-A.bin', hash: 'hashA' }]
+      })
+
       firstStats = await runMigration({
         s3,
         bucket: BUCKET,
         abVersion: 'v48',
         target: 'windows',
         dryRun: false,
-        concurrency: 10
+        concurrency: 10,
+        fetchEntity
       })
       secondStats = await runMigration({
         s3,
@@ -124,7 +155,8 @@ describe('when running the migration against a pre-rollout bucket', () => {
         abVersion: 'v48',
         target: 'windows',
         dryRun: false,
-        concurrency: 10
+        concurrency: 10,
+        fetchEntity
       })
     })
 
@@ -150,13 +182,18 @@ describe('when running the migration against a pre-rollout bucket', () => {
       await seedObject(s3, 'manifest/bafy-win_windows.json', makeManifest('v48', ['hashZ_windows']))
       await seedObject(s3, 'v48/bafy-win/hashZ_windows', 'windows-bytes')
 
+      const fetchEntity = makeFetchEntityStub({
+        'bafy-win': [{ file: 'geo-Z.bin', hash: 'hashZ' }]
+      })
+
       stats = await runMigration({
         s3,
         bucket: BUCKET,
         abVersion: 'v48',
         target: 'windows',
         dryRun: false,
-        concurrency: 10
+        concurrency: 10,
+        fetchEntity
       })
     })
 
@@ -213,13 +250,18 @@ describe('when running the migration against a pre-rollout bucket', () => {
       await seedObject(s3, 'manifest/bafy-entity_windows.json', makeManifest('v48', ['hashA_windows']))
       await seedObject(s3, 'v48/bafy-entity/hashA_windows', 'bundle-bytes')
 
+      const fetchEntity = makeFetchEntityStub({
+        'bafy-entity': [{ file: 'geo-A.bin', hash: 'hashA' }]
+      })
+
       stats = await runMigration({
         s3,
         bucket: BUCKET,
         abVersion: 'v48',
         target: 'windows',
         dryRun: true,
-        concurrency: 10
+        concurrency: 10,
+        fetchEntity
       })
     })
 
@@ -229,6 +271,163 @@ describe('when running the migration against a pre-rollout bucket', () => {
 
     it('should not actually write to the canonical path', async () => {
       expect(await read(s3, 'v48/assets/hashA_windows')).toBeNull()
+    })
+  })
+
+  describe('and the manifest lists a glb bundle', () => {
+    let stats: Awaited<ReturnType<typeof runMigration>>
+    let expectedComposite: string
+
+    beforeEach(async () => {
+      // Pre-rollout: manifest was written with the bare `{hash}_{target}` form.
+      await seedObject(
+        s3,
+        'manifest/bafy-entity-with-glb_windows.json',
+        makeManifest('v48', ['hashGlb_windows', 'hashGlb_windows.manifest', 'hashTex_windows'])
+      )
+      await seedObject(s3, 'v48/bafy-entity-with-glb/hashGlb_windows', 'glb-bundle-bytes')
+      await seedObject(s3, 'v48/bafy-entity-with-glb/hashGlb_windows.manifest', 'glb-manifest-bytes')
+      await seedObject(s3, 'v48/bafy-entity-with-glb/hashTex_windows', 'tex-bundle-bytes')
+
+      const content = [
+        { file: 'model.glb', hash: 'hashGlb' },
+        { file: 'texture.png', hash: 'hashTex' }
+      ]
+      const digest = computeDepsDigest(content)
+      expectedComposite = canonicalFilename('hashGlb', '.glb', 'windows', digest)
+
+      const fetchEntity = makeFetchEntityStub({ 'bafy-entity-with-glb': content })
+
+      stats = await runMigration({
+        s3,
+        bucket: BUCKET,
+        abVersion: 'v48',
+        target: 'windows',
+        dryRun: false,
+        concurrency: 10,
+        fetchEntity
+      })
+    })
+
+    it('should copy the glb bundle to the composite canonical path, not the bare one', async () => {
+      expect(await read(s3, `v48/assets/${expectedComposite}`)).toBe('glb-bundle-bytes')
+      expect(await read(s3, 'v48/assets/hashGlb_windows')).toBeNull()
+    })
+
+    it('should copy the glb .manifest sibling to the composite canonical path too', async () => {
+      expect(await read(s3, `v48/assets/${expectedComposite}.manifest`)).toBe('glb-manifest-bytes')
+    })
+
+    it('should copy the texture bundle to the bare canonical path (leaves stay bare)', async () => {
+      expect(await read(s3, 'v48/assets/hashTex_windows')).toBe('tex-bundle-bytes')
+    })
+
+    it('should count the glb + its sibling under glbRenamedCount', () => {
+      // Two bundles rewritten (raw + .manifest); texture kept bare.
+      expect(stats.glbRenamedCount).toBe(2)
+    })
+  })
+
+  describe('and two entities share a glb hash but differ in textures', () => {
+    let expectedA: string
+    let expectedB: string
+
+    beforeEach(async () => {
+      await seedObject(s3, 'manifest/bafy-A_windows.json', makeManifest('v48', ['hashGlb_windows']))
+      await seedObject(s3, 'manifest/bafy-B_windows.json', makeManifest('v48', ['hashGlb_windows']))
+      await seedObject(s3, 'v48/bafy-A/hashGlb_windows', 'bundle-A-bytes')
+      await seedObject(s3, 'v48/bafy-B/hashGlb_windows', 'bundle-B-bytes')
+
+      const contentA = [
+        { file: 'model.glb', hash: 'hashGlb' },
+        { file: 'skin-red.png', hash: 'hashRed' }
+      ]
+      const contentB = [
+        { file: 'model.glb', hash: 'hashGlb' },
+        { file: 'skin-blue.png', hash: 'hashBlue' }
+      ]
+      expectedA = canonicalFilename('hashGlb', '.glb', 'windows', computeDepsDigest(contentA))
+      expectedB = canonicalFilename('hashGlb', '.glb', 'windows', computeDepsDigest(contentB))
+
+      const fetchEntity = makeFetchEntityStub({ 'bafy-A': contentA, 'bafy-B': contentB })
+
+      await runMigration({
+        s3,
+        bucket: BUCKET,
+        abVersion: 'v48',
+        target: 'windows',
+        dryRun: false,
+        concurrency: 10,
+        fetchEntity
+      })
+    })
+
+    it('should land each entity at a distinct composite path', async () => {
+      expect(expectedA).not.toBe(expectedB)
+      expect(await read(s3, `v48/assets/${expectedA}`)).toBe('bundle-A-bytes')
+      expect(await read(s3, `v48/assets/${expectedB}`)).toBe('bundle-B-bytes')
+    })
+  })
+
+  describe('and the manifest is missing contentServerUrl', () => {
+    let stats: Awaited<ReturnType<typeof runMigration>>
+
+    beforeEach(async () => {
+      // Pre-PR manifests predate the contentServerUrl field. Without it we
+      // can't safely route glb/gltf bundles, so the script skips the manifest
+      // (and surfaces it in a dedicated counter so operators can retry later).
+      const body = JSON.stringify({ version: 'v48', files: ['hashX_windows'], exitCode: 0, date: '2026-04-17' })
+      await seedObject(s3, 'manifest/bafy-nocatalyst_windows.json', body)
+      await seedObject(s3, 'v48/bafy-nocatalyst/hashX_windows', 'bundle-bytes')
+
+      stats = await runMigration({
+        s3,
+        bucket: BUCKET,
+        abVersion: 'v48',
+        target: 'windows',
+        dryRun: false,
+        concurrency: 10,
+        fetchEntity: jest.fn()
+      })
+    })
+
+    it('should count the manifest under manifestsMissingContentServer and not copy anything', async () => {
+      expect(stats.manifestsMissingContentServer).toBe(1)
+      expect(stats.bundlesProbed).toBe(0)
+      expect(await read(s3, 'v48/assets/hashX_windows')).toBeNull()
+    })
+  })
+
+  describe('and the entity fetch fails for one manifest', () => {
+    let stats: Awaited<ReturnType<typeof runMigration>>
+
+    beforeEach(async () => {
+      await seedObject(s3, 'manifest/bafy-good_windows.json', makeManifest('v48', ['hashG_windows']))
+      await seedObject(s3, 'manifest/bafy-bad_windows.json', makeManifest('v48', ['hashB_windows']))
+      await seedObject(s3, 'v48/bafy-good/hashG_windows', 'good-bytes')
+      await seedObject(s3, 'v48/bafy-bad/hashB_windows', 'bad-bytes')
+
+      const fetchEntity = jest.fn(async (entityId: string) => {
+        if (entityId === 'bafy-bad') throw new Error('catalyst 502')
+        return { content: [{ file: 'geo.bin', hash: 'hashG' }] }
+      })
+
+      stats = await runMigration({
+        s3,
+        bucket: BUCKET,
+        abVersion: 'v48',
+        target: 'windows',
+        dryRun: false,
+        concurrency: 10,
+        fetchEntity
+      })
+    })
+
+    it('should count the failure under manifestsEntityFetchFailed and keep processing the rest', async () => {
+      expect(stats.manifestsEntityFetchFailed).toBe(1)
+      expect(stats.bundlesCopied).toBe(1)
+      expect(await read(s3, 'v48/assets/hashG_windows')).toBe('good-bytes')
+      expect(await read(s3, 'v48/assets/hashB_windows')).toBeNull()
     })
   })
 
@@ -247,13 +446,21 @@ describe('when running the migration against a pre-rollout bucket', () => {
       await seedObject(s3, 'v48/bafy-stale/hashExists_windows', 'present-bytes')
       // hashMissing_windows is intentionally NOT seeded.
 
+      const fetchEntity = makeFetchEntityStub({
+        'bafy-stale': [
+          { file: 'exists.bin', hash: 'hashExists' },
+          { file: 'missing.bin', hash: 'hashMissing' }
+        ]
+      })
+
       stats = await runMigration({
         s3,
         bucket: BUCKET,
         abVersion: 'v48',
         target: 'windows',
         dryRun: false,
-        concurrency: 10
+        concurrency: 10,
+        fetchEntity
       })
     })
 

@@ -285,6 +285,14 @@ namespace DCL.ABConverter
                 log.Info($"Received {settings.cachedHashes.Count} cached hash(es) — these GLTF/GLB/BIN bundles will be skipped.");
             }
 
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_DEPS_DIGEST, 1, out string[] depsDigestArg)
+                && depsDigestArg != null
+                && !string.IsNullOrWhiteSpace(depsDigestArg[0]))
+            {
+                settings.depsDigest = depsDigestArg[0].Trim();
+                log.Info($"Received depsDigest={settings.depsDigest} — GLB/GLTF bundles will be named with this digest.");
+            }
+
             // Target is setup during the commandline argument -buildTarget
             settings.buildTarget = EditorUserBuildSettings.activeBuildTarget;
 

@@ -10,7 +10,7 @@ import { hasContentChange } from './has-content-changed-task'
 import { getUnityBuildTarget } from '../utils'
 import { getActiveEntity } from './fetch-entity-by-pointer'
 import fetch from 'node-fetch'
-import { checkAssetCache, purgeCachedBundlesFromOutput, AssetCacheResult } from './asset-reuse'
+import { checkAssetCache, computeDepsDigest, purgeCachedBundlesFromOutput, AssetCacheResult } from './asset-reuse'
 
 type Manifest = {
   version: string
@@ -398,6 +398,12 @@ export async function executeConversion(
   const assetReuseUploadPath = abVersion + '/assets'
   const entityScopedUploadPath = abVersion + '/' + entityId
 
+  // Computed eagerly (not from cacheResult) so the glb/gltf composite key stays
+  // well-defined even when the probe throws and cacheResult ends up null —
+  // otherwise a probe failure would silently reintroduce the hash-only collision
+  // bug by asking Unity to emit bare `{hash}_{target}` names.
+  const depsDigest = useAssetReuse && entity ? computeDepsDigest(entity.content ?? []) : undefined
+
   let cacheResult: AssetCacheResult | null = null
   let fullCacheHit = false
   if (useAssetReuse && entity) {
@@ -433,7 +439,7 @@ export async function executeConversion(
       cached: cacheResult.cachedHashes.length
     } as any)
 
-    const files = cacheResult.cachedHashes.map((h) => `${h}_${$BUILD_TARGET}`)
+    const files = cacheResult.cachedHashes.map((h) => cacheResult!.canonicalNameByHash[h])
     const manifest: Manifest = {
       version: abVersion,
       files,
@@ -517,7 +523,8 @@ export async function executeConversion(
         unityBuildTarget: unityBuildTarget,
         animation: animation,
         doISS: doISS,
-        cachedHashes: useAssetReuse && cacheResult ? cacheResult.unitySkippableHashes : undefined
+        cachedHashes: useAssetReuse && cacheResult ? cacheResult.unitySkippableHashes : undefined,
+        depsDigest
       })
     } else {
       exitCode = 0
@@ -545,12 +552,13 @@ export async function executeConversion(
     }
 
     // Top-level entity manifest must advertise every hash that resolves — including
-    // the cached ones we intentionally did not produce locally.
+    // the cached ones we intentionally did not produce locally. The canonical name
+    // (composite for glb/gltf, bare for BINs/textures) comes from the probe result.
     if (useAssetReuse && cacheResult && cacheResult.cachedHashes.length > 0) {
       const seen = new Set(manifest.files)
       for (const hash of cacheResult.cachedHashes) {
-        const bundleName = `${hash}_${$BUILD_TARGET}`
-        if (!seen.has(bundleName)) manifest.files.push(bundleName)
+        const bundleName = cacheResult.canonicalNameByHash[hash]
+        if (bundleName && !seen.has(bundleName)) manifest.files.push(bundleName)
       }
     }
 

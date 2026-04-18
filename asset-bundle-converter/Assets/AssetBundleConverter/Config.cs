@@ -24,6 +24,7 @@ namespace DCL.ABConverter
         internal const string CLI_SET_SHADER_TARGET = "shaderTarget";
         internal const string CLI_INCLUDE_SHADER_VARIANTS = "includeShaderVariants";
         internal const string CLI_CACHED_HASHES = "cachedHashes";
+        internal const string CLI_DEPS_DIGEST = "depsDigest";
 
         internal static string ASSET_BUNDLE_FOLDER_NAME = "AssetBundles";
         internal static string DOWNLOADED_FOLDER_NAME = "_Downloaded";
