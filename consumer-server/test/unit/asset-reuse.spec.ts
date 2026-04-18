@@ -154,6 +154,25 @@ describe('when building the canonical bundle filename', () => {
     })
   })
 
+  describe('and the entity has a glb with no textures or buffers', () => {
+    it('should still produce a stable composite filename (digest over empty dep set)', async () => {
+      const content = [{ file: 'standalone.glb', hash: 'soloGlb' }]
+      const existing = new Set([probeKeyFor('v48', 'soloGlb', '.glb', 'windows', content)])
+      const { components, calls } = makeMockComponents(existing)
+      const result = await checkAssetCache(components, {
+        entity: { content } as any,
+        abVersion: 'v48',
+        buildTarget: 'windows',
+        cdnBucket: 'bucket'
+      })
+
+      expect(calls).toHaveLength(1)
+      // Composite key has a well-defined digest for the empty dep set.
+      expect(calls[0].Key).toMatch(/^v48\/assets\/soloGlb_[0-9a-f]{16}_windows$/)
+      expect(result.cachedHashes).toEqual(['soloGlb'])
+    })
+  })
+
   describe('and the extension is a leaf (bin or texture)', () => {
     it('should keep the bare hash-only form', () => {
       expect(canonicalFilename('bufHash', '.bin', 'windows', 'abcd1234abcd1234')).toBe('bufHash_windows')

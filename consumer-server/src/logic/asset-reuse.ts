@@ -64,11 +64,15 @@ function fileExtension(file: string): string {
 export function computeDepsDigest(entityContent: ReadonlyArray<{ file: string; hash: string }>): string {
   const deps = entityContent.filter((e) => GLB_DEP_EXTENSIONS.has(fileExtension(e.file)))
   deps.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0))
-  const h = crypto.createHash('sha256')
-  for (const d of deps) h.update(`${d.file}\t${d.hash}\n`)
+  // Feed JSON.stringify of the sorted tuple array rather than a hand-rolled
+  // `${file}\t${hash}\n` concatenation so a filename that happens to contain a
+  // tab or newline can't line-shift its neighbour's bytes into an identical
+  // digest for a different dep set. DCL filenames are well-formed in practice,
+  // but correctness shouldn't rely on that.
+  const payload = JSON.stringify(deps.map((d) => [d.file, d.hash]))
   // 16 hex = 64-bit. At 10^9 unique (hash, dep-set) tuples per AB_VERSION the
   // birthday collision probability is ~10^-20 — negligible for our domain.
-  return h.digest('hex').slice(0, 16)
+  return crypto.createHash('sha256').update(payload).digest('hex').slice(0, 16)
 }
 
 /**

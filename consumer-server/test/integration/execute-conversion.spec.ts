@@ -171,6 +171,51 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     })
   })
 
+  describe('and the entity uses the text .gltf + .bin form', () => {
+    it('should fold the deps digest into the gltf canonical path and keep the buffer bare', async () => {
+      // `.gltf` (text) references `.bin` buffers by URI — the bin is a dep, not
+      // a leaf-only neighbour — so the digest picks it up and the gltf bundle
+      // lands at the composite path. The bin bundle itself stays bare (leaf).
+      const content = [
+        { file: 'model.gltf', hash: 'hGltf' },
+        { file: 'model.bin', hash: 'hBin' }
+      ]
+      const digest = computeDepsDigest(content)
+      const gltfFilename = canonicalFilename('hGltf', '.gltf', 'windows', digest)
+      await components.cdnS3
+        .putObject({ Bucket: 'test-bucket', Key: `v48/assets/${gltfFilename}`, Body: 'gltf-bytes' })
+        .promise()
+      await components.cdnS3
+        .putObject({ Bucket: 'test-bucket', Key: 'v48/assets/hBin_windows', Body: 'bin-bytes' })
+        .promise()
+
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-gltf',
+        type: 'scene',
+        content,
+        metadata: {}
+      })
+
+      const exitCode = await executeConversion(
+        components,
+        'bafy-gltf',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+
+      expect(exitCode).toBe(0)
+      expect(mockedRunConversion).not.toHaveBeenCalled()
+
+      const manifest = JSON.parse(
+        (await read(components.cdnS3, 'test-bucket', 'manifest/bafy-gltf_windows.json')) as string
+      )
+      expect(manifest.files.sort()).toEqual([gltfFilename, 'hBin_windows'].sort())
+    })
+  })
+
   describe('and some asset hashes are cached and others are not', () => {
     it('should pass the GLTF/BIN cached hashes to Unity as -cachedHashes and upload new bundles to the canonical prefix', async () => {
       const content = [

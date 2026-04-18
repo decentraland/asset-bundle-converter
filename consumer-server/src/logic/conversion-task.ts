@@ -371,13 +371,19 @@ export async function executeConversion(
 
   // Fetch the entity up-front — needed both for the per-asset cache probe (when
   // enabled) and for uploading scene source files regardless of whether Unity runs.
+  // `getActiveEntity` returns `undefined` (not an error) when the catalyst no
+  // longer has this entity active — promote that to an explicit throw so the
+  // catch below logs something actionable instead of "cannot read property
+  // 'type' of undefined".
   let entityType = 'undefined'
   let entity: Awaited<ReturnType<typeof getActiveEntity>> | null = null
   try {
-    entity = await getActiveEntity(entityId, contentServerUrl)
+    const fetched = await getActiveEntity(entityId, contentServerUrl)
+    if (!fetched) throw new Error('entity no longer active on catalyst (redeployed or evicted)')
+    entity = fetched
     entityType = entity.type
-  } catch (e) {
-    logger.info(`Could not determine entity type for ${entityId}, scene manifest wont be generated`)
+  } catch (e: any) {
+    logger.info(`Could not fetch entity for ${entityId}: ${e?.message ?? e}. Scene manifest wont be generated`)
   }
 
   // Per-asset reuse: scenes with the kill switch on and no force/ISS short-circuit
