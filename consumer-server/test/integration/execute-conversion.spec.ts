@@ -172,10 +172,13 @@ describe('when executing a conversion with asset-reuse enabled', () => {
   })
 
   describe('and the entity uses the text .gltf + .bin form', () => {
-    it('should fold the deps digest into the gltf canonical path and keep the buffer bare', async () => {
-      // `.gltf` (text) references `.bin` buffers by URI — the bin is a dep, not
-      // a leaf-only neighbour — so the digest picks it up and the gltf bundle
-      // lands at the composite path. The bin bundle itself stays bare (leaf).
+    it('should fold the deps digest into the gltf canonical path and ignore the buffer in the manifest (no standalone bin bundle exists)', async () => {
+      // `.gltf` (text) references `.bin` buffers by URI. The bin contributes
+      // to the digest (it changes the GLTF's bundle output bytes if swapped),
+      // but Unity never emits a standalone `{binHash}_{target}` bundle — the
+      // buffer is inlined into the referencing GLTF's bundle. So the cache
+      // probe never asks for a bin canonical and the top-level manifest
+      // doesn't list one either.
       const content = [
         { file: 'model.gltf', hash: 'hGltf' },
         { file: 'model.bin', hash: 'hBin' }
@@ -184,9 +187,6 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       const gltfFilename = canonicalFilename('hGltf', '.gltf', 'windows', digest)
       await components.cdnS3
         .putObject({ Bucket: 'test-bucket', Key: `v48/assets/${gltfFilename}`, Body: 'gltf-bytes' })
-        .promise()
-      await components.cdnS3
-        .putObject({ Bucket: 'test-bucket', Key: 'v48/assets/hBin_windows', Body: 'bin-bytes' })
         .promise()
 
       mockedGetActiveEntity.mockResolvedValue({
@@ -207,12 +207,58 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       )
 
       expect(exitCode).toBe(0)
+      // Full short-circuit fires: the gltf is cached and the bin is not
+      // probed at all, so there are no missing hashes.
       expect(mockedRunConversion).not.toHaveBeenCalled()
 
       const manifest = JSON.parse(
         (await read(components.cdnS3, 'test-bucket', 'manifest/bafy-gltf_windows.json')) as string
       )
-      expect(manifest.files.sort()).toEqual([gltfFilename, 'hBin_windows'].sort())
+      expect(manifest.files).toEqual([gltfFilename])
+    })
+  })
+
+  describe('and the entity has buffers alongside otherwise-cached glbs', () => {
+    it('should still short-circuit — the bin never blocks the full-cache hit (regression guard for the P1 review finding)', async () => {
+      // Before the fix, `.bin` hashes were probed for a canonical object that
+      // Unity never produces. They always landed in `missingHashes`, so any
+      // scene with a buffer file (almost all scenes) was permanently
+      // prevented from taking the full-cache short-circuit.
+      const content = [
+        { file: 'mesh.glb', hash: 'hGlbBinRegression' },
+        { file: 'mesh.bin', hash: 'hBinRegression' },
+        { file: 'skin.png', hash: 'hTexRegression' }
+      ]
+      const digest = computeDepsDigest(content)
+      const glbFilename = canonicalFilename('hGlbBinRegression', '.glb', 'windows', digest)
+      // Seed canonical for the probeable kinds (glb, texture) only. The `.bin`
+      // intentionally has NO seeded canonical object.
+      await components.cdnS3
+        .putObject({ Bucket: 'test-bucket', Key: `v48/assets/${glbFilename}`, Body: 'x' })
+        .promise()
+      await components.cdnS3
+        .putObject({ Bucket: 'test-bucket', Key: 'v48/assets/hTexRegression_windows', Body: 'x' })
+        .promise()
+
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-bin-regression',
+        type: 'scene',
+        content,
+        metadata: {}
+      })
+
+      const exitCode = await executeConversion(
+        components,
+        'bafy-bin-regression',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+
+      expect(exitCode).toBe(0)
+      expect(mockedRunConversion).not.toHaveBeenCalled()
     })
   })
 

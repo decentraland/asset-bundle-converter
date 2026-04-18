@@ -231,20 +231,24 @@ describe('when checking the asset cache against S3', () => {
     })
   })
 
-  describe('and every asset hash is cached', () => {
+  describe('and every probeable asset hash is cached', () => {
+    // Note: `.bin` is NOT probed (Unity inlines buffers into the referencing
+    // GLTF's bundle rather than producing a standalone `{hash}_{target}`), so
+    // the `.bin` entry below must not appear in the cache result. It DOES
+    // still participate in the deps digest because a `.gltf` bundle embeds
+    // buffer-bundle refs.
     const content = [
       { file: 'model.glb', hash: 'glbHash' },
       { file: 'texture.png', hash: 'textureHash' },
       { file: 'buffer.bin', hash: 'bufferHash' }
     ]
 
-    it('should probe glb at the composite path and leaves at the bare path', async () => {
+    it('should probe glb at the composite path and textures at the bare path, ignoring the .bin', async () => {
       const existing = new Set([
         probeKeyFor('v48', 'glbHash', '.glb', 'windows', content),
-        'v48/assets/textureHash_windows',
-        'v48/assets/bufferHash_windows'
+        'v48/assets/textureHash_windows'
       ])
-      const { components } = makeMockComponents(existing)
+      const { components, calls } = makeMockComponents(existing)
       const result = await checkAssetCache(components, {
         entity: { content } as any,
         abVersion: 'v48',
@@ -252,16 +256,18 @@ describe('when checking the asset cache against S3', () => {
         cdnBucket: 'bucket'
       })
 
-      expect(result.cachedHashes.sort()).toEqual(['bufferHash', 'glbHash', 'textureHash'])
+      expect(result.cachedHashes.sort()).toEqual(['glbHash', 'textureHash'])
       expect(result.missingHashes).toEqual([])
-      expect(result.unitySkippableHashes.sort()).toEqual(['bufferHash', 'glbHash'])
+      expect(result.unitySkippableHashes).toEqual(['glbHash'])
+      // One HEAD per glb + one per texture. The `.bin` is never probed.
+      expect(calls).toHaveLength(2)
+      expect(calls.every((c) => !c.Key.includes('bufferHash'))).toBe(true)
     })
 
-    it('should surface the composite filename in canonicalNameByHash for glb', async () => {
+    it('should surface the composite filename in canonicalNameByHash for glb but omit the .bin (no standalone bundle exists)', async () => {
       const existing = new Set([
         probeKeyFor('v48', 'glbHash', '.glb', 'windows', content),
-        'v48/assets/textureHash_windows',
-        'v48/assets/bufferHash_windows'
+        'v48/assets/textureHash_windows'
       ])
       const { components } = makeMockComponents(existing)
       const result = await checkAssetCache(components, {
@@ -274,8 +280,7 @@ describe('when checking the asset cache against S3', () => {
       const digest = computeDepsDigest(content)
       expect(result.canonicalNameByHash).toEqual({
         glbHash: `glbHash_${digest}_windows`,
-        textureHash: 'textureHash_windows',
-        bufferHash: 'bufferHash_windows'
+        textureHash: 'textureHash_windows'
       })
       expect(result.depsDigest).toBe(digest)
     })
@@ -311,12 +316,16 @@ describe('when checking the asset cache against S3', () => {
   })
 
   describe('and a mix of hashes are cached and missing', () => {
-    it('should split correctly and only flag GLTF/BIN extensions as Unity-skippable', async () => {
+    it('should split correctly and only flag GLTF extensions as Unity-skippable (bins ignored, textures not skippable)', async () => {
+      // .bin files are skipped entirely (Unity inlines buffers into their
+      // referencing GLTF's bundle). Textures are probed but never listed as
+      // Unity-skippable because a non-cached GLTF can still reference them.
       const content = [
         { file: 'model.glb', hash: 'glbHash' },
         { file: 'newModel.glb', hash: 'missingGlb' },
         { file: 'texture.png', hash: 'textureHash' },
-        { file: 'newBuffer.bin', hash: 'missingBuf' }
+        { file: 'newTex.png', hash: 'missingTex' },
+        { file: 'newBuffer.bin', hash: 'ignoredBuf' }
       ]
       const existing = new Set([
         probeKeyFor('v48', 'glbHash', '.glb', 'windows', content),
@@ -331,8 +340,10 @@ describe('when checking the asset cache against S3', () => {
       })
 
       expect(result.cachedHashes.sort()).toEqual(['glbHash', 'textureHash'])
-      expect(result.missingHashes.sort()).toEqual(['missingBuf', 'missingGlb'])
+      expect(result.missingHashes.sort()).toEqual(['missingGlb', 'missingTex'])
       expect(result.unitySkippableHashes).toEqual(['glbHash'])
+      // The .bin hash never enters any result partition.
+      expect(result.canonicalNameByHash).not.toHaveProperty('ignoredBuf')
     })
   })
 
@@ -382,10 +393,12 @@ describe('when checking the asset cache against S3', () => {
 
   describe('and concurrency is zero', () => {
     it('should still complete probing every hash (clamped to at least one worker)', async () => {
+      // Use textures (leaves, bare canonical form) so the probe keys are stable
+      // regardless of the digest — keeps the test focused on concurrency alone.
       const content = [
-        { file: 'a.bin', hash: 'h1' },
-        { file: 'b.bin', hash: 'h2' },
-        { file: 'c.bin', hash: 'h3' }
+        { file: 'a.png', hash: 'h1' },
+        { file: 'b.png', hash: 'h2' },
+        { file: 'c.png', hash: 'h3' }
       ]
       const existing = new Set(['v48/assets/h1_windows', 'v48/assets/h2_windows', 'v48/assets/h3_windows'])
       const { components, calls } = makeMockComponents(existing)
@@ -448,8 +461,8 @@ describe('when checking the asset cache against S3', () => {
       await checkAssetCache(firstRun.components, {
         entity: {
           content: [
-            { file: 'a.bin', hash: 'h1' },
-            { file: 'b.bin', hash: 'h2' }
+            { file: 'a.png', hash: 'h1' },
+            { file: 'b.png', hash: 'h2' }
           ]
         } as any,
         abVersion: 'v48',
@@ -462,8 +475,8 @@ describe('when checking the asset cache against S3', () => {
       const result = await checkAssetCache(secondRun.components, {
         entity: {
           content: [
-            { file: 'a.bin', hash: 'h1' },
-            { file: 'c.bin', hash: 'h3' }
+            { file: 'a.png', hash: 'h1' },
+            { file: 'c.png', hash: 'h3' }
           ]
         } as any,
         abVersion: 'v48',
@@ -484,8 +497,8 @@ describe('when checking the asset cache against S3', () => {
       await checkAssetCache(firstRun.components, {
         entity: {
           content: [
-            { file: 'a.bin', hash: 'h1' },
-            { file: 'b.bin', hash: 'h2' }
+            { file: 'a.png', hash: 'h1' },
+            { file: 'b.png', hash: 'h2' }
           ]
         } as any,
         abVersion: 'v48',
@@ -499,8 +512,8 @@ describe('when checking the asset cache against S3', () => {
       await checkAssetCache(secondRun.components, {
         entity: {
           content: [
-            { file: 'a.bin', hash: 'h1' },
-            { file: 'c.bin', hash: 'h3' }
+            { file: 'a.png', hash: 'h1' },
+            { file: 'c.png', hash: 'h3' }
           ]
         } as any,
         abVersion: 'v48',
@@ -516,7 +529,7 @@ describe('when checking the asset cache against S3', () => {
       const { components } = makeMockComponents(existing)
 
       await checkAssetCache(components, {
-        entity: { content: [{ file: 'a.bin', hash: 'h1' }] } as any,
+        entity: { content: [{ file: 'a.png', hash: 'h1' }] } as any,
         abVersion: 'v48',
         buildTarget: 'windows',
         cdnBucket: 'bucket'
@@ -524,7 +537,7 @@ describe('when checking the asset cache against S3', () => {
 
       const macRun = makeMockComponents(new Set())
       await checkAssetCache(macRun.components, {
-        entity: { content: [{ file: 'a.bin', hash: 'h1' }] } as any,
+        entity: { content: [{ file: 'a.png', hash: 'h1' }] } as any,
         abVersion: 'v48',
         buildTarget: 'mac',
         cdnBucket: 'bucket'
@@ -533,7 +546,7 @@ describe('when checking the asset cache against S3', () => {
 
       const v49Run = makeMockComponents(new Set())
       await checkAssetCache(v49Run.components, {
-        entity: { content: [{ file: 'a.bin', hash: 'h1' }] } as any,
+        entity: { content: [{ file: 'a.png', hash: 'h1' }] } as any,
         abVersion: 'v49',
         buildTarget: 'windows',
         cdnBucket: 'bucket'

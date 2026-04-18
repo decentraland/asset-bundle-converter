@@ -913,6 +913,14 @@ namespace DCL.ABConverter
                 // distinct canonical paths. BIN and texture bundles are leaves (no
                 // inbound dep refs from their own bundle) so hash-only naming is safe.
                 bool useDigest = !string.IsNullOrEmpty(settings.depsDigest);
+                // `PlatformUtils.GetPlatform()` already returns the leading
+                // underscore (e.g. "_windows" / "_mac" / "_webgl"), so the
+                // string interpolations below produce `{hash}_{digest}_{target}`
+                // and `{hash}_{target}` without an explicit underscore before
+                // `platform`. Keep this in mind when editing the bundle-name
+                // format — adding another `_` here would produce a double
+                // underscore that the consumer-server's canonical probe would
+                // then miss.
                 string platform = PlatformUtils.GetPlatform();
                 foreach (var assetPath in assetPaths)
                 {

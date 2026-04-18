@@ -4,21 +4,36 @@ import * as path from 'path'
 import * as fs from 'fs/promises'
 import * as crypto from 'crypto'
 import { AppComponents } from '../types'
-import { bufferExtensions, gltfExtensions, textureExtensions, hasValidExtension } from './has-content-changed-task'
+import { bufferExtensions, gltfExtensions, textureExtensions } from './extensions'
 import { isS3NotFound } from './s3-helpers'
 
-// Unity-side extensions whose bundles have no inbound dependencies from other
-// assets, so the converter can safely skip downloading & re-building them when the
-// canonical bundle already exists. Textures are intentionally excluded — they can
-// still be referenced from within a non-cached GLTF during import, so we keep
-// downloading them regardless of cache status.
-const UNITY_SKIPPABLE_EXTENSIONS = new Set<string>([...gltfExtensions, ...bufferExtensions])
+// Extensions whose bundles the converter actually uploads and we can therefore
+// probe at the canonical prefix. `.bin` is deliberately absent: Unity never
+// marks `.bin` files as their own asset bundles (`AssetBundleConverter.cs`
+// `MarkAllAssetBundles` early-continues on `.bin`), so no `{hash}_{target}`
+// object at the canonical prefix ever represents a buffer. Probing `.bin`
+// hashes would just add S3 HEAD calls that always miss, and worse it would
+// permanently block the full-cache short-circuit for every scene with a
+// buffer file (which is most of them).
+const PROBE_EXTENSIONS = new Set<string>([...gltfExtensions, ...textureExtensions])
+
+// Unity-side extensions whose asset bundles have no inbound dependencies from
+// other assets, so the converter can safely skip downloading & re-building
+// them via the `-cachedHashes` flag when the canonical bundle already exists.
+// Textures are intentionally excluded — they can still be referenced from
+// within a non-cached GLTF during import, so we keep downloading them
+// regardless of cache status. `.bin` is not here either: it never has a
+// canonical bundle to hit in the first place (see PROBE_EXTENSIONS above).
+const UNITY_SKIPPABLE_EXTENSIONS = new Set<string>([...gltfExtensions])
 
 // Extensions that a `.glb` / `.gltf` bundle can reference as dependencies. The
 // bundle output bytes embed the referenced dep bundle names (themselves derived
 // from dep content hashes), so two scenes that share a glb source hash but
 // differ in their dep set produce byte-different bundles — distinct canonical
-// paths prevent cross-scene collision.
+// paths prevent cross-scene collision. Buffers ARE included here even though
+// they're not probed directly: a `.gltf` (text) bundle's output DOES embed
+// references to the buffer bundle Unity produces as part of the GLTF's own
+// bundle, so the buffer hashes participate in the digest.
 const GLB_DEP_EXTENSIONS = new Set<string>([...bufferExtensions, ...textureExtensions])
 
 const GLTF_EXTENSIONS_SET = new Set<string>(gltfExtensions)
@@ -39,8 +54,9 @@ export type AssetCacheResult = {
 }
 
 /** Extract the lowercase file extension (including the leading `.`) from a
- * filename. Returns `''` when the name has no `.`. */
-function fileExtension(file: string): string {
+ * filename. Returns `''` when the name has no `.`. Exported so the migration
+ * script can classify entries without redefining the same helper. */
+export function fileExtension(file: string): string {
   const idx = file.lastIndexOf('.')
   return idx < 0 ? '' : file.substring(idx).toLowerCase()
 }
@@ -70,8 +86,11 @@ export function computeDepsDigest(entityContent: ReadonlyArray<{ file: string; h
   // digest for a different dep set. DCL filenames are well-formed in practice,
   // but correctness shouldn't rely on that.
   const payload = JSON.stringify(deps.map((d) => [d.file, d.hash]))
-  // 16 hex = 64-bit. At 10^9 unique (hash, dep-set) tuples per AB_VERSION the
-  // birthday collision probability is ~10^-20 — negligible for our domain.
+  // 16 hex = 64-bit. Birthday-paradox collision probability at k tuples is
+  // ~1 - exp(-k² / 2·2⁶⁴). That's ~10⁻⁹ at 10⁵ tuples, ~10⁻⁵ at 10⁶, and
+  // ~3% at 10⁹ — the previous comment's "~10⁻²⁰ at 10⁹" was wrong by many
+  // orders of magnitude. At realistic DCL scale (10⁴–10⁶ unique dep-sets
+  // per AB_VERSION) the probability is still negligible.
   return crypto.createHash('sha256').update(payload).digest('hex').slice(0, 16)
 }
 
@@ -258,10 +277,15 @@ export async function checkAssetCache(
   const seen = new Set<string>()
   const probes: Probe[] = []
   for (const entry of entity.content ?? []) {
-    if (!hasValidExtension(entry.file)) continue
+    const ext = fileExtension(entry.file)
+    // Probe only the file kinds Unity actually emits as their own asset
+    // bundle — glb/gltf and textures. `.bin` is excluded because Unity
+    // inlines buffers into their referencing GLTF's bundle rather than
+    // producing a standalone `{hash}_{target}` object, so probing would
+    // always miss and permanently block the full-cache short-circuit.
+    if (!PROBE_EXTENSIONS.has(ext)) continue
     if (seen.has(entry.hash)) continue
     seen.add(entry.hash)
-    const ext = fileExtension(entry.file)
     const filename = canonicalFilename(entry.hash, ext, buildTarget, depsDigest)
     probes.push({
       hash: entry.hash,

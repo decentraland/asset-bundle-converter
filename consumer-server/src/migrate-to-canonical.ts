@@ -25,7 +25,7 @@
 import arg from 'arg'
 import AWS from 'aws-sdk'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
-import { canonicalFilename, computeDepsDigest, mapBounded } from './logic/asset-reuse'
+import { canonicalFilename, computeDepsDigest, fileExtension, mapBounded } from './logic/asset-reuse'
 import { getActiveEntity } from './logic/fetch-entity-by-pointer'
 import { isS3NotFound } from './logic/s3-helpers'
 
@@ -64,11 +64,6 @@ function emptyStats(): MigrationStats {
     bundlesMissingSource: 0,
     errors: 0
   }
-}
-
-function fileExtension(file: string): string {
-  const idx = file.lastIndexOf('.')
-  return idx < 0 ? '' : file.substring(idx).toLowerCase()
 }
 
 /**
