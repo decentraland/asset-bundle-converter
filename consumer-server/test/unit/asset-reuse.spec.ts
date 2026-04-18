@@ -60,8 +60,8 @@ function makeMockComponents(existingKeys: Set<string>) {
   }
 }
 
-describe('checkAssetCache', () => {
-  describe('when no assets have valid extensions', () => {
+describe('when checking the asset cache against S3', () => {
+  describe('and no assets have valid extensions', () => {
     it('should return empty results without probing S3', async () => {
       const { components, calls } = makeMockComponents(new Set())
       const result = await checkAssetCache(components, {
@@ -76,7 +76,7 @@ describe('checkAssetCache', () => {
     })
   })
 
-  describe('when every asset hash is cached', () => {
+  describe('and every asset hash is cached', () => {
     it('should report all hashes as cached and none missing', async () => {
       const existing = new Set([
         'v48/assets/glbHash_windows',
@@ -116,7 +116,7 @@ describe('checkAssetCache', () => {
     })
   })
 
-  describe('when a mix of hashes are cached and missing', () => {
+  describe('and a mix of hashes are cached and missing', () => {
     it('should split correctly and only flag GLTF/BIN extensions as Unity-skippable', async () => {
       const existing = new Set(['v48/assets/glbHash_windows', 'v48/assets/textureHash_windows'])
       const { components } = makeMockComponents(existing)
@@ -140,7 +140,7 @@ describe('checkAssetCache', () => {
     })
   })
 
-  describe('when the same hash appears twice in entity.content', () => {
+  describe('and the same hash appears twice in entity.content', () => {
     it('should probe it only once', async () => {
       const { components, calls } = makeMockComponents(new Set())
       await checkAssetCache(components, {
@@ -159,7 +159,7 @@ describe('checkAssetCache', () => {
     })
   })
 
-  describe('when S3 returns a non-404 error', () => {
+  describe('and S3 returns a non-404 error', () => {
     it('should propagate the error to the caller', async () => {
       const s3Error: any = new Error('boom')
       s3Error.statusCode = 500
@@ -184,7 +184,7 @@ describe('checkAssetCache', () => {
     })
   })
 
-  describe('when concurrency is zero', () => {
+  describe('and concurrency is zero', () => {
     it('should still complete probing every hash (clamped to at least one worker)', async () => {
       const existing = new Set(['v48/assets/h1_windows', 'v48/assets/h2_windows', 'v48/assets/h3_windows'])
       const { components, calls } = makeMockComponents(existing)
@@ -207,7 +207,7 @@ describe('checkAssetCache', () => {
     })
   })
 
-  describe('when entity.content is empty', () => {
+  describe('and entity.content is empty', () => {
     it('should return empty results without probing S3 or emitting metrics', async () => {
       const { components, calls, metricsCalls } = makeMockComponents(new Set())
       const result = await checkAssetCache(components, {
@@ -223,7 +223,7 @@ describe('checkAssetCache', () => {
     })
   })
 
-  describe('when asset uses uppercase file extension', () => {
+  describe('and asset uses uppercase file extension', () => {
     it('should still probe (extension check is case-insensitive)', async () => {
       const existing = new Set(['v48/assets/h1_windows'])
       const { components, calls } = makeMockComponents(existing)
@@ -239,7 +239,7 @@ describe('checkAssetCache', () => {
     })
   })
 
-  describe('when the hit-cache already knows a hash is canonical', () => {
+  describe('and the hit-cache already knows a hash is canonical', () => {
     it('should skip the S3 HEAD for that hash on the next conversion', async () => {
       const existing = new Set(['v48/assets/h1_windows', 'v48/assets/h2_windows'])
       const firstRun = makeMockComponents(existing)
@@ -424,7 +424,7 @@ describe('checkAssetCache', () => {
     })
   })
 
-  describe('when a HEAD probe misses', () => {
+  describe('and a HEAD probe misses', () => {
     it('should NOT cache the miss (a later scene would racefully replay the probe)', async () => {
       const { components, calls } = makeMockComponents(new Set()) // no canonical keys
       await checkAssetCache(components, {
@@ -446,7 +446,7 @@ describe('checkAssetCache', () => {
   })
 })
 
-describe('purgeCachedBundlesFromOutput', () => {
+describe('when purging cached bundles from the output directory', () => {
   let tmpDir: string
 
   beforeEach(async () => {
@@ -457,7 +457,7 @@ describe('purgeCachedBundlesFromOutput', () => {
     await fs.rm(tmpDir, { recursive: true, force: true })
   })
 
-  describe('when called with a directory containing mixed files', () => {
+  describe('and called with a directory containing mixed files', () => {
     it('should unlink only files matching the cached hashes and report the count', async () => {
       await fs.writeFile(path.join(tmpDir, 'cached_windows'), 'x')
       await fs.writeFile(path.join(tmpDir, 'cached_windows.br'), 'x')
@@ -474,7 +474,7 @@ describe('purgeCachedBundlesFromOutput', () => {
     })
   })
 
-  describe('when the output directory does not exist', () => {
+  describe('and the output directory does not exist', () => {
     it('should return 0 without throwing', async () => {
       const { logger } = makeMockLogger()
       const removed = await purgeCachedBundlesFromOutput('/tmp/definitely-not-a-real-path-12345', ['cached'], logger)
@@ -482,7 +482,7 @@ describe('purgeCachedBundlesFromOutput', () => {
     })
   })
 
-  describe('when cachedHashes is empty', () => {
+  describe('and cachedHashes is empty', () => {
     it('should return 0 without reading the directory', async () => {
       await fs.writeFile(path.join(tmpDir, 'cached_windows'), 'x')
       const { logger } = makeMockLogger()
@@ -492,7 +492,7 @@ describe('purgeCachedBundlesFromOutput', () => {
     })
   })
 
-  describe('when a filename starts with a cached hash but is a different hash', () => {
+  describe('and a filename starts with a cached hash but is a different hash', () => {
     it('should keep the file because the hash-separator must match', async () => {
       await fs.writeFile(path.join(tmpDir, 'cachedExtended_windows'), 'x')
       const { logger } = makeMockLogger()
@@ -502,7 +502,7 @@ describe('purgeCachedBundlesFromOutput', () => {
     })
   })
 
-  describe('when fs.unlink throws for some entries', () => {
+  describe('and fs.unlink throws for some entries', () => {
     it('should log a warning and count only the successful unlinks', async () => {
       // A file + a directory that share the cached-hash prefix. unlink on a dir
       // throws EISDIR, which exercises the error branch without mocking fs.
@@ -518,7 +518,7 @@ describe('purgeCachedBundlesFromOutput', () => {
     })
   })
 
-  describe('when Unity emits generic artifacts without a hash prefix', () => {
+  describe('and Unity emits generic artifacts without a hash prefix', () => {
     it('should leave them alone regardless of cachedHashes content', async () => {
       // Generic Unity output files that do not carry a content hash.
       await fs.writeFile(path.join(tmpDir, 'AssetBundles'), 'x')

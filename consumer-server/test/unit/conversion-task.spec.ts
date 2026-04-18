@@ -1,7 +1,7 @@
 import { parseBooleanFlag } from '../../src/logic/conversion-task'
 
-describe('parseBooleanFlag', () => {
-  describe('when the raw value is undefined or empty', () => {
+describe('when parsing a boolean flag env var', () => {
+  describe('and the raw value is undefined or empty', () => {
     it('should return the default', () => {
       expect(parseBooleanFlag(undefined, true)).toBe(true)
       expect(parseBooleanFlag(undefined, false)).toBe(false)
@@ -10,7 +10,7 @@ describe('parseBooleanFlag', () => {
     })
   })
 
-  describe('when the raw value is a known truthy string (any case)', () => {
+  describe('and the raw value is a known truthy string (any case)', () => {
     it.each(['true', 'TRUE', 'True', '1', 'yes', 'YES', 'on', 'ON'])(
       'should return true for %s',
       (raw) => {
@@ -19,7 +19,7 @@ describe('parseBooleanFlag', () => {
     )
   })
 
-  describe('when the raw value is a known falsy string (any case)', () => {
+  describe('and the raw value is a known falsy string (any case)', () => {
     it.each(['false', 'FALSE', 'False', '0', 'no', 'NO', 'off', 'OFF'])(
       'should return false for %s',
       (raw) => {
@@ -28,40 +28,49 @@ describe('parseBooleanFlag', () => {
     )
   })
 
-  describe('when the raw value has surrounding whitespace', () => {
+  describe('and the raw value has surrounding whitespace', () => {
     it('should still recognise the underlying keyword', () => {
       expect(parseBooleanFlag('  false  ', true)).toBe(false)
       expect(parseBooleanFlag('\ttrue\n', false)).toBe(true)
     })
   })
 
-  describe('when the raw value is unrecognised', () => {
+  describe('and the raw value is unrecognised', () => {
     it('should fall back to the default', () => {
       expect(parseBooleanFlag('maybe', true)).toBe(true)
       expect(parseBooleanFlag('maybe', false)).toBe(false)
       expect(parseBooleanFlag('2', true)).toBe(true)
     })
 
-    it('should invoke the onUnrecognized callback so operators see the typo in the logs', () => {
-      const onUnrecognized = jest.fn()
-      parseBooleanFlag('flase', true, onUnrecognized)
-      expect(onUnrecognized).toHaveBeenCalledTimes(1)
-      expect(onUnrecognized).toHaveBeenCalledWith('flase')
-    })
+    describe('and an onUnrecognized callback is provided', () => {
+      let onUnrecognized: jest.Mock
 
-    it('should NOT invoke the callback for recognised values', () => {
-      const onUnrecognized = jest.fn()
-      parseBooleanFlag('true', false, onUnrecognized)
-      parseBooleanFlag('FALSE', true, onUnrecognized)
-      parseBooleanFlag('1', false, onUnrecognized)
-      expect(onUnrecognized).not.toHaveBeenCalled()
-    })
+      beforeEach(() => {
+        onUnrecognized = jest.fn()
+      })
 
-    it('should NOT invoke the callback for unset / empty values (that is the default, not a mistake)', () => {
-      const onUnrecognized = jest.fn()
-      parseBooleanFlag(undefined, true, onUnrecognized)
-      parseBooleanFlag('', false, onUnrecognized)
-      expect(onUnrecognized).not.toHaveBeenCalled()
+      afterEach(() => {
+        jest.clearAllMocks()
+      })
+
+      it('should invoke the callback with the original raw value so operators see the typo in logs', () => {
+        parseBooleanFlag('flase', true, onUnrecognized)
+        expect(onUnrecognized).toHaveBeenCalledTimes(1)
+        expect(onUnrecognized).toHaveBeenCalledWith('flase')
+      })
+
+      it('should NOT invoke the callback for recognised truthy/falsy values', () => {
+        parseBooleanFlag('true', false, onUnrecognized)
+        parseBooleanFlag('FALSE', true, onUnrecognized)
+        parseBooleanFlag('1', false, onUnrecognized)
+        expect(onUnrecognized).not.toHaveBeenCalled()
+      })
+
+      it('should NOT invoke the callback for unset or empty values (default behaviour, not a mistake)', () => {
+        parseBooleanFlag(undefined, true, onUnrecognized)
+        parseBooleanFlag('', false, onUnrecognized)
+        expect(onUnrecognized).not.toHaveBeenCalled()
+      })
     })
   })
 })

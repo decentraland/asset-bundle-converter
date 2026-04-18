@@ -1,7 +1,8 @@
-import { buildBundlePattern, parseManifestKey, isNotFound } from '../../src/migrate-to-canonical'
+import { buildBundlePattern, parseManifestKey } from '../../src/migrate-to-canonical'
+import { isS3NotFound } from '../../src/logic/s3-helpers'
 
-describe('parseManifestKey', () => {
-  describe('when given a WebGL manifest key', () => {
+describe('when parsing a manifest key', () => {
+  describe('and given a WebGL manifest key', () => {
     it('should default to webgl target when no suffix is present', () => {
       expect(parseManifestKey('manifest/bafkreiabc.json')).toEqual({
         entityId: 'bafkreiabc',
@@ -10,7 +11,7 @@ describe('parseManifestKey', () => {
     })
   })
 
-  describe('when given a windows manifest key', () => {
+  describe('and given a windows manifest key', () => {
     it('should split off the _windows suffix as the target', () => {
       expect(parseManifestKey('manifest/bafkreiabc_windows.json')).toEqual({
         entityId: 'bafkreiabc',
@@ -19,7 +20,7 @@ describe('parseManifestKey', () => {
     })
   })
 
-  describe('when given a mac manifest key', () => {
+  describe('and given a mac manifest key', () => {
     it('should split off the _mac suffix as the target', () => {
       expect(parseManifestKey('manifest/bafkreiabc_mac.json')).toEqual({
         entityId: 'bafkreiabc',
@@ -28,13 +29,13 @@ describe('parseManifestKey', () => {
     })
   })
 
-  describe('when given a _failed sentinel key', () => {
+  describe('and given a _failed sentinel key', () => {
     it('should return null so the migration skips it', () => {
       expect(parseManifestKey('manifest/bafkreiabc_failed.json')).toBeNull()
     })
   })
 
-  describe('when given a key with no manifest/ prefix', () => {
+  describe('and given a key with no manifest/ prefix', () => {
     it('should still parse — the prefix strip is tolerant', () => {
       // Real callers always pass `manifest/...`; the stripping is defensive.
       expect(parseManifestKey('bafkreiabc.json')).toEqual({
@@ -44,13 +45,13 @@ describe('parseManifestKey', () => {
     })
   })
 
-  describe('when given an empty base name', () => {
+  describe('and given an empty base name', () => {
     it('should return null', () => {
       expect(parseManifestKey('manifest/.json')).toBeNull()
     })
   })
 
-  describe('when the entity id itself contains an underscore', () => {
+  describe('and the entity id itself contains an underscore', () => {
     it('should only strip the known target suffix, not arbitrary underscores', () => {
       // 'entity_with_underscores' is the entityId; '_windows' is the real target.
       expect(parseManifestKey('manifest/entity_with_underscores_windows.json')).toEqual({
@@ -70,9 +71,13 @@ describe('parseManifestKey', () => {
   })
 })
 
-describe('buildBundlePattern', () => {
-  describe('when matching bundle filenames for a target', () => {
-    const pattern = buildBundlePattern('windows')
+describe('when building the bundle-filename regex', () => {
+  describe('and matching bundle filenames for a target', () => {
+    let pattern: RegExp
+
+    beforeEach(() => {
+      pattern = buildBundlePattern('windows')
+    })
 
     it('should match the raw bundle', () => {
       expect(pattern.test('bafkreiabc_windows')).toBe(true)
@@ -110,7 +115,7 @@ describe('buildBundlePattern', () => {
     })
   })
 
-  describe('when building a pattern for webgl', () => {
+  describe('and building a pattern for webgl', () => {
     it('should not accidentally match windows or mac bundles', () => {
       const pattern = buildBundlePattern('webgl')
       expect(pattern.test('bafkreiabc_webgl')).toBe(true)
@@ -120,39 +125,39 @@ describe('buildBundlePattern', () => {
   })
 })
 
-describe('isNotFound', () => {
-  describe('when given an S3 NotFound error from AWS SDK v2', () => {
+describe('when detecting an S3 not-found error', () => {
+  describe('and given an S3 NotFound error from AWS SDK v2', () => {
     it('should return true for statusCode 404', () => {
-      expect(isNotFound({ statusCode: 404 })).toBe(true)
+      expect(isS3NotFound({ statusCode: 404 })).toBe(true)
     })
 
     it("should return true for code 'NotFound'", () => {
-      expect(isNotFound({ code: 'NotFound' })).toBe(true)
+      expect(isS3NotFound({ code: 'NotFound' })).toBe(true)
     })
 
     it("should return true for code 'NoSuchKey'", () => {
-      expect(isNotFound({ code: 'NoSuchKey' })).toBe(true)
+      expect(isS3NotFound({ code: 'NoSuchKey' })).toBe(true)
     })
   })
 
-  describe('when given a different kind of S3 error', () => {
+  describe('and given a different kind of S3 error', () => {
     it('should return false for statusCode 500', () => {
-      expect(isNotFound({ statusCode: 500 })).toBe(false)
+      expect(isS3NotFound({ statusCode: 500 })).toBe(false)
     })
 
     it("should return false for code 'AccessDenied'", () => {
-      expect(isNotFound({ code: 'AccessDenied' })).toBe(false)
+      expect(isS3NotFound({ code: 'AccessDenied' })).toBe(false)
     })
 
     it('should return false for a plain Error', () => {
-      expect(isNotFound(new Error('boom'))).toBe(false)
+      expect(isS3NotFound(new Error('boom'))).toBe(false)
     })
   })
 
-  describe('when given nullish input', () => {
+  describe('and given nullish input', () => {
     it('should return false', () => {
-      expect(isNotFound(null)).toBe(false)
-      expect(isNotFound(undefined)).toBe(false)
+      expect(isS3NotFound(null)).toBe(false)
+      expect(isS3NotFound(undefined)).toBe(false)
     })
   })
 })

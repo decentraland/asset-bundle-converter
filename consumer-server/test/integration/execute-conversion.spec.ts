@@ -82,7 +82,7 @@ async function read(s3: any, Bucket: string, Key: string): Promise<string | null
   }
 }
 
-describe('executeConversion: asset-reuse flows', () => {
+describe('when executing a conversion with asset-reuse enabled', () => {
   let workDir: string
   let components: any
 
@@ -116,7 +116,7 @@ describe('executeConversion: asset-reuse flows', () => {
     await rimraf(workDir, { maxRetries: 3 })
   })
 
-  describe('when every asset hash in the scene is already canonical', () => {
+  describe('and every asset hash in the scene is already canonical', () => {
     it('should short-circuit without calling Unity and publish a manifest pointing at canonical paths', async () => {
       // Seed canonical bundles.
       await components.cdnS3
@@ -166,7 +166,7 @@ describe('executeConversion: asset-reuse flows', () => {
     })
   })
 
-  describe('when some asset hashes are cached and others are not', () => {
+  describe('and some asset hashes are cached and others are not', () => {
     it('should pass the GLTF/BIN cached hashes to Unity as -cachedHashes and upload new bundles to the canonical prefix', async () => {
       // Seed: hGlb (cached GLB) and hTex (cached texture). Unity will be asked to
       // produce hNewGlb + hNewBuf. Textures are never put in unitySkippableHashes
@@ -232,7 +232,7 @@ describe('executeConversion: asset-reuse flows', () => {
     })
   })
 
-  describe('when ASSET_REUSE_ENABLED is off', () => {
+  describe('and ASSET_REUSE_ENABLED is off', () => {
     it('should skip the cache probe and upload bundles to the entity-scoped path (legacy behaviour)', async () => {
       // Rebuild components with the kill switch flipped off.
       const off = buildComponents(workDir, { assetReuseEnabled: 'false' })
@@ -273,7 +273,7 @@ describe('executeConversion: asset-reuse flows', () => {
     })
   })
 
-  describe('when force=true and the canonical prefix is fully populated', () => {
+  describe('and force=true and the canonical prefix is fully populated', () => {
     let exitCode: number
 
     beforeEach(async () => {
@@ -328,7 +328,7 @@ describe('executeConversion: asset-reuse flows', () => {
     })
   })
 
-  describe('when the entity is not a scene (wearable/emote)', () => {
+  describe('and the entity is not a scene (wearable/emote)', () => {
     let exitCode: number
 
     beforeEach(async () => {
@@ -385,7 +385,7 @@ describe('executeConversion: asset-reuse flows', () => {
     })
   })
 
-  describe('when the short-circuit manifest upload fails', () => {
+  describe('and the short-circuit manifest upload fails', () => {
     let thrown: any
     let sentryCalls: any[]
 
@@ -448,7 +448,7 @@ describe('executeConversion: asset-reuse flows', () => {
     })
   })
 
-  describe('when the cache probe itself throws (S3 transient error)', () => {
+  describe('and the cache probe itself throws (S3 transient error)', () => {
     let exitCode: number
 
     beforeEach(async () => {
@@ -503,7 +503,7 @@ describe('executeConversion: asset-reuse flows', () => {
     })
   })
 
-  describe('when fetching the entity fails', () => {
+  describe('and fetching the entity fails', () => {
     let exitCode: number
 
     beforeEach(async () => {

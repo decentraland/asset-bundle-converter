@@ -97,13 +97,6 @@ export function parseManifestKey(key: string): { entityId: string; target: strin
   return { entityId: base, target: 'webgl' }
 }
 
-/**
- * @deprecated Use {@link isS3NotFound} from `./logic/s3-helpers`. This alias is
- * kept because the pre-existing unit-test suite imports this name from here;
- * delete once those tests are retargeted.
- */
-export const isNotFound = isS3NotFound
-
 async function* listManifests(s3: AWS.S3, bucket: string): AsyncGenerator<AWS.S3.Object> {
   let ContinuationToken: string | undefined
   do {
@@ -122,7 +115,15 @@ export type RunMigrationOptions = {
   target: string
   dryRun: boolean
   concurrency: number
+  /** Receives individual error messages (per-manifest / per-bundle). */
   log?: (msg: string) => void
+  /** Fires every `progressInterval` manifests with a live stats snapshot.
+   * Useful for multi-hour migration runs — without it the operator sees
+   * nothing until completion. Tests typically omit it. */
+  onProgress?: (stats: MigrationStats) => void
+  /** How often to call `onProgress`, measured in manifests scanned.
+   * Default 100. */
+  progressInterval?: number
 }
 
 /**
@@ -133,6 +134,8 @@ export type RunMigrationOptions = {
 export async function runMigration(opts: RunMigrationOptions): Promise<MigrationStats> {
   const { s3, bucket, abVersion, target, dryRun, concurrency } = opts
   const log = opts.log ?? (() => {})
+  const onProgress = opts.onProgress
+  const progressInterval = opts.progressInterval ?? 100
   const bundlePattern = buildBundlePattern(target)
   const canonicalPrefix = `${abVersion}/assets`
   const stats = emptyStats()
@@ -140,6 +143,12 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
   for await (const obj of listManifests(s3, bucket)) {
     if (!obj.Key) continue
     stats.manifestsScanned++
+
+    // Periodic progress callback — lets long migration runs surface liveness
+    // signal without flooding logs on every manifest.
+    if (onProgress && stats.manifestsScanned % progressInterval === 0) {
+      onProgress({ ...stats })
+    }
 
     const parsed = parseManifestKey(obj.Key)
     if (!parsed || parsed.target !== target) {
@@ -277,7 +286,11 @@ Options:
     target,
     dryRun,
     concurrency,
-    log: (msg) => console.warn(msg)
+    log: (msg) => console.warn(msg),
+    onProgress: (snapshot) => {
+      const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1)
+      console.log(`[${elapsedSec}s] progress: ${JSON.stringify(snapshot)}`)
+    }
   })
 
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1)
