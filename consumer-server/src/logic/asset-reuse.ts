@@ -82,12 +82,15 @@ export function computeDepsDigest(entityContent: ReadonlyArray<{ file: string; h
   // digest for a different dep set. DCL filenames are well-formed in practice,
   // but correctness shouldn't rely on that.
   const payload = JSON.stringify(deps.map((d) => [d.file, d.hash]))
-  // 16 hex = 64-bit. Birthday-paradox collision probability at k tuples is
-  // ~1 - exp(-k² / 2·2⁶⁴). That's ~10⁻⁹ at 10⁵ tuples, ~10⁻⁵ at 10⁶, and
-  // ~3% at 10⁹ — the previous comment's "~10⁻²⁰ at 10⁹" was wrong by many
-  // orders of magnitude. At realistic DCL scale (10⁴–10⁶ unique dep-sets
-  // per AB_VERSION) the probability is still negligible.
-  return crypto.createHash('sha256').update(payload).digest('hex').slice(0, 16)
+  // 32 hex = 128-bit. Birthday-paradox collision probability at k tuples is
+  // ~k² / 2·2¹²⁸ ≈ k² / 6.8·10³⁸. Even at 10¹⁸ tuples (astronomically
+  // beyond any realistic DCL scale) the probability is ~10⁻³; at 10⁹ it's
+  // ~10⁻²¹. The earlier version truncated to 16 hex (64-bit) which was
+  // also safely above DCL's scale, but for critical-infrastructure
+  // headroom this is essentially free — 16 extra chars in the filename at
+  // rest, invisible to clients (who read the manifest opaquely) and
+  // negligible in every downstream consumer.
+  return crypto.createHash('sha256').update(payload).digest('hex').slice(0, 32)
 }
 
 /**

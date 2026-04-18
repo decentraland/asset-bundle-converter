@@ -80,7 +80,7 @@ describe('when computing the deps digest', () => {
         { file: 'textures/a.png', hash: 'hashA' },
         { file: 'buffers/b.bin', hash: 'hashB' }
       ])
-      expect(digest).toMatch(/^[0-9a-f]{16}$/)
+      expect(digest).toMatch(/^[0-9a-f]{32}$/)
     })
   })
 
@@ -118,7 +118,7 @@ describe('when computing the deps digest', () => {
   describe('and the entity content is empty', () => {
     it('should still produce a well-defined 16-hex digest', () => {
       const digest = computeDepsDigest([])
-      expect(digest).toMatch(/^[0-9a-f]{16}$/)
+      expect(digest).toMatch(/^[0-9a-f]{32}$/)
     })
   })
 
@@ -176,12 +176,9 @@ describe('when computing the deps digest', () => {
 describe('when building the canonical bundle filename', () => {
   describe('and the extension is a glb/gltf', () => {
     it('should fold the deps digest into the filename', () => {
-      expect(canonicalFilename('modelHash', '.glb', 'windows', 'abcd1234abcd1234')).toBe(
-        'modelHash_abcd1234abcd1234_windows'
-      )
-      expect(canonicalFilename('modelHash', '.gltf', 'windows', 'abcd1234abcd1234')).toBe(
-        'modelHash_abcd1234abcd1234_windows'
-      )
+      const digest = 'abcd1234abcd1234abcd1234abcd1234' // 32 hex, matches production digest length
+      expect(canonicalFilename('modelHash', '.glb', 'windows', digest)).toBe(`modelHash_${digest}_windows`)
+      expect(canonicalFilename('modelHash', '.gltf', 'windows', digest)).toBe(`modelHash_${digest}_windows`)
     })
   })
 
@@ -199,15 +196,16 @@ describe('when building the canonical bundle filename', () => {
 
       expect(calls).toHaveLength(1)
       // Composite key has a well-defined digest for the empty dep set.
-      expect(calls[0].Key).toMatch(/^v48\/assets\/soloGlb_[0-9a-f]{16}_windows$/)
+      expect(calls[0].Key).toMatch(/^v48\/assets\/soloGlb_[0-9a-f]{32}_windows$/)
       expect(result.cachedHashes).toEqual(['soloGlb'])
     })
   })
 
   describe('and the extension is a leaf (bin or texture)', () => {
     it('should keep the bare hash-only form', () => {
-      expect(canonicalFilename('bufHash', '.bin', 'windows', 'abcd1234abcd1234')).toBe('bufHash_windows')
-      expect(canonicalFilename('texHash', '.png', 'windows', 'abcd1234abcd1234')).toBe('texHash_windows')
+      const digest = 'abcd1234abcd1234abcd1234abcd1234'
+      expect(canonicalFilename('bufHash', '.bin', 'windows', digest)).toBe('bufHash_windows')
+      expect(canonicalFilename('texHash', '.png', 'windows', digest)).toBe('texHash_windows')
     })
   })
 })
@@ -713,8 +711,8 @@ describe('when purging cached bundles from the output directory', () => {
     it('should match the leading hash prefix and purge the composite file', async () => {
       // New scheme emits `{hash}_{digest}_{target}` for glb/gltf. The purge
       // helper extracts the leading hash (pre-first-`_`) and still matches.
-      await fs.writeFile(path.join(tmpDir, 'modelHash_abcd1234abcd1234_windows'), 'x')
-      await fs.writeFile(path.join(tmpDir, 'modelHash_abcd1234abcd1234_windows.br'), 'x')
+      await fs.writeFile(path.join(tmpDir, 'modelHash_abcd1234abcd1234abcd1234abcd1234_windows'), 'x')
+      await fs.writeFile(path.join(tmpDir, 'modelHash_abcd1234abcd1234abcd1234abcd1234_windows.br'), 'x')
 
       const { logger } = makeMockLogger()
       const removed = await purgeCachedBundlesFromOutput(tmpDir, ['modelHash'], logger)
