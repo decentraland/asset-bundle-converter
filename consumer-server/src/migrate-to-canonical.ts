@@ -160,7 +160,14 @@ export type RunMigrationOptions = {
    * every pre-PR manifest is skipped. Manifest-embedded value wins if both
    * are present (the manifest was produced against a specific catalyst). */
   contentServerUrl?: string
+  /** Per-catalyst-call timeout. Without this a hung or unresponsive catalyst
+   * would stall the whole migration loop (sequential by manifest). Default
+   * 30s via main(); tests can override to keep suites fast. Only applied to
+   * the default fetcher — custom stubs can impose their own timing. */
+  catalystTimeoutMs?: number
 }
+
+const DEFAULT_CATALYST_TIMEOUT_MS = 30_000
 
 /**
  * Execute the migration loop against a pre-built S3 client. Separated from main()
@@ -172,7 +179,11 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
   const log = opts.log ?? (() => {})
   const onProgress = opts.onProgress
   const progressInterval = opts.progressInterval ?? 100
-  const fetchEntity = opts.fetchEntity ?? getActiveEntity
+  const catalystTimeoutMs = opts.catalystTimeoutMs ?? DEFAULT_CATALYST_TIMEOUT_MS
+  // Default fetcher wraps `getActiveEntity` with a hard timeout so a hung
+  // catalyst can't stall the migration. Custom stubs (tests) keep their own
+  // timing.
+  const fetchEntity = opts.fetchEntity ?? ((id: string, url: string) => getActiveEntity(id, url, catalystTimeoutMs))
   const bundlePattern = buildBundlePattern(target)
   const canonicalPrefix = `${abVersion}/assets`
   const stats = emptyStats()
@@ -263,7 +274,11 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
         ? `${canonicalFilename(parts.hash, ext, target, depsDigest)}${parts.variant}`
         : filename
       const canonicalKey = `${canonicalPrefix}/${destFilename}`
-      if (destFilename !== filename) stats.glbRenamedCount++
+      // Held locally and only reflected into stats when the copy actually
+      // happens (or would happen in dry-run), so the counter tracks real work
+      // done rather than intent. If the HEAD fails transiently or the source
+      // has disappeared, the counter stays untouched for that bundle.
+      const isRename = destFilename !== filename
 
       try {
         await s3.headObject({ Bucket: bucket, Key: canonicalKey }).promise()
@@ -279,6 +294,7 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
 
       if (dryRun) {
         stats.bundlesCopied++ // counted as "would copy"
+        if (isRename) stats.glbRenamedCount++
         return
       }
 
@@ -293,6 +309,7 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
           })
           .promise()
         stats.bundlesCopied++
+        if (isRename) stats.glbRenamedCount++
       } catch (err: any) {
         if (isS3NotFound(err)) {
           // Manifest listed a file that no longer exists at the entity prefix —
@@ -314,6 +331,7 @@ async function main() {
     '--ab-version': String,
     '--target': String,
     '--content-server-url': String,
+    '--catalyst-timeout-ms': Number,
     '--dry-run': Boolean,
     '--concurrency': Number,
     '--help': Boolean
@@ -334,6 +352,8 @@ Options:
                               is missing contentServerUrl. Required for backfill
                               of pre-PR-#258 manifests (they predate that
                               field). Typically https://peer.decentraland.org/content.
+  --catalyst-timeout-ms <n>   Per-entity catalyst fetch timeout in ms (default 30000).
+                              Prevents a hung catalyst from stalling the run.
   --dry-run                   Log intended copies, do not mutate the bucket.
   --concurrency <n>           Parallel probe+copy workers per manifest (default 50).
 `)
@@ -343,6 +363,7 @@ Options:
   const abVersion = args['--ab-version']
   const target = args['--target']
   const contentServerUrl = args['--content-server-url']
+  const catalystTimeoutMs = args['--catalyst-timeout-ms']
   const dryRun = args['--dry-run'] === true
   const concurrency = args['--concurrency'] ?? 50
 
@@ -373,6 +394,7 @@ Options:
     dryRun,
     concurrency,
     contentServerUrl,
+    catalystTimeoutMs,
     log: (msg) => console.warn(msg),
     onProgress: (snapshot) => {
       const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1)

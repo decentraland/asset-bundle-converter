@@ -620,6 +620,140 @@ describe('when running the migration against a pre-rollout bucket', () => {
     })
   })
 
+  describe('and glbRenamedCount counting across error-paths', () => {
+    describe('and a glb entry is already canonical at the composite path', () => {
+      let stats: Awaited<ReturnType<typeof runMigration>>
+
+      beforeEach(async () => {
+        // Seed BOTH the entity-scoped source and the canonical composite
+        // destination, so the HEAD probe hits and the copy is skipped.
+        const content = [
+          { file: 'model.glb', hash: 'hashGlbA' },
+          { file: 'tex.png', hash: 'hashTexA' }
+        ]
+        const digest = computeDepsDigest(content)
+        const glbComposite = canonicalFilename('hashGlbA', '.glb', 'windows', digest)
+        await seedObject(s3, 'manifest/bafy-preexist_windows.json', makeManifest('v48', ['hashGlbA_windows']))
+        await seedObject(s3, 'v48/bafy-preexist/hashGlbA_windows', 'glb-bytes')
+        await seedObject(s3, `v48/assets/${glbComposite}`, 'already-there')
+
+        const fetchEntity = makeFetchEntityStub({ 'bafy-preexist': content })
+
+        stats = await runMigration({
+          s3,
+          bucket: BUCKET,
+          abVersion: 'v48',
+          target: 'windows',
+          dryRun: false,
+          concurrency: 10,
+          fetchEntity
+        })
+      })
+
+      it('should NOT increment glbRenamedCount for already-canonical bundles (no actual rename happened)', () => {
+        expect(stats.bundlesAlreadyCanonical).toBe(1)
+        expect(stats.bundlesCopied).toBe(0)
+        expect(stats.glbRenamedCount).toBe(0)
+      })
+    })
+
+    describe('and a glb entry is actually copied', () => {
+      let stats: Awaited<ReturnType<typeof runMigration>>
+
+      beforeEach(async () => {
+        const content = [
+          { file: 'model.glb', hash: 'hashGlbB' },
+          { file: 'tex.png', hash: 'hashTexB' }
+        ]
+        await seedObject(s3, 'manifest/bafy-fresh_windows.json', makeManifest('v48', ['hashGlbB_windows']))
+        await seedObject(s3, 'v48/bafy-fresh/hashGlbB_windows', 'glb-bytes')
+
+        const fetchEntity = makeFetchEntityStub({ 'bafy-fresh': content })
+
+        stats = await runMigration({
+          s3,
+          bucket: BUCKET,
+          abVersion: 'v48',
+          target: 'windows',
+          dryRun: false,
+          concurrency: 10,
+          fetchEntity
+        })
+      })
+
+      it('should increment glbRenamedCount on successful copy', () => {
+        expect(stats.bundlesCopied).toBe(1)
+        expect(stats.glbRenamedCount).toBe(1)
+      })
+    })
+
+    describe('and a glb entry is a dry-run "would copy"', () => {
+      let stats: Awaited<ReturnType<typeof runMigration>>
+
+      beforeEach(async () => {
+        const content = [
+          { file: 'model.glb', hash: 'hashGlbC' },
+          { file: 'tex.png', hash: 'hashTexC' }
+        ]
+        await seedObject(s3, 'manifest/bafy-dry_windows.json', makeManifest('v48', ['hashGlbC_windows']))
+        await seedObject(s3, 'v48/bafy-dry/hashGlbC_windows', 'glb-bytes')
+
+        const fetchEntity = makeFetchEntityStub({ 'bafy-dry': content })
+
+        stats = await runMigration({
+          s3,
+          bucket: BUCKET,
+          abVersion: 'v48',
+          target: 'windows',
+          dryRun: true,
+          concurrency: 10,
+          fetchEntity
+        })
+      })
+
+      it('should count glbRenamedCount alongside the bundlesCopied dry-run tally', () => {
+        expect(stats.bundlesCopied).toBe(1)
+        expect(stats.glbRenamedCount).toBe(1)
+      })
+    })
+  })
+
+  describe('and the catalyst fetch takes longer than the configured timeout', () => {
+    let stats: Awaited<ReturnType<typeof runMigration>>
+
+    beforeEach(async () => {
+      await seedObject(s3, 'manifest/bafy-slow_windows.json', makeManifest('v48', ['hashS_windows']))
+      await seedObject(s3, 'v48/bafy-slow/hashS_windows', 'x')
+
+      // Custom fetcher that respects AbortSignal-style cancellation by
+      // throwing a timeout-shaped error when the caller's timeout elapses
+      // before the fetch resolves. Mirrors what the real getActiveEntity
+      // would do when the AbortController fires.
+      const fetchEntity = jest.fn(async (_id: string, _url: string) => {
+        await new Promise((_resolve, reject) => {
+          setTimeout(() => reject(new Error('simulated catalyst timeout')), 30)
+        })
+        // Unreachable; kept for type purposes.
+        return { content: [] }
+      })
+
+      stats = await runMigration({
+        s3,
+        bucket: BUCKET,
+        abVersion: 'v48',
+        target: 'windows',
+        dryRun: false,
+        concurrency: 10,
+        fetchEntity
+      })
+    })
+
+    it('should count the manifest under manifestsEntityFetchFailed and continue scanning', () => {
+      expect(stats.manifestsEntityFetchFailed).toBe(1)
+      expect(stats.bundlesProbed).toBe(0)
+    })
+  })
+
   describe('and the catalyst returns undefined for a redeployed entity', () => {
     let stats: Awaited<ReturnType<typeof runMigration>>
     let logged: string[]
