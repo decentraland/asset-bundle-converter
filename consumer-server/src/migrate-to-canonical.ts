@@ -174,7 +174,15 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
   const log = opts.log ?? (() => {})
   const onProgress = opts.onProgress
   const progressInterval = opts.progressInterval ?? 100
-  const catalystTimeoutMs = opts.catalystTimeoutMs ?? DEFAULT_CATALYST_TIMEOUT_MS
+  // Clamp against 0 / negative so `--catalyst-timeout-ms 0` can't silently
+  // abort every fetch on the next tick (AbortController + setTimeout(…, 0)
+  // would otherwise fire before the fetch finishes). A 1s floor is still
+  // effectively "fail fast" for tests that genuinely want a short timeout,
+  // but it removes the footgun where an operator meant "no timeout" and got
+  // "instant abort" instead.
+  const MIN_CATALYST_TIMEOUT_MS = 1000
+  const rawTimeout = opts.catalystTimeoutMs ?? DEFAULT_CATALYST_TIMEOUT_MS
+  const catalystTimeoutMs = Math.max(MIN_CATALYST_TIMEOUT_MS, rawTimeout)
   // Default fetcher wraps `getActiveEntity` with a hard timeout so a hung
   // catalyst can't stall the migration. Custom stubs (tests) keep their own
   // timing.

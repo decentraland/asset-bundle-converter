@@ -4,8 +4,12 @@ import * as path from 'path'
 import * as fs from 'fs/promises'
 import * as crypto from 'crypto'
 import { AppComponents } from '../types'
-import { bufferExtensions, gltfExtensions, textureExtensions } from './extensions'
+import { bufferExtensions, fileExtension, gltfExtensions, textureExtensions } from './extensions'
 import { isS3NotFound } from './s3-helpers'
+
+// Re-export so callers still referencing `asset-reuse.ts` for this helper keep
+// working. Single source of truth is `extensions.ts`.
+export { fileExtension } from './extensions'
 
 // Extensions whose bundles the converter actually uploads and we can therefore
 // probe at the canonical prefix. `.bin` is deliberately absent: Unity never
@@ -51,14 +55,6 @@ export type AssetCacheResult = {
   // Entity-wide deps digest — passed to Unity so it names glb/gltf bundles with
   // the same composite key we probe and upload to.
   depsDigest: string
-}
-
-/** Extract the lowercase file extension (including the leading `.`) from a
- * filename. Returns `''` when the name has no `.`. Exported so the migration
- * script can classify entries without redefining the same helper. */
-export function fileExtension(file: string): string {
-  const idx = file.lastIndexOf('.')
-  return idx < 0 ? '' : file.substring(idx).toLowerCase()
 }
 
 /**

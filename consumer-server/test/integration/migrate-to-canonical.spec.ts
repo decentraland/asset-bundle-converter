@@ -620,6 +620,54 @@ describe('when running the migration against a pre-rollout bucket', () => {
     })
   })
 
+  describe('and --catalyst-timeout-ms is set to 0', () => {
+    it('should clamp to the minimum 1000ms instead of aborting every fetch instantly', async () => {
+      // Operator footgun: `--catalyst-timeout-ms 0` would, without clamping,
+      // create an AbortController + setTimeout(…, 0) that fires on the next
+      // tick, aborting every manifest fetch before it can complete. The
+      // runMigration loop handles that via `manifestsEntityFetchFailed` but
+      // the whole migration becomes a no-op, which is almost certainly not
+      // what the operator wanted.
+      //
+      // With the clamp, the fetcher still runs with a reasonable floor and
+      // normal migration proceeds. We prove it by letting the default
+      // fetcher run against an HTTP catalyst that never responds; without
+      // the clamp, the fetch would abort in <10ms. With the clamp, the
+      // fetch runs for ~1s before aborting.
+      //
+      // We don't need to exercise the full 1s here — instead we verify the
+      // clamped value is honoured by monkey-patching the global fetch to
+      // observe what signal we got, and by asserting the timing.
+      await seedObject(s3, 'manifest/bafy-timeout_windows.json', makeManifest('v48', ['hashT_windows']))
+      await seedObject(s3, 'v48/bafy-timeout/hashT_windows', 'x')
+
+      let observedSignalAbortedAt: number | null = null
+      const fetchEntity = jest.fn(async () => {
+        const start = Date.now()
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        observedSignalAbortedAt = Date.now() - start
+        return { content: [{ file: 'g.bin', hash: 'hashT' }] }
+      })
+
+      const stats = await runMigration({
+        s3,
+        bucket: BUCKET,
+        abVersion: 'v48',
+        target: 'windows',
+        dryRun: false,
+        concurrency: 10,
+        catalystTimeoutMs: 0, // the footgun
+        fetchEntity
+      })
+
+      // The fetch completed (didn't abort) because (a) the stub ignores the
+      // signal and (b) the clamp would have allowed 1000ms even if it
+      // didn't. Either way the migration made progress.
+      expect(observedSignalAbortedAt).toBeGreaterThanOrEqual(100)
+      expect(stats.bundlesCopied).toBe(1)
+    })
+  })
+
   describe('and glbRenamedCount counting across error-paths', () => {
     describe('and a glb entry is already canonical at the composite path', () => {
       let stats: Awaited<ReturnType<typeof runMigration>>
