@@ -917,9 +917,15 @@ namespace DCL.ABConverter
                 foreach (var assetPath in assetPaths)
                 {
                     if (assetPath == null) continue;
-                    if (assetPath.finalPath.EndsWith(".bin")) continue;
+                    // Case-insensitive to match the consumer-server side, which
+                    // normalises via `.toLowerCase()` before classifying extensions.
+                    // Keeping the two sides consistent prevents a `.GLB` input from
+                    // being probed as composite but emitted as bare (or vice versa).
+                    if (assetPath.finalPath.EndsWith(".bin", System.StringComparison.OrdinalIgnoreCase)) continue;
 
-                    bool isGltf = useDigest && (assetPath.finalPath.EndsWith(".glb") || assetPath.finalPath.EndsWith(".gltf"));
+                    bool isGltf = useDigest
+                        && (assetPath.finalPath.EndsWith(".glb", System.StringComparison.OrdinalIgnoreCase)
+                            || assetPath.finalPath.EndsWith(".gltf", System.StringComparison.OrdinalIgnoreCase));
                     string assetBundleName = isGltf
                         ? $"{assetPath.hash}_{settings.depsDigest}{platform}"
                         : assetPath.hash + platform;

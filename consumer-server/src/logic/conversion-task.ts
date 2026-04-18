@@ -412,7 +412,8 @@ export async function executeConversion(
         entity,
         abVersion,
         buildTarget: $BUILD_TARGET,
-        cdnBucket
+        cdnBucket,
+        depsDigest
       })
       const totalProbed = cacheResult.cachedHashes.length + cacheResult.missingHashes.length
       fullCacheHit = totalProbed > 0 && cacheResult.missingHashes.length === 0

@@ -470,6 +470,41 @@ describe('when running the migration against a pre-rollout bucket', () => {
     })
   })
 
+  describe('and the catalyst returns undefined for a redeployed entity', () => {
+    let stats: Awaited<ReturnType<typeof runMigration>>
+    let logged: string[]
+
+    beforeEach(async () => {
+      await seedObject(s3, 'manifest/bafy-redeployed_windows.json', makeManifest('v48', ['hashX_windows']))
+      await seedObject(s3, 'v48/bafy-redeployed/hashX_windows', 'bundle-bytes')
+
+      // Mirrors `getActiveEntity`'s real behaviour: when the catalyst has no
+      // active entity for the id, `JSON.parse(response)[0]` is `undefined`.
+      const fetchEntity = jest.fn(async () => undefined as any)
+      logged = []
+      stats = await runMigration({
+        s3,
+        bucket: BUCKET,
+        abVersion: 'v48',
+        target: 'windows',
+        dryRun: false,
+        concurrency: 10,
+        fetchEntity,
+        log: (msg) => logged.push(msg)
+      })
+    })
+
+    it('should count the manifest under manifestsEntityFetchFailed without crashing', () => {
+      expect(stats.manifestsEntityFetchFailed).toBe(1)
+      expect(stats.bundlesProbed).toBe(0)
+    })
+
+    it('should log an actionable reason instead of a TypeError', () => {
+      const msg = logged.find((l) => l.includes('bafy-redeployed_windows.json')) ?? ''
+      expect(msg).toMatch(/no longer active on catalyst/)
+    })
+  })
+
   describe('and the entity fetch fails for one manifest', () => {
     let stats: Awaited<ReturnType<typeof runMigration>>
 

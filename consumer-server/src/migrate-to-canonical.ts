@@ -227,10 +227,18 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
     let extByHash: Map<string, string>
     let depsDigest: string
     try {
+      // `getActiveEntity` returns `undefined` (not an error) when the catalyst
+      // no longer has the entity active — common for scenes that have been
+      // redeployed since the manifest was written. Surface that as an obvious
+      // error message instead of a cryptic "cannot read property 'content' of
+      // undefined" down the line.
       const entity = await fetchEntity(parsed.entityId, catalystUrl)
+      if (!entity || !Array.isArray(entity.content)) {
+        throw new Error('entity no longer active on catalyst (redeployed or evicted)')
+      }
       extByHash = new Map<string, string>()
-      for (const c of entity.content ?? []) extByHash.set(c.hash, fileExtension(c.file))
-      depsDigest = computeDepsDigest(entity.content ?? [])
+      for (const c of entity.content) extByHash.set(c.hash, fileExtension(c.file))
+      depsDigest = computeDepsDigest(entity.content)
     } catch (err: any) {
       log(`[${obj.Key}] failed to fetch entity: ${err.message}`)
       stats.manifestsEntityFetchFailed++

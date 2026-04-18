@@ -226,6 +226,11 @@ type CheckAssetCacheParams = {
   buildTarget: string
   cdnBucket: string
   concurrency?: number
+  /** Pre-computed entity deps digest. When supplied, skips the re-computation
+   * that would otherwise happen inside `checkAssetCache`. Callers that also
+   * need the digest (e.g. to pass `-depsDigest` to Unity independently of
+   * whether the probe succeeded) should compute once and pass it through. */
+  depsDigest?: string
 }
 
 /**
@@ -243,7 +248,7 @@ export async function checkAssetCache(
   const concurrency = params.concurrency ?? 50
   const logger = components.logs.getLogger('AssetReuse')
 
-  const depsDigest = computeDepsDigest(entity.content ?? [])
+  const depsDigest = params.depsDigest ?? computeDepsDigest(entity.content ?? [])
 
   type Probe = { hash: string; skippable: boolean; filename: string; key: string }
   const seen = new Set<string>()
