@@ -10,6 +10,11 @@ import { hasContentChange } from './has-content-changed-task'
 import { getUnityBuildTarget } from '../utils'
 import { getActiveEntity } from './fetch-entity-by-pointer'
 import fetch from 'node-fetch'
+import { requestShutdown, scheduleFatalExit } from './shutdown'
+import { classifyHasContentChangeFailure } from './classify-has-content-change-failure'
+import { scrubUnityProjectState } from './scrub-unity-project-state'
+
+export { isShutdownRequested } from './shutdown'
 
 type Manifest = {
   version: string
@@ -159,6 +164,8 @@ export async function executeLODConversion(
     return 5 // UNEXPECTED_ERROR exit code
   }
 
+  await scrubUnityProjectState($PROJECT_PATH, logger, defaultLoggerMetadata)
+
   try {
     const exitCode = await runLodsConversion(logger, components, {
       entityId,
@@ -203,10 +210,12 @@ export async function executeLODConversion(
     components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
     logger.error(error)
 
-    setTimeout(() => {
-      // kill the process in one minute, enough time to allow prometheus to collect the metrics
-      process.exit(199)
-    }, 60_000)
+    // After any fatal conversion error, refuse to pick up the next SQS job and
+    // restart the container. Reusing the worker after a timeout/crash has caused
+    // cascading failures where a second Unity spawn on the same container hangs
+    // or blows resource limits.
+    requestShutdown()
+    scheduleFatalExit()
 
     throw error
   } finally {
@@ -293,6 +302,14 @@ export async function executeConversion(
   const defaultLoggerMetadata = { entityId, contentServerUrl, version: abVersion, logFile: s3LogKey }
 
   logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
+
+  // Scrub any Unity project state left over from a previous job. The finally-block
+  // cleanup is best-effort and can fail silently (e.g. if a prior Unity process
+  // was killed while holding a Library/ScriptAssemblies lock); running the same
+  // cleanup again at the start of the next job prevents inheriting a half-broken
+  // project directory.
+  await scrubUnityProjectState($PROJECT_PATH, logger, defaultLoggerMetadata)
+
   let hasContentChanged = true
 
   if ($BUILD_TARGET !== 'webgl' && !force && !doISS) {
@@ -305,8 +322,17 @@ export async function executeConversion(
         abVersion,
         logger
       )
-    } catch (e) {
-      logger.info('HasContentChanged failed with error ' + e)
+    } catch (e: any) {
+      // Upstream (content-server) failure — we fall back to reconverting, which
+      // can produce a reconversion loop for entities whose content-server
+      // endpoints are broken. Tag the metric with the reason so the failure mode
+      // is visible in Grafana.
+      const reason = classifyHasContentChangeFailure(e)
+      components.metrics.increment('ab_converter_has_content_change_failures', { reason })
+      logger.warn(`HasContentChanged failed (${reason}), falling back to reconvert: ${e?.message ?? e}`, {
+        ...defaultLoggerMetadata,
+        contentServerUrl
+      } as any)
     }
   }
 
@@ -456,10 +482,12 @@ export async function executeConversion(
         .promise()
     } catch {}
 
-    setTimeout(() => {
-      // kill the process in one minute, enough time to allow prometheus to collect the metrics
-      process.exit(199)
-    }, 60_000)
+    // After any fatal conversion error, refuse to pick up the next SQS job and
+    // restart the container. Reusing the worker after a timeout/crash has caused
+    // cascading failures where a second Unity spawn on the same container hangs
+    // or blows resource limits.
+    requestShutdown()
+    scheduleFatalExit()
 
     throw err
   } finally {

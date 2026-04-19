@@ -29,6 +29,11 @@ export const metricDeclarations = {
   ab_converter_free_disk_space: {
     help: 'Free bytes in disk',
     type: IMetricsComponent.GaugeType
+  },
+  ab_converter_has_content_change_failures: {
+    help: 'Counter of hasContentChange calls that failed and forced a reconversion',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['reason']
   }
 }
 
