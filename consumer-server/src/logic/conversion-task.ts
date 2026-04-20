@@ -10,11 +10,9 @@ import { hasContentChange } from './has-content-changed-task'
 import { getUnityBuildTarget } from '../utils'
 import { getActiveEntity } from './fetch-entity-by-pointer'
 import fetch from 'node-fetch'
-import { requestShutdown, scheduleFatalExit } from './shutdown'
+import { initiateGracefulCrashShutdown } from './shutdown'
 import { classifyHasContentChangeFailure } from './classify-has-content-change-failure'
 import { scrubUnityProjectState } from './scrub-unity-project-state'
-
-export { isShutdownRequested } from './shutdown'
 
 type Manifest = {
   version: string
@@ -214,8 +212,7 @@ export async function executeLODConversion(
     // restart the container. Reusing the worker after a timeout/crash has caused
     // cascading failures where a second Unity spawn on the same container hangs
     // or blows resource limits.
-    requestShutdown()
-    scheduleFatalExit()
+    initiateGracefulCrashShutdown()
 
     throw error
   } finally {
@@ -235,7 +232,7 @@ export async function executeLODConversion(
       logger.info(`!!!!!!!! Log file not deleted or uploaded ${logFile}`, defaultLoggerMetadata)
     }
 
-    // delete output files
+    // delete job-specific artefacts
     try {
       await rimraf(logFile, { maxRetries: 3 })
     } catch (err: any) {
@@ -246,15 +243,9 @@ export async function executeLODConversion(
     } catch (err: any) {
       logger.error(err, defaultLoggerMetadata)
     }
-    // delete library folder
-    try {
-      await rimraf(`${$PROJECT_PATH}/Library`, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
-    }
 
-    // delete scene manifest folder
-    await deleteSceneManifestFolder($PROJECT_PATH, logger, defaultLoggerMetadata)
+    // delete Unity project state (Library, Assets/_Downloaded, Assets/_SceneManifest)
+    await scrubUnityProjectState($PROJECT_PATH, logger, defaultLoggerMetadata)
   }
 
   logger.debug('LOD Conversion finished', defaultLoggerMetadata)
@@ -486,8 +477,7 @@ export async function executeConversion(
     // restart the container. Reusing the worker after a timeout/crash has caused
     // cascading failures where a second Unity spawn on the same container hangs
     // or blows resource limits.
-    requestShutdown()
-    scheduleFatalExit()
+    initiateGracefulCrashShutdown()
 
     throw err
   } finally {
@@ -507,7 +497,7 @@ export async function executeConversion(
       logger.info(`!!!!!!!! Log file not deleted or uploaded ${logFile}`, defaultLoggerMetadata)
     }
 
-    // delete output files
+    // delete job-specific artefacts
     try {
       await rimraf(logFile, { maxRetries: 3 })
     } catch (err: any) {
@@ -518,47 +508,14 @@ export async function executeConversion(
     } catch (err: any) {
       logger.error(err, defaultLoggerMetadata)
     }
-    // delete library folder
-    try {
-      await rimraf(`${$PROJECT_PATH}/Library`, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(`Error deleting library folder: ${err}`, defaultLoggerMetadata)
-    }
-    //delete _Download folder
-    try {
-      await rimraf(`${$PROJECT_PATH}/Assets/_Downloaded`, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
-    }
 
-    // delete scene manifest folder
-    await deleteSceneManifestFolder($PROJECT_PATH, logger, defaultLoggerMetadata)
+    // delete Unity project state (Library, Assets/_Downloaded, Assets/_SceneManifest)
+    await scrubUnityProjectState($PROJECT_PATH, logger, defaultLoggerMetadata)
   }
 
   logger.debug('Conversion finished', defaultLoggerMetadata)
   logger.debug(`Full project size ${getFolderSize($PROJECT_PATH)}`)
   printFolderSizes($PROJECT_PATH, logger)
-}
-
-async function deleteSceneManifestFolder(projectPath: string, logger: any, defaultLoggerMetadata: any): Promise<void> {
-  const sceneManifestPath = `${projectPath}/Assets/_SceneManifest`
-  logger.info(`Attempting to delete scene manifest folder: ${sceneManifestPath}`, defaultLoggerMetadata)
-  try {
-    await rimraf(sceneManifestPath, { maxRetries: 3 })
-    const folderStillExists = fs.existsSync(sceneManifestPath)
-    if (folderStillExists) {
-      logger.warn(`Scene manifest folder still exists after deletion: ${sceneManifestPath}`, defaultLoggerMetadata)
-    } else {
-      logger.info(`Scene manifest folder successfully deleted: ${sceneManifestPath}`, defaultLoggerMetadata)
-    }
-  } catch (err: any) {
-    logger.error(`Error deleting scene manifest folder ${sceneManifestPath}:`, {
-      ...defaultLoggerMetadata,
-      error: err
-    })
-    const folderStillExists = fs.existsSync(sceneManifestPath)
-    logger.warn(`Scene manifest folder exists after failed deletion: ${folderStillExists}`, defaultLoggerMetadata)
-  }
 }
 
 /**

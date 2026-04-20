@@ -1,8 +1,7 @@
 import {
   _resetShutdownStateForTests,
-  isShutdownRequested,
-  requestShutdown,
-  scheduleFatalExit
+  initiateGracefulCrashShutdown,
+  isShutdownRequested
 } from '../../src/logic/shutdown'
 
 describe('shutdown state', () => {
@@ -25,26 +24,20 @@ describe('shutdown state', () => {
     it('should report that shutdown is not requested', () => {
       expect(isShutdownRequested()).toBe(false)
     })
-  })
 
-  describe('when requestShutdown is called', () => {
-    beforeEach(() => {
-      requestShutdown()
-    })
-
-    it('should flip isShutdownRequested to true', () => {
-      expect(isShutdownRequested()).toBe(true)
-    })
-
-    it('should not by itself schedule process.exit', () => {
+    it('should not call process.exit', () => {
       jest.advanceTimersByTime(120_000)
       expect(exitSpy).not.toHaveBeenCalled()
     })
   })
 
-  describe('when scheduleFatalExit is called', () => {
+  describe('when initiateGracefulCrashShutdown is called', () => {
     beforeEach(() => {
-      scheduleFatalExit()
+      initiateGracefulCrashShutdown()
+    })
+
+    it('should flip isShutdownRequested to true', () => {
+      expect(isShutdownRequested()).toBe(true)
     })
 
     it('should set process.exitCode to 199 synchronously', () => {
@@ -62,43 +55,34 @@ describe('shutdown state', () => {
     })
   })
 
-  describe('when scheduleFatalExit is called multiple times', () => {
+  describe('when initiateGracefulCrashShutdown is called multiple times', () => {
     beforeEach(() => {
-      scheduleFatalExit()
-      scheduleFatalExit()
-      scheduleFatalExit()
+      initiateGracefulCrashShutdown()
+      initiateGracefulCrashShutdown()
+      initiateGracefulCrashShutdown()
     })
 
     it('should only arm a single process.exit timer regardless of call count', () => {
       jest.advanceTimersByTime(60_000)
       expect(exitSpy).toHaveBeenCalledTimes(1)
     })
+
+    it('should keep the shutdown flag set', () => {
+      expect(isShutdownRequested()).toBe(true)
+    })
   })
 
-  describe('when the fatal exit is scheduled but the timer has not yet fired', () => {
+  describe('when the fatal exit is armed but the timer has not yet fired', () => {
     beforeEach(() => {
-      scheduleFatalExit()
+      initiateGracefulCrashShutdown()
     })
 
     it('should leave process.exitCode at 199 so a clean natural exit still signals failure to ECS', () => {
-      // This is the belt-and-suspenders: even if something unref'd the timer
-      // or Node managed to exit before 60s, exitCode=199 ensures ECS logs a
-      // failed task rather than a success.
+      // Belt-and-suspenders: even if something unref'd the timer or Node
+      // managed to exit before 60s, exitCode=199 ensures ECS logs a failed
+      // task rather than a success.
       jest.advanceTimersByTime(1_000)
       expect(process.exitCode).toBe(199)
-    })
-  })
-
-  describe('when requestShutdown and scheduleFatalExit are both called', () => {
-    beforeEach(() => {
-      requestShutdown()
-      scheduleFatalExit()
-    })
-
-    it('should both flip the shutdown flag and arm the fatal-exit timer', () => {
-      expect(isShutdownRequested()).toBe(true)
-      jest.advanceTimersByTime(60_000)
-      expect(exitSpy).toHaveBeenCalledWith(199)
     })
   })
 })

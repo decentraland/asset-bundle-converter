@@ -1,6 +1,7 @@
 import { Lifecycle } from '@well-known-components/interfaces'
 import { setupRouter } from './controllers/routes'
-import { executeConversion, executeLODConversion, isShutdownRequested } from './logic/conversion-task'
+import { executeConversion, executeLODConversion } from './logic/conversion-task'
+import { isShutdownRequested } from './logic/shutdown'
 import checkDiskSpace from 'check-disk-space'
 import { AppComponents, GlobalContext, TestComponents } from './types'
 import { AssetBundleConversionFinishedEvent, Events } from '@dcl/schemas'

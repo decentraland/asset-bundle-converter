@@ -27,11 +27,11 @@ export function isShutdownRequested(): boolean {
   return shutdownRequested
 }
 
-export function requestShutdown(): void {
+function requestShutdown(): void {
   shutdownRequested = true
 }
 
-export function scheduleFatalExit(): void {
+function scheduleFatalExit(): void {
   if (fatalExitScheduled) return
   fatalExitScheduled = true
   process.exitCode = FATAL_EXIT_CODE
@@ -41,6 +41,15 @@ export function scheduleFatalExit(): void {
   fatalExitTimer = setTimeout(() => {
     process.exit(FATAL_EXIT_CODE)
   }, FATAL_EXIT_TIMEOUT_MS)
+}
+
+// Single entry point for the "worker is no longer safe to reuse" protocol.
+// Callers in the conversion-task catch blocks invoke this; the implementation
+// lives here so the protocol can evolve (e.g. add a sentry breadcrumb, publish
+// a metric, change the timeout) in one place.
+export function initiateGracefulCrashShutdown(): void {
+  requestShutdown()
+  scheduleFatalExit()
 }
 
 // Test-only helper: reset the module-level flags and clear any pending
