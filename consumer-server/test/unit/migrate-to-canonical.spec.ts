@@ -1,4 +1,5 @@
-import { buildBundlePattern, parseManifestKey } from '../../src/migrate-to-canonical'
+import { buildBundlePattern, parseManifestKey, splitBundleName } from '../../src/migrate-to-canonical'
+import { canonicalFilename, computeDepsDigest, fileExtension } from '../../src/logic/asset-reuse'
 import { isS3NotFound } from '../../src/logic/s3-helpers'
 
 describe('when parsing a manifest key', () => {
@@ -158,6 +159,97 @@ describe('when detecting an S3 not-found error', () => {
     it('should return false', () => {
       expect(isS3NotFound(null)).toBe(false)
       expect(isS3NotFound(undefined)).toBe(false)
+    })
+  })
+})
+
+// Pin that the migration script's rename composition — `splitBundleName` then
+// `canonicalFilename(…, computeDepsDigest(entity.content))` — produces the
+// exact same key a fresh conversion would upload to. The migrate script
+// shares the `canonicalFilename`/`computeDepsDigest` helpers with the live
+// converter, but parses pre-PR filenames through its own `splitBundleName`;
+// silent drift in that parser would deposit migrated bundles at paths the
+// runtime probe never hits, silently poisoning the canonical prefix.
+describe('when the migration script derives a canonical destination key', () => {
+  function deriveMigratedKey(sourceFilename: string, target: string, abVersion: string, entityContent: { file: string; hash: string }[]): string | null {
+    const parts = splitBundleName(sourceFilename, target)
+    if (!parts) return null
+    const extByHash = new Map<string, string>()
+    for (const c of entityContent) extByHash.set(c.hash, fileExtension(c.file))
+    const ext = extByHash.get(parts.hash) ?? ''
+    const depsDigest = computeDepsDigest(entityContent)
+    const destFilename = `${canonicalFilename(parts.hash, ext, target, depsDigest)}${parts.variant}`
+    return `${abVersion}/assets/${destFilename}`
+  }
+
+  describe('and the source is a bare glb bundle on an entity with textures', () => {
+    it('should land at the same composite path a fresh conversion would upload', () => {
+      const entityContent = [
+        { file: 'model.glb', hash: 'hGlb' },
+        { file: 'diffuse.png', hash: 'hTex' }
+      ]
+      const digest = computeDepsDigest(entityContent)
+      const expected = `v48/assets/${canonicalFilename('hGlb', '.glb', 'windows', digest)}`
+
+      expect(deriveMigratedKey('hGlb_windows', 'windows', 'v48', entityContent)).toBe(expected)
+    })
+  })
+
+  describe('and the source is the brotli variant of a glb bundle', () => {
+    it('should preserve the .br suffix on the composite destination', () => {
+      const entityContent = [
+        { file: 'model.glb', hash: 'hGlb' },
+        { file: 'diffuse.png', hash: 'hTex' }
+      ]
+      const digest = computeDepsDigest(entityContent)
+      const expected = `v48/assets/${canonicalFilename('hGlb', '.glb', 'windows', digest)}.br`
+
+      expect(deriveMigratedKey('hGlb_windows.br', 'windows', 'v48', entityContent)).toBe(expected)
+    })
+  })
+
+  describe('and the source is a texture bundle (leaf, bare hash form)', () => {
+    it('should stay bare with no digest folded in', () => {
+      const entityContent = [
+        { file: 'model.glb', hash: 'hGlb' },
+        { file: 'diffuse.png', hash: 'hTex' }
+      ]
+
+      expect(deriveMigratedKey('hTex_windows', 'windows', 'v48', entityContent)).toBe('v48/assets/hTex_windows')
+    })
+  })
+
+  describe('and the source is a Unity per-bundle manifest', () => {
+    it('should preserve the .manifest suffix on the composite destination', () => {
+      const entityContent = [
+        { file: 'model.glb', hash: 'hGlb' },
+        { file: 'diffuse.png', hash: 'hTex' }
+      ]
+      const digest = computeDepsDigest(entityContent)
+      const expected = `v48/assets/${canonicalFilename('hGlb', '.glb', 'windows', digest)}.manifest`
+
+      expect(deriveMigratedKey('hGlb_windows.manifest', 'windows', 'v48', entityContent)).toBe(expected)
+    })
+  })
+
+  describe('and the source hash is not present in the entity content', () => {
+    it('should fall back to bare form because the extension lookup resolves to empty', () => {
+      // Defensive: a pre-PR manifest may list a hash whose entity content entry
+      // has been rotated out by the time the migration runs. We don't want the
+      // script to throw; instead it just copies to the bare canonical form
+      // (same hash, same target, no digest) which matches what a fresh run
+      // would produce for an unrecognized extension.
+      const entityContent = [{ file: 'diffuse.png', hash: 'hTex' }]
+
+      expect(deriveMigratedKey('hOrphan_windows', 'windows', 'v48', entityContent)).toBe('v48/assets/hOrphan_windows')
+    })
+  })
+
+  describe('and the source filename is already in composite form', () => {
+    it('should be rejected by splitBundleName (not migrateable)', () => {
+      // Composite names ship from the live converter, not this script — they
+      // have a `_` inside the hash-slot, so the `[^_]+` capture refuses.
+      expect(splitBundleName('hGlb_abcd1234abcd1234abcd1234abcd1234_windows', 'windows')).toBeNull()
     })
   })
 })

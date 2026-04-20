@@ -72,8 +72,12 @@ function emptyStats(): MigrationStats {
  * `{hash}` has no `_` — tightening the capture to `[^_]+` excludes any
  * already-composite filename that somehow leaks in (those aren't migrateable
  * because their canonical copies come from the new converter, not this script).
+ *
+ * Exported for unit testing: the migration's canonical-key derivation composes
+ * this parser with `canonicalFilename` + `computeDepsDigest`, and tests pin
+ * that composition against the live converter's key builder.
  */
-function splitBundleName(filename: string, target: string): { hash: string; variant: string } | null {
+export function splitBundleName(filename: string, target: string): { hash: string; variant: string } | null {
   const match = filename.match(new RegExp(`^([^_]+)_${target}(\\.br|\\.manifest|\\.manifest\\.br)?$`))
   if (!match) return null
   return { hash: match[1], variant: match[2] ?? '' }
