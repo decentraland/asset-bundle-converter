@@ -141,6 +141,59 @@ describe('when computing the deps digest', () => {
     })
   })
 
+  describe('and a texture shared by the entity gets a new hash', () => {
+    // Pins the entity-wide-digest invariant behind transitive-chain invalidation:
+    // a glb that references another glb whose deps shifted must not silently keep
+    // its stale canonical bundle. A future narrowing of the digest to per-glb
+    // scope would pass scenarios 1 and 2 but fail here.
+    it('should re-key every glb in the entity, not just the one that notionally owns the texture', () => {
+      const contentV1 = [
+        { file: 'a.glb', hash: 'aHash' },
+        { file: 'b.glb', hash: 'bHash' },
+        { file: 'shared.png', hash: 'texV1' }
+      ]
+      const contentV2 = [
+        { file: 'a.glb', hash: 'aHash' },
+        { file: 'b.glb', hash: 'bHash' },
+        { file: 'shared.png', hash: 'texV2' }
+      ]
+
+      const d1 = computeDepsDigest(contentV1)
+      const d2 = computeDepsDigest(contentV2)
+
+      expect(canonicalFilename('aHash', '.glb', 'webgl', d1)).not.toBe(
+        canonicalFilename('aHash', '.glb', 'webgl', d2)
+      )
+      expect(canonicalFilename('bHash', '.glb', 'webgl', d1)).not.toBe(
+        canonicalFilename('bHash', '.glb', 'webgl', d2)
+      )
+    })
+  })
+
+  describe('and a brand-new texture is added to the entity', () => {
+    // Sibling guard: adding a texture no existing glb notionally depends on must
+    // still invalidate every glb's canonical key. Same invariant expressed from
+    // the additive direction.
+    it('should re-key every existing glb in the entity', () => {
+      const before = [
+        { file: 'a.glb', hash: 'aHash' },
+        { file: 'b.glb', hash: 'bHash' },
+        { file: 'existing.png', hash: 'texE' }
+      ]
+      const after = [...before, { file: 'newly-added.png', hash: 'texN' }]
+
+      const dBefore = computeDepsDigest(before)
+      const dAfter = computeDepsDigest(after)
+
+      expect(canonicalFilename('aHash', '.glb', 'webgl', dBefore)).not.toBe(
+        canonicalFilename('aHash', '.glb', 'webgl', dAfter)
+      )
+      expect(canonicalFilename('bHash', '.glb', 'webgl', dBefore)).not.toBe(
+        canonicalFilename('bHash', '.glb', 'webgl', dAfter)
+      )
+    })
+  })
+
   describe('and a content entry has no file extension at all', () => {
     it('should ignore it (not a leaf-dep kind)', () => {
       // Defensive: a catalyst could in theory return a content entry without
@@ -169,6 +222,42 @@ describe('when computing the deps digest', () => {
         { file: 'c.png', hash: 'h2' }
       ])
       expect(a).not.toBe(b)
+    })
+  })
+})
+
+// Cross-language golden-vector contract. The Unity converter computes its own
+// digest in C# and receives Node's via `-depsDigest`. If the two drift (sort
+// order, separator, truncation, SHA variant, extension filter), bundles land
+// at paths the probe never hits — or worse, at paths that collide with
+// unrelated assets. The fixture at test/fixtures/deps-digest-vectors.json is
+// the single source of truth; both this test and the Unity-side EditMode test
+// (follow-up, tracked separately) read from it.
+describe('when computing deps digests against the cross-language golden vectors', () => {
+  const fixturePath = path.join(__dirname, '..', 'fixtures', 'deps-digest-vectors.json')
+  const fixture = JSON.parse(require('fs').readFileSync(fixturePath, 'utf8')) as {
+    vectors: Array<{ name: string; input: Array<{ file: string; hash: string }>; expected: string }>
+  }
+
+  describe.each(fixture.vectors)('and the vector is "$name"', ({ input, expected }) => {
+    it('should produce the fixture-recorded digest byte-for-byte', () => {
+      expect(computeDepsDigest(input)).toBe(expected)
+    })
+  })
+
+  describe('and two vectors share the same content in different orders', () => {
+    it('should produce identical digests (sort is content-defined, input-order-independent)', () => {
+      const sorted = fixture.vectors.find((v) => v.name === 'two_textures_sorted')!
+      const shuffled = fixture.vectors.find((v) => v.name === 'two_textures_shuffled_same_content')!
+      expect(sorted.expected).toBe(shuffled.expected)
+    })
+  })
+
+  describe('and every fixture digest is inspected', () => {
+    it('should be 32 lowercase hex chars (128-bit truncation, stable across implementations)', () => {
+      for (const v of fixture.vectors) {
+        expect(v.expected).toMatch(/^[0-9a-f]{32}$/)
+      }
     })
   })
 })
