@@ -1,15 +1,15 @@
 import { rimraf } from 'rimraf'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 
-// Best-effort cleanup of Unity project state left over from a previous
-// conversion job. The finally-block cleanup in conversion-task.ts runs after
-// every job, but can fail silently (e.g. if the prior Unity process was
-// killed while holding a Library/ScriptAssemblies lock). Running the same
-// cleanup again at the start of the next job prevents inheriting a
-// half-broken project directory.
+// Best-effort cleanup of Unity project state that's not tied to a specific
+// job (Library cache, downloaded assets, scene manifest). Called at both the
+// start and the end of each conversion so a silently-failed end-of-job
+// cleanup doesn't leave the next job to inherit a half-broken project
+// directory (e.g. a Library/ScriptAssemblies lock from an orphan Unity
+// process).
 //
-// Never throws: any individual rimraf failure is logged and skipped so a
-// single stuck file doesn't prevent other scrub targets from being cleaned.
+// Never throws: each rimraf failure is logged and skipped so a single stuck
+// target doesn't prevent the rest from being cleaned.
 
 const SCRUB_TARGETS = ['Library', 'Assets/_Downloaded', 'Assets/_SceneManifest'] as const
 
@@ -23,7 +23,7 @@ export async function scrubUnityProjectState(
     try {
       await rimraf(target, { maxRetries: 3 })
     } catch (err: any) {
-      logger.warn(`Pre-job scrub failed for ${target}: ${err?.message ?? err}`, loggerMetadata as any)
+      logger.warn(`Unity project scrub failed for ${target}: ${err?.message ?? err}`, loggerMetadata as any)
     }
   }
 }

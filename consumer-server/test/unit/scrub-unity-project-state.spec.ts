@@ -109,7 +109,7 @@ describe('scrubUnityProjectState', () => {
       const { scrubUnityProjectState: freshScrub } = require('../../src/logic/scrub-unity-project-state')
       await freshScrub(projectPath, logger, loggerMetadata)
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Pre-job scrub failed'),
+        expect.stringContaining('Unity project scrub failed'),
         expect.any(Object)
       )
     })

@@ -244,7 +244,6 @@ export async function executeLODConversion(
       logger.error(err, defaultLoggerMetadata)
     }
 
-    // delete Unity project state (Library, Assets/_Downloaded, Assets/_SceneManifest)
     await scrubUnityProjectState($PROJECT_PATH, logger, defaultLoggerMetadata)
   }
 
@@ -294,11 +293,6 @@ export async function executeConversion(
 
   logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
 
-  // Scrub any Unity project state left over from a previous job. The finally-block
-  // cleanup is best-effort and can fail silently (e.g. if a prior Unity process
-  // was killed while holding a Library/ScriptAssemblies lock); running the same
-  // cleanup again at the start of the next job prevents inheriting a half-broken
-  // project directory.
   await scrubUnityProjectState($PROJECT_PATH, logger, defaultLoggerMetadata)
 
   let hasContentChanged = true
@@ -509,7 +503,6 @@ export async function executeConversion(
       logger.error(err, defaultLoggerMetadata)
     }
 
-    // delete Unity project state (Library, Assets/_Downloaded, Assets/_SceneManifest)
     await scrubUnityProjectState($PROJECT_PATH, logger, defaultLoggerMetadata)
   }
 
