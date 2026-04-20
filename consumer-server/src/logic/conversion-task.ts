@@ -268,7 +268,7 @@ export async function executeConversion(
 
   const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
   if (!unityBuildTarget) {
-    logger.info('Invalid build target ' + $BUILD_TARGET)
+    logger.error(`Invalid build target ${$BUILD_TARGET}`)
     return 5 // UNEXPECTED_ERROR exit code
   }
 
