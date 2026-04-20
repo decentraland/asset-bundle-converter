@@ -333,13 +333,22 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     })
   })
 
-  describe('and ASSET_REUSE_ENABLED is off', () => {
-    it('should skip the cache probe and upload bundles to the entity-scoped path (legacy behaviour)', async () => {
+  describe('and ASSET_REUSE_ENABLED is off and the canonical prefix is fully populated', () => {
+    let exitCode: number
+
+    beforeEach(async () => {
       // Rebuild components with the kill switch flipped off.
       const off = buildComponents(workDir, { assetReuseEnabled: 'false' })
       const metrics = await createMetricsComponent(metricDeclarations, { config: off.config })
       const logs = await createLogComponent({ metrics })
       components = { ...off, metrics, logs }
+
+      // Seed canonical for every hash in the scene — full-cache short-circuit
+      // scenario. The kill switch must bypass it symmetrically to force/doISS,
+      // and must never touch the canonical prefix while off.
+      await components.cdnS3
+        .putObject({ Bucket: 'test-bucket', Key: 'v48/assets/hOnlyGlb_windows', Body: 'cached-glb' })
+        .promise()
 
       mockedGetActiveEntity.mockResolvedValue({
         id: 'bafy-entity-3',
@@ -350,11 +359,11 @@ describe('when executing a conversion with asset-reuse enabled', () => {
 
       mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(options.outDirectory, { recursive: true })
-        await fs.writeFile(path.join(options.outDirectory, 'hOnlyGlb_windows'), 'bundle')
+        await fs.writeFile(path.join(options.outDirectory, 'hOnlyGlb_windows'), 'freshly-converted')
         return 0
       })
 
-      const exitCode = await executeConversion(
+      exitCode = await executeConversion(
         components,
         'bafy-entity-3',
         'https://peer.decentraland.org/content',
@@ -363,14 +372,28 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         undefined,
         'v48'
       )
+    })
 
+    it('should return exit code 0', () => {
       expect(exitCode).toBe(0)
-      expect(mockedRunConversion).toHaveBeenCalledTimes(1)
-      expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
+    })
 
-      // Bundle lives at the entity prefix, NOT the canonical prefix.
-      expect(await read(components.cdnS3, 'test-bucket', 'v48/bafy-entity-3/hOnlyGlb_windows')).toContain('bundle')
-      expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/hOnlyGlb_windows')).toBeNull()
+    it('should invoke Unity despite the cache being warm', () => {
+      expect(mockedRunConversion).toHaveBeenCalledTimes(1)
+    })
+
+    it('should NOT pass a cachedHashes list to Unity', () => {
+      expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
+    })
+
+    it('should upload the freshly-converted bundle to the entity-scoped path (reuse path is gated off by the kill switch)', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/bafy-entity-3/hOnlyGlb_windows')).toContain(
+        'freshly-converted'
+      )
+    })
+
+    it('should leave the pre-seeded canonical bytes untouched', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/hOnlyGlb_windows')).toBe('cached-glb')
     })
   })
 
@@ -422,6 +445,63 @@ describe('when executing a conversion with asset-reuse enabled', () => {
 
     it('should upload the freshly-converted bundle to the entity-scoped path (reuse path is gated off by force)', async () => {
       expect(await read(components.cdnS3, 'test-bucket', 'v48/bafy-force/hGlb_windows')).toContain('freshly-converted')
+    })
+
+    it('should leave the pre-seeded canonical bytes untouched', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/hGlb_windows')).toBe('cached-glb')
+    })
+  })
+
+  describe('and doISS=true and the canonical prefix is fully populated', () => {
+    let exitCode: number
+
+    beforeEach(async () => {
+      // Seed canonical for every hash in the scene — full-cache short-circuit
+      // scenario. doISS must bypass it. The gate lives in `useAssetReuse` at
+      // conversion-task.ts:403 (`!doISS && ...`); without it, v2004 ISS
+      // conversions would pollute the v48 canonical prefix (or vice-versa).
+      await components.cdnS3
+        .putObject({ Bucket: 'test-bucket', Key: 'v48/assets/hGlb_windows', Body: 'cached-glb' })
+        .promise()
+
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-iss',
+        type: 'scene',
+        content: [{ file: 'model.glb', hash: 'hGlb' }],
+        metadata: {}
+      })
+
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        await fs.mkdir(options.outDirectory, { recursive: true })
+        await fs.writeFile(path.join(options.outDirectory, 'hGlb_windows'), 'freshly-converted')
+        return 0
+      })
+
+      exitCode = await executeConversion(
+        components,
+        'bafy-iss',
+        'https://peer.decentraland.org/content',
+        /* force */ false,
+        undefined,
+        /* doISS */ true,
+        'v48'
+      )
+    })
+
+    it('should return exit code 0', () => {
+      expect(exitCode).toBe(0)
+    })
+
+    it('should invoke Unity despite the cache being warm', () => {
+      expect(mockedRunConversion).toHaveBeenCalledTimes(1)
+    })
+
+    it('should NOT pass a cachedHashes list to Unity', () => {
+      expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
+    })
+
+    it('should upload the freshly-converted bundle to the entity-scoped path (reuse path is gated off by doISS)', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/bafy-iss/hGlb_windows')).toContain('freshly-converted')
     })
 
     it('should leave the pre-seeded canonical bytes untouched', async () => {
