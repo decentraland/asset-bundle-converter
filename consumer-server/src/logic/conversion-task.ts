@@ -210,7 +210,13 @@ export async function executeLODConversion(
 
     return exitCode ?? -1
   } catch (error: any) {
-    logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
+    // readFile is wrapped because the log file may not exist (e.g. if
+    // setupStartDirectories itself failed). A throw here would propagate
+    // through finally and prevent service.ts from publishing the failure
+    // event — defeating the catch block's whole purpose of always returning.
+    try {
+      logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
+    } catch {}
     components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
     logger.error(error)
 
@@ -440,7 +446,13 @@ export async function executeConversion(
 
     return exitCode ?? -1
   } catch (err: any) {
-    logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
+    // readFile is wrapped because the log file may not exist (e.g. if
+    // setupStartDirectories itself failed). A throw here would propagate
+    // through finally and prevent service.ts from publishing the failure
+    // event — defeating the catch block's whole purpose of always returning.
+    try {
+      logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
+    } catch {}
     components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
     logger.error(err)
 

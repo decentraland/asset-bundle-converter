@@ -24,9 +24,9 @@ export function execCommand(
   const child = spawn(command, args, { env, cwd, detached: true })
 
   function killProcessTree(signal: NodeJS.Signals = 'SIGKILL'): boolean {
-    // Falsy check also guards against the pathological pid=0, which on POSIX
-    // would signal the caller's own process group — very much not what we want.
-    if (!child.pid) return false
+    // Guards against undefined (spawn failed), pid=0 (would signal the
+    // caller's own group on POSIX), and any hypothetical non-positive pid.
+    if (!child.pid || child.pid <= 0) return false
     try {
       process.kill(-child.pid, signal)
       return true

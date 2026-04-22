@@ -1,3 +1,7 @@
+import * as fs from 'fs/promises'
+import * as path from 'path'
+import * as os from 'os'
+
 import { execCommand } from '../../src/logic/run-command'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 
@@ -31,6 +35,19 @@ async function isProcessAlive(pid: number): Promise<boolean> {
   } catch (err: any) {
     return err?.code === 'EPERM'
   }
+}
+
+async function waitForFile(filePath: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      await fs.access(filePath)
+      return
+    } catch {
+      await sleep(25)
+    }
+  }
+  throw new Error(`Timed out waiting for ${filePath}`)
 }
 
 describe('execCommand', () => {
@@ -72,19 +89,55 @@ describe('execCommand', () => {
     })
   })
 
+  describe('when spawn itself fails because the executable does not exist', () => {
+    let rejection: any
+
+    beforeEach(async () => {
+      const { exitPromise } = execCommand(
+        logger,
+        '/definitely/not/a/real/binary-xyz',
+        [],
+        process.env as any,
+        process.cwd()
+      )
+      rejection = await exitPromise.then(
+        () => {
+          throw new Error('expected rejection, got resolution')
+        },
+        (err) => err
+      )
+    })
+
+    it('should reject the exit promise with an ENOENT spawn error', () => {
+      expect(rejection).toMatchObject({
+        code: 'ENOENT',
+        message: expect.stringContaining('ENOENT')
+      })
+    })
+
+    it('should log the spawn error via the logger', () => {
+      expect(logger.error).toHaveBeenCalled()
+    })
+  })
+
   describe('when killProcessTree is called on a child that spawned a grandchild', () => {
+    let handshakeDir: string
     let grandchildPid: number
     let exitOutcome: 'resolved' | 'rejected' | 'pending'
     let killResult: boolean
 
     beforeEach(async () => {
-      // Parent shell prints the PID of a long-sleeping grandchild, then sleeps
-      // itself. We capture the grandchild PID and then tree-kill.
+      // Deterministic handshake via a tmpfile: the child shell writes its
+      // grandchild PID to a known path, and the test waits for that file.
+      // More robust than polling the child's stdout through the logger mock.
+      handshakeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'run-cmd-test-'))
+      const pidFile = path.join(handshakeDir, 'grandchild.pid')
       const script = `
         sleep 300 &
-        echo "GRANDCHILD_PID=$!"
+        echo "$!" > "${pidFile}"
         sleep 300
       `
+
       const { exitPromise, child, killProcessTree } = execCommand(
         logger,
         '/bin/sh',
@@ -99,24 +152,8 @@ describe('execCommand', () => {
         () => (exitOutcome = 'rejected')
       )
 
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('grandchild PID not emitted in time')), 5000)
-        const checkLogger = () => {
-          const logCalls = logger.log.mock.calls
-          for (const [payload] of logCalls) {
-            const text = Buffer.isBuffer(payload) ? payload.toString() : String(payload)
-            const match = text.match(/GRANDCHILD_PID=(\d+)/)
-            if (match) {
-              grandchildPid = parseInt(match[1], 10)
-              clearTimeout(timer)
-              resolve()
-              return
-            }
-          }
-          setTimeout(checkLogger, 50)
-        }
-        checkLogger()
-      })
+      await waitForFile(pidFile, 5000)
+      grandchildPid = parseInt((await fs.readFile(pidFile, 'utf8')).trim(), 10)
 
       expect(child.pid).toBeDefined()
       expect(grandchildPid).toBeGreaterThan(0)
@@ -128,6 +165,10 @@ describe('execCommand', () => {
       await sleep(200)
       await exitPromise.catch(() => undefined)
     }, 10_000)
+
+    afterEach(async () => {
+      await fs.rm(handshakeDir, { recursive: true, force: true })
+    })
 
     it('should return true indicating the signal was delivered to the group', () => {
       expect(killResult).toBe(true)
