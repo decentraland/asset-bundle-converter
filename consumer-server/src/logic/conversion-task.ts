@@ -10,9 +10,15 @@ import { hasContentChange } from './has-content-changed-task'
 import { getUnityBuildTarget } from '../utils'
 import { getActiveEntity } from './fetch-entity-by-pointer'
 import fetch from 'node-fetch'
-import { initiateGracefulCrashShutdown } from './shutdown'
 import { classifyHasContentChangeFailure } from './classify-has-content-change-failure'
 import { scrubUnityProjectState } from './scrub-unity-project-state'
+
+// Returned from executeConversion / executeLODConversion when the catch block
+// traps an exception (runConversion threw, S3 upload threw, etc.). Distinct
+// from Unity's own exit codes so the registry can tell "Node-side failure"
+// from "Unity reported an error". -1 is already the sentinel used elsewhere
+// for "exit code unknown".
+const NODE_CAUGHT_ERROR_EXIT_CODE = -1
 
 type Manifest = {
   version: string
@@ -208,13 +214,11 @@ export async function executeLODConversion(
     components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
     logger.error(error)
 
-    // After any fatal conversion error, refuse to pick up the next SQS job and
-    // restart the container. Reusing the worker after a timeout/crash has caused
-    // cascading failures where a second Unity spawn on the same container hangs
-    // or blows resource limits.
-    initiateGracefulCrashShutdown()
-
-    throw error
+    // Return a failure exit code instead of rethrowing. The service.ts task
+    // runner will publish an AssetBundleConversionFinishedEvent with this
+    // statusCode so the registry learns the entity failed, and the worker
+    // goes on to pick up the next SQS message.
+    return NODE_CAUGHT_ERROR_EXIT_CODE
   } finally {
     if ($LOGS_BUCKET) {
       const log = `https://${$LOGS_BUCKET}.s3.amazonaws.com/${s3LogKey}`
@@ -467,13 +471,11 @@ export async function executeConversion(
         .promise()
     } catch {}
 
-    // After any fatal conversion error, refuse to pick up the next SQS job and
-    // restart the container. Reusing the worker after a timeout/crash has caused
-    // cascading failures where a second Unity spawn on the same container hangs
-    // or blows resource limits.
-    initiateGracefulCrashShutdown()
-
-    throw err
+    // Return a failure exit code instead of rethrowing. The service.ts task
+    // runner will publish an AssetBundleConversionFinishedEvent with this
+    // statusCode so the registry learns the entity failed, and the worker
+    // goes on to pick up the next SQS message.
+    return NODE_CAUGHT_ERROR_EXIT_CODE
   } finally {
     if ($LOGS_BUCKET && hasContentChanged) {
       const log = `https://${$LOGS_BUCKET}.s3.amazonaws.com/${s3LogKey}`

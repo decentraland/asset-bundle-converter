@@ -1,7 +1,6 @@
 import { Lifecycle } from '@well-known-components/interfaces'
 import { setupRouter } from './controllers/routes'
 import { executeConversion, executeLODConversion } from './logic/conversion-task'
-import { isShutdownRequested } from './logic/shutdown'
 import checkDiskSpace from 'check-disk-space'
 import { AppComponents, GlobalContext, TestComponents } from './types'
 import { AssetBundleConversionFinishedEvent, Events } from '@dcl/schemas'
@@ -38,12 +37,6 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
     const $AB_VERSION = await components.config.requireString(abVersionEnvName)
 
     while (opt.isRunning) {
-      if (isShutdownRequested()) {
-        logger.warn('Shutdown requested by a previous conversion failure; not consuming more jobs')
-        void program.stop()
-        return
-      }
-
       if (await machineRanOutOfSpace(components)) {
         logger.warn('Stopping program due to lack of disk space')
         void program.stop()
