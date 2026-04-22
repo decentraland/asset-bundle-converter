@@ -1,121 +1,228 @@
-import { classifyHasContentChangeFailure } from '../../src/logic/classify-has-content-change-failure'
+import {
+  classifyHasContentChangeFailure,
+  HasContentChangeFailureReason
+} from '../../src/logic/classify-has-content-change-failure'
 
 describe('classifyHasContentChangeFailure', () => {
+  let result: HasContentChangeFailureReason
+
   describe('when the error is a timeout', () => {
-    it('should classify "timeout after 10000ms" as timeout', () => {
-      const err = new Error('Request timeout after 10000ms')
-      expect(classifyHasContentChangeFailure(err)).toBe('timeout')
+    describe("and the message is 'Request timeout after 10000ms'", () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure(new Error('Request timeout after 10000ms'))
+      })
+
+      it('should classify the failure as timeout', () => {
+        expect(result).toBe('timeout')
+      })
     })
 
-    it('should classify an ETIMEDOUT error as timeout', () => {
-      const err = new Error('connect ETIMEDOUT 1.2.3.4:443')
-      expect(classifyHasContentChangeFailure(err)).toBe('timeout')
+    describe("and the message is a node-level ETIMEDOUT", () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure(new Error('connect ETIMEDOUT 1.2.3.4:443'))
+      })
+
+      it('should classify the failure as timeout', () => {
+        expect(result).toBe('timeout')
+      })
     })
 
-    it('should classify a timeout whose message contains a 5xx-looking substring as timeout', () => {
-      // A naïve regex check would mis-classify this as server_error because
-      // "500ms" contains "500". Timeout detection must run first.
-      const err = new Error('timeout after 500ms')
-      expect(classifyHasContentChangeFailure(err)).toBe('timeout')
+    describe("and the message embeds a 5xx-looking substring like '500ms'", () => {
+      // Regression: a naive regex check would mis-classify this as server_error.
+      // Timeout detection must run before the 5xx regex.
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure(new Error('timeout after 500ms'))
+      })
+
+      it('should classify the failure as timeout, not server_error', () => {
+        expect(result).toBe('timeout')
+      })
     })
   })
 
   describe('when the error is a network-level failure', () => {
-    it('should classify an ECONNREFUSED error as network', () => {
-      const err = new Error('connect ECONNREFUSED 127.0.0.1:443')
-      expect(classifyHasContentChangeFailure(err)).toBe('network')
+    describe('and the message is an ECONNREFUSED', () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure(new Error('connect ECONNREFUSED 127.0.0.1:443'))
+      })
+
+      it('should classify the failure as network', () => {
+        expect(result).toBe('network')
+      })
     })
 
-    it('should classify an ENOTFOUND error as network', () => {
-      const err = new Error('getaddrinfo ENOTFOUND worlds-content-server.decentraland.org')
-      expect(classifyHasContentChangeFailure(err)).toBe('network')
+    describe('and the message is an ENOTFOUND from DNS resolution', () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure(
+          new Error('getaddrinfo ENOTFOUND worlds-content-server.decentraland.org')
+        )
+      })
+
+      it('should classify the failure as network', () => {
+        expect(result).toBe('network')
+      })
     })
 
-    it('should classify a generic "fetch failed" error as network', () => {
-      const err = new Error('fetch failed')
-      expect(classifyHasContentChangeFailure(err)).toBe('network')
+    describe("and the message is a generic 'fetch failed'", () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure(new Error('fetch failed'))
+      })
+
+      it('should classify the failure as network', () => {
+        expect(result).toBe('network')
+      })
     })
   })
 
   describe('when the upstream returns a 400-class error', () => {
-    it('should classify a "Bad request" message as bad_request', () => {
-      // This is the exact message worlds-content-server returned during the
-      // 2026-04-19 incident.
-      const err = new Error(
-        'Error fetching pointer changes: {"error":"Bad request","message":"Request body is not valid"}'
-      )
-      expect(classifyHasContentChangeFailure(err)).toBe('bad_request')
+    describe("and the message is the worlds-content-server 'Bad request' body from the 2026-04-19 incident", () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure(
+          new Error('Error fetching pointer changes: {"error":"Bad request","message":"Request body is not valid"}')
+        )
+      })
+
+      it('should classify the failure as bad_request', () => {
+        expect(result).toBe('bad_request')
+      })
     })
 
-    it('should classify an "Invalid request" message as bad_request', () => {
-      const err = new Error('Invalid request: missing field')
-      expect(classifyHasContentChangeFailure(err)).toBe('bad_request')
+    describe("and the message contains 'Invalid request'", () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure(new Error('Invalid request: missing field'))
+      })
+
+      it('should classify the failure as bad_request', () => {
+        expect(result).toBe('bad_request')
+      })
     })
 
-    it('should classify a message containing a bare 400 status token as bad_request', () => {
-      const err = new Error('HTTP 400 returned')
-      expect(classifyHasContentChangeFailure(err)).toBe('bad_request')
+    describe('and the message contains a bare 400 status token', () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure(new Error('HTTP 400 returned'))
+      })
+
+      it('should classify the failure as bad_request', () => {
+        expect(result).toBe('bad_request')
+      })
     })
   })
 
   describe('when the upstream returns a 500-class error', () => {
-    it('should classify a "status: 502" message as server_error', () => {
-      const err = new Error('Upstream responded with status: 502')
-      expect(classifyHasContentChangeFailure(err)).toBe('server_error')
+    describe("and the message is 'status: 502'", () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure(new Error('Upstream responded with status: 502'))
+      })
+
+      it('should classify the failure as server_error', () => {
+        expect(result).toBe('server_error')
+      })
     })
 
-    it('should classify a "status 500" (space-separated) message as server_error', () => {
-      const err = new Error('Upstream responded with status 500 Internal Server Error')
-      expect(classifyHasContentChangeFailure(err)).toBe('server_error')
+    describe("and the message is 'status 500 Internal Server Error' (space-separated)", () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure(new Error('Upstream responded with status 500 Internal Server Error'))
+      })
+
+      it('should classify the failure as server_error', () => {
+        expect(result).toBe('server_error')
+      })
     })
 
-    it('should classify a bare "503 " substring as server_error', () => {
-      const err = new Error('Got 503 from worlds-content-server')
-      expect(classifyHasContentChangeFailure(err)).toBe('server_error')
+    describe("and the message contains a bare '503 ' substring", () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure(new Error('Got 503 from worlds-content-server'))
+      })
+
+      it('should classify the failure as server_error', () => {
+        expect(result).toBe('server_error')
+      })
     })
   })
 
   describe('when the error does not match any known pattern', () => {
-    it('should classify an unrelated error as other', () => {
-      const err = new Error('something exploded in JSON parsing')
-      expect(classifyHasContentChangeFailure(err)).toBe('other')
+    describe('and the message is unrelated text', () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure(new Error('something exploded in JSON parsing'))
+      })
+
+      it('should classify the failure as other', () => {
+        expect(result).toBe('other')
+      })
     })
 
-    it('should classify an empty error message as other', () => {
-      const err = new Error('')
-      expect(classifyHasContentChangeFailure(err)).toBe('other')
+    describe('and the Error message is empty', () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure(new Error(''))
+      })
+
+      it('should classify the failure as other', () => {
+        expect(result).toBe('other')
+      })
     })
   })
 
   describe('when the thrown value is not an Error instance', () => {
-    it('should classify a plain string as other', () => {
-      expect(classifyHasContentChangeFailure('whatever')).toBe('other')
+    describe('and the value is a plain string with no known signal', () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure('whatever')
+      })
+
+      it('should classify the failure as other', () => {
+        expect(result).toBe('other')
+      })
     })
 
-    it('should classify undefined as other', () => {
-      expect(classifyHasContentChangeFailure(undefined)).toBe('other')
+    describe('and the value is undefined', () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure(undefined)
+      })
+
+      it('should classify the failure as other', () => {
+        expect(result).toBe('other')
+      })
     })
 
-    it('should classify null as other', () => {
-      expect(classifyHasContentChangeFailure(null)).toBe('other')
+    describe('and the value is null', () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure(null)
+      })
+
+      it('should classify the failure as other', () => {
+        expect(result).toBe('other')
+      })
     })
 
-    it('should classify a string containing "timeout" as timeout', () => {
-      expect(classifyHasContentChangeFailure('fetch timeout')).toBe('timeout')
+    describe("and the value is a plain string containing 'timeout'", () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure('fetch timeout')
+      })
+
+      it('should classify the failure as timeout', () => {
+        expect(result).toBe('timeout')
+      })
     })
   })
 
   describe('when the message contains multiple signals', () => {
-    it('should prefer timeout over 5xx when both appear in the message', () => {
-      // The ordering invariant we care about — timeout check runs first.
-      const err = new Error('timeout after 500ms waiting for worlds-content-server')
-      expect(classifyHasContentChangeFailure(err)).toBe('timeout')
+    describe('and it contains both a timeout phrase and a 5xx-looking token', () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure(new Error('timeout after 500ms waiting for worlds-content-server'))
+      })
+
+      it('should prefer timeout over server_error', () => {
+        expect(result).toBe('timeout')
+      })
     })
 
-    it('should prefer network over bad_request when both appear in the message', () => {
-      // Network / DNS errors are the more fundamental failure.
-      const err = new Error('fetch failed: 400 upstream')
-      expect(classifyHasContentChangeFailure(err)).toBe('network')
+    describe('and it contains both a network phrase and a 400-status token', () => {
+      beforeEach(() => {
+        result = classifyHasContentChangeFailure(new Error('fetch failed: 400 upstream'))
+      })
+
+      it('should prefer network over bad_request', () => {
+        expect(result).toBe('network')
+      })
     })
   })
 })

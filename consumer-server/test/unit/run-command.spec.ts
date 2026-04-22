@@ -45,25 +45,41 @@ describe('execCommand', () => {
   })
 
   describe('when the command exits cleanly', () => {
-    it('should resolve the exit promise with the child exit code', async () => {
-      const { exitPromise } = execCommand(logger, '/bin/sh', ['-c', 'exit 0'], process.env as any, process.cwd())
-      await expect(exitPromise).resolves.toBe(0)
+    describe('and the command returns exit code 0', () => {
+      let resolvedCode: number | null
+
+      beforeEach(async () => {
+        const { exitPromise } = execCommand(logger, '/bin/sh', ['-c', 'exit 0'], process.env as any, process.cwd())
+        resolvedCode = await exitPromise
+      })
+
+      it('should resolve the exit promise with 0', () => {
+        expect(resolvedCode).toBe(0)
+      })
     })
 
-    it('should resolve with a non-zero exit code when the child returns non-zero', async () => {
-      const { exitPromise } = execCommand(logger, '/bin/sh', ['-c', 'exit 7'], process.env as any, process.cwd())
-      await expect(exitPromise).resolves.toBe(7)
+    describe('and the command returns a non-zero exit code', () => {
+      let resolvedCode: number | null
+
+      beforeEach(async () => {
+        const { exitPromise } = execCommand(logger, '/bin/sh', ['-c', 'exit 7'], process.env as any, process.cwd())
+        resolvedCode = await exitPromise
+      })
+
+      it('should resolve the exit promise with that non-zero code', () => {
+        expect(resolvedCode).toBe(7)
+      })
     })
   })
 
-  describe('when killProcessTree is called on a child that spawned grandchildren', () => {
+  describe('when killProcessTree is called on a child that spawned a grandchild', () => {
     let grandchildPid: number
     let exitOutcome: 'resolved' | 'rejected' | 'pending'
     let killResult: boolean
 
     beforeEach(async () => {
-      // Parent shell prints the PID of a long-sleeping grandchild, then
-      // sleeps itself. We capture the grandchild PID and then tree-kill.
+      // Parent shell prints the PID of a long-sleeping grandchild, then sleeps
+      // itself. We capture the grandchild PID and then tree-kill.
       const script = `
         sleep 300 &
         echo "GRANDCHILD_PID=$!"
@@ -83,7 +99,6 @@ describe('execCommand', () => {
         () => (exitOutcome = 'rejected')
       )
 
-      // Collect grandchild PID from the child's stdout via the logger mock.
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('grandchild PID not emitted in time')), 5000)
         const checkLogger = () => {
@@ -114,21 +129,23 @@ describe('execCommand', () => {
       await exitPromise.catch(() => undefined)
     }, 10_000)
 
-    it('should return true from killProcessTree indicating the signal was delivered', () => {
+    it('should return true indicating the signal was delivered to the group', () => {
       expect(killResult).toBe(true)
     })
 
-    it('should kill the grandchild process too, not just the direct child', async () => {
+    it('should kill the grandchild process, not just the direct child', async () => {
       await expect(isProcessAlive(grandchildPid)).resolves.toBe(false)
     })
 
-    it('should cause the exit promise to reject with "SIGTERM sent to the process"', () => {
+    it("should reject the exit promise with 'SIGTERM sent to the process'", () => {
       expect(exitOutcome).toBe('rejected')
     })
   })
 
-  describe('when killProcessTree is called after the child has already exited', () => {
-    it('should return true and not log any warning (ESRCH is expected)', async () => {
+  describe('when killProcessTree is called after the child has already drained', () => {
+    let killResult: boolean
+
+    beforeEach(async () => {
       const { exitPromise, killProcessTree } = execCommand(
         logger,
         '/bin/sh',
@@ -138,10 +155,14 @@ describe('execCommand', () => {
       )
       await exitPromise
       await sleep(50)
+      killResult = killProcessTree('SIGKILL')
+    })
 
-      const result = killProcessTree('SIGKILL')
+    it('should return true because ESRCH is treated as success', () => {
+      expect(killResult).toBe(true)
+    })
 
-      expect(result).toBe(true)
+    it('should not log a warning since ESRCH is expected after the group has drained', () => {
       expect(logger.warn).not.toHaveBeenCalled()
     })
   })

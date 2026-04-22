@@ -39,13 +39,18 @@ describe('scrubUnityProjectState', () => {
     jest.clearAllMocks()
   })
 
-  describe('when the scrub targets do not exist', () => {
-    it('should complete without throwing', async () => {
-      await expect(scrubUnityProjectState(projectPath, logger, loggerMetadata)).resolves.toBeUndefined()
+  describe('when none of the scrub targets exist', () => {
+    let resolvedValue: void
+
+    beforeEach(async () => {
+      resolvedValue = await scrubUnityProjectState(projectPath, logger, loggerMetadata)
     })
 
-    it('should not log any warnings', async () => {
-      await scrubUnityProjectState(projectPath, logger, loggerMetadata)
+    it('should resolve without throwing', () => {
+      expect(resolvedValue).toBeUndefined()
+    })
+
+    it('should not log any warning since there is nothing stuck', () => {
       expect(logger.warn).not.toHaveBeenCalled()
     })
   })
@@ -74,23 +79,30 @@ describe('scrubUnityProjectState', () => {
       await expect(fs.stat(path.join(projectPath, 'Assets', '_SceneManifest'))).rejects.toThrow(/ENOENT/)
     })
 
-    it('should leave unrelated Assets subdirectories intact', async () => {
-      // Also seed and verify — prevents regressions where the scrub over-reaches.
-      await fs.mkdir(path.join(projectPath, 'Assets', 'AssetBundleConverter'), { recursive: true })
-      await fs.writeFile(path.join(projectPath, 'Assets', 'AssetBundleConverter', 'keep.cs'), 'x')
-      await scrubUnityProjectState(projectPath, logger, loggerMetadata)
-      await expect(
-        fs.stat(path.join(projectPath, 'Assets', 'AssetBundleConverter', 'keep.cs'))
-      ).resolves.toBeDefined()
-    })
-
-    it('should not log any warnings on the happy path', () => {
+    it('should not log any warning on the happy path', () => {
       expect(logger.warn).not.toHaveBeenCalled()
     })
   })
 
-  describe('when one scrub target fails', () => {
+  describe('when an unrelated directory also lives under the project path', () => {
+    let unrelatedFile: string
+
+    beforeEach(async () => {
+      unrelatedFile = path.join(projectPath, 'Assets', 'AssetBundleConverter', 'keep.cs')
+      await fs.mkdir(path.dirname(unrelatedFile), { recursive: true })
+      await fs.writeFile(unrelatedFile, 'x')
+
+      await scrubUnityProjectState(projectPath, logger, loggerMetadata)
+    })
+
+    it('should leave the unrelated file intact (scrub must not over-reach)', async () => {
+      await expect(fs.stat(unrelatedFile)).resolves.toBeDefined()
+    })
+  })
+
+  describe('when one scrub target fails with EBUSY but the others would succeed', () => {
     let rimrafSpy: jest.SpyInstance
+    let freshScrub: typeof scrubUnityProjectState
 
     beforeEach(async () => {
       jest.resetModules()
@@ -99,31 +111,34 @@ describe('scrubUnityProjectState', () => {
           throw new Error('EBUSY: resource busy or locked')
         }
       }) as any)
+      freshScrub = require('../../src/logic/scrub-unity-project-state').scrubUnityProjectState
     })
 
     afterEach(() => {
       rimrafSpy.mockRestore()
     })
 
-    it('should log a warning for the failed target', async () => {
-      const { scrubUnityProjectState: freshScrub } = require('../../src/logic/scrub-unity-project-state')
-      await freshScrub(projectPath, logger, loggerMetadata)
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Unity project scrub failed'),
-        expect.any(Object)
-      )
-    })
+    describe('and the scrub runs to completion', () => {
+      let resolvedValue: void
 
-    it('should continue and clean the remaining targets', async () => {
-      const { scrubUnityProjectState: freshScrub } = require('../../src/logic/scrub-unity-project-state')
-      await freshScrub(projectPath, logger, loggerMetadata)
-      // rimraf was called for all three targets even though Library threw.
-      expect(rimrafSpy).toHaveBeenCalledTimes(3)
-    })
+      beforeEach(async () => {
+        resolvedValue = await freshScrub(projectPath, logger, loggerMetadata)
+      })
 
-    it('should not re-throw the underlying error', async () => {
-      const { scrubUnityProjectState: freshScrub } = require('../../src/logic/scrub-unity-project-state')
-      await expect(freshScrub(projectPath, logger, loggerMetadata)).resolves.toBeUndefined()
+      it('should not re-throw the underlying EBUSY error', () => {
+        expect(resolvedValue).toBeUndefined()
+      })
+
+      it('should log a warning that names the failed target', () => {
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining('Unity project scrub failed'),
+          expect.any(Object)
+        )
+      })
+
+      it('should attempt rimraf on all three targets even though Library threw', () => {
+        expect(rimrafSpy).toHaveBeenCalledTimes(3)
+      })
     })
   })
 })
