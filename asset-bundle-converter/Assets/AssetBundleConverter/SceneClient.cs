@@ -84,6 +84,8 @@ namespace DCL.ABConverter
             {
                 ParseCommonSettings(commandLineArgs, settings);
 
+                log.Info($"Asset reuse state: cachedHashes={settings.cachedHashes?.Count ?? 0}, depsDigest='{settings.depsDigest ?? ""}'");
+
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_SHADER_TARGET, 1, out string[] shaderTarget))
                 {
                     string target = shaderTarget[0].ToLower();

@@ -922,6 +922,7 @@ namespace DCL.ABConverter
                 // underscore that the consumer-server's canonical probe would
                 // then miss.
                 string platform = PlatformUtils.GetPlatform();
+
                 foreach (var assetPath in assetPaths)
                 {
                     if (assetPath == null) continue;
@@ -1095,6 +1096,9 @@ namespace DCL.ABConverter
                     int bufferSkipped = bufferPaths.RemoveAll(p => settings.cachedHashes.Contains(p.hash));
 
                     log.Info($"Skipped {gltfSkipped} cached GLTF(s) and {bufferSkipped} cached buffer(s).");
+                } else {
+                    if (!string.IsNullOrEmpty(settings.depsDigest))
+                        log.Info($"No cached hashes — full cache miss. depsDigest={settings.depsDigest}, proceeding to convert all {gltfPaths.Count} gltf and {bufferPaths.Count} buffer");
                 }
 
                 if (!FilterDumpList(ref gltfPaths))
