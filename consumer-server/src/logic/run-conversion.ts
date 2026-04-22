@@ -53,7 +53,13 @@ async function executeProgram(options: {
   timeout: number
 }) {
   const { logger, components, childArg0, childArguments, projectPath, timeout } = options
-  const { exitPromise, child } = execCommand(logger, childArg0, childArguments, process.env as any, projectPath)
+  const { exitPromise, child, killProcessTree } = execCommand(
+    logger,
+    childArg0,
+    childArguments,
+    process.env as any,
+    projectPath
+  )
 
   if (timeout) {
     setTimeout(() => {
@@ -67,8 +73,11 @@ async function executeProgram(options: {
             } as any)
             components.metrics.increment('ab_converter_timeout')
             exitPromise.reject(new Error('Process did not finish'))
-            if (!child.kill('SIGKILL')) {
-              logger.error('Error trying to kill child process', {
+            // killProcessTree signals the whole Unity process group (including
+            // Mono workers) rather than just the direct child, so orphaned
+            // descendants don't linger holding FDs and file locks.
+            if (!killProcessTree('SIGKILL')) {
+              logger.error('Error trying to kill Unity process tree on timeout', {
                 pid: child.pid?.toString() || '?',
                 command: childArg0,
                 args: childArguments.join(' ')
