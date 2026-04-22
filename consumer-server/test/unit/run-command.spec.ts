@@ -1,9 +1,5 @@
 import { execCommand } from '../../src/logic/run-command'
 import { ILoggerComponent } from '@well-known-components/interfaces'
-import { promisify } from 'util'
-import { exec } from 'child_process'
-
-const execAsync = promisify(exec)
 
 type LoggerMock = ILoggerComponent.ILogger & {
   info: jest.Mock

@@ -220,18 +220,24 @@ export async function executeLODConversion(
     // goes on to pick up the next SQS message.
     return NODE_CAUGHT_ERROR_EXIT_CODE
   } finally {
+    // Finally-block operations must not throw: an uncaught throw here would
+    // replace the try/catch's return value and service.ts would skip the
+    // event publish, so the registry wouldn't learn about the outcome.
     if ($LOGS_BUCKET) {
       const log = `https://${$LOGS_BUCKET}.s3.amazonaws.com/${s3LogKey}`
-
       logger.info(`LogFile=${log}`, defaultLoggerMetadata)
-      await components.cdnS3
-        .upload({
-          Bucket: $LOGS_BUCKET,
-          Key: s3LogKey,
-          Body: await promises.readFile(logFile),
-          ACL: 'public-read'
-        })
-        .promise()
+      try {
+        await components.cdnS3
+          .upload({
+            Bucket: $LOGS_BUCKET,
+            Key: s3LogKey,
+            Body: await promises.readFile(logFile),
+            ACL: 'public-read'
+          })
+          .promise()
+      } catch (err: any) {
+        logger.error(`Failed to upload LOD log file to S3: ${err?.message ?? err}`, defaultLoggerMetadata)
+      }
     } else {
       logger.info(`!!!!!!!! Log file not deleted or uploaded ${logFile}`, defaultLoggerMetadata)
     }
@@ -444,7 +450,9 @@ export async function executeConversion(
         entityId,
         contentServerUrl,
         unityBuildTarget,
-        unityExitCode: exitCode || 'unknown',
+        // Nullish coalescing instead of `||`: a successful-but-post-upload-failing
+        // run has exitCode === 0 and we want Sentry to report 0, not 'unknown'.
+        unityExitCode: exitCode ?? 'unknown',
         version: abVersion,
         log: s3LogKey,
         date: new Date().toISOString()
@@ -477,18 +485,24 @@ export async function executeConversion(
     // goes on to pick up the next SQS message.
     return NODE_CAUGHT_ERROR_EXIT_CODE
   } finally {
+    // Finally-block operations must not throw: an uncaught throw here would
+    // replace the try/catch's return value and service.ts would skip the
+    // event publish, so the registry wouldn't learn about the outcome.
     if ($LOGS_BUCKET && hasContentChanged) {
       const log = `https://${$LOGS_BUCKET}.s3.amazonaws.com/${s3LogKey}`
-
       logger.info(`LogFile=${log}`, defaultLoggerMetadata)
-      await components.cdnS3
-        .upload({
-          Bucket: $LOGS_BUCKET,
-          Key: s3LogKey,
-          Body: await promises.readFile(logFile),
-          ACL: 'public-read'
-        })
-        .promise()
+      try {
+        await components.cdnS3
+          .upload({
+            Bucket: $LOGS_BUCKET,
+            Key: s3LogKey,
+            Body: await promises.readFile(logFile),
+            ACL: 'public-read'
+          })
+          .promise()
+      } catch (err: any) {
+        logger.error(`Failed to upload log file to S3: ${err?.message ?? err}`, defaultLoggerMetadata)
+      }
     } else {
       logger.info(`!!!!!!!! Log file not deleted or uploaded ${logFile}`, defaultLoggerMetadata)
     }

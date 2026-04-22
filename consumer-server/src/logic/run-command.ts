@@ -13,7 +13,7 @@ export function execCommand(
 
   logger.debug('Running command', { command, args } as any)
 
-  // `detached: true` makes the child a new process group leader on Linux.
+  // `detached: true` makes the child a new process group leader (POSIX).
   // Without this, a subsequent SIGKILL only reaches the direct child —
   // Mono workers Unity spawned keep running, get reparented to PID 1, and
   // hold onto file descriptors and file locks across subsequent jobs.
@@ -24,7 +24,9 @@ export function execCommand(
   const child = spawn(command, args, { env, cwd, detached: true })
 
   function killProcessTree(signal: NodeJS.Signals = 'SIGKILL'): boolean {
-    if (child.pid === undefined || child.pid === null) return false
+    // Falsy check also guards against the pathological pid=0, which on POSIX
+    // would signal the caller's own process group — very much not what we want.
+    if (!child.pid) return false
     try {
       process.kill(-child.pid, signal)
       return true
