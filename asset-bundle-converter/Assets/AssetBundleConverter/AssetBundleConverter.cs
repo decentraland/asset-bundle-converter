@@ -908,11 +908,13 @@ namespace DCL.ABConverter
                 // Otherwise, mark each asset as its own bundle. GLB/GLTF bundles embed
                 // dep-bundle references whose names are derived from dep content hashes.
                 // Two scenes that share a glb source hash but differ in deps therefore
-                // produce byte-different bundles — we fold the entity-wide depsDigest
-                // into the glb/gltf bundle name so those byte-different bundles land at
-                // distinct canonical paths. BIN and texture bundles are leaves (no
-                // inbound dep refs from their own bundle) so hash-only naming is safe.
-                bool useDigest = !string.IsNullOrEmpty(settings.depsDigest);
+                // produce byte-different bundles — we fold a per-asset depsDigest into
+                // the glb/gltf bundle name so those byte-different bundles land at
+                // distinct canonical paths, and two glbs with the same deps land at
+                // the same path regardless of what else is in the scene. BIN and
+                // texture bundles are leaves (no inbound dep refs from their own
+                // bundle) so hash-only naming is safe.
+                bool useDigest = settings.depsDigestByHash != null && settings.depsDigestByHash.Count > 0;
                 // `PlatformUtils.GetPlatform()` already returns the leading
                 // underscore (e.g. "_windows" / "_mac" / "_webgl"), so the
                 // string interpolations below produce `{hash}_{digest}_{target}`
@@ -935,9 +937,25 @@ namespace DCL.ABConverter
                     bool isGltf = useDigest
                         && (assetPath.finalPath.EndsWith(".glb", System.StringComparison.OrdinalIgnoreCase)
                             || assetPath.finalPath.EndsWith(".gltf", System.StringComparison.OrdinalIgnoreCase));
-                    string assetBundleName = isGltf
-                        ? $"{assetPath.hash}_{settings.depsDigest}{platform}"
-                        : assetPath.hash + platform;
+                    string assetBundleName;
+                    if (isGltf)
+                    {
+                        // A missing digest for a glb/gltf means the consumer-server
+                        // probed one canonical key but Unity would emit bare bundles
+                        // that the probe-side logic could never find. Throw loudly.
+                        // Treat a null/empty digest the same as a missing key — both
+                        // would silently collapse into `{hash}__{platform}` which
+                        // never matches what the consumer-server probes.
+                        if (!settings.depsDigestByHash.TryGetValue(assetPath.hash, out string digest)
+                            || string.IsNullOrEmpty(digest))
+                            throw new System.InvalidOperationException(
+                                $"No per-asset deps digest found for glb/gltf hash {assetPath.hash} (path {assetPath.finalPath}). The consumer-server must pass every glb/gltf via -depsDigestsFile.");
+                        assetBundleName = $"{assetPath.hash}_{digest}{platform}";
+                    }
+                    else
+                    {
+                        assetBundleName = assetPath.hash + platform;
+                    }
                     env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, assetBundleName);
                 }
             }
@@ -1097,8 +1115,8 @@ namespace DCL.ABConverter
 
                     log.Info($"Skipped {gltfSkipped} cached GLTF(s) and {bufferSkipped} cached buffer(s).");
                 } else {
-                    if (!string.IsNullOrEmpty(settings.depsDigest))
-                        log.Info($"No cached hashes — full cache miss. depsDigest={settings.depsDigest}, proceeding to convert all {gltfPaths.Count} gltf and {bufferPaths.Count} buffer");
+                    if (settings.depsDigestByHash != null && settings.depsDigestByHash.Count > 0)
+                        log.Info($"No cached hashes — full cache miss. Received {settings.depsDigestByHash.Count} per-asset digest(s), proceeding to convert all {gltfPaths.Count} gltf and {bufferPaths.Count} buffer");
                 }
 
                 if (!FilterDumpList(ref gltfPaths))

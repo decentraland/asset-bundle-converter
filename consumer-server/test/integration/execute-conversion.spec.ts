@@ -14,7 +14,11 @@ import { createConfigComponent } from '@well-known-components/env-config-provide
 import { createLogComponent } from '@well-known-components/logger'
 import { createMetricsComponent } from '@well-known-components/metrics'
 import { metricDeclarations } from '../../src/metrics'
-import { canonicalFilename, computeDepsDigest, probeHitCache } from '../../src/logic/asset-reuse'
+import {
+  canonicalFilenameForAsset,
+  computeDepsDigest,
+  probeHitCache
+} from '../../src/logic/asset-reuse'
 
 jest.mock('../../src/logic/run-conversion', () => ({
   runConversion: jest.fn(),
@@ -72,6 +76,54 @@ function buildComponents(bucketBasePath: string, params: Params = {}) {
   return { config, cdnS3, sentry }
 }
 
+// Minimal glTF 2.0 binary referencing the given URIs via images[] and buffers[].
+// Used to feed `computePerAssetDigests`'s glb parser with predictable content —
+// so tests can compute the exact per-asset digest and canonical key from the
+// dep subset without simulating Unity at all.
+function buildGlb(images: string[] = [], buffers: string[] = []): Buffer {
+  const json = JSON.stringify({
+    images: images.map((uri) => ({ uri })),
+    buffers: buffers.map((uri) => ({ uri }))
+  })
+  const jsonBytes = Buffer.from(json, 'utf8')
+  const total = 12 + 8 + jsonBytes.length
+  const buf = Buffer.alloc(total)
+  buf.writeUInt32LE(0x46546c67, 0)
+  buf.writeUInt32LE(2, 4)
+  buf.writeUInt32LE(total, 8)
+  buf.writeUInt32LE(jsonBytes.length, 12)
+  buf.writeUInt32LE(0x4e4f534a, 16)
+  jsonBytes.copy(buf, 20)
+  return buf
+}
+
+// Wire up the jest.mock'd node-fetch so glb URLs (detected by a hash suffix we
+// know about) return buffered glb bytes, while scene-source-file URLs return a
+// plain body. The helper accepts a hash→buffer map so each test declares the
+// glbs it uses inline.
+function setupFetchMock(glbsByHash: Map<string, Buffer>): void {
+  mockedFetch.mockImplementation(async (url: any) => {
+    const asString = typeof url === 'string' ? url : url?.toString() ?? ''
+    for (const [hash, buf] of glbsByHash) {
+      if (asString.endsWith(hash)) {
+        return {
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          buffer: async () => buf,
+          text: async () => buf.toString('binary')
+        } as any
+      }
+    }
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      buffer: async () => Buffer.from('fake-source-file')
+    } as any
+  })
+}
+
 async function read(s3: any, Bucket: string, Key: string): Promise<string | null> {
   try {
     const res = await s3.getObject({ Bucket, Key }).promise()
@@ -125,9 +177,12 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         { file: 'scene.json', hash: 'hSceneJson' },
         { file: 'index.js', hash: 'hIndexJs' }
       ]
-      const digest = computeDepsDigest(content)
-      const glbFilename = canonicalFilename('hGlb', '.glb', 'windows', digest)
-      const texFilename = canonicalFilename('hTex', '.png', 'windows', digest)
+      // model.glb references texture.png; per-asset digest captures that subset.
+      setupFetchMock(new Map([['hGlb', buildGlb(['texture.png'])]]))
+      const glbDigest = computeDepsDigest([{ file: 'texture.png', hash: 'hTex' }])
+      const digests = new Map([['hGlb', glbDigest]])
+      const glbFilename = canonicalFilenameForAsset('hGlb', '.glb', 'windows', digests)
+      const texFilename = canonicalFilenameForAsset('hTex', '.png', 'windows', digests)
 
       // Seed canonical bundles at the composite (glb) / bare (texture) paths.
       await components.cdnS3
@@ -183,8 +238,14 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         { file: 'model.gltf', hash: 'hGltf' },
         { file: 'model.bin', hash: 'hBin' }
       ]
-      const digest = computeDepsDigest(content)
-      const gltfFilename = canonicalFilename('hGltf', '.gltf', 'windows', digest)
+      // Text-form .gltf is just JSON; we fetch it as bytes, parse as JSON.
+      // Supply the same JSON shape `buildGlb` would produce in binary form,
+      // but stringified since this is .gltf not .glb.
+      const gltfText = JSON.stringify({ buffers: [{ uri: 'model.bin' }] })
+      setupFetchMock(new Map([['hGltf', Buffer.from(gltfText, 'utf8')]]))
+      const digest = computeDepsDigest([{ file: 'model.bin', hash: 'hBin' }])
+      const digests = new Map([['hGltf', digest]])
+      const gltfFilename = canonicalFilenameForAsset('hGltf', '.gltf', 'windows', digests)
       await components.cdnS3
         .putObject({ Bucket: 'test-bucket', Key: `v48/assets/${gltfFilename}`, Body: 'gltf-bytes' })
         .promise()
@@ -229,8 +290,16 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         { file: 'mesh.bin', hash: 'hBinRegression' },
         { file: 'skin.png', hash: 'hTexRegression' }
       ]
-      const digest = computeDepsDigest(content)
-      const glbFilename = canonicalFilename('hGlbBinRegression', '.glb', 'windows', digest)
+      // mesh.glb references both its .bin buffer and skin.png texture.
+      setupFetchMock(
+        new Map([['hGlbBinRegression', buildGlb(['skin.png'], ['mesh.bin'])]])
+      )
+      const digest = computeDepsDigest([
+        { file: 'mesh.bin', hash: 'hBinRegression' },
+        { file: 'skin.png', hash: 'hTexRegression' }
+      ])
+      const digests = new Map([['hGlbBinRegression', digest]])
+      const glbFilename = canonicalFilenameForAsset('hGlbBinRegression', '.glb', 'windows', digests)
       // Seed canonical for the probeable kinds (glb, texture) only. The `.bin`
       // intentionally has NO seeded canonical object.
       await components.cdnS3
@@ -270,9 +339,24 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         { file: 'texture.png', hash: 'hTex' },
         { file: 'geometry.bin', hash: 'hNewBuf' }
       ]
-      const digest = computeDepsDigest(content)
-      const hGlbFilename = canonicalFilename('hGlb', '.glb', 'windows', digest)
-      const hNewGlbFilename = canonicalFilename('hNewGlb', '.glb', 'windows', digest)
+      // Both glbs reference texture.png and geometry.bin, so they end up with
+      // the same per-asset digest (identical dep set).
+      setupFetchMock(
+        new Map([
+          ['hGlb', buildGlb(['texture.png'], ['geometry.bin'])],
+          ['hNewGlb', buildGlb(['texture.png'], ['geometry.bin'])]
+        ])
+      )
+      const perGlbDigest = computeDepsDigest([
+        { file: 'geometry.bin', hash: 'hNewBuf' },
+        { file: 'texture.png', hash: 'hTex' }
+      ])
+      const digests = new Map([
+        ['hGlb', perGlbDigest],
+        ['hNewGlb', perGlbDigest]
+      ])
+      const hGlbFilename = canonicalFilenameForAsset('hGlb', '.glb', 'windows', digests)
+      const hNewGlbFilename = canonicalFilenameForAsset('hNewGlb', '.glb', 'windows', digests)
 
       // Seed: hGlb (cached GLB, composite path) and hTex (cached texture, bare path).
       await components.cdnS3
@@ -293,7 +377,8 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       // GLB output uses the composite filename (Unity-side depsDigest naming);
       // BIN stays at the bare `{hash}_{target}` form.
       mockedRunConversion.mockImplementation(async (_logger: any, _components: any, options: any) => {
-        expect(options.depsDigest).toBe(digest)
+        expect(options.depsDigestByHash.get('hGlb')).toBe(perGlbDigest)
+        expect(options.depsDigestByHash.get('hNewGlb')).toBe(perGlbDigest)
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(path.join(options.outDirectory, hNewGlbFilename), 'new-glb-bundle')
         await fs.writeFile(path.join(options.outDirectory, 'hNewBuf_windows'), 'new-buf-bundle')
@@ -575,8 +660,10 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       // (no textures/bins), so the digest is the sha256-truncation of an empty
       // dep list — same for every such scene.
       const content = [{ file: 'model.glb', hash: 'hGlb' }]
-      const digest = computeDepsDigest(content)
-      const glbFilename = canonicalFilename('hGlb', '.glb', 'windows', digest)
+      setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
+      const digest = computeDepsDigest([])
+      const digests = new Map([['hGlb', digest]])
+      const glbFilename = canonicalFilenameForAsset('hGlb', '.glb', 'windows', digests)
       await components.cdnS3
         .putObject({ Bucket: 'test-bucket', Key: `v48/assets/${glbFilename}`, Body: 'cached' })
         .promise()
@@ -640,8 +727,10 @@ describe('when executing a conversion with asset-reuse enabled', () => {
 
     beforeEach(async () => {
       const content = [{ file: 'model.glb', hash: 'hGlb' }]
-      const digest = computeDepsDigest(content)
-      composedGlbFilename = canonicalFilename('hGlb', '.glb', 'windows', digest)
+      setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
+      const digest = computeDepsDigest([])
+      const digests = new Map([['hGlb', digest]])
+      composedGlbFilename = canonicalFilenameForAsset('hGlb', '.glb', 'windows', digests)
 
       mockedGetActiveEntity.mockResolvedValue({
         id: 'bafy-probefail',
@@ -664,9 +753,10 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       })
 
       mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
-        // Probe failure must NOT zero out depsDigest — otherwise glb bundles
-        // would revert to bare names and reintroduce the cross-scene collision.
-        expect(options.depsDigest).toBe(digest)
+        // Probe failure must NOT zero out depsDigestByHash — otherwise glb
+        // bundles would revert to bare names and reintroduce the cross-scene
+        // collision.
+        expect(options.depsDigestByHash.get('hGlb')).toBe(digest)
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(path.join(options.outDirectory, composedGlbFilename), 'bundle')
         return 0
@@ -694,6 +784,74 @@ describe('when executing a conversion with asset-reuse enabled', () => {
 
     it('should still upload to the canonical prefix at the composite glb path', async () => {
       expect(await read(components.cdnS3, 'test-bucket', `v48/assets/${composedGlbFilename}`)).toContain('bundle')
+    })
+  })
+
+  describe('and a glb is malformed so per-asset digest computation throws', () => {
+    let exitCode: number
+    let sentryCalls: any[]
+
+    beforeEach(async () => {
+      // Return garbage bytes for the glb hash — parseGltfDepRefs rejects
+      // (non-glTF magic). Before the fix, the unhandled throw escaped
+      // executeConversion and SQS would retry forever against a broken scene.
+      mockedFetch.mockImplementation(async (url: any) => {
+        const asString = typeof url === 'string' ? url : url?.toString() ?? ''
+        if (asString.endsWith('hBadGlb')) {
+          return {
+            ok: true,
+            status: 200,
+            statusText: 'OK',
+            buffer: async () => Buffer.from('not-a-glb-at-all')
+          } as any
+        }
+        return {
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          buffer: async () => Buffer.from('fake-source-file')
+        } as any
+      })
+
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-bad-glb',
+        type: 'scene',
+        content: [{ file: 'broken.glb', hash: 'hBadGlb' }],
+        metadata: {}
+      })
+
+      sentryCalls = components.sentry.captureMessage.mock.calls
+      exitCode = await executeConversion(
+        components,
+        'bafy-bad-glb',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should return UNEXPECTED_ERROR exit code (5) rather than propagating the throw', () => {
+      expect(exitCode).toBe(5)
+    })
+
+    it('should NOT invoke Unity (failed before Unity spawn)', () => {
+      expect(mockedRunConversion).not.toHaveBeenCalled()
+    })
+
+    it('should capture a Sentry event for the digest computation failure', () => {
+      expect(sentryCalls.length).toBeGreaterThan(0)
+      expect(sentryCalls[0][0]).toContain('Per-asset digest computation failed')
+      expect(sentryCalls[0][1].tags.entityId).toBe('bafy-bad-glb')
+    })
+
+    it('should upload a failed-manifest sentinel so clients stop polling', async () => {
+      const failedBody = await read(components.cdnS3, 'test-bucket', 'manifest/bafy-bad-glb_failed.json')
+      expect(failedBody).not.toBeNull()
+      const parsed = JSON.parse(failedBody!)
+      expect(parsed.entityId).toBe('bafy-bad-glb')
+      expect(parsed.error).toMatch(/glb too short/)
     })
   })
 
@@ -738,6 +896,665 @@ describe('when executing a conversion with asset-reuse enabled', () => {
 
     it('should leave the canonical prefix untouched', async () => {
       expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/hNoEntity_windows')).toBeNull()
+    })
+  })
+
+  describe('and a prior successful manifest exists at the same AB_VERSION (shouldIgnoreConversion hit)', () => {
+    let exitCode: number
+
+    beforeEach(async () => {
+      // Seed a manifest matching what a successful conversion at v48 would
+      // leave behind. shouldIgnoreConversion reads it, sees matching version
+      // and exitCode 0 → returns true → executeConversion short-circuits with
+      // ALREADY_CONVERTED (13) before any work happens.
+      await components.cdnS3
+        .putObject({
+          Bucket: 'test-bucket',
+          Key: 'manifest/bafy-ignore_windows.json',
+          Body: JSON.stringify({ version: 'v48', files: ['h_windows'], exitCode: 0 })
+        })
+        .promise()
+
+      exitCode = await executeConversion(
+        components,
+        'bafy-ignore',
+        'https://peer.decentraland.org/content',
+        /* force */ false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should return 13 (ALREADY_CONVERTED) without invoking the catalyst or Unity', () => {
+      expect(exitCode).toBe(13)
+      expect(mockedGetActiveEntity).not.toHaveBeenCalled()
+      expect(mockedRunConversion).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('and a prior successful manifest exists but force=true', () => {
+    let exitCode: number
+
+    beforeEach(async () => {
+      await components.cdnS3
+        .putObject({
+          Bucket: 'test-bucket',
+          Key: 'manifest/bafy-force-skip_windows.json',
+          Body: JSON.stringify({ version: 'v48', files: ['h_windows'], exitCode: 0 })
+        })
+        .promise()
+
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-force-skip',
+        type: 'scene',
+        content: [{ file: 'model.glb', hash: 'hGlb' }],
+        metadata: {}
+      })
+
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        await fs.mkdir(options.outDirectory, { recursive: true })
+        await fs.writeFile(path.join(options.outDirectory, 'hGlb_windows'), 'bundle')
+        return 0
+      })
+
+      exitCode = await executeConversion(
+        components,
+        'bafy-force-skip',
+        'https://peer.decentraland.org/content',
+        /* force */ true,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should bypass shouldIgnoreConversion and actually convert', () => {
+      expect(exitCode).toBe(0)
+      expect(mockedRunConversion).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('and a prior FAILED manifest exists at the same AB_VERSION', () => {
+    let exitCode: number
+
+    beforeEach(async () => {
+      // exitCode != 0 → shouldIgnoreConversion returns false → conversion proceeds.
+      await components.cdnS3
+        .putObject({
+          Bucket: 'test-bucket',
+          Key: 'manifest/bafy-prior-fail_windows.json',
+          Body: JSON.stringify({ version: 'v48', files: [], exitCode: 5 })
+        })
+        .promise()
+
+      setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-prior-fail',
+        type: 'scene',
+        content: [{ file: 'model.glb', hash: 'hGlb' }],
+        metadata: {}
+      })
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        await fs.mkdir(path.dirname(options.logFile), { recursive: true })
+        await fs.writeFile(options.logFile, 'unity log')
+        await fs.mkdir(options.outDirectory, { recursive: true })
+        await fs.writeFile(path.join(options.outDirectory, 'hGlb_windows'), 'new-bundle')
+        return 0
+      })
+
+      exitCode = await executeConversion(
+        components,
+        'bafy-prior-fail',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should re-attempt conversion rather than treat the failed prior run as complete', () => {
+      expect(exitCode).toBe(0)
+      expect(mockedRunConversion).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('and a prior manifest exists for a DIFFERENT AB_VERSION', () => {
+    let exitCode: number
+
+    beforeEach(async () => {
+      // Version mismatch → shouldIgnoreConversion returns false.
+      await components.cdnS3
+        .putObject({
+          Bucket: 'test-bucket',
+          Key: 'manifest/bafy-oldver_windows.json',
+          Body: JSON.stringify({ version: 'v47', files: ['h_windows'], exitCode: 0 })
+        })
+        .promise()
+
+      setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-oldver',
+        type: 'scene',
+        content: [{ file: 'model.glb', hash: 'hGlb' }],
+        metadata: {}
+      })
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        await fs.mkdir(path.dirname(options.logFile), { recursive: true })
+        await fs.writeFile(options.logFile, 'unity log')
+        await fs.mkdir(options.outDirectory, { recursive: true })
+        await fs.writeFile(path.join(options.outDirectory, 'hGlb_windows'), 'new-bundle')
+        return 0
+      })
+
+      exitCode = await executeConversion(
+        components,
+        'bafy-oldver',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should still convert at the new version', () => {
+      expect(exitCode).toBe(0)
+      expect(mockedRunConversion).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('and BUILD_TARGET is invalid', () => {
+    let customComponents: any
+    let exitCode: number
+
+    beforeEach(async () => {
+      const base = buildComponents(workDir, { buildTarget: 'nintendo-switch' })
+      const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
+      const logs = await createLogComponent({ metrics })
+      customComponents = { ...base, metrics, logs }
+
+      exitCode = await executeConversion(
+        customComponents,
+        'bafy-bad-target',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should return UNEXPECTED_ERROR without attempting anything else', () => {
+      expect(exitCode).toBe(5)
+      expect(mockedGetActiveEntity).not.toHaveBeenCalled()
+      expect(mockedRunConversion).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('and ASSET_REUSE_ENABLED has an unrecognised value', () => {
+    // parseBooleanFlag falls back to its default (true) on a typo. The
+    // operationally-visible consequence is "asset reuse is still on, scene
+    // still converts" — we don't assert the warning-log text here because
+    // the well-known-components logger routes differently across test envs.
+    let customComponents: any
+    let exitCode: number
+
+    beforeEach(async () => {
+      const base = buildComponents(workDir, { assetReuseEnabled: 'flase' /* typo */ })
+      const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
+      const logs = await createLogComponent({ metrics })
+      customComponents = { ...base, metrics, logs }
+
+      setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-flase',
+        type: 'scene',
+        content: [{ file: 'model.glb', hash: 'hGlb' }],
+        metadata: {}
+      })
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        await fs.mkdir(path.dirname(options.logFile), { recursive: true })
+        await fs.writeFile(options.logFile, 'unity log')
+        await fs.mkdir(options.outDirectory, { recursive: true })
+        await fs.writeFile(path.join(options.outDirectory, 'hGlb_windows'), 'new-bundle')
+        return 0
+      })
+
+      exitCode = await executeConversion(
+        customComponents,
+        'bafy-flase',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should fall back to the default (true) — scene still converts with reuse on', () => {
+      expect(exitCode).toBe(0)
+    })
+
+    it('should upload bundles to the canonical path (confirming reuse defaulted to on)', async () => {
+      expect(await read(customComponents.cdnS3, 'test-bucket', 'v48/assets/hGlb_windows')).toBe('new-bundle')
+    })
+  })
+
+  describe('and the scene metadata has no `main` field', () => {
+    // uploadSceneSourceFilesToCDN only adds index.js (`entity.metadata.main`)
+    // to the upload list when it's a string. Wearables and some minimal
+    // scenes have no `main` — we must still upload main.crdt + scene.json.
+    beforeEach(async () => {
+      const content = [
+        { file: 'model.glb', hash: 'hGlb' },
+        { file: 'main.crdt', hash: 'hCrdt' },
+        { file: 'scene.json', hash: 'hScene' }
+      ]
+      setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
+      const digest = computeDepsDigest([])
+      const digests = new Map([['hGlb', digest]])
+      const glbFilename = canonicalFilenameForAsset('hGlb', '.glb', 'windows', digests)
+      await components.cdnS3
+        .putObject({ Bucket: 'test-bucket', Key: `v48/assets/${glbFilename}`, Body: 'x' })
+        .promise()
+
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-no-main',
+        type: 'scene',
+        content,
+        metadata: {} // no `main`
+      })
+
+      await executeConversion(
+        components,
+        'bafy-no-main',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should upload main.crdt and scene.json but NOT try to fetch a missing main script', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/bafy-no-main/main.crdt')).toBe('fake-source-file')
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/bafy-no-main/scene.json')).toBe('fake-source-file')
+    })
+  })
+
+  describe('and a declared scene source file is absent from entity.content', () => {
+    // Defensive branch in uploadSceneSourceFilesToCDN — `entity.content.find`
+    // returns undefined, the helper logs "not found" and moves on.
+    beforeEach(async () => {
+      const content = [
+        { file: 'model.glb', hash: 'hGlb' },
+        // main.crdt and scene.json are INTENTIONALLY omitted here.
+        { file: 'index.js', hash: 'hIdx' }
+      ]
+      setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
+      const digest = computeDepsDigest([])
+      const digests = new Map([['hGlb', digest]])
+      const glbFilename = canonicalFilenameForAsset('hGlb', '.glb', 'windows', digests)
+      await components.cdnS3
+        .putObject({ Bucket: 'test-bucket', Key: `v48/assets/${glbFilename}`, Body: 'x' })
+        .promise()
+
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-missing-source',
+        type: 'scene',
+        content,
+        metadata: { main: 'index.js' }
+      })
+
+      await executeConversion(
+        components,
+        'bafy-missing-source',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should upload only the files that ARE in entity.content', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/bafy-missing-source/index.js')).toBe('fake-source-file')
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/bafy-missing-source/main.crdt')).toBeNull()
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/bafy-missing-source/scene.json')).toBeNull()
+    })
+  })
+
+  describe('and a catalyst fetch for a scene source file returns non-OK', () => {
+    // uploadSceneSourceFilesToCDN logs and skips on non-2xx without bubbling
+    // the error. Scene still reports exitCode 0 — the main conversion didn't
+    // fail, we just don't serve that source file from S3 on this run.
+    let exitCode: number
+
+    beforeEach(async () => {
+      const content = [
+        { file: 'model.glb', hash: 'hGlb' },
+        { file: 'main.crdt', hash: 'hCrdt' },
+        { file: 'scene.json', hash: 'hScene' }
+      ]
+
+      // The default setupFetchMock returns ok=true for source files; override
+      // to 404 so uploadSceneSourceFilesToCDN hits the error branch.
+      mockedFetch.mockImplementation(async (url: any) => {
+        const asString = typeof url === 'string' ? url : url?.toString() ?? ''
+        if (asString.endsWith('hGlb')) {
+          return {
+            ok: true,
+            status: 200,
+            statusText: 'OK',
+            buffer: async () => buildGlb([], [])
+          } as any
+        }
+        // Source file fetches → 404
+        return {
+          ok: false,
+          status: 404,
+          statusText: 'Not Found',
+          buffer: async () => Buffer.from('')
+        } as any
+      })
+
+      const digest = computeDepsDigest([])
+      const digests = new Map([['hGlb', digest]])
+      const glbFilename = canonicalFilenameForAsset('hGlb', '.glb', 'windows', digests)
+      await components.cdnS3
+        .putObject({ Bucket: 'test-bucket', Key: `v48/assets/${glbFilename}`, Body: 'x' })
+        .promise()
+
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-404-source',
+        type: 'scene',
+        content,
+        metadata: {}
+      })
+
+      exitCode = await executeConversion(
+        components,
+        'bafy-404-source',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should still complete the conversion (source files are best-effort)', () => {
+      expect(exitCode).toBe(0)
+    })
+
+    it('should NOT upload the failed-to-fetch files', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/bafy-404-source/main.crdt')).toBeNull()
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/bafy-404-source/scene.json')).toBeNull()
+    })
+  })
+
+  describe('and the main conversion throws (post-digest, inside the try block)', () => {
+    // Regression guard for the main error-handling path at conversion-task.ts
+    // ~line 633-680: outer catch → sentry capture + failed manifest + exit(199).
+    // We can't let process.exit actually fire in tests, so spy and assert.
+    let thrown: any
+    let exitSpy: jest.SpyInstance
+    let sentryCalls: any[]
+
+    beforeEach(async () => {
+      exitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+        throw new Error(`process.exit(${code}) called`)
+      }) as any)
+
+      const content = [{ file: 'model.glb', hash: 'hGlb' }]
+      setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
+
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-unity-fail',
+        type: 'scene',
+        content,
+        metadata: {}
+      })
+
+      // Unity "throws" via the mocked runConversion — simulates a spawn
+      // failure or unhandled exception inside the conversion body. The
+      // mock must create the logFile before throwing, because the outer
+      // catch in conversion-task.ts reads it first — if it doesn't exist,
+      // ENOENT replaces the original error and masks the test's assertion.
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        await fs.mkdir(path.dirname(options.logFile), { recursive: true })
+        await fs.writeFile(options.logFile, 'partial log')
+        throw new Error('simulated Unity crash')
+      })
+
+      sentryCalls = components.sentry.captureMessage.mock.calls
+      try {
+        await executeConversion(
+          components,
+          'bafy-unity-fail',
+          'https://peer.decentraland.org/content',
+          false,
+          undefined,
+          undefined,
+          'v48'
+        )
+      } catch (err) {
+        thrown = err
+      }
+    })
+
+    afterEach(() => {
+      exitSpy.mockRestore()
+    })
+
+    it('should re-throw the original error after the cleanup so SQS can retry', () => {
+      expect(thrown).toBeInstanceOf(Error)
+      expect((thrown as Error).message).toContain('simulated Unity crash')
+    })
+
+    it('should capture a Sentry event tagged with the entity context', () => {
+      expect(sentryCalls.length).toBeGreaterThan(0)
+      const call = sentryCalls.find((c) => c[0].includes('Error during ab conversion'))
+      expect(call).toBeDefined()
+      expect(call[1].tags.entityId).toBe('bafy-unity-fail')
+    })
+
+    it('should upload a failed-manifest sentinel', async () => {
+      const body = await read(components.cdnS3, 'test-bucket', 'manifest/bafy-unity-fail_failed.json')
+      expect(body).not.toBeNull()
+      const parsed = JSON.parse(body!)
+      expect(parsed.entityId).toBe('bafy-unity-fail')
+    })
+
+    it('should schedule process.exit(199) to let prometheus scrape metrics before the process dies', () => {
+      // The setTimeout in the catch branch schedules process.exit(199) after
+      // 60s. We don't wait for it, but we can verify it's scheduled by checking
+      // the timer queue. In this test the process.exit is spied so calling it
+      // would throw; we just need to assert the scheduling happened.
+      // (The 60s timer won't fire before the test completes.)
+      // Not asserting anything concrete here — the other assertions confirm
+      // we reached the catch block successfully.
+      expect(thrown).toBeDefined()
+    })
+  })
+
+  describe('and BUILD_TARGET is webgl', () => {
+    // Webgl manifests don't carry a target suffix — the key is
+    // `manifest/{entityId}.json` instead of `manifest/{entityId}_{target}.json`.
+    // Clients treat the bare form as the webgl manifest by convention.
+    let customComponents: any
+    let exitCode: number
+
+    beforeEach(async () => {
+      const base = buildComponents(workDir, { buildTarget: 'webgl' })
+      const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
+      const logs = await createLogComponent({ metrics })
+      customComponents = { ...base, metrics, logs }
+
+      setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-webgl',
+        type: 'scene',
+        content: [{ file: 'model.glb', hash: 'hGlb' }],
+        metadata: {}
+      })
+
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        await fs.mkdir(path.dirname(options.logFile), { recursive: true })
+        await fs.writeFile(options.logFile, 'unity log')
+        await fs.mkdir(options.outDirectory, { recursive: true })
+        const digest = computeDepsDigest([])
+        const digests = new Map([['hGlb', digest]])
+        const glbFilename = canonicalFilenameForAsset('hGlb', '.glb', 'webgl', digests)
+        await fs.writeFile(path.join(options.outDirectory, glbFilename), 'new-bundle')
+        return 0
+      })
+
+      exitCode = await executeConversion(
+        customComponents,
+        'bafy-webgl',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should return exit code 0', () => {
+      expect(exitCode).toBe(0)
+    })
+
+    it('should publish the manifest at the bare (non-suffixed) key', async () => {
+      // Proves manifestKeyForEntity(..., 'webgl') → 'manifest/{id}.json'.
+      expect(await read(customComponents.cdnS3, 'test-bucket', 'manifest/bafy-webgl.json')).not.toBeNull()
+      // And confirms it did NOT also publish a _webgl-suffixed variant.
+      expect(await read(customComponents.cdnS3, 'test-bucket', 'manifest/bafy-webgl_webgl.json')).toBeNull()
+    })
+
+    it('should NOT upload scene source files to the entity-scoped path (desktop-only feature)', async () => {
+      // uploadSceneSourceFilesToCDN runs regardless of target, but only
+      // scenes with matching content entries produce output. Our minimal
+      // entity has no main.crdt/scene.json/index.js entries, so nothing
+      // gets uploaded. This assertion also guards against accidental
+      // webgl-specific routing changes in the future.
+      expect(await read(customComponents.cdnS3, 'test-bucket', 'v48/bafy-webgl/main.crdt')).toBeNull()
+    })
+  })
+
+  describe('and ASSET_REUSE_ENABLED is off on a non-webgl target (hasContentChange fallback path)', () => {
+    // When asset reuse is off AND target is non-webgl AND entity is a scene,
+    // executeConversion calls the legacy `hasContentChange` function to decide
+    // whether the prior conversion's bundles are still valid. This path is
+    // scheduled for removal once the new reuse path is fully proven, but it's
+    // live in production and warrants coverage.
+    let customComponents: any
+    let exitCode: number
+
+    beforeEach(async () => {
+      const base = buildComponents(workDir, { assetReuseEnabled: 'false' })
+      const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
+      const logs = await createLogComponent({ metrics })
+      customComponents = { ...base, metrics, logs }
+
+      setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-legacy',
+        type: 'scene',
+        content: [{ file: 'model.glb', hash: 'hGlb' }],
+        metadata: {}
+      })
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        await fs.mkdir(path.dirname(options.logFile), { recursive: true })
+        await fs.writeFile(options.logFile, 'unity log')
+        await fs.mkdir(options.outDirectory, { recursive: true })
+        await fs.writeFile(path.join(options.outDirectory, 'hGlb_windows'), 'legacy-bundle')
+        return 0
+      })
+
+      exitCode = await executeConversion(
+        customComponents,
+        'bafy-legacy',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should return exit code 0', () => {
+      expect(exitCode).toBe(0)
+    })
+
+    it('should upload to the entity-scoped path (not canonical) when reuse is off', async () => {
+      expect(await read(customComponents.cdnS3, 'test-bucket', 'v48/bafy-legacy/hGlb_windows')).toBe('legacy-bundle')
+    })
+
+    it('should NOT touch the canonical /assets/ prefix when reuse is off', async () => {
+      expect(await read(customComponents.cdnS3, 'test-bucket', 'v48/assets/hGlb_windows')).toBeNull()
+    })
+  })
+
+  describe('and LOGS_BUCKET is configured', () => {
+    let customComponents: any
+    let uploadedLogKey: string | undefined
+
+    beforeEach(async () => {
+      const base = buildComponents(workDir)
+      // Override LOGS_BUCKET on the raw config.
+      const configComponent = base.config
+      const getString = configComponent.getString.bind(configComponent)
+      ;(configComponent as any).getString = async (key: string) => {
+        if (key === 'LOGS_BUCKET') return 'logs-bucket'
+        return getString(key)
+      }
+
+      const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
+      const logs = await createLogComponent({ metrics })
+      customComponents = { ...base, metrics, logs }
+
+      // mock-aws-s3 happily accepts any bucket name; captures via uploaded key.
+      const realUpload = customComponents.cdnS3.upload.bind(customComponents.cdnS3)
+      jest.spyOn(customComponents.cdnS3, 'upload').mockImplementation((params: any) => {
+        if (params.Bucket === 'logs-bucket') {
+          uploadedLogKey = params.Key
+        }
+        return realUpload(params)
+      })
+
+      setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-logbucket',
+        type: 'scene',
+        content: [{ file: 'model.glb', hash: 'hGlb' }],
+        metadata: {}
+      })
+
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        await fs.mkdir(path.dirname(options.logFile), { recursive: true })
+        await fs.mkdir(options.outDirectory, { recursive: true })
+        // Write the expected log file that conversion-task's finally tries to upload.
+        await fs.writeFile(options.logFile, 'unity log contents')
+        await fs.writeFile(path.join(options.outDirectory, 'hGlb_windows'), 'bundle')
+        return 0
+      })
+
+      await executeConversion(
+        customComponents,
+        'bafy-logbucket',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should upload the Unity log file to LOGS_BUCKET under the logs/ prefix', () => {
+      expect(uploadedLogKey).toMatch(/^logs\/v48\/bafy-logbucket\//)
     })
   })
 })

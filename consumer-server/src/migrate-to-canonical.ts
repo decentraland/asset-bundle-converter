@@ -358,7 +358,16 @@ Usage: yarn migrate --ab-version <v> --target <webgl|windows|mac> [options]
 
 Copy existing {AB_VERSION}/{entityId}/{hash}_{target}* bundles into the
 canonical {AB_VERSION}/assets/ layout. glb/gltf bundles land at
-{hash}_{depsDigest}_{target}; bins and textures at {hash}_{target}.
+{hash}_{entityWideDepsDigest}_{target}; bins and textures at {hash}_{target}.
+
+NOTE: the current converter uses per-glb digests (not entity-wide) for new
+conversions, producing {hash}_{perGlbDigest}_{target} keys. The two key
+shapes coexist safely under the same AB_VERSION — different digest strings
+produce byte-distinct filenames, so this script's entity-wide-digest copies
+don't collide with new per-glb-digest uploads. Running the script today is
+still valid for its original purpose (backfilling pre-PR-#258 entity-scoped
+bundles into canonical), though clients of scenes with newer manifests
+already resolve via the per-glb paths and don't need the backfill.
 
 Options:
   --ab-version <v>            AB_VERSION prefix (e.g. v48). Required.

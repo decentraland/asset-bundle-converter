@@ -1,7 +1,7 @@
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { closeSync, openSync } from 'fs'
 import * as fs from 'fs/promises'
-import { dirname } from 'path'
+import { dirname, resolve } from 'path'
 import { AppComponents } from '../types'
 import { execCommand } from './run-command'
 import { spawn } from 'child_process'
@@ -148,7 +148,7 @@ export async function runConversion(
     animation: string | undefined
     doISS: boolean | undefined
     cachedHashes?: string[]
-    depsDigest?: string
+    depsDigestByHash?: ReadonlyMap<string, string>
   }
 ) {
   await setupStartDirectories(options)
@@ -198,18 +198,53 @@ export async function runConversion(
     childArguments.push('-cachedHashes', options.cachedHashes.join(';'))
   }
 
-  if (options.depsDigest) {
-    // Tells Unity to emit `{hash}_{depsDigest}_{target}` bundles for glb/gltf
-    // assets so the canonical key factors in the entity's dep set.
-    childArguments.push('-depsDigest', options.depsDigest)
-  }
+  // Per-asset deps digests go out via a temp JSON file rather than an inline
+  // CLI arg: a scene with dozens of glbs × 96 chars per entry would push the
+  // arg string close to argv limits and fight shell-escaping on Windows. Unity
+  // reads the file in `ParseCommonSettings`.
+  //
+  // The file is written ADJACENT to outDirectory (not inside it) so that even
+  // if our best-effort unlink in the finally below fails, the orphan can't be
+  // picked up by `readdir(outDirectory)` in conversion-task.ts (it'd land in
+  // the entity manifest) or by `uploadDir`'s `**/*` match (it'd land at
+  // `{AB_VERSION}/assets/deps-digests.json` on S3).
+  //
+  // `path.resolve` normalizes any trailing slashes — otherwise
+  // `"/tmp/entity_X/" + ".deps-digests.json"` would land *inside* the
+  // directory and silently reintroduce the leak class this guards against.
+  //
+  // The path is decided before the try so the finally can clean up regardless
+  // of whether writeFile succeeded, partially succeeded (disk full mid-write),
+  // or threw before creating the file — fs.unlink swallows ENOENT for us.
+  const depsDigestsFile =
+    options.depsDigestByHash && options.depsDigestByHash.size > 0
+      ? `${resolve(options.outDirectory)}.deps-digests.json`
+      : undefined
 
-  return await executeProgram({
-    logger,
-    components,
-    childArg0,
-    childArguments,
-    projectPath: options.projectPath,
-    timeout: options.timeout
-  })
+  try {
+    if (depsDigestsFile && options.depsDigestByHash) {
+      const payload: Record<string, string> = {}
+      for (const [hash, digest] of options.depsDigestByHash) payload[hash] = digest
+      await fs.writeFile(depsDigestsFile, JSON.stringify(payload), 'utf8')
+      childArguments.push('-depsDigestsFile', depsDigestsFile)
+    }
+
+    return await executeProgram({
+      logger,
+      components,
+      childArg0,
+      childArguments,
+      projectPath: options.projectPath,
+      timeout: options.timeout
+    })
+  } finally {
+    if (depsDigestsFile) {
+      // Best-effort — the outer teardown will also rimraf `outDirectory`, so
+      // failing here is harmless. Runs even when writeFile crashed mid-write
+      // so a half-written sidecar can't leak past the process.
+      try {
+        await fs.unlink(depsDigestsFile)
+      } catch {}
+    }
+  }
 }

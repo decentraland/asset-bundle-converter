@@ -5,6 +5,7 @@ import * as fs from 'fs/promises'
 import * as crypto from 'crypto'
 import { AppComponents } from '../types'
 import { bufferExtensions, fileExtension, gltfExtensions, textureExtensions } from './extensions'
+import { parseGltfDepRefs, resolveUriToContentFile } from './gltf-deps'
 import { isS3NotFound } from './s3-helpers'
 
 // Re-export so callers still referencing `asset-reuse.ts` for this helper keep
@@ -52,9 +53,11 @@ export type AssetCacheResult = {
   // (short-circuit manifest emit, post-Unity manifest append) don't have to
   // reconstruct the composite form.
   canonicalNameByHash: Record<string, string>
-  // Entity-wide deps digest — passed to Unity so it names glb/gltf bundles with
-  // the same composite key we probe and upload to.
-  depsDigest: string
+  // Per-glb/gltf deps digest — keyed by asset hash. Passed to Unity so it names
+  // each glb/gltf bundle with the same composite key we probed and will upload to.
+  // Non-glb entries (textures, buffers) don't appear in this map; their canonical
+  // filename is hash-only.
+  depsDigestByHash: ReadonlyMap<string, string>
 }
 
 /**
@@ -95,9 +98,14 @@ export function computeDepsDigest(entityContent: ReadonlyArray<{ file: string; h
 
 /**
  * Build the canonical bundle filename Unity's output drops into
- * `{abVersion}/assets/{filename}`. glb/gltf filenames embed the entity-wide
- * depsDigest; BINs and textures are keyed by hash alone (they're leaves with
- * no inbound dep refs from their own bundle).
+ * `{abVersion}/assets/{filename}`. glb/gltf filenames embed a `depsDigest`;
+ * BINs and textures are keyed by hash alone (they're leaves with no inbound
+ * dep refs from their own bundle).
+ *
+ * The digest input is an opaque string — callers decide whether it's an
+ * entity-wide aggregate (legacy: `migrate-to-canonical.ts`) or a per-asset
+ * digest (current: `checkAssetCache` via `canonicalFilenameForAsset`). This
+ * function doesn't care, it just concatenates.
  *
  * Exported for unit testing and so the migration script produces keys that
  * match this function's rules exactly.
@@ -105,6 +113,30 @@ export function computeDepsDigest(entityContent: ReadonlyArray<{ file: string; h
 export function canonicalFilename(hash: string, ext: string, target: string, depsDigest: string): string {
   if (GLTF_EXTENSIONS_SET.has(ext)) {
     return `${hash}_${depsDigest}_${target}`
+  }
+  return `${hash}_${target}`
+}
+
+/**
+ * Per-asset-digest variant of `canonicalFilename`. Looks up the digest for this
+ * specific asset hash in the map produced by `computePerAssetDigests`.
+ *
+ * Throws for glb/gltf hashes missing from the map — that would mean the caller
+ * is probing an asset whose deps we haven't digested, and silently falling back
+ * to a bare `{hash}_{target}` name would mis-align the probe key with the
+ * filename Unity will emit. Missing digest for non-glb extensions is fine
+ * (they're leaves; the map isn't expected to contain them).
+ */
+export function canonicalFilenameForAsset(
+  hash: string,
+  ext: string,
+  target: string,
+  depsDigestByHash: ReadonlyMap<string, string>
+): string {
+  if (GLTF_EXTENSIONS_SET.has(ext)) {
+    const digest = depsDigestByHash.get(hash)
+    if (!digest) throw new Error(`missing per-asset deps digest for glb/gltf hash ${hash}`)
+    return `${hash}_${digest}_${target}`
   }
   return `${hash}_${target}`
 }
@@ -242,17 +274,122 @@ export async function mapBounded<T, R>(items: T[], concurrency: number, fn: (ite
   return results
 }
 
+/**
+ * Fetcher function used by `computePerAssetDigests` to pull glb/gltf bytes
+ * from the catalyst. Kept as a plain parameter (rather than a component
+ * dependency) so tests can swap in a memory-backed fetcher without mocking
+ * `node-fetch`.
+ */
+export type GltfFetcher = (url: string) => Promise<Buffer>
+
+/**
+ * Default fetcher — wraps `node-fetch` with a non-ok status check. Kept out of
+ * the module-level imports so `asset-reuse.ts` stays importable from pure-unit
+ * test paths that don't want to pull in `node-fetch`'s transitive deps.
+ */
+async function defaultGltfFetcher(url: string): Promise<Buffer> {
+  const { default: fetch } = await import('node-fetch')
+  const res = await fetch(url)
+  if (!res.ok) {
+    throw new Error(`failed to fetch ${url}: ${res.status} ${res.statusText}`)
+  }
+  return await res.buffer()
+}
+
+/**
+ * Compute a per-glb/gltf deps digest for every gltf-extension asset in the
+ * entity. For each glb/gltf: download the bytes, parse the embedded JSON to
+ * enumerate its external URI refs, resolve each URI against `entity.content`
+ * to get the `{file, hash}` tuples the glb actually depends on, and hash
+ * that subset through `computeDepsDigest`.
+ *
+ * Two glbs with identical referenced dep sets (same file names, same content
+ * hashes) produce identical digests regardless of ordering inside the glTF
+ * JSON — guaranteed by `parseGltfDepRefs` dedup+sort on the way in and by
+ * `computeDepsDigest`'s own sort. Two glbs whose dep sets differ in any entry
+ * produce distinct digests.
+ *
+ * Malformed glTF / missing URI target / invalid percent-encoding: the promise
+ * rejects. Callers (scene conversion) convert this into a scene failure, which
+ * matches what Unity would do if it tried to convert the same bad content.
+ */
+export async function computePerAssetDigests(
+  entity: Pick<Entity, 'content'>,
+  contentServerUrl: string,
+  options?: { fetcher?: GltfFetcher; concurrency?: number }
+): Promise<Map<string, string>> {
+  const fetcher = options?.fetcher ?? defaultGltfFetcher
+  // 20 in-flight catalyst fetches — below the S3 HEAD probe concurrency (50)
+  // because catalyst fetches are heavier and more rate-limit-sensitive, but
+  // high enough to amortize TCP/TLS setup across a scene with dozens of glbs.
+  const concurrency = options?.concurrency ?? 20
+
+  const content = entity.content ?? []
+  const contentByFile = new Map<string, string>()
+  for (const c of content) contentByFile.set(c.file, c.hash)
+
+  // Normalize catalyst base URL to the `/contents/` endpoint — same convention
+  // as `uploadSceneSourceFilesToCDN`. The caller already has a URL shaped for
+  // entity fetches; we have to resolve it to the per-hash content endpoint.
+  let contentsBaseUrl = contentServerUrl
+  if (!contentsBaseUrl.endsWith('/')) contentsBaseUrl += '/'
+  if (contentsBaseUrl !== 'https://sdk-team-cdn.decentraland.org/ipfs/' && !contentsBaseUrl.endsWith('contents/')) {
+    contentsBaseUrl += 'contents/'
+  }
+
+  const gltfEntries = content.filter((e) => GLTF_EXTENSIONS_SET.has(fileExtension(e.file)))
+  const digests = new Map<string, string>()
+  if (gltfEntries.length === 0) return digests
+
+  const results = await mapBounded(gltfEntries, concurrency, async (entry) => {
+    const ext = fileExtension(entry.file) as '.glb' | '.gltf'
+    const bytes = await fetcher(`${contentsBaseUrl}${entry.hash}`)
+    const uris = parseGltfDepRefs(bytes, ext)
+
+    // Resolve URIs against entity content, dedup on (file, hash) — the glTF
+    // URI layer already dedups by URI, but two distinct URIs could resolve to
+    // the same content file via percent-encoding variants or path aliases.
+    const seen = new Set<string>()
+    const deps: Array<{ file: string; hash: string }> = []
+    for (const uri of uris) {
+      const resolved = resolveUriToContentFile(uri, entry.file)
+      const hash = contentByFile.get(resolved)
+      if (!hash) {
+        throw new Error(
+          `glTF ${entry.file} references "${uri}" (resolved to "${resolved}") which is not in the entity content`
+        )
+      }
+      const key = `${resolved}\0${hash}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      deps.push({ file: resolved, hash })
+    }
+
+    return { hash: entry.hash, digest: computeDepsDigest(deps) }
+  })
+
+  for (const { hash, digest } of results) digests.set(hash, digest)
+  return digests
+}
+
 type CheckAssetCacheParams = {
   entity: Pick<Entity, 'content'>
   abVersion: string
   buildTarget: string
   cdnBucket: string
   concurrency?: number
-  /** Pre-computed entity deps digest. When supplied, skips the re-computation
-   * that would otherwise happen inside `checkAssetCache`. Callers that also
-   * need the digest (e.g. to pass `-depsDigest` to Unity independently of
-   * whether the probe succeeded) should compute once and pass it through. */
-  depsDigest?: string
+  /** Pre-computed per-asset deps digests keyed by asset hash. When supplied,
+   * skips the re-computation that would otherwise happen inside
+   * `checkAssetCache`. Callers that also need the digests (e.g. to pass to
+   * Unity independently of whether the probe succeeded) should compute once
+   * and pass through. Required in practice because computing digests involves
+   * downloading glb bytes — the caller already has a catalyst URL in context. */
+  depsDigestByHash?: ReadonlyMap<string, string>
+  /** Catalyst URL used to download glb/gltf bytes when `depsDigestByHash` is
+   * not supplied. Ignored when `depsDigestByHash` is provided. */
+  contentServerUrl?: string
+  /** Injectable fetcher for glb bytes — forwarded to `computePerAssetDigests`. */
+  fetcher?: GltfFetcher
 }
 
 /**
@@ -270,7 +407,15 @@ export async function checkAssetCache(
   const concurrency = params.concurrency ?? 50
   const logger = components.logs.getLogger('AssetReuse')
 
-  const depsDigest = params.depsDigest ?? computeDepsDigest(entity.content ?? [])
+  let depsDigestByHash: ReadonlyMap<string, string>
+  if (params.depsDigestByHash) {
+    depsDigestByHash = params.depsDigestByHash
+  } else {
+    if (!params.contentServerUrl) {
+      throw new Error('checkAssetCache: either depsDigestByHash or contentServerUrl must be supplied')
+    }
+    depsDigestByHash = await computePerAssetDigests(entity, params.contentServerUrl, { fetcher: params.fetcher })
+  }
 
   type Probe = { hash: string; skippable: boolean; filename: string; key: string }
   const seen = new Set<string>()
@@ -285,7 +430,7 @@ export async function checkAssetCache(
     if (!PROBE_EXTENSIONS.has(ext)) continue
     if (seen.has(entry.hash)) continue
     seen.add(entry.hash)
-    const filename = canonicalFilename(entry.hash, ext, buildTarget, depsDigest)
+    const filename = canonicalFilenameForAsset(entry.hash, ext, buildTarget, depsDigestByHash)
     probes.push({
       hash: entry.hash,
       skippable: UNITY_SKIPPABLE_EXTENSIONS.has(ext),
@@ -300,7 +445,7 @@ export async function checkAssetCache(
       missingHashes: [],
       unitySkippableHashes: [],
       canonicalNameByHash: {},
-      depsDigest
+      depsDigestByHash
     }
   }
 
@@ -372,10 +517,10 @@ export async function checkAssetCache(
     unitySkippable: unitySkippableHashes.length,
     hitCacheServed,
     headRequests: pendingIdx.length,
-    depsDigest
+    gltfAssetsDigested: depsDigestByHash.size
   } as any)
 
-  return { cachedHashes, missingHashes, unitySkippableHashes, canonicalNameByHash, depsDigest }
+  return { cachedHashes, missingHashes, unitySkippableHashes, canonicalNameByHash, depsDigestByHash }
 }
 
 /**

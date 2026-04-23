@@ -10,7 +10,7 @@ import { hasContentChange } from './has-content-changed-task'
 import { getUnityBuildTarget } from '../utils'
 import { getActiveEntity } from './fetch-entity-by-pointer'
 import fetch from 'node-fetch'
-import { checkAssetCache, computeDepsDigest, purgeCachedBundlesFromOutput, AssetCacheResult } from './asset-reuse'
+import { checkAssetCache, computePerAssetDigests, purgeCachedBundlesFromOutput, AssetCacheResult } from './asset-reuse'
 
 type Manifest = {
   version: string
@@ -407,8 +407,51 @@ export async function executeConversion(
   // Computed eagerly (not from cacheResult) so the glb/gltf composite key stays
   // well-defined even when the probe throws and cacheResult ends up null —
   // otherwise a probe failure would silently reintroduce the hash-only collision
-  // bug by asking Unity to emit bare `{hash}_{target}` names.
-  const depsDigest = useAssetReuse && entity ? computeDepsDigest(entity.content ?? []) : undefined
+  // bug by asking Unity to emit bare `{hash}_{target}` names. Malformed glTF /
+  // network failures fail this step; rather than letting the error propagate
+  // past service.ts (where it would be swallowed with no failed-manifest
+  // upload and SQS would retry forever against the same broken scene), we
+  // treat it as a scene conversion failure: emit the same observability the
+  // main catch does, publish the failed-manifest sentinel, and return
+  // UNEXPECTED_ERROR.
+  let depsDigestByHash: ReadonlyMap<string, string> | undefined
+  if (useAssetReuse && entity) {
+    try {
+      depsDigestByHash = await computePerAssetDigests(entity, contentServerUrl)
+    } catch (err: any) {
+      logger.error(`Per-asset digest computation failed: ${err?.message ?? err}`, defaultLoggerMetadata as any)
+      components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
+      components.sentry.captureMessage('Per-asset digest computation failed', {
+        level: 'error',
+        tags: {
+          entityId,
+          contentServerUrl,
+          unityBuildTarget,
+          version: abVersion,
+          date: new Date().toISOString()
+        }
+      })
+      try {
+        await components.cdnS3
+          .upload({
+            Bucket: cdnBucket,
+            Key: failedManifestFile,
+            ContentType: 'application/json',
+            Body: JSON.stringify({
+              entityId,
+              contentServerUrl,
+              version: abVersion,
+              error: err?.message ?? String(err),
+              date: new Date().toISOString()
+            }),
+            CacheControl: 'max-age=3600,s-maxage=3600',
+            ACL: 'public-read'
+          })
+          .promise()
+      } catch {}
+      return 5 // UNEXPECTED_ERROR exit code
+    }
+  }
 
   let cacheResult: AssetCacheResult | null = null
   let fullCacheHit = false
@@ -419,7 +462,7 @@ export async function executeConversion(
         abVersion,
         buildTarget: $BUILD_TARGET,
         cdnBucket,
-        depsDigest
+        depsDigestByHash
       })
       const totalProbed = cacheResult.cachedHashes.length + cacheResult.missingHashes.length
       fullCacheHit = totalProbed > 0 && cacheResult.missingHashes.length === 0
@@ -531,7 +574,7 @@ export async function executeConversion(
         animation: animation,
         doISS: doISS,
         cachedHashes: useAssetReuse && cacheResult ? cacheResult.unitySkippableHashes : undefined,
-        depsDigest
+        depsDigestByHash
       })
     } else {
       exitCode = 0

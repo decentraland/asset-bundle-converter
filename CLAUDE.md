@@ -42,14 +42,17 @@ docker run -p 5001:5000 ab-converter  # curl localhost:5001/metrics to verify
 - **Entity** — a scene / wearable / emote. Identified by `entityId` (itself a CID). An entity's `content` is a list of `{file, hash}` pairs fetched from a Decentraland catalyst (`{contentServerUrl}/entities/active`).
 - **Top-level entity manifest** — `manifest/{entityId}[_{target}].json`. Lists bundle filenames that were produced for this entity and the `AB_VERSION` they were produced with. Clients fetch this first to discover what's been converted. Uploaded with `Cache-Control: private, max-age=0, no-cache` — **do not override this**.
 
-## Bundle URL scheme (as of PR #258)
+## Bundle URL scheme (as of PR #258 + per-glb digest)
 
 Two upload paths exist simultaneously:
 
 ```
-{AB_VERSION}/assets/{hash}_{target}         # canonical — new PR-#258 path, deduped across scenes
-{AB_VERSION}/{entityId}/{hash}_{target}     # entity-scoped — legacy path, still used when ASSET_REUSE_ENABLED=false
+{AB_VERSION}/assets/{hash}_{depsDigest}_{target}   # canonical glb/gltf, keyed by per-asset dep digest
+{AB_VERSION}/assets/{hash}_{target}                # canonical bin/texture (leaves, no digest)
+{AB_VERSION}/{entityId}/{hash}_{target}            # entity-scoped — legacy path, still used when ASSET_REUSE_ENABLED=false
 ```
+
+`depsDigest` is computed per-glb/gltf from the specific `images[].uri` + `buffers[].uri` it references (resolved against the entity's `content` map). Two scenes sharing a glb CID AND the exact set of referenced deps land at the same canonical path; any difference in the referenced deps produces a distinct path. BINs and textures are leaves — their bundle output doesn't reference siblings, so they stay hash-only.
 
 Per-scene source files stay entity-scoped (genuinely per-scene):
 
@@ -132,3 +135,4 @@ This service doesn't live in isolation. Changes here often imply changes in one 
 Significant functional changes worth capturing here as they land:
 
 - **2026-04 — PR #258**: per-asset reuse via canonical `{AB_VERSION}/assets/` path. `ASSET_REUSE_ENABLED` kill-switch. `yarn migrate` backfill script. Unity `-cachedHashes` CLI flag.
+- **2026-04 — per-glb digest**: replaced the entity-wide `depsDigest` with a per-asset digest derived from each glb/gltf's actual URI references (`images[].uri` + `buffers[].uri`). Consumer-server now parses glb bytes server-side (`src/logic/gltf-deps.ts`) and passes Unity a `{hash → digest}` map via a temp JSON file (`-depsDigestsFile` CLI flag, replaces `-depsDigest`). Two scenes sharing a glb CID and its referenced textures now land at the same canonical path even when the rest of the scene differs, closing the cross-scene reuse gap that the entity-wide digest left open. **No `AB_VERSION` bump required** — the new filename `{hash}_{perGlbDigest}_{target}` is byte-distinct from the pre-change `{hash}_{entityWideDigest}_{target}`, so old manifests continue to resolve to their (still-present) old canonical bundles while new conversions upload to the new per-glb paths. The two populations coexist in `{AB_VERSION}/assets/` without collision; storage grows modestly as old paths become orphaned over time.
