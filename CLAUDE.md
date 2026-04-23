@@ -24,7 +24,7 @@ yarn lint:fix                # eslint --fix (prettier runs via eslint-plugin-pre
 
 # Standalone runnables (after `yarn build`):
 yarn test-conversion         # Runs a real Unity conversion locally. Requires UNITY_PATH + PROJECT_PATH + BUILD_TARGET env + a valid Unity license.
-yarn migrate                 # Backfills old entity-scoped bundles into the canonical prefix. See consumer-server/src/migrate-to-canonical.ts for flags.
+yarn migrate                 # Backfills old entity-scoped bundles into the canonical prefix. Fetches each glb's bytes from the catalyst per entity to compute the per-glb digest (heavier on catalyst than the original entity-wide-digest form — rate-limit-aware). See consumer-server/src/migrate-to-canonical.ts for flags.
 ```
 
 Local Docker:
@@ -115,7 +115,7 @@ This service doesn't live in isolation. Changes here often imply changes in one 
 
 - Deploy **with `ASSET_REUSE_ENABLED=false`** first. Baseline.
 - Flip to `true` **per build target pool** (Windows → Mac → WebGL). Each pool has one `BUILD_TARGET`, so flipping is per-pool.
-- Run `yarn migrate --ab-version {v} --target {webgl|windows|mac}` (dry-run first) to backfill pre-PR entity-scoped bundles into canonical.
+- Run `yarn migrate --ab-version {v} --target {webgl|windows|mac}` (dry-run first) to backfill pre-PR entity-scoped bundles into canonical. The script computes per-glb digests by downloading each glb from the catalyst — noticeably heavier than the previous entity-wide-digest form, so expect longer wall-clock runs and be ready to throttle via `--concurrency` if the catalyst rate-limits. The run is idempotent: re-running after a failure only re-probes (HEAD) the already-canonical objects.
 - Once the canonical prefix is fully populated, swap the Cloudflare Worker for a plain Transform Rule (follow-up MR in `dcl/cloudflare-workers`).
 - Then `hasContentChange` can be deleted here.
 
@@ -136,3 +136,4 @@ Significant functional changes worth capturing here as they land:
 
 - **2026-04 — PR #258**: per-asset reuse via canonical `{AB_VERSION}/assets/` path. `ASSET_REUSE_ENABLED` kill-switch. `yarn migrate` backfill script. Unity `-cachedHashes` CLI flag.
 - **2026-04 — per-glb digest**: replaced the entity-wide `depsDigest` with a per-asset digest derived from each glb/gltf's actual URI references (`images[].uri` + `buffers[].uri`). Consumer-server now parses glb bytes server-side (`src/logic/gltf-deps.ts`) and passes Unity a `{hash → digest}` map via a temp JSON file (`-depsDigestsFile` CLI flag, replaces `-depsDigest`). Two scenes sharing a glb CID and its referenced textures now land at the same canonical path even when the rest of the scene differs, closing the cross-scene reuse gap that the entity-wide digest left open. **No `AB_VERSION` bump required** — the new filename `{hash}_{perGlbDigest}_{target}` is byte-distinct from the pre-change `{hash}_{entityWideDigest}_{target}`, so old manifests continue to resolve to their (still-present) old canonical bundles while new conversions upload to the new per-glb paths. The two populations coexist in `{AB_VERSION}/assets/` without collision; storage grows modestly as old paths become orphaned over time.
+- **2026-04 — migrate-to-canonical ported to per-glb digest**: `yarn migrate` now computes the same per-glb digests the live converter produces (via `computePerAssetDigests` against the catalyst) instead of the entity-wide digest. Re-running the script no longer produces dead storage under the canonical prefix. Requires a reachable catalyst per-entity and one glb-bytes fetch per glb in each kept manifest — noticeably heavier than the original form. New `manifestsDigestFailed` stat distinguishes "catalyst served entity metadata but glb bytes failed to parse" from the existing "entity fetch failed" case. Also added: `Retry-After` honouring in the shared fetcher (parses delta-seconds + HTTP-date, capped at 30 s so a pathological catalyst can't park a worker past SQS visibility). Catalyst fetch from `executeConversion` now bounded at 30 s via the same timeout path.
