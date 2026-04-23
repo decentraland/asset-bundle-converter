@@ -25,7 +25,13 @@
 import arg from 'arg'
 import AWS from 'aws-sdk'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
-import { canonicalFilename, computeDepsDigest, fileExtension, mapBounded } from './logic/asset-reuse'
+import {
+  canonicalFilenameForAsset,
+  computePerAssetDigests,
+  fileExtension,
+  GltfFetcher,
+  mapBounded
+} from './logic/asset-reuse'
 import { getActiveEntity } from './logic/fetch-entity-by-pointer'
 import { isS3NotFound } from './logic/s3-helpers'
 
@@ -42,6 +48,13 @@ export type MigrationStats = {
   manifestsSkipped: number
   manifestsMissingContentServer: number
   manifestsEntityFetchFailed: number
+  /** Manifests whose entity metadata was readable but whose per-glb digest
+   * computation failed (malformed glb, catalyst 404 on a glb byte fetch,
+   * etc.). Distinct from `manifestsEntityFetchFailed` because the catalyst
+   * responded at the `/entities/active` level — it's the glb asset fetch
+   * underneath that failed, and an operator diagnosing the two cases needs
+   * different remediation (reachability vs. content validity). */
+  manifestsDigestFailed: number
   bundlesProbed: number
   bundlesAlreadyCanonical: number
   bundlesCopied: number
@@ -57,6 +70,7 @@ function emptyStats(): MigrationStats {
     manifestsSkipped: 0,
     manifestsMissingContentServer: 0,
     manifestsEntityFetchFailed: 0,
+    manifestsDigestFailed: 0,
     bundlesProbed: 0,
     bundlesAlreadyCanonical: 0,
     bundlesCopied: 0,
@@ -74,8 +88,8 @@ function emptyStats(): MigrationStats {
  * because their canonical copies come from the new converter, not this script).
  *
  * Exported for unit testing: the migration's canonical-key derivation composes
- * this parser with `canonicalFilename` + `computeDepsDigest`, and tests pin
- * that composition against the live converter's key builder.
+ * this parser with `canonicalFilenameForAsset` + `computePerAssetDigests`, and
+ * tests pin that composition against the live converter's key builder.
  */
 export function splitBundleName(filename: string, target: string): { hash: string; variant: string } | null {
   const match = filename.match(new RegExp(`^([^_]+)_${target}(\\.br|\\.manifest|\\.manifest\\.br)?$`))
@@ -152,6 +166,11 @@ export type RunMigrationOptions = {
   /** Catalyst fetcher — normally `getActiveEntity`; tests pass a stub so they
    * don't depend on network fetches. Must return the entity's `.content` array. */
   fetchEntity?: (entityId: string, contentServerUrl: string) => Promise<{ content: { file: string; hash: string }[] }>
+  /** GLB/GLTF byte fetcher used by `computePerAssetDigests`. Forwarded to the
+   * digest-computation helper so tests can stub glb downloads without hitting
+   * a real catalyst. Defaults to the production fetcher that talks to the
+   * catalyst directly (retries + Content-Length guards + streaming). */
+  gltfFetcher?: GltfFetcher
   /** Fallback catalyst URL used when a manifest body doesn't carry its own
    * `contentServerUrl`. Pre-PR manifests were written before we started
    * stamping that field, so for a backfill run the operator should pass
@@ -251,7 +270,7 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
     }
 
     let extByHash: Map<string, string>
-    let depsDigest: string
+    let entityContent: { file: string; hash: string }[]
     try {
       // `getActiveEntity` returns `undefined` (not an error) when the catalyst
       // no longer has the entity active — common for scenes that have been
@@ -262,12 +281,37 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
       if (!entity || !Array.isArray(entity.content)) {
         throw new Error('entity no longer active on catalyst (redeployed or evicted)')
       }
+      entityContent = entity.content
       extByHash = new Map<string, string>()
-      for (const c of entity.content) extByHash.set(c.hash, fileExtension(c.file))
-      depsDigest = computeDepsDigest(entity.content)
+      for (const c of entityContent) extByHash.set(c.hash, fileExtension(c.file))
     } catch (err: any) {
       log(`[${obj.Key}] failed to fetch entity: ${err.message}`)
       stats.manifestsEntityFetchFailed++
+      continue
+    }
+
+    // Per-glb digests match what the live converter uploads today. The pre-PR
+    // entity-wide digest produced a single digest for all glbs in an entity;
+    // the live converter now emits per-glb digests derived from each glb's
+    // actual URI references. Copying bundles under the old entity-wide scheme
+    // here would land them at paths nothing probes — dead storage forever.
+    //
+    // Computing the digest requires downloading each glb's bytes from the
+    // catalyst to parse its external-URI list. That's heavier than the
+    // pre-port path (one-shot hash of entity.content) but matches the live
+    // converter byte-for-byte, which is the invariant we care about.
+    let depsDigestByHash: ReadonlyMap<string, string>
+    try {
+      depsDigestByHash = await computePerAssetDigests({ content: entityContent }, catalystUrl, {
+        fetcher: opts.gltfFetcher
+      })
+    } catch (err: any) {
+      // Catalyst returned 404 on a glb fetch, glb is malformed, URI escapes
+      // entity root, etc. Count separately from entity-fetch failures so an
+      // operator can triage "catalyst unreachable" vs "manifest's entity has
+      // corrupt content" with a single glance at the stats.
+      log(`[${obj.Key}] failed to compute per-glb digests: ${err.message}`)
+      stats.manifestsDigestFailed++
       continue
     }
 
@@ -285,9 +329,23 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
 
       const parts = splitBundleName(filename, target)
       const ext = parts ? (extByHash.get(parts.hash) ?? '') : ''
-      const destFilename = parts
-        ? `${canonicalFilename(parts.hash, ext, target, depsDigest)}${parts.variant}`
-        : filename
+      // `canonicalFilenameForAsset` throws when asked for a glb/gltf hash that
+      // is missing from the digest map — that shouldn't happen here because
+      // `computePerAssetDigests` keys every gltf-extension content entry, but
+      // if an entity was redeployed mid-migration and its glb now points at a
+      // bundle filename that's not in the recomputed digest set, we'd rather
+      // skip that one candidate than abort the whole manifest. Bare-hash
+      // fallback for non-gltf extensions is handled by the callee internally.
+      let destFilename: string
+      try {
+        destFilename = parts
+          ? `${canonicalFilenameForAsset(parts.hash, ext, target, depsDigestByHash)}${parts.variant}`
+          : filename
+      } catch (err: any) {
+        log(`[${obj.Key}/${filename}] canonical-name derivation failed: ${err.message}`)
+        stats.errors++
+        return
+      }
       const canonicalKey = `${canonicalPrefix}/${destFilename}`
       // Held locally and only reflected into stats when the copy actually
       // happens (or would happen in dry-run), so the counter tracks real work
@@ -358,16 +416,17 @@ Usage: yarn migrate --ab-version <v> --target <webgl|windows|mac> [options]
 
 Copy existing {AB_VERSION}/{entityId}/{hash}_{target}* bundles into the
 canonical {AB_VERSION}/assets/ layout. glb/gltf bundles land at
-{hash}_{entityWideDepsDigest}_{target}; bins and textures at {hash}_{target}.
+{hash}_{perGlbDepsDigest}_{target}; bins and textures at {hash}_{target}.
 
-NOTE: the current converter uses per-glb digests (not entity-wide) for new
-conversions, producing {hash}_{perGlbDigest}_{target} keys. The two key
-shapes coexist safely under the same AB_VERSION — different digest strings
-produce byte-distinct filenames, so this script's entity-wide-digest copies
-don't collide with new per-glb-digest uploads. Running the script today is
-still valid for its original purpose (backfilling pre-PR-#258 entity-scoped
-bundles into canonical), though clients of scenes with newer manifests
-already resolve via the per-glb paths and don't need the backfill.
+Per-glb digests match what the live converter uploads today — the script
+downloads each glb's bytes from the catalyst to extract its external-URI
+references and compute the same digest the converter would. That's heavier
+than the original entity-wide-digest backfill, but it's the only scheme
+that produces canonical paths which live converter probes will hit.
+
+Safe to re-run: every candidate is HEAD-probed before copy; already-canonical
+destinations are no-ops. Same-bucket CopyObject is server-side, no egress
+through this process.
 
 Options:
   --ab-version <v>            AB_VERSION prefix (e.g. v48). Required.

@@ -866,6 +866,45 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     })
   })
 
+  describe('and getActiveEntity is invoked', () => {
+    // Regression guard against regressing the catalyst-timeout argument. Without
+    // it, a wedged catalyst would pin the worker slot until SQS visibility
+    // timeout (1-2min) ran out — long enough to starve the pool under a partial
+    // catalyst outage.
+    beforeEach(async () => {
+      setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-timeout-arg',
+        type: 'scene',
+        content: [{ file: 'model.glb', hash: 'hGlb' }],
+        metadata: {}
+      })
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        await fs.mkdir(options.outDirectory, { recursive: true })
+        await fs.writeFile(path.join(options.outDirectory, 'out'), 'x')
+        return 0
+      })
+
+      await executeConversion(
+        components,
+        'bafy-timeout-arg',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should pass a bounded catalyst fetch timeout so a wedged catalyst cannot hold the worker', () => {
+      expect(mockedGetActiveEntity).toHaveBeenCalled()
+      // Args: (entityId, contentServerUrl, timeoutMs)
+      const [, , timeoutMs] = mockedGetActiveEntity.mock.calls[0]
+      expect(typeof timeoutMs).toBe('number')
+      expect(timeoutMs).toBeGreaterThan(0)
+    })
+  })
+
   describe('and a prior successful manifest exists at the same AB_VERSION (shouldIgnoreConversion hit)', () => {
     let exitCode: number
 

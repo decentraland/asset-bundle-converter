@@ -99,28 +99,9 @@ export function computeDepsDigest(entityContent: ReadonlyArray<{ file: string; h
 
 /**
  * Build the canonical bundle filename Unity's output drops into
- * `{abVersion}/assets/{filename}`. glb/gltf filenames embed a `depsDigest`;
- * BINs and textures are keyed by hash alone (they're leaves with no inbound
- * dep refs from their own bundle).
- *
- * The digest input is an opaque string — callers decide whether it's an
- * entity-wide aggregate (legacy: `migrate-to-canonical.ts`) or a per-asset
- * digest (current: `checkAssetCache` via `canonicalFilenameForAsset`). This
- * function doesn't care, it just concatenates.
- *
- * Exported for unit testing and so the migration script produces keys that
- * match this function's rules exactly.
- */
-export function canonicalFilename(hash: string, ext: string, target: string, depsDigest: string): string {
-  if (GLTF_EXTENSIONS_SET.has(ext)) {
-    return `${hash}_${depsDigest}_${target}`
-  }
-  return `${hash}_${target}`
-}
-
-/**
- * Per-asset-digest variant of `canonicalFilename`. Looks up the digest for this
- * specific asset hash in the map produced by `computePerAssetDigests`.
+ * `{abVersion}/assets/{filename}`. glb/gltf filenames embed the per-asset
+ * digest looked up from `depsDigestByHash`; BINs and textures are keyed by
+ * hash alone (they're leaves with no inbound dep refs from their own bundle).
  *
  * Throws for glb/gltf hashes missing from the map — that would mean the caller
  * is probing an asset whose deps we haven't digested, and silently falling back
@@ -151,6 +132,13 @@ export function canonicalFilenameForAsset(
 //
 // The entries are plain canonical keys (`{abVersion}/assets/{hash}_{target}`) so
 // that a version bump or a different build target never returns a false positive.
+// NOTE: keys do NOT include the S3 bucket name — the cache assumes a worker is
+// bound to a single CDN bucket for its lifetime, which is the current deploy
+// shape (one bucket per worker pool). If we ever run a process that probes
+// against multiple buckets (e.g. staging-vs-prod dual-writes), a HIT confirmed
+// in bucket A would spuriously satisfy a later probe for bucket B. Either
+// introduce the bucket into the key or instantiate one cache per bucket
+// before making that deploy change.
 // LRU ordering is maintained via JS Set insertion order — on every hit we
 // delete + re-add the key so it becomes the most-recently-used entry, and on
 // eviction we drop the first (least-recently-used) element.
@@ -292,6 +280,11 @@ const MAX_GLTF_DOWNLOAD_BYTES = 256 * 1024 * 1024
 const GLB_JSON_START = 20
 const GLTF_FETCH_ATTEMPTS = 3
 const GLTF_FETCH_RETRY_BASE_MS = 250
+// Upper bound on a server-supplied `Retry-After`. A catalyst that asks us to
+// wait longer than this is effectively broken for our use case — SQS visibility
+// timeout will retry the whole job sooner, and blocking here just hogs a worker
+// slot. We cap and let the next attempt (or SQS) handle it.
+const MAX_RETRY_AFTER_MS = 30_000
 
 type FetchResponse = {
   ok: boolean
@@ -303,12 +296,68 @@ type FetchResponse = {
 }
 
 class NonRetryableFetchError extends Error {}
-class RetryableFetchError extends Error {}
+class RetryableFetchError extends Error {
+  /** Server-supplied hint (from `Retry-After`) parsed into ms. When set,
+   * `withFetchRetries` uses this instead of its exponential-backoff formula
+   * — the catalyst knows better than we do how long to wait under 429/503. */
+  retryAfterMs?: number
+  constructor(message: string, retryAfterMs?: number) {
+    super(message)
+    this.retryAfterMs = retryAfterMs
+  }
+}
 
+/**
+ * Parse an HTTP `Retry-After` value into milliseconds, clamped to
+ * `[0, MAX_RETRY_AFTER_MS]`. RFC 7231 allows two forms:
+ *   - delta-seconds (e.g. `"120"`) — by far the most common from catalysts.
+ *   - HTTP-date (e.g. `"Wed, 21 Oct 2026 07:28:00 GMT"`) — rarer; clamped
+ *     against `now` so a clock skew doesn't produce a negative delay.
+ *
+ * Returns `undefined` when the header is absent or unparseable — the caller
+ * (`withFetchRetries`) then falls back to its exponential-backoff formula.
+ * We intentionally don't surface parse errors: a malformed Retry-After is a
+ * catalyst bug, not a reason to fail the whole fetch.
+ *
+ * Exported for unit testing.
+ */
+export function parseRetryAfterMs(raw: string | null): number | undefined {
+  if (raw === null) return undefined
+  const trimmed = raw.trim()
+  if (trimmed === '') return undefined
+
+  // delta-seconds: ASCII digits only. `Number('120abc')` would happily parse
+  // to NaN here, but `Number('120')` → 120 and `Number('')` → 0, so we need
+  // an explicit digits-only check to distinguish "0 seconds" from "not a
+  // number".
+  if (/^\d+$/.test(trimmed)) {
+    const seconds = Number(trimmed)
+    return Math.min(Math.max(0, seconds * 1000), MAX_RETRY_AFTER_MS)
+  }
+
+  // Anything remaining must be an HTTP-date — those always contain at least
+  // one letter (weekday / month abbreviation). Without this check,
+  // `Date.parse("-1")` silently succeeds (epoch-ish), and `Date.parse("1.5")`
+  // would slip through on some engines, returning a misleading 0ms delta for
+  // what is actually a malformed numeric value.
+  if (!/[a-zA-Z]/.test(trimmed)) return undefined
+
+  const dateMs = Date.parse(trimmed)
+  if (Number.isNaN(dateMs)) return undefined
+  const delta = dateMs - Date.now()
+  return Math.min(Math.max(0, delta), MAX_RETRY_AFTER_MS)
+}
+
+/**
+ * Read the declared `Content-Length` header as a number, or `-1` when absent.
+ */
 function contentLength(res: { headers: { get(name: string): string | null } }): number {
   return Number(res.headers.get('content-length') ?? '-1')
 }
 
+/**
+ * Convert a full response body into a `Buffer` and enforce the download guard.
+ */
 async function responseBytes(url: string, res: { arrayBuffer(): Promise<ArrayBuffer> }): Promise<Buffer> {
   const bytes = Buffer.from(await res.arrayBuffer())
   if (bytes.length > MAX_GLTF_DOWNLOAD_BYTES) {
@@ -319,14 +368,28 @@ async function responseBytes(url: string, res: { arrayBuffer(): Promise<ArrayBuf
   return bytes
 }
 
+/**
+ * Fail fast on non-2xx HTTP responses, classifying retryable status codes.
+ *
+ * For retryable statuses we also propagate any `Retry-After` hint into the
+ * thrown error so `withFetchRetries` can respect the catalyst's preferred
+ * backoff — important under sustained 429s where our fixed jitter formula
+ * would hammer a cooperating server.
+ */
 function assertOkResponse(url: string, res: FetchResponse): void {
   if (!res.ok) {
     const message = `failed to fetch ${url}: ${res.status} ${res.statusText}`
-    if (res.status === 408 || res.status === 429 || res.status >= 500) throw new RetryableFetchError(message)
+    if (res.status === 408 || res.status === 429 || res.status >= 500) {
+      const retryAfterMs = parseRetryAfterMs(res.headers.get('retry-after'))
+      throw new RetryableFetchError(message, retryAfterMs)
+    }
     throw new NonRetryableFetchError(message)
   }
 }
 
+/**
+ * Reject responses whose declared payload length exceeds the download guard.
+ */
 function assertDeclaredLengthWithinGuard(url: string, res: FetchResponse): void {
   const declaredLength = contentLength(res)
   if (Number.isFinite(declaredLength) && declaredLength > MAX_GLTF_DOWNLOAD_BYTES) {
@@ -336,6 +399,9 @@ function assertDeclaredLengthWithinGuard(url: string, res: FetchResponse): void 
   }
 }
 
+/**
+ * Require a valid `Content-Length` header when the response has no stream body.
+ */
 function requireFallbackContentLength(url: string, res: FetchResponse): void {
   const declaredLength = contentLength(res)
   if (!Number.isFinite(declaredLength) || declaredLength < 0) {
@@ -348,23 +414,38 @@ function requireFallbackContentLength(url: string, res: FetchResponse): void {
   }
 }
 
+/**
+ * Convert a Web stream chunk into a zero-copy `Buffer` view.
+ */
 function toBuffer(chunk: Uint8Array): Buffer {
   return Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)
 }
 
+/**
+ * Sleep for the requested number of milliseconds.
+ */
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/**
+ * Compute exponential backoff with jitter for GLB/GLTF retries.
+ */
 function retryDelayMs(attempt: number): number {
   const jitter = Math.floor(Math.random() * GLTF_FETCH_RETRY_BASE_MS)
   return GLTF_FETCH_RETRY_BASE_MS * Math.pow(2, attempt) + jitter
 }
 
+/**
+ * Treat every fetch error except the explicit non-retryable wrapper as retryable.
+ */
 function isRetryableFetchError(err: unknown): boolean {
   return !(err instanceof NonRetryableFetchError)
 }
 
+/**
+ * Fetch and fully buffer a GLTF/GLB response when no prefix-only optimization applies.
+ */
 async function fetchFullWithContentLengthGuard(url: string, res: FetchResponse): Promise<Buffer> {
   assertOkResponse(url, res)
   assertDeclaredLengthWithinGuard(url, res)
@@ -374,6 +455,9 @@ async function fetchFullWithContentLengthGuard(url: string, res: FetchResponse):
   return responseBytes(url, res)
 }
 
+/**
+ * Stream a full response body into memory with a hard upper bound.
+ */
 async function readWholeStream(url: string, res: FetchResponse): Promise<Buffer> {
   if (!res.body) throw new RetryableFetchError(`glb/gltf at ${url} returned no response body stream`)
 
@@ -406,6 +490,9 @@ async function readWholeStream(url: string, res: FetchResponse): Promise<Buffer>
   return Buffer.concat(chunks, total)
 }
 
+/**
+ * Stream only the JSON prefix needed from a GLB, then cancel the response body.
+ */
 async function readGlbJsonPrefix(url: string, res: FetchResponse): Promise<Buffer> {
   assertOkResponse(url, res)
   if (!res.body) {
@@ -463,6 +550,12 @@ async function readGlbJsonPrefix(url: string, res: FetchResponse): Promise<Buffe
   )
 }
 
+/**
+ * Retry a fetch operation on retryable HTTP or stream failures. When the error
+ * carries a parsed `Retry-After` hint (populated by `assertOkResponse` on
+ * 408/429/503 responses), the hint wins over our exponential-backoff formula
+ * — a cooperating catalyst knows better than we do how long to back off.
+ */
 async function withFetchRetries<T>(fn: () => Promise<T>): Promise<T> {
   let lastError: unknown
   for (let attempt = 0; attempt < GLTF_FETCH_ATTEMPTS; attempt++) {
@@ -471,7 +564,8 @@ async function withFetchRetries<T>(fn: () => Promise<T>): Promise<T> {
     } catch (err: unknown) {
       lastError = err
       if (attempt === GLTF_FETCH_ATTEMPTS - 1 || !isRetryableFetchError(err)) throw err
-      await sleep(retryDelayMs(attempt))
+      const hint = err instanceof RetryableFetchError ? err.retryAfterMs : undefined
+      await sleep(hint ?? retryDelayMs(attempt))
     }
   }
   throw lastError

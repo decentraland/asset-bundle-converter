@@ -2,11 +2,11 @@ import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
 import {
-  canonicalFilename,
   canonicalFilenameForAsset,
   checkAssetCache,
   computeDepsDigest,
   computePerAssetDigests,
+  parseRetryAfterMs,
   probeHitCache,
   purgeCachedBundlesFromOutput,
   GltfFetcher
@@ -121,7 +121,12 @@ function streamFromChunks(
 
 function responseForChunks(
   chunks: Buffer[],
-  options: { status?: number; body?: ReadableStream<Uint8Array> | null; contentLength?: number } = {}
+  options: {
+    status?: number
+    body?: ReadableStream<Uint8Array> | null
+    contentLength?: number
+    retryAfter?: string
+  } = {}
 ): any {
   const status = options.status ?? 200
   const buf = Buffer.concat(chunks)
@@ -130,8 +135,12 @@ function responseForChunks(
     status,
     statusText: status === 200 ? 'OK' : 'ERR',
     headers: {
-      get: (name: string) =>
-        name.toLowerCase() === 'content-length' ? String(options.contentLength ?? buf.length) : null
+      get: (name: string) => {
+        const lower = name.toLowerCase()
+        if (lower === 'content-length') return String(options.contentLength ?? buf.length)
+        if (lower === 'retry-after') return options.retryAfter ?? null
+        return null
+      }
     },
     body: options.body === undefined ? streamFromChunks(chunks) : options.body,
     arrayBuffer: async () => arrayBufferFor(buf)
@@ -575,6 +584,89 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
     })
   })
 
+  describe('and a retryable status carries a numeric Retry-After that is followed by a successful response', () => {
+    // The backoff-honouring path: the catalyst says "wait 1 second", we honour
+    // it (up to MAX_RETRY_AFTER_MS), and the next attempt succeeds. We keep the
+    // delay small here so the test finishes quickly while still covering the
+    // "honour the hint" branch end-to-end.
+    let digests: Map<string, string>
+    let setTimeoutSpy: jest.SpyInstance
+    let observedDelays: number[]
+
+    beforeEach(async () => {
+      observedDelays = []
+      // Spy on setTimeout so we can verify the delay chosen by the retry loop
+      // was the server hint (1000ms), not the exponential-backoff formula
+      // (250ms base + jitter). The spy passes through so the actual sleep
+      // still resolves and the retry proceeds.
+      setTimeoutSpy = jest.spyOn(global, 'setTimeout').mockImplementation(((fn: any, ms?: number) => {
+        observedDelays.push(ms ?? 0)
+        // Fire synchronously so the test doesn't actually wait 1 second.
+        Promise.resolve().then(fn)
+        return 0 as any
+      }) as any)
+
+      const glb = buildGlb(['texture.png'])
+      mockedFetch.mockResolvedValueOnce(
+        responseForChunks([Buffer.from('busy')], { status: 429, retryAfter: '1' })
+      )
+      mockedFetch.mockResolvedValueOnce(responseForChunks([glb]))
+
+      digests = await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+    })
+
+    afterEach(() => {
+      setTimeoutSpy.mockRestore()
+    })
+
+    it('should retry and compute the digest', () => {
+      expect(digests.get('hGlb')).toMatch(/^[0-9a-f]{32}$/)
+    })
+
+    it('should wait the server-supplied Retry-After delay rather than the backoff formula', () => {
+      // Retry-After "1" → 1000ms. Backoff would be ~250-500ms at attempt 0.
+      expect(observedDelays).toContain(1000)
+    })
+  })
+
+  describe('and a retryable status carries a Retry-After that exceeds the safety cap', () => {
+    // Catalyst says "wait an hour"; we cap at MAX_RETRY_AFTER_MS (30s) and
+    // still attempt the retry. Any longer and we'd block a worker slot past
+    // the SQS visibility window.
+    let digests: Map<string, string>
+    let setTimeoutSpy: jest.SpyInstance
+    let observedDelays: number[]
+
+    beforeEach(async () => {
+      observedDelays = []
+      setTimeoutSpy = jest.spyOn(global, 'setTimeout').mockImplementation(((fn: any, ms?: number) => {
+        observedDelays.push(ms ?? 0)
+        Promise.resolve().then(fn)
+        return 0 as any
+      }) as any)
+
+      const glb = buildGlb(['texture.png'])
+      mockedFetch.mockResolvedValueOnce(
+        responseForChunks([Buffer.from('busy')], { status: 503, retryAfter: '3600' /* 1h */ })
+      )
+      mockedFetch.mockResolvedValueOnce(responseForChunks([glb]))
+
+      digests = await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+    })
+
+    afterEach(() => {
+      setTimeoutSpy.mockRestore()
+    })
+
+    it('should clamp the delay to 30s (MAX_RETRY_AFTER_MS)', () => {
+      expect(observedDelays).toContain(30_000)
+    })
+
+    it('should still compute the digest after the clamped wait', () => {
+      expect(digests.get('hGlb')).toMatch(/^[0-9a-f]{32}$/)
+    })
+  })
+
   describe('and a non-retryable HTTP status is returned', () => {
     let thrown: unknown
 
@@ -653,24 +745,6 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
 
     it('should stream the full JSON document and compute the digest', () => {
       expect(digests.get('hGltf')).toMatch(/^[0-9a-f]{32}$/)
-    })
-  })
-})
-
-describe('when building the canonical bundle filename (legacy entity-wide variant)', () => {
-  describe('and the extension is a glb/gltf', () => {
-    it('should fold the deps digest into the filename', () => {
-      const digest = 'abcd1234abcd1234abcd1234abcd1234'
-      expect(canonicalFilename('modelHash', '.glb', 'windows', digest)).toBe(`modelHash_${digest}_windows`)
-      expect(canonicalFilename('modelHash', '.gltf', 'windows', digest)).toBe(`modelHash_${digest}_windows`)
-    })
-  })
-
-  describe('and the extension is a leaf (bin or texture)', () => {
-    it('should keep the bare hash-only form', () => {
-      const digest = 'abcd1234abcd1234abcd1234abcd1234'
-      expect(canonicalFilename('bufHash', '.bin', 'windows', digest)).toBe('bufHash_windows')
-      expect(canonicalFilename('texHash', '.png', 'windows', digest)).toBe('texHash_windows')
     })
   })
 })
@@ -1352,6 +1426,86 @@ describe('when purging cached bundles from the output directory', () => {
 
       expect(removed).toBe(0)
       expect((await fs.readdir(tmpDir)).sort()).toEqual(['AssetBundles', 'AssetBundles.manifest'])
+    })
+  })
+})
+
+describe('when parsing the Retry-After header', () => {
+  // Pure parser coverage — withFetchRetries wiring is proven by the end-to-end
+  // retry tests in the "computing per-asset digests with the default gltf
+  // fetcher" block; these pin the corner cases without fetch timing noise.
+  describe('and the header is absent', () => {
+    it('should return undefined (caller falls back to exponential backoff)', () => {
+      expect(parseRetryAfterMs(null)).toBeUndefined()
+    })
+  })
+
+  describe('and the header is an empty string', () => {
+    it('should return undefined rather than parsing as 0ms', () => {
+      expect(parseRetryAfterMs('')).toBeUndefined()
+      expect(parseRetryAfterMs('   ')).toBeUndefined()
+    })
+  })
+
+  describe('and the header is a delta-seconds integer', () => {
+    it('should convert seconds to milliseconds', () => {
+      expect(parseRetryAfterMs('2')).toBe(2000)
+    })
+
+    it('should handle 0 seconds (retry immediately)', () => {
+      expect(parseRetryAfterMs('0')).toBe(0)
+    })
+
+    it('should clamp values beyond the 30s cap', () => {
+      expect(parseRetryAfterMs('3600')).toBe(30_000)
+    })
+  })
+
+  describe('and the header is a malformed delta-seconds value', () => {
+    it('should return undefined for mixed digits + letters', () => {
+      // `Number('120abc')` would silently produce NaN — we reject explicitly
+      // so the caller falls back to backoff rather than waiting 0ms.
+      expect(parseRetryAfterMs('120abc')).toBeUndefined()
+    })
+
+    it('should return undefined for a negative value', () => {
+      // Regex disallows the minus sign; falls through to Date.parse which
+      // also rejects. Caller uses backoff.
+      expect(parseRetryAfterMs('-1')).toBeUndefined()
+    })
+
+    it('should return undefined for a non-integer value', () => {
+      expect(parseRetryAfterMs('1.5')).toBeUndefined()
+    })
+  })
+
+  describe('and the header is an HTTP-date in the future', () => {
+    it('should return the delta against now, clamped to the 30s cap', () => {
+      const future = new Date(Date.now() + 2000).toUTCString()
+      const ms = parseRetryAfterMs(future)
+      expect(ms).toBeDefined()
+      // Loose bound — the HTTP-date only has 1-second resolution, so the
+      // parsed delta lands somewhere in [0, 2000].
+      expect(ms).toBeGreaterThanOrEqual(0)
+      expect(ms).toBeLessThanOrEqual(2000)
+    })
+
+    it('should clamp far-future dates to the 30s cap', () => {
+      const farFuture = new Date(Date.now() + 24 * 60 * 60 * 1000).toUTCString()
+      expect(parseRetryAfterMs(farFuture)).toBe(30_000)
+    })
+  })
+
+  describe('and the header is an HTTP-date in the past (clock skew)', () => {
+    it('should clamp to 0 rather than produce a negative delay', () => {
+      const past = new Date(Date.now() - 60_000).toUTCString()
+      expect(parseRetryAfterMs(past)).toBe(0)
+    })
+  })
+
+  describe('and the header is unparseable text', () => {
+    it('should return undefined', () => {
+      expect(parseRetryAfterMs('definitely not a date or a number')).toBeUndefined()
     })
   })
 })

@@ -19,6 +19,16 @@ type Manifest = {
   date: string
 }
 
+// Upper bound on a single `/entities/active` catalyst call before we fall back
+// to "couldn't fetch entity, upload to entity-scoped path without source files".
+// Historically unset, which meant a wedged catalyst would pin the worker slot
+// until SQS visibility (1-2 min) retried the whole job — by which point the
+// replacement worker would hit the same wedge. Bounding at 30s lets us degrade
+// gracefully within a single visibility window: the probe path can't run, but
+// the conversion still proceeds against raw hashes, and Unity still produces
+// usable bundles. Matches the default the migration script uses.
+const CATALYST_FETCH_TIMEOUT_MS = 30_000
+
 async function getCdnBucket(components: Pick<AppComponents, 'config'>) {
   return (await components.config.getString('CDN_BUCKET')) || 'CDN_BUCKET'
 }
@@ -369,10 +379,15 @@ export async function executeConversion(
   // longer has this entity active — promote that to an explicit throw so the
   // catch below logs something actionable instead of "cannot read property
   // 'type' of undefined".
+  //
+  // Timeout: passing CATALYST_FETCH_TIMEOUT_MS prevents a wedged catalyst from
+  // holding the worker slot indefinitely. On abort the catch below degrades us
+  // to "no entity, no asset-reuse, no source-file upload" — conversion still
+  // runs against raw hashes.
   let entityType = 'undefined'
   let entity: Awaited<ReturnType<typeof getActiveEntity>> | null = null
   try {
-    const fetched = await getActiveEntity(entityId, contentServerUrl)
+    const fetched = await getActiveEntity(entityId, contentServerUrl, CATALYST_FETCH_TIMEOUT_MS)
     if (!fetched) throw new Error('entity no longer active on catalyst (redeployed or evicted)')
     entity = fetched
     entityType = entity.type
