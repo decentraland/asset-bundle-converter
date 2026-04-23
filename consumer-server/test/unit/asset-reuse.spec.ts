@@ -13,9 +13,19 @@ import {
 } from '../../src/logic/asset-reuse'
 import { buildGlb } from '../helpers/glb-fixtures'
 
+const originalFetch = globalThis.fetch
+
+let mockedFetch: jest.Mock
+
 beforeEach(() => {
   // The hit-cache is process-local and survives across tests unless we clear it.
   probeHitCache.clear()
+  mockedFetch = jest.fn()
+  globalThis.fetch = mockedFetch as any
+})
+
+afterEach(() => {
+  globalThis.fetch = originalFetch
 })
 
 type HeadCall = { Bucket: string; Key: string }
@@ -85,6 +95,68 @@ function makeFetcher(byHash: Map<string, Buffer>): GltfFetcher {
 // call-path exactly (`canonicalFilenameForAsset` → `${prefix}/assets/${name}`).
 function probeKeyFor(abVersion: string, hash: string, ext: string, target: string, digests: Map<string, string>) {
   return `${abVersion}/assets/${canonicalFilenameForAsset(hash, ext, target, digests)}`
+}
+
+function arrayBufferFor(buf: Buffer): ArrayBuffer {
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+}
+
+function streamFromChunks(
+  chunks: Buffer[],
+  options: { cancel?: jest.Mock; errorAtIndex?: number } = {}
+): ReadableStream<Uint8Array> {
+  let index = 0
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (options.errorAtIndex === index) throw new Error('socket hang up')
+      if (index >= chunks.length) {
+        controller.close()
+        return
+      }
+      controller.enqueue(chunks[index++])
+    },
+    cancel: options.cancel
+  })
+}
+
+function responseForChunks(
+  chunks: Buffer[],
+  options: { status?: number; body?: ReadableStream<Uint8Array> | null; contentLength?: number } = {}
+): any {
+  const status = options.status ?? 200
+  const buf = Buffer.concat(chunks)
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status === 200 ? 'OK' : 'ERR',
+    headers: {
+      get: (name: string) =>
+        name.toLowerCase() === 'content-length' ? String(options.contentLength ?? buf.length) : null
+    },
+    body: options.body === undefined ? streamFromChunks(chunks) : options.body,
+    arrayBuffer: async () => arrayBufferFor(buf)
+  }
+}
+
+function responseWithoutBody(buf: Buffer): any {
+  return {
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    headers: {
+      get: (name: string) => (name.toLowerCase() === 'content-length' ? String(buf.length) : null)
+    },
+    arrayBuffer: async () => arrayBufferFor(buf)
+  }
+}
+
+function entityWithGlb(hash = 'hGlb') {
+  return {
+    content: [
+      { file: 'model.glb', hash },
+      { file: 'texture.png', hash: 'hTexture' }
+    ]
+  }
 }
 
 describe('when computing the deps digest', () => {
@@ -368,6 +440,219 @@ describe('when computing per-asset digests', () => {
 
     it('should resolve the relative URI against the glb location and record the digest', () => {
       expect(digests.get('hCar')).toMatch(/^[0-9a-f]{32}$/)
+    })
+  })
+})
+
+describe('when computing per-asset digests with the default gltf fetcher', () => {
+  describe('and a glb has a large BIN payload after the JSON chunk', () => {
+    let digests: Map<string, string>
+    let cancel: jest.Mock
+
+    beforeEach(async () => {
+      const glb = buildGlb(['texture.png'])
+      cancel = jest.fn()
+      const body = streamFromChunks(
+        [glb.subarray(0, 7), glb.subarray(7, 20), glb.subarray(20), Buffer.alloc(5 * 1024)],
+        { cancel }
+      )
+      mockedFetch.mockResolvedValue(responseForChunks([glb, Buffer.alloc(5 * 1024)], { body }))
+
+      digests = await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+    })
+
+    it('should read enough bytes to compute the digest', () => {
+      expect(digests.get('hGlb')).toMatch(/^[0-9a-f]{32}$/)
+    })
+
+    it('should cancel the stream after the GLB JSON chunk is complete', () => {
+      expect(cancel).toHaveBeenCalled()
+    })
+  })
+
+  describe('and a stream ends before the GLB JSON header is complete', () => {
+    let thrown: unknown
+
+    beforeEach(async () => {
+      const glb = buildGlb(['texture.png'])
+      mockedFetch.mockResolvedValue(responseForChunks([glb.subarray(0, 10)]))
+      try {
+        await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+      } catch (err: unknown) {
+        thrown = err
+      }
+    })
+
+    it('should reject without retrying', () => {
+      expect(thrown).toBeInstanceOf(Error)
+      expect((thrown as Error).message).toMatch(/ended before the 20-byte GLB JSON header/)
+      expect(mockedFetch).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('and a stream ends before the declared GLB JSON chunk is complete', () => {
+    let thrown: unknown
+
+    beforeEach(async () => {
+      const glb = buildGlb(['texture.png'])
+      mockedFetch.mockResolvedValue(responseForChunks([glb.subarray(0, 24)]))
+      try {
+        await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+      } catch (err: unknown) {
+        thrown = err
+      }
+    })
+
+    it('should reject without retrying', () => {
+      expect(thrown).toBeInstanceOf(Error)
+      expect((thrown as Error).message).toMatch(/before JSON chunk end/)
+      expect(mockedFetch).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('and a stream errors before the GLB JSON chunk is complete but a retry succeeds', () => {
+    let digests: Map<string, string>
+    let cancel: jest.Mock
+
+    beforeEach(async () => {
+      const glb = buildGlb(['texture.png'])
+      cancel = jest.fn()
+      const read = jest
+        .fn()
+        .mockResolvedValueOnce({ done: false, value: glb.subarray(0, 10) })
+        .mockRejectedValueOnce(new Error('socket hang up'))
+      const failingBody = {
+        getReader: () => ({
+          read,
+          cancel,
+          releaseLock: jest.fn()
+        })
+      } as any
+      mockedFetch
+        .mockResolvedValueOnce(responseForChunks([glb.subarray(0, 10)], { body: failingBody }))
+        .mockResolvedValueOnce(responseForChunks([glb]))
+
+      digests = await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+    })
+
+    it('should retry and compute the digest from the next response', () => {
+      expect(digests.get('hGlb')).toMatch(/^[0-9a-f]{32}$/)
+    })
+
+    it('should cancel the failed stream', () => {
+      expect(cancel).toHaveBeenCalled()
+    })
+  })
+
+  describe('and native fetch returns a response without a body stream', () => {
+    let digests: Map<string, string>
+
+    beforeEach(async () => {
+      const glb = buildGlb(['texture.png'])
+      mockedFetch.mockResolvedValue(responseWithoutBody(glb))
+
+      digests = await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+    })
+
+    it('should fall back to guarded arrayBuffer reads', () => {
+      expect(digests.get('hGlb')).toMatch(/^[0-9a-f]{32}$/)
+    })
+  })
+
+  describe('and a transient HTTP status is followed by a successful response', () => {
+    let digests: Map<string, string>
+
+    beforeEach(async () => {
+      const glb = buildGlb(['texture.png'])
+      mockedFetch.mockResolvedValueOnce(responseForChunks([Buffer.from('busy')], { status: 503 }))
+      mockedFetch.mockResolvedValueOnce(responseForChunks([glb]))
+
+      digests = await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+    })
+
+    it('should retry and compute the digest', () => {
+      expect(digests.get('hGlb')).toMatch(/^[0-9a-f]{32}$/)
+    })
+  })
+
+  describe('and a non-retryable HTTP status is returned', () => {
+    let thrown: unknown
+
+    beforeEach(async () => {
+      mockedFetch.mockResolvedValue(responseForChunks([Buffer.from('missing')], { status: 404 }))
+      try {
+        await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+      } catch (err: unknown) {
+        thrown = err
+      }
+    })
+
+    it('should reject without retrying', () => {
+      expect(thrown).toBeInstanceOf(Error)
+      expect((thrown as Error).message).toMatch(/failed to fetch/)
+      expect(mockedFetch).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('and the GLB header declares an oversized JSON chunk', () => {
+    let thrown: unknown
+
+    beforeEach(async () => {
+      const header = Buffer.alloc(20)
+      header.writeUInt32LE(256 * 1024 * 1024 + 1, 12)
+      mockedFetch.mockResolvedValue(responseForChunks([header]))
+      try {
+        await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+      } catch (err: unknown) {
+        thrown = err
+      }
+    })
+
+    it('should reject without retrying', () => {
+      expect(thrown).toBeInstanceOf(Error)
+      expect((thrown as Error).message).toMatch(/JSON chunk/)
+      expect(mockedFetch).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('and the streamed GLB is malformed but complete enough to parse', () => {
+    let thrown: unknown
+
+    beforeEach(async () => {
+      const malformed = Buffer.alloc(20)
+      mockedFetch.mockResolvedValue(responseForChunks([malformed]))
+      try {
+        await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+      } catch (err: unknown) {
+        thrown = err
+      }
+    })
+
+    it('should reject without retrying parse failures', () => {
+      expect(thrown).toBeInstanceOf(Error)
+      expect((thrown as Error).message).toMatch(/magic mismatch/)
+      expect(mockedFetch).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('and the asset is a text gltf', () => {
+    let digests: Map<string, string>
+
+    beforeEach(async () => {
+      const gltf = Buffer.from(JSON.stringify({ images: [{ uri: 'texture.png' }] }), 'utf8')
+      const entity = {
+        content: [
+          { file: 'model.gltf', hash: 'hGltf' },
+          { file: 'texture.png', hash: 'hTexture' }
+        ]
+      }
+      mockedFetch.mockResolvedValue(responseForChunks([gltf.subarray(0, 8), gltf.subarray(8)]))
+
+      digests = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content')
+    })
+
+    it('should stream the full JSON document and compute the digest', () => {
+      expect(digests.get('hGltf')).toMatch(/^[0-9a-f]{32}$/)
     })
   })
 })

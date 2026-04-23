@@ -9,7 +9,6 @@ import * as path from 'path'
 import { hasContentChange } from './has-content-changed-task'
 import { getUnityBuildTarget, normalizeContentsBaseUrl } from '../utils'
 import { getActiveEntity } from './fetch-entity-by-pointer'
-import fetch from 'node-fetch'
 import { checkAssetCache, computePerAssetDigests, purgeCachedBundlesFromOutput, AssetCacheResult } from './asset-reuse'
 
 type Manifest = {
@@ -137,7 +136,7 @@ async function uploadSceneSourceFilesToCDN(
 
       try {
         const fileUrl = `${contentsBaseUrl}${contentDef.hash}`
-        const response = await fetch(fileUrl)
+        const response = await globalThis.fetch(fileUrl)
 
         if (!response.ok) {
           logger.error(
@@ -146,7 +145,7 @@ async function uploadSceneSourceFilesToCDN(
           return
         }
 
-        const content = await response.buffer()
+        const content = Buffer.from(await response.arrayBuffer())
         const contentType = fileName.endsWith('.js')
           ? 'application/javascript'
           : fileName.endsWith('.json')

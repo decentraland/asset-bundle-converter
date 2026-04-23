@@ -1,6 +1,6 @@
 ARG UNITY_DOCKER_IMAGE=unityci/editor:2022.3.12f1-webgl-3.0.0
 
-FROM node:18 AS builderenv
+FROM node:24 AS builderenv
 
 WORKDIR /consumer-server
 
@@ -34,7 +34,7 @@ RUN yarn --prod --frozen-lockfile
 
 ########################## END OF CONSUMER-SERVER BUILD STAGE ##########################
 
-FROM node:18 AS lod-builder
+FROM node:24 AS lod-builder
 
 WORKDIR /scene-lod-entities-manifest-builder
 
@@ -60,7 +60,7 @@ RUN apt-get update -y && \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
 ENV NVM_DIR=/root/.nvm
-ENV NODE_VERSION=v18.20.4
+ENV NODE_VERSION=v24.14.0
 
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
 RUN /bin/bash -c "source $NVM_DIR/nvm.sh && nvm install $NODE_VERSION && nvm use --delete-prefix $NODE_VERSION"

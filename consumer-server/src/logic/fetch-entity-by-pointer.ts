@@ -1,6 +1,5 @@
 import { Entity } from '@dcl/schemas'
 import { IFetchComponent } from '@well-known-components/interfaces'
-import fetch from 'node-fetch'
 
 export async function getEntities(
   fetcher: IFetchComponent,
@@ -35,7 +34,7 @@ export async function getActiveEntity(id: string, contentServer: string, timeout
   const timeoutHandle = controller !== undefined ? setTimeout(() => controller.abort(), timeoutMs) : undefined
 
   try {
-    const res = await fetch(url, {
+    const res = await globalThis.fetch(url, {
       method: 'post',
       body: JSON.stringify({ ids: [id] }),
       headers: { 'content-type': 'application/json' },

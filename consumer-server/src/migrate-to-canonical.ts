@@ -150,7 +150,7 @@ export type RunMigrationOptions = {
    * Default 100. */
   progressInterval?: number
   /** Catalyst fetcher — normally `getActiveEntity`; tests pass a stub so they
-   * don't depend on `node-fetch`. Must return the entity's `.content` array. */
+   * don't depend on network fetches. Must return the entity's `.content` array. */
   fetchEntity?: (entityId: string, contentServerUrl: string) => Promise<{ content: { file: string; hash: string }[] }>
   /** Fallback catalyst URL used when a manifest body doesn't carry its own
    * `contentServerUrl`. Pre-PR manifests were written before we started

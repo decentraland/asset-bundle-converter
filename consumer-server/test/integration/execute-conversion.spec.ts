@@ -33,19 +33,16 @@ jest.mock('../../src/logic/has-content-changed-task', () => {
   const real = jest.requireActual('../../src/logic/has-content-changed-task')
   return { ...real, hasContentChange: jest.fn(async () => true) }
 })
-jest.mock('node-fetch', () => jest.fn())
-
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const MockAws = require('mock-aws-s3')
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-import fetch from 'node-fetch'
 import { runConversion } from '../../src/logic/run-conversion'
 import { getActiveEntity } from '../../src/logic/fetch-entity-by-pointer'
 import { executeConversion } from '../../src/logic/conversion-task'
 
-const mockedFetch = fetch as unknown as jest.Mock
 const mockedRunConversion = runConversion as jest.Mock
 const mockedGetActiveEntity = getActiveEntity as jest.Mock
+const originalNativeFetch = globalThis.fetch
+let mockedFetch: jest.Mock
 
 type Params = {
   abVersion?: string
@@ -77,23 +74,21 @@ function buildComponents(bucketBasePath: string, params: Params = {}) {
   return { config, cdnS3, sentry }
 }
 
-// Wire up the jest.mock'd node-fetch so glb URLs (detected by a hash suffix we
-// know about) return buffered glb bytes, while scene-source-file URLs return a
-// plain body. The helper accepts a hash→buffer map so each test declares the
-// glbs it uses inline.
+// Wire up native fetch so glb/gltf digest reads return declared fixtures and
+// scene source files return a tiny body.
 function setupFetchMock(glbsByHash: Map<string, Buffer>): void {
-  mockedFetch.mockImplementation(async (url: any) => {
+  const implementation = async (url: any) => {
     const asString = typeof url === 'string' ? url : url?.toString() ?? ''
     for (const [hash, buf] of glbsByHash) {
       if (asString.endsWith(hash)) return responseFor(buf)
     }
     return responseFor(Buffer.from('fake-source-file'))
-  })
+  }
+  mockedFetch.mockImplementation(implementation)
 }
 
-// Mock Response that satisfies both the scene-source-file path (uses
-// `.buffer()`) and the glb fetch path (uses `.headers.get(...)` for the
-// Content-Length guard and `.arrayBuffer()` for the payload).
+// Mock Response that satisfies both scene-source-file and glb/gltf digest
+// fetches: `.headers.get(...)` for guards and `.arrayBuffer()` for payloads.
 function responseFor(buf: Buffer): any {
   return {
     ok: true,
@@ -131,6 +126,8 @@ describe('when executing a conversion with asset-reuse enabled', () => {
 
     // Scene source files: respond with a tiny body so uploadSceneSourceFilesToCDN
     // can fetch + S3-PUT without talking to a real catalyst.
+    mockedFetch = jest.fn()
+    globalThis.fetch = mockedFetch as any
     mockedFetch.mockResolvedValue(responseFor(Buffer.from('fake-source-file')))
 
     probeHitCache.clear()
@@ -139,6 +136,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
   })
 
   afterEach(async () => {
+    globalThis.fetch = originalNativeFetch
     await rimraf(workDir, { maxRetries: 3 })
   })
 
@@ -769,13 +767,14 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       // Return garbage bytes for the glb hash — parseGltfDepRefs rejects
       // (non-glTF magic). Before the fix, the unhandled throw escaped
       // executeConversion and SQS would retry forever against a broken scene.
-      mockedFetch.mockImplementation(async (url: any) => {
+      const implementation = async (url: any) => {
         const asString = typeof url === 'string' ? url : url?.toString() ?? ''
         if (asString.endsWith('hBadGlb')) {
           return responseFor(Buffer.from('not-a-glb-at-all'))
         }
         return responseFor(Buffer.from('fake-source-file'))
-      })
+      }
+      mockedFetch.mockImplementation(implementation)
 
       mockedGetActiveEntity.mockResolvedValue({
         id: 'bafy-bad-glb',

@@ -279,9 +279,9 @@ export async function mapBounded<T, R>(items: T[], concurrency: number, fn: (ite
  * Fetcher function used by `computePerAssetDigests` to pull glb/gltf bytes
  * from the catalyst. Kept as a plain parameter (rather than a component
  * dependency) so tests can swap in a memory-backed fetcher without mocking
- * `node-fetch`.
+ * global fetch.
  */
-export type GltfFetcher = (url: string) => Promise<Buffer>
+export type GltfFetcher = (url: string, ext: '.glb' | '.gltf') => Promise<Buffer>
 
 // 256 MB upper bound on a single glb/gltf download. Defence-in-depth against
 // a malicious or corrupted catalyst entry that declares an unbounded body —
@@ -289,30 +289,209 @@ export type GltfFetcher = (url: string) => Promise<Buffer>
 // it. DCL's largest legitimate glbs are ~tens of MB, so 256 is generous
 // headroom without risking an OOM on the conversion worker.
 const MAX_GLTF_DOWNLOAD_BYTES = 256 * 1024 * 1024
+const GLB_JSON_START = 20
+const GLTF_FETCH_ATTEMPTS = 3
+const GLTF_FETCH_RETRY_BASE_MS = 250
 
-/**
- * Default fetcher — wraps `node-fetch` with a non-ok status check and a
- * Content-Length guard. Kept out of the module-level imports so
- * `asset-reuse.ts` stays importable from pure-unit test paths that don't
- * want to pull in `node-fetch`'s transitive deps.
- *
- * Uses `arrayBuffer()` rather than `res.buffer()` — the latter is deprecated
- * in node-fetch v3 and removed in undici-based fetches. `Buffer.from(...)`
- * on the arrayBuffer is a zero-copy view (no extra allocation).
- */
-async function defaultGltfFetcher(url: string): Promise<Buffer> {
-  const { default: fetch } = await import('node-fetch')
-  const res = await fetch(url)
-  if (!res.ok) {
-    throw new Error(`failed to fetch ${url}: ${res.status} ${res.statusText}`)
+type FetchResponse = {
+  ok: boolean
+  status: number
+  statusText: string
+  headers: { get(name: string): string | null }
+  body?: ReadableStream<Uint8Array> | null
+  arrayBuffer(): Promise<ArrayBuffer>
+}
+
+class NonRetryableFetchError extends Error {}
+class RetryableFetchError extends Error {}
+
+function contentLength(res: { headers: { get(name: string): string | null } }): number {
+  return Number(res.headers.get('content-length') ?? '-1')
+}
+
+async function responseBytes(url: string, res: { arrayBuffer(): Promise<ArrayBuffer> }): Promise<Buffer> {
+  const bytes = Buffer.from(await res.arrayBuffer())
+  if (bytes.length > MAX_GLTF_DOWNLOAD_BYTES) {
+    throw new NonRetryableFetchError(
+      `glb/gltf at ${url} buffered ${bytes.length} bytes > ${MAX_GLTF_DOWNLOAD_BYTES} (refusing to buffer)`
+    )
   }
-  const declaredLength = Number(res.headers.get('content-length') ?? '-1')
+  return bytes
+}
+
+function assertOkResponse(url: string, res: FetchResponse): void {
+  if (!res.ok) {
+    const message = `failed to fetch ${url}: ${res.status} ${res.statusText}`
+    if (res.status === 408 || res.status === 429 || res.status >= 500) throw new RetryableFetchError(message)
+    throw new NonRetryableFetchError(message)
+  }
+}
+
+function assertDeclaredLengthWithinGuard(url: string, res: FetchResponse): void {
+  const declaredLength = contentLength(res)
   if (Number.isFinite(declaredLength) && declaredLength > MAX_GLTF_DOWNLOAD_BYTES) {
-    throw new Error(
+    throw new NonRetryableFetchError(
       `glb/gltf at ${url} declared Content-Length ${declaredLength} > ${MAX_GLTF_DOWNLOAD_BYTES} (refusing to buffer)`
     )
   }
-  return Buffer.from(await res.arrayBuffer())
+}
+
+function requireFallbackContentLength(url: string, res: FetchResponse): void {
+  const declaredLength = contentLength(res)
+  if (!Number.isFinite(declaredLength) || declaredLength < 0) {
+    throw new NonRetryableFetchError(`glb/gltf at ${url} has no stream body and no valid Content-Length guard`)
+  }
+  if (declaredLength > MAX_GLTF_DOWNLOAD_BYTES) {
+    throw new NonRetryableFetchError(
+      `glb/gltf at ${url} declared Content-Length ${declaredLength} > ${MAX_GLTF_DOWNLOAD_BYTES} (refusing to buffer)`
+    )
+  }
+}
+
+function toBuffer(chunk: Uint8Array): Buffer {
+  return Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function retryDelayMs(attempt: number): number {
+  const jitter = Math.floor(Math.random() * GLTF_FETCH_RETRY_BASE_MS)
+  return GLTF_FETCH_RETRY_BASE_MS * Math.pow(2, attempt) + jitter
+}
+
+function isRetryableFetchError(err: unknown): boolean {
+  return !(err instanceof NonRetryableFetchError)
+}
+
+async function fetchFullWithContentLengthGuard(url: string, res: FetchResponse): Promise<Buffer> {
+  assertOkResponse(url, res)
+  assertDeclaredLengthWithinGuard(url, res)
+  if (res.body) return readWholeStream(url, res)
+
+  requireFallbackContentLength(url, res)
+  return responseBytes(url, res)
+}
+
+async function readWholeStream(url: string, res: FetchResponse): Promise<Buffer> {
+  if (!res.body) throw new RetryableFetchError(`glb/gltf at ${url} returned no response body stream`)
+
+  const reader = res.body.getReader()
+  const chunks: Buffer[] = []
+  let total = 0
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const bytes = toBuffer(value)
+      total += bytes.length
+      if (total > MAX_GLTF_DOWNLOAD_BYTES) {
+        throw new NonRetryableFetchError(
+          `glb/gltf at ${url} streamed ${total} bytes > ${MAX_GLTF_DOWNLOAD_BYTES} (refusing to buffer)`
+        )
+      }
+      chunks.push(bytes)
+    }
+  } catch (err: any) {
+    try {
+      await reader.cancel()
+    } catch (_cancelErr: any) {}
+    throw err
+  } finally {
+    reader.releaseLock()
+  }
+
+  return Buffer.concat(chunks, total)
+}
+
+async function readGlbJsonPrefix(url: string, res: FetchResponse): Promise<Buffer> {
+  assertOkResponse(url, res)
+  if (!res.body) {
+    requireFallbackContentLength(url, res)
+    return responseBytes(url, res)
+  }
+
+  const reader = res.body.getReader()
+  const chunks: Buffer[] = []
+  let total = 0
+  let targetBytes: number | undefined
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const bytes = toBuffer(value)
+      const remaining = targetBytes === undefined ? bytes.length : Math.max(0, targetBytes - total)
+      const kept = remaining >= bytes.length ? bytes : bytes.subarray(0, remaining)
+
+      if (kept.length > 0) {
+        chunks.push(kept)
+        total += kept.length
+      }
+
+      if (targetBytes === undefined && total >= GLB_JSON_START) {
+        const prefix = Buffer.concat(chunks, total)
+        const jsonChunkLength = prefix.readUInt32LE(12)
+        targetBytes = GLB_JSON_START + jsonChunkLength
+        if (targetBytes > MAX_GLTF_DOWNLOAD_BYTES) {
+          throw new NonRetryableFetchError(
+            `glb/gltf at ${url} JSON chunk ${targetBytes} > ${MAX_GLTF_DOWNLOAD_BYTES} (refusing to buffer)`
+          )
+        }
+      }
+
+      if (targetBytes !== undefined && total >= targetBytes) {
+        await reader.cancel()
+        return Buffer.concat(chunks, targetBytes)
+      }
+    }
+  } catch (err: any) {
+    try {
+      await reader.cancel()
+    } catch (_cancelErr: any) {}
+    throw err
+  } finally {
+    reader.releaseLock()
+  }
+
+  throw new NonRetryableFetchError(
+    targetBytes === undefined
+      ? `glb/gltf at ${url} ended before the 20-byte GLB JSON header was available`
+      : `glb/gltf at ${url} ended after ${total} bytes, before JSON chunk end ${targetBytes}`
+  )
+}
+
+async function withFetchRetries<T>(fn: () => Promise<T>): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < GLTF_FETCH_ATTEMPTS; attempt++) {
+    try {
+      return await fn()
+    } catch (err: unknown) {
+      lastError = err
+      if (attempt === GLTF_FETCH_ATTEMPTS - 1 || !isRetryableFetchError(err)) throw err
+      await sleep(retryDelayMs(attempt))
+    }
+  }
+  throw lastError
+}
+
+/**
+ * Default fetcher — wraps native fetch with a non-ok status check, retries,
+ * a Content-Length guard, and streaming reads. Binary GLBs are only streamed
+ * through the embedded JSON chunk; text GLTFs are fully streamed because the
+ * dependency refs can appear anywhere in the JSON document.
+ *
+ * Uses `arrayBuffer()` only as a guarded fallback for mocked / non-standard
+ * responses that do not expose a stream body.
+ */
+async function defaultGltfFetcher(url: string, ext: '.glb' | '.gltf'): Promise<Buffer> {
+  return withFetchRetries(async () => {
+    const init = ext === '.glb' ? { headers: { 'Accept-Encoding': 'identity' } } : undefined
+    const res = (await fetch(url, init)) as FetchResponse
+    return ext === '.glb' ? readGlbJsonPrefix(url, res) : fetchFullWithContentLengthGuard(url, res)
+  })
 }
 
 /**
@@ -355,7 +534,7 @@ export async function computePerAssetDigests(
 
   const results = await mapBounded(gltfEntries, concurrency, async (entry) => {
     const ext = fileExtension(entry.file) as '.glb' | '.gltf'
-    const bytes = await fetcher(`${contentsBaseUrl}${entry.hash}`)
+    const bytes = await fetcher(`${contentsBaseUrl}${entry.hash}`, ext)
     const uris = parseGltfDepRefs(bytes, ext)
 
     // Resolve URIs against entity content, dedup on (file, hash) — the glTF
