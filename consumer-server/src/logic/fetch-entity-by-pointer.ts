@@ -23,20 +23,33 @@ export async function getEntities(
   return JSON.parse(response)
 }
 
-export async function getActiveEntity(id: string, contentServer: string): Promise<Entity> {
+export async function getActiveEntity(id: string, contentServer: string, timeoutMs?: number): Promise<Entity> {
   const url = `${contentServer}/entities/active`
 
-  const res = await fetch(url, {
-    method: 'post',
-    body: JSON.stringify({ ids: [id] }),
-    headers: { 'content-type': 'application/json' }
-  })
+  // Optional per-call timeout via AbortController. Callers like the migration
+  // script pass a bound (e.g. 30s) so a hung catalyst can't stall the whole
+  // run; the HTTP serving path that calls this without a timeout keeps the
+  // pre-existing behaviour of waiting indefinitely (and relying on the SQS
+  // visibility timeout to retry if it does).
+  const controller = timeoutMs !== undefined ? new AbortController() : undefined
+  const timeoutHandle = controller !== undefined ? setTimeout(() => controller.abort(), timeoutMs) : undefined
 
-  const response = await res.text()
+  try {
+    const res = await fetch(url, {
+      method: 'post',
+      body: JSON.stringify({ ids: [id] }),
+      headers: { 'content-type': 'application/json' },
+      signal: controller?.signal
+    })
 
-  if (!res.ok) {
-    throw new Error('Error fetching list of active entities: ' + response)
+    const response = await res.text()
+
+    if (!res.ok) {
+      throw new Error('Error fetching list of active entities: ' + response)
+    }
+
+    return JSON.parse(response)[0]
+  } finally {
+    if (timeoutHandle !== undefined) clearTimeout(timeoutHandle)
   }
-
-  return JSON.parse(response)[0]
 }

@@ -53,18 +53,10 @@ async function getLastEntityIdByBase(
   return null
 }
 
-// Extension lists
-const bufferExtensions = ['.bin']
-const gltfExtensions = ['.glb', '.gltf']
-const textureExtensions = ['.jpg', '.png', '.jpeg', '.tga', '.gif', '.bmp', '.psd', '.tiff', '.iff', '.ktx']
-
-// Helper function to check if the file has a valid extension
-function hasValidExtension(file: string): boolean {
-  const extension = file.substring(file.lastIndexOf('.')).toLowerCase()
-  return (
-    bufferExtensions.includes(extension) || gltfExtensions.includes(extension) || textureExtensions.includes(extension)
-  )
-}
+// Re-exports for backwards compatibility — the canonical home is
+// `./extensions.ts` so these survive this legacy module's eventual deletion.
+export { bufferExtensions, gltfExtensions, textureExtensions, hasValidExtension } from './extensions'
+import { hasValidExtension } from './extensions'
 
 // Function to extract hashes from the entity JSON based on valid extensions
 function extractValidHashesFromEntity(content: { file: string; hash: string }[]): string[] {

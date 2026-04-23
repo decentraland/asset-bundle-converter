@@ -905,13 +905,39 @@ namespace DCL.ABConverter
                 env.sceneStateGenerator.GenerateISSAssetBundle(assetPaths, gltfImporters, finalDownloadedPath);
             else
             {
-                // Otherwise, mark each asset as its own bundle
+                // Otherwise, mark each asset as its own bundle. GLB/GLTF bundles embed
+                // dep-bundle references whose names are derived from dep content hashes.
+                // Two scenes that share a glb source hash but differ in deps therefore
+                // produce byte-different bundles — we fold the entity-wide depsDigest
+                // into the glb/gltf bundle name so those byte-different bundles land at
+                // distinct canonical paths. BIN and texture bundles are leaves (no
+                // inbound dep refs from their own bundle) so hash-only naming is safe.
+                bool useDigest = !string.IsNullOrEmpty(settings.depsDigest);
+                // `PlatformUtils.GetPlatform()` already returns the leading
+                // underscore (e.g. "_windows" / "_mac" / "_webgl"), so the
+                // string interpolations below produce `{hash}_{digest}_{target}`
+                // and `{hash}_{target}` without an explicit underscore before
+                // `platform`. Keep this in mind when editing the bundle-name
+                // format — adding another `_` here would produce a double
+                // underscore that the consumer-server's canonical probe would
+                // then miss.
+                string platform = PlatformUtils.GetPlatform();
+
                 foreach (var assetPath in assetPaths)
                 {
                     if (assetPath == null) continue;
-                    if (assetPath.finalPath.EndsWith(".bin")) continue;
+                    // Case-insensitive to match the consumer-server side, which
+                    // normalises via `.toLowerCase()` before classifying extensions.
+                    // Keeping the two sides consistent prevents a `.GLB` input from
+                    // being probed as composite but emitted as bare (or vice versa).
+                    if (assetPath.finalPath.EndsWith(".bin", System.StringComparison.OrdinalIgnoreCase)) continue;
 
-                    string assetBundleName = assetPath.hash + PlatformUtils.GetPlatform();
+                    bool isGltf = useDigest
+                        && (assetPath.finalPath.EndsWith(".glb", System.StringComparison.OrdinalIgnoreCase)
+                            || assetPath.finalPath.EndsWith(".gltf", System.StringComparison.OrdinalIgnoreCase));
+                    string assetBundleName = isGltf
+                        ? $"{assetPath.hash}_{settings.depsDigest}{platform}"
+                        : assetPath.hash + platform;
                     env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, assetBundleName);
                 }
             }
@@ -1060,6 +1086,20 @@ namespace DCL.ABConverter
                 List<AssetPath> gltfPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.gltfExtensions);
                 List<AssetPath> bufferPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.bufferExtensions);
                 List<AssetPath> texturePaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
+
+                // Skip GLTFs/buffers whose canonical asset bundle already exists on the CDN.
+                // Textures are never skipped here — they may still be referenced from within
+                // non-cached GLTFs and are required to be in the contentTable for import.
+                if (settings.cachedHashes != null && settings.cachedHashes.Count > 0)
+                {
+                    int gltfSkipped = gltfPaths.RemoveAll(p => settings.cachedHashes.Contains(p.hash));
+                    int bufferSkipped = bufferPaths.RemoveAll(p => settings.cachedHashes.Contains(p.hash));
+
+                    log.Info($"Skipped {gltfSkipped} cached GLTF(s) and {bufferSkipped} cached buffer(s).");
+                } else {
+                    if (!string.IsNullOrEmpty(settings.depsDigest))
+                        log.Info($"No cached hashes — full cache miss. depsDigest={settings.depsDigest}, proceeding to convert all {gltfPaths.Count} gltf and {bufferPaths.Count} buffer");
+                }
 
                 if (!FilterDumpList(ref gltfPaths))
                     return false;

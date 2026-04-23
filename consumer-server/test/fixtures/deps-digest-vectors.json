@@ -1,0 +1,166 @@
+{
+  "_note": "Cross-language golden vectors for computeDepsDigest. The Node implementation in consumer-server/src/logic/asset-reuse.ts and the Unity implementation in asset-bundle-converter/Assets/AssetBundleConverter/ must produce byte-identical outputs for every vector. Silent drift between the two ends up serving the wrong canonical bundle.",
+  "_algorithm": "SHA256(JSON.stringify(sortedBy(file asc, then hash asc)(filter(entry => ext(entry.file) in {.bin, .jpg, .jpeg, .png, .tga, .gif, .bmp, .psd, .tiff, .iff, .ktx}).map(([file, hash])))).slice(0, 32)",
+  "_note_shuffled": "Cases two_textures_sorted and two_textures_shuffled_same_content have identical input sets in different orders and MUST produce identical digests.",
+  "vectors": [
+    {
+      "name": "empty",
+      "input": [],
+      "expected": "4f53cda18c2baa0c0354bb5f9a3ecbe5"
+    },
+    {
+      "name": "single_png",
+      "input": [
+        {
+          "file": "tex.png",
+          "hash": "h1"
+        }
+      ],
+      "expected": "e694ee215f7a8eec10fadc72585d9642"
+    },
+    {
+      "name": "single_bin",
+      "input": [
+        {
+          "file": "buffer.bin",
+          "hash": "hb"
+        }
+      ],
+      "expected": "6d8ca9ae0cadaab6104c6cb24abee3c4"
+    },
+    {
+      "name": "two_textures_sorted",
+      "input": [
+        {
+          "file": "a.png",
+          "hash": "hA"
+        },
+        {
+          "file": "b.png",
+          "hash": "hB"
+        }
+      ],
+      "expected": "677cef1bdb040a547679096667d45dd2"
+    },
+    {
+      "name": "two_textures_shuffled_same_content",
+      "input": [
+        {
+          "file": "b.png",
+          "hash": "hB"
+        },
+        {
+          "file": "a.png",
+          "hash": "hA"
+        }
+      ],
+      "expected": "677cef1bdb040a547679096667d45dd2"
+    },
+    {
+      "name": "shared_hash_different_filenames",
+      "input": [
+        {
+          "file": "alpha.png",
+          "hash": "shared"
+        },
+        {
+          "file": "beta.png",
+          "hash": "shared"
+        }
+      ],
+      "expected": "e5f53eb03e94d2f9b2dc73ef34c3f860"
+    },
+    {
+      "name": "non_dep_files_are_ignored",
+      "input": [
+        {
+          "file": "scene.json",
+          "hash": "h_scene"
+        },
+        {
+          "file": "game.js",
+          "hash": "h_js"
+        },
+        {
+          "file": "model.glb",
+          "hash": "h_glb"
+        },
+        {
+          "file": "tex.png",
+          "hash": "h_tex"
+        },
+        {
+          "file": "buffer.bin",
+          "hash": "h_bin"
+        }
+      ],
+      "expected": "4905066b2b13ef4eb86ebbed960e9336"
+    },
+    {
+      "name": "uppercase_extensions_lowercased",
+      "input": [
+        {
+          "file": "TEX.PNG",
+          "hash": "hU"
+        }
+      ],
+      "expected": "e8d2094843331e676ad9e0e2a6950bcd"
+    },
+    {
+      "name": "filename_with_tab",
+      "input": [
+        {
+          "file": "a\tb.png",
+          "hash": "h1"
+        },
+        {
+          "file": "c.png",
+          "hash": "h2"
+        }
+      ],
+      "expected": "3706f4528a42efd38558a16feacf25f9"
+    },
+    {
+      "name": "realistic_mixed",
+      "input": [
+        {
+          "file": "models/model.glb",
+          "hash": "hGlb1"
+        },
+        {
+          "file": "models/model2.glb",
+          "hash": "hGlb2"
+        },
+        {
+          "file": "buffers/model.bin",
+          "hash": "hBin1"
+        },
+        {
+          "file": "buffers/model2.bin",
+          "hash": "hBin2"
+        },
+        {
+          "file": "textures/diffuse.png",
+          "hash": "hTex1"
+        },
+        {
+          "file": "textures/normal.png",
+          "hash": "hTex2"
+        },
+        {
+          "file": "textures/ao.jpg",
+          "hash": "hTex3"
+        },
+        {
+          "file": "scene.json",
+          "hash": "hScene"
+        },
+        {
+          "file": "main.crdt",
+          "hash": "hCrdt"
+        }
+      ],
+      "expected": "23099bf5ee1eef9cc00b1dda8fb72e06"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using DCL.ABConverter;
 using GLTFast;
@@ -81,6 +82,23 @@ namespace AssetBundleConverter
             public bool importGltf = true;
             public string targetHash;
             public Vector2Int? targetPointer = null;
+
+            /// <summary>
+            /// Content hashes whose asset bundles are already available at the canonical CDN
+            /// location. GLTF/GLB and BIN entries whose hash appears here are skipped during
+            /// the asset-bundle build step; textures are intentionally not filtered because
+            /// they can still be referenced from non-cached GLTFs.
+            /// </summary>
+            public HashSet<string> cachedHashes = new HashSet<string>();
+
+            /// <summary>
+            /// Entity-wide deps digest (short hex). When non-empty, GLB/GLTF bundles are
+            /// named `{hash}_{depsDigest}_{target}` instead of `{hash}_{target}` so their
+            /// canonical path factors in the dep set — two scenes sharing a glb source
+            /// hash but differing in deps produce distinct canonical paths.
+            /// BIN and texture bundles are unchanged (they're leaves with no dep refs).
+            /// </summary>
+            public string depsDigest = string.Empty;
             public bool reportErrors = false;
             public bool isWearable;
             public BuildTarget buildTarget = BuildTarget.WebGL;

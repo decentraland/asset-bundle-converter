@@ -84,6 +84,8 @@ namespace DCL.ABConverter
             {
                 ParseCommonSettings(commandLineArgs, settings);
 
+                log.Info($"Asset reuse state: cachedHashes={settings.cachedHashes?.Count ?? 0}, depsDigest='{settings.depsDigest ?? ""}'");
+
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_SHADER_TARGET, 1, out string[] shaderTarget))
                 {
                     string target = shaderTarget[0].ToLower();
@@ -271,6 +273,27 @@ namespace DCL.ABConverter
 
             if (Utils.ParseOption(commandLineArgs, Config.CLI_INCLUDE_SHADER_VARIANTS, 0, out _))
                 settings.includeShaderVariants = true;
+
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_CACHED_HASHES, 1, out string[] cachedHashesArg)
+                && cachedHashesArg != null
+                && !string.IsNullOrEmpty(cachedHashesArg[0]))
+            {
+                foreach (var hash in cachedHashesArg[0].Split(';'))
+                {
+                    if (!string.IsNullOrWhiteSpace(hash))
+                        settings.cachedHashes.Add(hash.Trim());
+                }
+
+                log.Info($"Received {settings.cachedHashes.Count} cached hash(es) — these GLTF/GLB/BIN bundles will be skipped.");
+            }
+
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_DEPS_DIGEST, 1, out string[] depsDigestArg)
+                && depsDigestArg != null
+                && !string.IsNullOrWhiteSpace(depsDigestArg[0]))
+            {
+                settings.depsDigest = depsDigestArg[0].Trim();
+                log.Info($"Received depsDigest={settings.depsDigest} — GLB/GLTF bundles will be named with this digest.");
+            }
 
             // Target is setup during the commandline argument -buildTarget
             settings.buildTarget = EditorUserBuildSettings.activeBuildTarget;
