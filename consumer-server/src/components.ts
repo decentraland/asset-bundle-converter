@@ -59,6 +59,11 @@ export async function initComponents(): Promise<AppComponents> {
   const runner = createRunnerComponent()
   const publisher = await createSnsComponent({ config, logs })
 
+  // Order matters for shutdown: @well-known-components/interfaces>=1.5 stops
+  // components sequentially in reverse. runner.stop() awaits in-flight
+  // delegates that block on taskQueue.consumeAndProcessJob, so taskQueue must
+  // come after runner here to be stopped first (closing the queue unblocks
+  // the delegate and lets runner drain).
   return {
     config,
     logs,
@@ -66,10 +71,10 @@ export async function initComponents(): Promise<AppComponents> {
     statusChecks,
     fetch,
     metrics,
-    taskQueue,
     cdnS3,
-    runner,
     sentry,
-    publisher
+    publisher,
+    runner,
+    taskQueue
   }
 }

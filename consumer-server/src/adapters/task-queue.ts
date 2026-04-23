@@ -1,4 +1,4 @@
-import { IBaseComponent, IMetricsComponent } from '@well-known-components/interfaces'
+import { IBaseComponent, IMetricsComponent, STOP_COMPONENT } from '@well-known-components/interfaces'
 import { validateMetricsDeclaration } from '@well-known-components/metrics'
 import { AsyncQueue } from '@well-known-components/pushable-channel'
 import { SQS } from 'aws-sdk'
@@ -53,7 +53,7 @@ export function createMemoryQueueAdapter<T>(
   const logger = components.logs.getLogger(options.queueName)
 
   return {
-    async stop() {
+    async [STOP_COMPONENT]() {
       q.close()
     },
     async publish(job) {

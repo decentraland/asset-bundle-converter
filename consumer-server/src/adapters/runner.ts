@@ -1,4 +1,4 @@
-import { IBaseComponent } from '@well-known-components/interfaces'
+import { IBaseComponent, START_COMPONENT, STOP_COMPONENT } from '@well-known-components/interfaces'
 
 export type RunnerComponentArg = {
   readonly isRunning: boolean
@@ -15,11 +15,11 @@ export function createRunnerComponent(): IRunnerComponent {
   let isRunning = false
 
   return {
-    async start() {
+    async [START_COMPONENT]() {
       if (isRunning) throw new Error('Cannot run twice')
       isRunning = true
     },
-    async stop() {
+    async [STOP_COMPONENT]() {
       isRunning = false
       await Promise.all(delegates)
     },
