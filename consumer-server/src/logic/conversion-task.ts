@@ -349,7 +349,7 @@ export async function executeConversion(
   }
 
   if (!force) {
-    if (await shouldIgnoreConversion(components, entityId, abVersion, $BUILD_TARGET)) {
+    if (await shouldIgnoreConversion(components, abVersion, entityId, $BUILD_TARGET)) {
       logger.info('Ignoring conversion', { entityId, contentServerUrl, abVersion })
       return 13 // ALREADY_CONVERTED exit code
     }
