@@ -19,6 +19,7 @@ import {
   computeDepsDigest,
   probeHitCache
 } from '../../src/logic/asset-reuse'
+import { buildGlb } from '../helpers/glb-fixtures'
 
 jest.mock('../../src/logic/run-conversion', () => ({
   runConversion: jest.fn(),
@@ -76,27 +77,6 @@ function buildComponents(bucketBasePath: string, params: Params = {}) {
   return { config, cdnS3, sentry }
 }
 
-// Minimal glTF 2.0 binary referencing the given URIs via images[] and buffers[].
-// Used to feed `computePerAssetDigests`'s glb parser with predictable content —
-// so tests can compute the exact per-asset digest and canonical key from the
-// dep subset without simulating Unity at all.
-function buildGlb(images: string[] = [], buffers: string[] = []): Buffer {
-  const json = JSON.stringify({
-    images: images.map((uri) => ({ uri })),
-    buffers: buffers.map((uri) => ({ uri }))
-  })
-  const jsonBytes = Buffer.from(json, 'utf8')
-  const total = 12 + 8 + jsonBytes.length
-  const buf = Buffer.alloc(total)
-  buf.writeUInt32LE(0x46546c67, 0)
-  buf.writeUInt32LE(2, 4)
-  buf.writeUInt32LE(total, 8)
-  buf.writeUInt32LE(jsonBytes.length, 12)
-  buf.writeUInt32LE(0x4e4f534a, 16)
-  jsonBytes.copy(buf, 20)
-  return buf
-}
-
 // Wire up the jest.mock'd node-fetch so glb URLs (detected by a hash suffix we
 // know about) return buffered glb bytes, while scene-source-file URLs return a
 // plain body. The helper accepts a hash→buffer map so each test declares the
@@ -105,23 +85,27 @@ function setupFetchMock(glbsByHash: Map<string, Buffer>): void {
   mockedFetch.mockImplementation(async (url: any) => {
     const asString = typeof url === 'string' ? url : url?.toString() ?? ''
     for (const [hash, buf] of glbsByHash) {
-      if (asString.endsWith(hash)) {
-        return {
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          buffer: async () => buf,
-          text: async () => buf.toString('binary')
-        } as any
-      }
+      if (asString.endsWith(hash)) return responseFor(buf)
     }
-    return {
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      buffer: async () => Buffer.from('fake-source-file')
-    } as any
+    return responseFor(Buffer.from('fake-source-file'))
   })
+}
+
+// Mock Response that satisfies both the scene-source-file path (uses
+// `.buffer()`) and the glb fetch path (uses `.headers.get(...)` for the
+// Content-Length guard and `.arrayBuffer()` for the payload).
+function responseFor(buf: Buffer): any {
+  return {
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    headers: {
+      get: (name: string) => (name.toLowerCase() === 'content-length' ? String(buf.length) : null)
+    },
+    buffer: async () => buf,
+    arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
+    text: async () => buf.toString('binary')
+  }
 }
 
 async function read(s3: any, Bucket: string, Key: string): Promise<string | null> {
@@ -147,21 +131,11 @@ describe('when executing a conversion with asset-reuse enabled', () => {
 
     // Scene source files: respond with a tiny body so uploadSceneSourceFilesToCDN
     // can fetch + S3-PUT without talking to a real catalyst.
-    mockedFetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      buffer: async () => Buffer.from('fake-source-file')
-    } as any)
+    mockedFetch.mockResolvedValue(responseFor(Buffer.from('fake-source-file')))
 
     probeHitCache.clear()
     jest.clearAllMocks()
-    mockedFetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      buffer: async () => Buffer.from('fake-source-file')
-    } as any)
+    mockedFetch.mockResolvedValue(responseFor(Buffer.from('fake-source-file')))
   })
 
   afterEach(async () => {
@@ -798,19 +772,9 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       mockedFetch.mockImplementation(async (url: any) => {
         const asString = typeof url === 'string' ? url : url?.toString() ?? ''
         if (asString.endsWith('hBadGlb')) {
-          return {
-            ok: true,
-            status: 200,
-            statusText: 'OK',
-            buffer: async () => Buffer.from('not-a-glb-at-all')
-          } as any
+          return responseFor(Buffer.from('not-a-glb-at-all'))
         }
-        return {
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          buffer: async () => Buffer.from('fake-source-file')
-        } as any
+        return responseFor(Buffer.from('fake-source-file'))
       })
 
       mockedGetActiveEntity.mockResolvedValue({
@@ -820,7 +784,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         metadata: {}
       })
 
-      sentryCalls = components.sentry.captureMessage.mock.calls
+      sentryCalls = components.sentry.captureException.mock.calls
       exitCode = await executeConversion(
         components,
         'bafy-bad-glb',
@@ -840,10 +804,14 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       expect(mockedRunConversion).not.toHaveBeenCalled()
     })
 
-    it('should capture a Sentry event for the digest computation failure', () => {
+    it('should capture the thrown error via Sentry captureException with the entity tag', () => {
       expect(sentryCalls.length).toBeGreaterThan(0)
-      expect(sentryCalls[0][0]).toContain('Per-asset digest computation failed')
+      // First arg is the Error object (captureException carries the stack);
+      // second arg is the captureContext with tags.
+      expect(sentryCalls[0][0]).toBeInstanceOf(Error)
+      expect((sentryCalls[0][0] as Error).message).toMatch(/glb too short/)
       expect(sentryCalls[0][1].tags.entityId).toBe('bafy-bad-glb')
+      expect(sentryCalls[0][1].tags.phase).toBe('per-asset-digest')
     })
 
     it('should upload a failed-manifest sentinel so clients stop polling', async () => {
@@ -1244,18 +1212,14 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       mockedFetch.mockImplementation(async (url: any) => {
         const asString = typeof url === 'string' ? url : url?.toString() ?? ''
         if (asString.endsWith('hGlb')) {
-          return {
-            ok: true,
-            status: 200,
-            statusText: 'OK',
-            buffer: async () => buildGlb([], [])
-          } as any
+          return responseFor(buildGlb([], []))
         }
         // Source file fetches → 404
         return {
           ok: false,
           status: 404,
           statusText: 'Not Found',
+          headers: { get: () => null },
           buffer: async () => Buffer.from('')
         } as any
       })

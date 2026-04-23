@@ -4,6 +4,7 @@ import * as path from 'path'
 import * as fs from 'fs/promises'
 import * as crypto from 'crypto'
 import { AppComponents } from '../types'
+import { normalizeContentsBaseUrl } from '../utils'
 import { bufferExtensions, fileExtension, gltfExtensions, textureExtensions } from './extensions'
 import { parseGltfDepRefs, resolveUriToContentFile } from './gltf-deps'
 import { isS3NotFound } from './s3-helpers'
@@ -282,10 +283,22 @@ export async function mapBounded<T, R>(items: T[], concurrency: number, fn: (ite
  */
 export type GltfFetcher = (url: string) => Promise<Buffer>
 
+// 256 MB upper bound on a single glb/gltf download. Defence-in-depth against
+// a malicious or corrupted catalyst entry that declares an unbounded body —
+// without this, `arrayBuffer()` would buffer the whole response before we see
+// it. DCL's largest legitimate glbs are ~tens of MB, so 256 is generous
+// headroom without risking an OOM on the conversion worker.
+const MAX_GLTF_DOWNLOAD_BYTES = 256 * 1024 * 1024
+
 /**
- * Default fetcher — wraps `node-fetch` with a non-ok status check. Kept out of
- * the module-level imports so `asset-reuse.ts` stays importable from pure-unit
- * test paths that don't want to pull in `node-fetch`'s transitive deps.
+ * Default fetcher — wraps `node-fetch` with a non-ok status check and a
+ * Content-Length guard. Kept out of the module-level imports so
+ * `asset-reuse.ts` stays importable from pure-unit test paths that don't
+ * want to pull in `node-fetch`'s transitive deps.
+ *
+ * Uses `arrayBuffer()` rather than `res.buffer()` — the latter is deprecated
+ * in node-fetch v3 and removed in undici-based fetches. `Buffer.from(...)`
+ * on the arrayBuffer is a zero-copy view (no extra allocation).
  */
 async function defaultGltfFetcher(url: string): Promise<Buffer> {
   const { default: fetch } = await import('node-fetch')
@@ -293,7 +306,13 @@ async function defaultGltfFetcher(url: string): Promise<Buffer> {
   if (!res.ok) {
     throw new Error(`failed to fetch ${url}: ${res.status} ${res.statusText}`)
   }
-  return await res.buffer()
+  const declaredLength = Number(res.headers.get('content-length') ?? '-1')
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_GLTF_DOWNLOAD_BYTES) {
+    throw new Error(
+      `glb/gltf at ${url} declared Content-Length ${declaredLength} > ${MAX_GLTF_DOWNLOAD_BYTES} (refusing to buffer)`
+    )
+  }
+  return Buffer.from(await res.arrayBuffer())
 }
 
 /**
@@ -328,14 +347,7 @@ export async function computePerAssetDigests(
   const contentByFile = new Map<string, string>()
   for (const c of content) contentByFile.set(c.file, c.hash)
 
-  // Normalize catalyst base URL to the `/contents/` endpoint — same convention
-  // as `uploadSceneSourceFilesToCDN`. The caller already has a URL shaped for
-  // entity fetches; we have to resolve it to the per-hash content endpoint.
-  let contentsBaseUrl = contentServerUrl
-  if (!contentsBaseUrl.endsWith('/')) contentsBaseUrl += '/'
-  if (contentsBaseUrl !== 'https://sdk-team-cdn.decentraland.org/ipfs/' && !contentsBaseUrl.endsWith('contents/')) {
-    contentsBaseUrl += 'contents/'
-  }
+  const contentsBaseUrl = normalizeContentsBaseUrl(contentServerUrl)
 
   const gltfEntries = content.filter((e) => GLTF_EXTENSIONS_SET.has(fileExtension(e.file)))
   const digests = new Map<string, string>()

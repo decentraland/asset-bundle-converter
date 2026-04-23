@@ -1,10 +1,11 @@
 import { parseGltfDepRefs, resolveUriToContentFile } from '../../src/logic/gltf-deps'
 
-function buildGlb(jsonBody: string): Buffer {
-  // Minimal valid glTF 2.0 binary: 12-byte header + JSON chunk header + JSON payload.
-  // No BIN chunk — the parser doesn't need it. Chunk length must be 4-byte aligned
-  // per the spec, but our parser doesn't enforce that because real-world glbs sometimes
-  // skip the padding and Unity tolerates it.
+// Thin local helper for tests that need to feed `parseGltfDepRefs` a valid
+// glb wrapper around a specific JSON body — the shared `buildGlb` helper
+// takes images/buffers arrays (useful for most tests), but parser-edge
+// tests want control over the raw JSON text (malformed JSON, null root,
+// etc.), so this variant accepts the JSON string directly.
+function buildGlbWithRawJson(jsonBody: string): Buffer {
   const jsonBytes = Buffer.from(jsonBody, 'utf8')
   const chunkLength = jsonBytes.length
   const total = 12 + 8 + chunkLength
@@ -134,7 +135,7 @@ describe('when parsing a .glb buffer', () => {
     let result: string[]
 
     beforeEach(() => {
-      const glb = buildGlb(JSON.stringify({ images: [{ uri: 'tex.png' }], buffers: [{ uri: 'b.bin' }] }))
+      const glb = buildGlbWithRawJson(JSON.stringify({ images: [{ uri: 'tex.png' }], buffers: [{ uri: 'b.bin' }] }))
       result = parseGltfDepRefs(glb, '.glb')
     })
 
@@ -148,8 +149,8 @@ describe('when parsing a .glb buffer', () => {
     let second: string[]
 
     beforeEach(() => {
-      const a = buildGlb(JSON.stringify({ images: [{ uri: 'a.png' }, { uri: 'b.png' }] }))
-      const b = buildGlb(JSON.stringify({ images: [{ uri: 'b.png' }, { uri: 'a.png' }] }))
+      const a = buildGlbWithRawJson(JSON.stringify({ images: [{ uri: 'a.png' }, { uri: 'b.png' }] }))
+      const b = buildGlbWithRawJson(JSON.stringify({ images: [{ uri: 'b.png' }, { uri: 'a.png' }] }))
       first = parseGltfDepRefs(a, '.glb')
       second = parseGltfDepRefs(b, '.glb')
     })

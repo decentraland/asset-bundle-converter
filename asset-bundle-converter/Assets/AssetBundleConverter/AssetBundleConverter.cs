@@ -948,8 +948,15 @@ namespace DCL.ABConverter
                         // never matches what the consumer-server probes.
                         if (!settings.depsDigestByHash.TryGetValue(assetPath.hash, out string digest)
                             || string.IsNullOrEmpty(digest))
-                            throw new System.InvalidOperationException(
-                                $"No per-asset deps digest found for glb/gltf hash {assetPath.hash} (path {assetPath.finalPath}). The consumer-server must pass every glb/gltf via -depsDigestsFile.");
+                        {
+                            // Log before throwing — Unity's crash handler
+                            // sometimes truncates exception stacks in the
+                            // uploaded log file, so duplicate the message
+                            // through the logger to ensure S3 captures it.
+                            string message = $"No per-asset deps digest found for glb/gltf hash {assetPath.hash} (path {assetPath.finalPath}). The consumer-server must pass every glb/gltf via -depsDigestsFile.";
+                            log.Error(message);
+                            throw new System.InvalidOperationException(message);
+                        }
                         assetBundleName = $"{assetPath.hash}_{digest}{platform}";
                     }
                     else

@@ -3,6 +3,7 @@ import { closeSync, openSync } from 'fs'
 import * as fs from 'fs/promises'
 import { dirname, resolve } from 'path'
 import { AppComponents } from '../types'
+import { normalizeContentsBaseUrl } from '../utils'
 import { execCommand } from './run-command'
 import { spawn } from 'child_process'
 
@@ -163,14 +164,7 @@ export async function runConversion(
     }
   }
 
-  // normalize content server URL
-  let contentServerUrl = options.contentServerUrl
-  if (!contentServerUrl.endsWith('/')) contentServerUrl += '/'
-
-  // TODO: Temporal hack, we need to standardize this
-  if (contentServerUrl !== 'https://sdk-team-cdn.decentraland.org/ipfs/' && !contentServerUrl.endsWith('contents/')) {
-    contentServerUrl += 'contents/'
-  }
+  const contentServerUrl = normalizeContentsBaseUrl(options.contentServerUrl)
 
   const childArg0 = `${options.unityPath}/Editor/Unity`
 

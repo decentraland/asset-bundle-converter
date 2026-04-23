@@ -7,7 +7,7 @@ import { runConversion, runLodsConversion } from './run-conversion'
 import * as fs from 'fs'
 import * as path from 'path'
 import { hasContentChange } from './has-content-changed-task'
-import { getUnityBuildTarget } from '../utils'
+import { getUnityBuildTarget, normalizeContentsBaseUrl } from '../utils'
 import { getActiveEntity } from './fetch-entity-by-pointer'
 import fetch from 'node-fetch'
 import { checkAssetCache, computePerAssetDigests, purgeCachedBundlesFromOutput, AssetCacheResult } from './asset-reuse'
@@ -119,12 +119,7 @@ async function uploadSceneSourceFilesToCDN(
     filesToUpload.push(mainScript)
   }
 
-  // Normalize content server URL to the /contents/ endpoint
-  let contentsBaseUrl = contentServerUrl
-  if (!contentsBaseUrl.endsWith('/')) contentsBaseUrl += '/'
-  if (contentsBaseUrl !== 'https://sdk-team-cdn.decentraland.org/ipfs/' && !contentsBaseUrl.endsWith('contents/')) {
-    contentsBaseUrl += 'contents/'
-  }
+  const contentsBaseUrl = normalizeContentsBaseUrl(contentServerUrl)
 
   // Fetch+upload all source files in parallel. Independent files, each a catalyst
   // round-trip + S3 PUT; serializing them was tens-of-ms × N files of tail latency.
@@ -421,14 +416,18 @@ export async function executeConversion(
     } catch (err: any) {
       logger.error(`Per-asset digest computation failed: ${err?.message ?? err}`, defaultLoggerMetadata as any)
       components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
-      components.sentry.captureMessage('Per-asset digest computation failed', {
+      // captureException (vs captureMessage) so Sentry gets the full error
+      // object including stack — the failed-manifest body carries the same
+      // message for clients, but Sentry triage needs the stack to find where
+      // the throw originated (glb parse? URI escape? catalyst 404?).
+      components.sentry.captureException(err, {
         level: 'error',
         tags: {
           entityId,
           contentServerUrl,
           unityBuildTarget,
           version: abVersion,
-          date: new Date().toISOString()
+          phase: 'per-asset-digest'
         }
       })
       try {
@@ -448,7 +447,15 @@ export async function executeConversion(
             ACL: 'public-read'
           })
           .promise()
-      } catch {}
+      } catch (uploadErr: any) {
+        // If the sentinel upload ALSO fails, we lose the one signal clients
+        // have that this scene won't convert. Surface at warn level so ops
+        // sees a cascading failure instead of silence.
+        logger.warn(
+          `Failed to upload failed-manifest sentinel after digest failure: ${uploadErr?.message ?? uploadErr}`,
+          defaultLoggerMetadata as any
+        )
+      }
       return 5 // UNEXPECTED_ERROR exit code
     }
   }

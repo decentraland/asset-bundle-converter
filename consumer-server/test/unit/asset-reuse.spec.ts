@@ -11,6 +11,7 @@ import {
   purgeCachedBundlesFromOutput,
   GltfFetcher
 } from '../../src/logic/asset-reuse'
+import { buildGlb } from '../helpers/glb-fixtures'
 
 beforeEach(() => {
   // The hit-cache is process-local and survives across tests unless we clear it.
@@ -67,27 +68,6 @@ function makeMockComponents(existingKeys: Set<string>) {
     calls,
     metricsCalls
   }
-}
-
-// Build a minimal glTF 2.0 binary referencing the given URIs via images[] and
-// buffers[]. Kept in this spec (rather than importing a shared util) so the
-// shape of test glbs is explicit at the callsite — a reader can reason about
-// the dep set from the spec directly.
-function buildGlb(images: string[] = [], buffers: string[] = []): Buffer {
-  const json = JSON.stringify({
-    images: images.map((uri) => ({ uri })),
-    buffers: buffers.map((uri) => ({ uri }))
-  })
-  const jsonBytes = Buffer.from(json, 'utf8')
-  const total = 12 + 8 + jsonBytes.length
-  const buf = Buffer.alloc(total)
-  buf.writeUInt32LE(0x46546c67, 0)
-  buf.writeUInt32LE(2, 4)
-  buf.writeUInt32LE(total, 8)
-  buf.writeUInt32LE(jsonBytes.length, 12)
-  buf.writeUInt32LE(0x4e4f534a, 16)
-  jsonBytes.copy(buf, 20)
-  return buf
 }
 
 function makeFetcher(byHash: Map<string, Buffer>): GltfFetcher {
