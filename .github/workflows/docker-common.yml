@@ -158,6 +158,15 @@ jobs:
                 --logFile /tmp-ab/log.txt \
                 --doISS true
 
+      - name: Run e2e world conversion (ABTestScene1.dcl.eth)
+        run: |
+          docker run --rm \
+            -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
+            ${{ env.QUAY_URL }}${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
+              node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/e2e-world-conversion.js \
+                --world ABTestScene1.dcl.eth \
+                --baseUrl https://worlds-content-server.decentraland.zone
+
       - name: Push Docker image to Quay.io
         if: ${{ inputs.upload-image }}
         run: docker push --all-tags ${{ env.QUAY_URL }}${{ inputs.service-name }}

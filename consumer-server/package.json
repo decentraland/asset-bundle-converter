@@ -8,6 +8,7 @@
     "test": "jest --forceExit --detectOpenHandles --coverage --verbose",
     "test-conversion": "node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/test-conversion.js",
     "migrate": "node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/migrate-to-canonical.js",
+    "e2e-world-conversion": "node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/e2e-world-conversion.js",
     "lint:check": "eslint '**/*.{js,ts}'",
     "lint:fix": "eslint '**/*.{js,ts}' --fix"
   },
