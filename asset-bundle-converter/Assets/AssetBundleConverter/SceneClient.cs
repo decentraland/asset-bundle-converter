@@ -239,6 +239,9 @@ namespace DCL.ABConverter
             if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_CUSTOM_BASE_URL, 1, out string[] customBaseUrl))
                 settings.baseUrl = customBaseUrl[0];
 
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_ENTITY_MAPPINGS_URL, 1, out string[] customEntityMappingsUrl))
+                settings.entityMappingsUrl = customEntityMappingsUrl[0];
+
 
             if (Utils.ParseOption(commandLineArgs, Config.CLI_ANIMATION_METHOD, 1, out string[] animationMethod))
             {

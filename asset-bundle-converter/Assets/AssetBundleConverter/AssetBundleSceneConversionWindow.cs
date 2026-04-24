@@ -47,6 +47,7 @@ namespace AssetBundleConverter
         private string batchSceneId = "";
         private string batchModeParams = "";
         private string baseUrl;
+        private string entityMappingsUrl = "https://peer.decentraland.org/content/entities/active/";
         private bool placeOnScene = true;
         private bool visualTest = false;
         private bool cleanAndExitOnFinish = true;
@@ -103,6 +104,7 @@ namespace AssetBundleConverter
             animationMehtod.Value = (AnimationMethod)EditorGUILayout.EnumPopup("Animation Method", animationMehtod);
             buildTarget.Value = (SupportedBuildTarget)EditorGUILayout.EnumPopup("Build Target", buildTarget);
 
+            entityMappingsUrl = EditorGUILayout.TextField("Entity Mappings URL", entityMappingsUrl);
             cleanAndExitOnFinish = EditorGUILayout.Toggle("Clean and exit on finish", cleanAndExitOnFinish);
             visualTest = EditorGUILayout.Toggle("Visual Test", visualTest);
             placeOnScene = EditorGUILayout.Toggle("Place on Scene", placeOnScene);
@@ -334,6 +336,7 @@ namespace AssetBundleConverter
             {
                 visualTest = visualTest,
                 baseUrl = baseUrl,
+                entityMappingsUrl = entityMappingsUrl,
                 cleanAndExitOnFinish = cleanAndExitOnFinish,
                 createAssetBundle = createAssetBundle,
                 downloadBatchSize = ClampDownloadBatchSize(downloadBatchSize),

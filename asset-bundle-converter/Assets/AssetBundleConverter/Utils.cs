@@ -378,8 +378,7 @@ namespace DCL.ABConverter
         public static async Task<EntityMappingsDTO[]> GetEntityMappings(Vector2Int entityPointer, ClientSettings settings,
             IWebRequest webRequest)
         {
-
-            string url = "https://peer.decentraland.org/content/entities/active/";
+            string url = settings.entityMappingsUrl;
             DownloadHandler downloadHandler = null;
 
             try

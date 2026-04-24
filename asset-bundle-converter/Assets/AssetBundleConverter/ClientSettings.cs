@@ -62,6 +62,12 @@ namespace AssetBundleConverter
             /// </summary>
             public string baseUrl;
 
+            /// <summary>
+            /// Endpoint used to resolve a parcel pointer to its active entity mappings.
+            /// Override with -entityMappingsUrl (e.g. "http://localhost:8000/content/entities/active/") to point at a local catalyst.
+            /// </summary>
+            public string entityMappingsUrl = "https://peer.decentraland.org/content/entities/active/";
+
             public bool cleanAndExitOnFinish = true;
             public bool visualTest = false;
             public bool createAssetBundle = true;
