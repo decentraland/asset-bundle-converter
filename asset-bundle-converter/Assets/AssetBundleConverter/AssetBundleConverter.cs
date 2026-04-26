@@ -1112,6 +1112,10 @@ namespace DCL.ABConverter
 
                 int totalAssetsToDownload = gltfPaths.Count + bufferPaths.Count + texturePaths.Count;
                 int progress = 0;
+                int logStride = Math.Max(1, totalAssetsToDownload / 10);
+                int lastLoggedProgress = 0;
+
+                log.Info($"Starting download of {totalAssetsToDownload} asset(s) (gltf:{gltfPaths.Count}, buffer:{bufferPaths.Count}, texture:{texturePaths.Count})");
 
                 long GetTotalMegabytesDownloaded() =>
                     downloadedData.Values.Sum(array => array.LongLength) / (1024 * 1024);
@@ -1120,6 +1124,13 @@ namespace DCL.ABConverter
                 {
                     await Task.WhenAll(downloadTasks);
                     log.Verbose($"{nameof(ResolveAssets)}: {progress}/{totalAssetsToDownload}; {GetTotalMegabytesDownloaded()} MB");
+
+                    if (progress - lastLoggedProgress >= logStride || progress == totalAssetsToDownload)
+                    {
+                        log.Info($"Download progress: {progress}/{totalAssetsToDownload} ({totalAssetsToDownload - progress} remaining); {GetTotalMegabytesDownloaded()} MB");
+                        lastLoggedProgress = progress;
+                    }
+
                     downloadTasks.Clear();
                 }
 
