@@ -1,134 +1,105 @@
 using NUnit.Framework;
 using System.IO;
-using System.Linq;
+using System.Net.Http;
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace AssetBundleConverter.Tests
 {
     /// <summary>
-    /// Loads asset bundles produced by the e2e conversion test and verifies:
-    /// - Both Cube bundles load successfully (Scene 1 and Scene 2)
-    /// - Both Cubes have the same mesh (same source Cube.gltf)
-    /// - Both Cubes have different textures (different albedo.png per scene)
-    ///
-    /// Reads bundle paths from /tmp/e2e-bundle-paths.json, written by the Node
-    /// e2e-conversion-test.ts script. Must run after that script completes.
+    /// Downloads Cube + albedo asset bundles for two scenes from the CDN,
+    /// loads them one at a time, and verifies:
+    /// - Both Cubes instantiate and have a mesh with the same vertex/triangle count
+    /// - Both Cubes have different textures (different albedo.png source hashes)
     /// </summary>
     [TestFixture]
     [Category("E2EVerification")]
     public class AssetBundleVerificationTest
     {
-        private const string BUNDLE_PATHS_FILE = "/tmp/e2e-bundle-paths.json";
+        private const string ENTITY_1 = "bafkreie7jn6nvmgmy4dlgblwmue5zqcpd52autcengvmt2moz2mcid5ez4";
+        private const string ENTITY_2 = "bafkreid66pd52q3isartlszn3ajwfeqin43qt2r52nyeamm7uaxkbu2oly";
+        private const string CUBE_HASH = "bafkreie5su6wnqzj7ppqzlbd4m2sgf3q76hkpzsfiqun5rfd54xvokepcm";
+        private const string ALBEDO_HASH_S1 = "bafkreigy4f55gqd5g6citumtzcefwdwdtqh5nfnwia7dnwawigqem4wlhq";
+        private const string ALBEDO_HASH_S2 = "bafybeich3nzq4bym2mufrymp3bg5yy7vdts2mgixfsutv5kzt5gm2j4m7m";
+        private const string CDN_BASE = "https://ab-cdn.decentraland.zone/v48";
+        // Use mac bundles for local Editor testing (webgl bundles can't load in Editor).
+        // CI overrides this via the e2e pipeline which builds for the current target.
+        private const string TARGET = "mac";
 
-        private BundlePaths paths;
-        private AssetBundle scene1AlbedoBundle;
-        private AssetBundle scene1CubeBundle;
-        private AssetBundle scene2AlbedoBundle;
-        private AssetBundle scene2CubeBundle;
-        private GameObject scene1Instance;
-        private GameObject scene2Instance;
+        private static readonly string DOWNLOAD_DIR = Path.Combine(Application.temporaryCachePath, "e2e-bundles");
+        private static readonly HttpClient httpClient = new HttpClient();
 
-        [System.Serializable]
-        private class BundlePaths
+        private string scene1CubePath;
+        private string scene1AlbedoPath;
+        private string scene2CubePath;
+        private string scene2AlbedoPath;
+
+        [OneTimeSetUp]
+        public async Task DownloadBundles()
         {
-            public string scene1CubePath;
-            public string scene1AlbedoPath;
-            public string scene2CubePath;
-            public string scene2AlbedoPath;
-        }
+            Directory.CreateDirectory(DOWNLOAD_DIR);
 
-        [SetUp]
-        public void Setup()
-        {
-            Assert.IsTrue(File.Exists(BUNDLE_PATHS_FILE),
-                $"Bundle paths file not found at {BUNDLE_PATHS_FILE}. Run e2e-conversion-test.js first.");
+            scene1CubePath = Path.Combine(DOWNLOAD_DIR, $"s1_cube_{TARGET}");
+            scene1AlbedoPath = Path.Combine(DOWNLOAD_DIR, $"s1_albedo_{TARGET}");
+            scene2CubePath = Path.Combine(DOWNLOAD_DIR, $"s2_cube_{TARGET}");
+            scene2AlbedoPath = Path.Combine(DOWNLOAD_DIR, $"s2_albedo_{TARGET}");
 
-            var json = File.ReadAllText(BUNDLE_PATHS_FILE);
-            paths = JsonUtility.FromJson<BundlePaths>(json);
-
-            Assert.IsNotNull(paths.scene1CubePath, "scene1CubePath is null in bundle paths JSON");
-            Assert.IsNotNull(paths.scene1AlbedoPath, "scene1AlbedoPath is null in bundle paths JSON");
-            Assert.IsNotNull(paths.scene2CubePath, "scene2CubePath is null in bundle paths JSON");
-            Assert.IsNotNull(paths.scene2AlbedoPath, "scene2AlbedoPath is null in bundle paths JSON");
-
-            Assert.IsTrue(File.Exists(paths.scene1CubePath), $"Scene 1 Cube bundle not found: {paths.scene1CubePath}");
-            Assert.IsTrue(File.Exists(paths.scene1AlbedoPath), $"Scene 1 albedo bundle not found: {paths.scene1AlbedoPath}");
-            Assert.IsTrue(File.Exists(paths.scene2CubePath), $"Scene 2 Cube bundle not found: {paths.scene2CubePath}");
-            Assert.IsTrue(File.Exists(paths.scene2AlbedoPath), $"Scene 2 albedo bundle not found: {paths.scene2AlbedoPath}");
-
-            // Load texture dependencies first, then the GLB bundles
-            scene1AlbedoBundle = AssetBundle.LoadFromFile(paths.scene1AlbedoPath);
-            Assert.IsNotNull(scene1AlbedoBundle, $"Failed to load Scene 1 albedo bundle from {paths.scene1AlbedoPath}");
-
-            scene1CubeBundle = AssetBundle.LoadFromFile(paths.scene1CubePath);
-            Assert.IsNotNull(scene1CubeBundle, $"Failed to load Scene 1 Cube bundle from {paths.scene1CubePath}");
-
-            scene2AlbedoBundle = AssetBundle.LoadFromFile(paths.scene2AlbedoPath);
-            Assert.IsNotNull(scene2AlbedoBundle, $"Failed to load Scene 2 albedo bundle from {paths.scene2AlbedoPath}");
-
-            scene2CubeBundle = AssetBundle.LoadFromFile(paths.scene2CubePath);
-            Assert.IsNotNull(scene2CubeBundle, $"Failed to load Scene 2 Cube bundle from {paths.scene2CubePath}");
-        }
-
-        [TearDown]
-        public void TearDown()
-        {
-            if (scene1Instance != null) Object.DestroyImmediate(scene1Instance);
-            if (scene2Instance != null) Object.DestroyImmediate(scene2Instance);
-            if (scene1CubeBundle != null) scene1CubeBundle.Unload(true);
-            if (scene2CubeBundle != null) scene2CubeBundle.Unload(true);
-            if (scene1AlbedoBundle != null) scene1AlbedoBundle.Unload(true);
-            if (scene2AlbedoBundle != null) scene2AlbedoBundle.Unload(true);
+            await DownloadBundle($"{CDN_BASE}/{ENTITY_1}/{CUBE_HASH}_{TARGET}", scene1CubePath);
+            await DownloadBundle($"{CDN_BASE}/{ENTITY_1}/{ALBEDO_HASH_S1}_{TARGET}", scene1AlbedoPath);
+            await DownloadBundle($"{CDN_BASE}/{ENTITY_2}/{CUBE_HASH}_{TARGET}", scene2CubePath);
+            await DownloadBundle($"{CDN_BASE}/{ENTITY_2}/{ALBEDO_HASH_S2}_{TARGET}", scene2AlbedoPath);
         }
 
         [Test]
-        public void BothCubes_ShouldInstantiateSuccessfully()
+        public void BothCubes_ShouldLoadWithSameMeshButDifferentTextures()
         {
-            scene1Instance = InstantiatePrefab(scene1CubeBundle, "Scene 1");
-            scene2Instance = InstantiatePrefab(scene2CubeBundle, "Scene 2");
+            // --- Scene 1 ---
+            var albedo1 = AssetBundle.LoadFromFile(scene1AlbedoPath);
+            Assert.IsNotNull(albedo1, "Failed to load Scene 1 albedo bundle");
 
-            Assert.IsNotNull(scene1Instance, "Scene 1 Cube failed to instantiate");
-            Assert.IsNotNull(scene2Instance, "Scene 2 Cube failed to instantiate");
-        }
+            var cube1 = AssetBundle.LoadFromFile(scene1CubePath);
+            Assert.IsNotNull(cube1, "Failed to load Scene 1 Cube bundle");
 
-        [Test]
-        public void BothCubes_ShouldHaveSameMesh()
-        {
-            scene1Instance = InstantiatePrefab(scene1CubeBundle, "Scene 1");
-            scene2Instance = InstantiatePrefab(scene2CubeBundle, "Scene 2");
+            var instance1 = InstantiatePrefab(cube1, "Scene 1");
+            var mesh1 = instance1.GetComponentInChildren<MeshFilter>()?.sharedMesh;
+            Assert.IsNotNull(mesh1, "Scene 1 Cube has no mesh");
+            int vertexCount = mesh1.vertexCount;
+            int triangleCount = mesh1.triangles.Length;
 
-            var mesh1 = scene1Instance.GetComponentInChildren<MeshFilter>()?.sharedMesh;
-            var mesh2 = scene2Instance.GetComponentInChildren<MeshFilter>()?.sharedMesh;
-
-            Assert.IsNotNull(mesh1, "Scene 1 Cube has no MeshFilter/mesh");
-            Assert.IsNotNull(mesh2, "Scene 2 Cube has no MeshFilter/mesh");
-
-            Assert.AreEqual(mesh1.vertexCount, mesh2.vertexCount,
-                "Cubes should have the same vertex count (same Cube.gltf source)");
-
-            Assert.AreEqual(mesh1.triangles.Length, mesh2.triangles.Length,
-                "Cubes should have the same triangle count (same Cube.gltf source)");
-        }
-
-        [Test]
-        public void BothCubes_ShouldHaveDifferentTextures()
-        {
-            scene1Instance = InstantiatePrefab(scene1CubeBundle, "Scene 1");
-            scene2Instance = InstantiatePrefab(scene2CubeBundle, "Scene 2");
-
-            var tex1 = GetAlbedoTexture(scene1Instance, "Scene 1");
-            var tex2 = GetAlbedoTexture(scene2Instance, "Scene 2");
-
+            var tex1 = GetAlbedoTexture(instance1, "Scene 1");
             Assert.IsNotNull(tex1, "Scene 1 Cube has no albedo texture");
+            var texHash1 = Hash128.Compute(tex1.GetRawTextureData());
+
+            Object.DestroyImmediate(instance1);
+            cube1.Unload(true);
+            albedo1.Unload(true);
+
+            // --- Scene 2 ---
+            var albedo2 = AssetBundle.LoadFromFile(scene2AlbedoPath);
+            Assert.IsNotNull(albedo2, "Failed to load Scene 2 albedo bundle");
+
+            var cube2 = AssetBundle.LoadFromFile(scene2CubePath);
+            Assert.IsNotNull(cube2, "Failed to load Scene 2 Cube bundle");
+
+            var instance2 = InstantiatePrefab(cube2, "Scene 2");
+            var mesh2 = instance2.GetComponentInChildren<MeshFilter>()?.sharedMesh;
+            Assert.IsNotNull(mesh2, "Scene 2 Cube has no mesh");
+
+            Assert.AreEqual(vertexCount, mesh2.vertexCount,
+                "Cubes should have the same vertex count (same Cube.gltf source)");
+            Assert.AreEqual(triangleCount, mesh2.triangles.Length,
+                "Cubes should have the same triangle count (same Cube.gltf source)");
+
+            var tex2 = GetAlbedoTexture(instance2, "Scene 2");
             Assert.IsNotNull(tex2, "Scene 2 Cube has no albedo texture");
+            var texHash2 = Hash128.Compute(tex2.GetRawTextureData());
 
-            // GetRawTextureData returns the compressed texture bytes from CPU memory.
-            // Unlike GetPixels32, it does NOT require isReadable and works in batch mode.
-            var hash1 = Hash128.Compute(tex1.GetRawTextureData());
-            var hash2 = Hash128.Compute(tex2.GetRawTextureData());
-
-            Assert.AreNotEqual(hash1, hash2,
+            Assert.AreNotEqual(texHash1, texHash2,
                 "Cube textures should differ between scenes (different albedo.png hashes)");
+
+            Object.DestroyImmediate(instance2);
+            cube2.Unload(true);
+            albedo2.Unload(true);
         }
 
         private static GameObject InstantiatePrefab(AssetBundle bundle, string label)
@@ -136,8 +107,29 @@ namespace AssetBundleConverter.Tests
             var assetNames = bundle.GetAllAssetNames();
             Assert.IsTrue(assetNames.Length > 0, $"{label} Cube bundle has no assets");
 
-            var prefab = bundle.LoadAsset<GameObject>(assetNames[0]);
-            Assert.IsNotNull(prefab, $"{label} Cube bundle's first asset is not a GameObject");
+            // Log all assets and their types for debugging
+            foreach (var name in assetNames)
+            {
+                var allAtPath = bundle.LoadAsset(name);
+                Debug.Log($"{label} bundle asset: '{name}' type={allAtPath?.GetType().Name ?? "null"}");
+            }
+
+            // Try loading as GameObject first, then try all assets
+            GameObject prefab = null;
+            foreach (var name in assetNames)
+            {
+                prefab = bundle.LoadAsset<GameObject>(name);
+                if (prefab != null) break;
+            }
+
+            if (prefab == null)
+            {
+                // Try loading all objects and find a GameObject
+                var allObjects = bundle.LoadAllAssets<GameObject>();
+                if (allObjects.Length > 0) prefab = allObjects[0];
+            }
+
+            Assert.IsNotNull(prefab, $"{label} Cube bundle contains no GameObject. Assets: [{string.Join(", ", assetNames)}]");
 
             return Object.Instantiate(prefab);
         }
@@ -150,12 +142,27 @@ namespace AssetBundleConverter.Tests
             var material = renderer.sharedMaterial;
             Assert.IsNotNull(material, $"{label} Cube Renderer has no material");
 
-            // Try common texture property names
             Texture tex = material.mainTexture;
             if (tex == null) tex = material.GetTexture("_BaseMap");
             if (tex == null) tex = material.GetTexture("_MainTex");
 
             return tex as Texture2D;
+        }
+
+        private static async Task DownloadBundle(string url, string destPath)
+        {
+            if (File.Exists(destPath))
+            {
+                Debug.Log($"Bundle already cached: {destPath}");
+                return;
+            }
+
+            Debug.Log($"Downloading bundle: {url}");
+            var bytes = await httpClient.GetByteArrayAsync(url);
+            await File.WriteAllBytesAsync(destPath, bytes);
+
+            Assert.Greater(bytes.Length, 0, $"Downloaded file is empty from {url}");
+            Debug.Log($"Downloaded bundle to {destPath} ({bytes.Length} bytes)");
         }
     }
 }

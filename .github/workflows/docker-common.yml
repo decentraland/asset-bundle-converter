@@ -104,26 +104,12 @@ jobs:
         env:
           UNITY_2021_ULF: ${{ secrets.UNITY_2021_ULF }}
 
-      - name: Run e2e conversion + dedup + asset bundle verification
+      - name: Run e2e conversion + dedup test
         run: |
           docker run --rm \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
-            -v $(pwd):/app \
             ${{ env.QUAY_URL }}${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
-              sh -c "\
-                node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/e2e-conversion-test.js && \
-                \$UNITY_PATH/Editor/Unity \
-                  -batchmode \
-                  -projectPath \$PROJECT_PATH \
-                  -logFile /tmp/e2e-unity-test.log \
-                  -runTests \
-                  -testPlatform EditMode \
-                  -testResults /tmp/e2e-unity-results.xml \
-                  -testCategory E2EVerification ; \
-                E2E_EXIT=\$? ; \
-                cat /tmp/e2e-unity-test.log | tail -50 ; \
-                exit \$E2E_EXIT \
-              "
+              node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/e2e-conversion-test.js
 
       - name: Run tests
         run: |

@@ -5,13 +5,18 @@ on:
 
 jobs:
   pr:
-    # TODO: restore full matrix (webgl + windows + mac) before merging
     strategy:
       matrix:
         include:
           - unity-docker-image: unityci/editor:6000.2.6f2-webgl-3
             service-name: asset-bundle-converter
             platform-target: webgl
+          - unity-docker-image: unityci/editor:6000.2.6f2-windows-mono-3
+            service-name: asset-bundle-converter-windows
+            platform-target: windows
+          - unity-docker-image: unityci/editor:6000.2.6f2-mac-mono-3
+            service-name: asset-bundle-converter-mac
+            platform-target: mac
 
     uses: ./.github/workflows/docker-common.yml
     with:
