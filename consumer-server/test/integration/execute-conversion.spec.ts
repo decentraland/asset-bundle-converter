@@ -795,10 +795,15 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         runConversionOptions = options
         // Unity ignores the broken glb (per `-skippedHashes`) and produces
         // a bundle for the texture, which the integration test asserts
-        // ends up at the canonical prefix.
+        // ends up at the canonical prefix. Do NOT write `options.logFile` —
+        // its parent directory (`/tmp/asset_bundles_logs/`) is created by
+        // the real `setupStartDirectories`, which is bypassed when
+        // `runConversion` is mocked. On CI Linux that dir doesn't exist
+        // ahead of time, and writing through it throws ENOENT mid-test.
+        // The other mocks in this suite all skip the logFile write for the
+        // same reason.
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(path.join(options.outDirectory, 'hTex_windows'), 'tex-bundle-bytes')
-        await fs.writeFile(options.logFile, 'unity log')
         return 0
       })
 
