@@ -104,6 +104,15 @@ jobs:
         env:
           UNITY_2021_ULF: ${{ secrets.UNITY_2021_ULF }}
 
+      - name: Run e2e conversion test (ABTestScene1.dcl.eth)
+        run: |
+          docker run --rm \
+            -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
+            ${{ env.QUAY_URL }}${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
+              node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/e2e-conversion-test.js \
+                --world ABTestScene1.dcl.eth \
+                --coords 0,0
+
       - name: Run tests
         run: |
           docker run --rm \
@@ -122,7 +131,7 @@ jobs:
                 --pointer urn:decentraland:off-chain:base-avatars:brown_pants \
                 --outDir /tmp-ab \
                 --logFile /tmp-ab/log.txt
-          
+
       - name: Run test conversion of scene 43,100
         run: |
           docker run --rm \
@@ -133,7 +142,7 @@ jobs:
                 --pointer 43,100 \
                 --outDir /tmp-ab \
                 --logFile /tmp-ab/log.txt
-          
+
       - name: Run test conversion of scene 43,100 with ISS
         run: |
           docker run --rm \
@@ -145,7 +154,7 @@ jobs:
                 --outDir /tmp-ab \
                 --logFile /tmp-ab/log.txt \
                 --doISS true
-          
+
       - name: Run test conversion of scene 20,4 Goerli with ISS
         run: |
           docker run --rm \
@@ -157,15 +166,6 @@ jobs:
                 --outDir /tmp-ab \
                 --logFile /tmp-ab/log.txt \
                 --doISS true
-
-      - name: Run e2e conversion test (ABTestScene1.dcl.eth)
-        run: |
-          docker run --rm \
-            -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
-            ${{ env.QUAY_URL }}${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
-              node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/e2e-conversion-test.js \
-                --world ABTestScene1.dcl.eth \
-                --coords 0,0
 
       - name: Push Docker image to Quay.io
         if: ${{ inputs.upload-image }}
