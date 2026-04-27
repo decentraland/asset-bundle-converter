@@ -302,6 +302,57 @@ async function main() {
     }
   }
 
+  // ---- Write bundle paths JSON for Unity test ----
+  // The Unity test needs to know where to find the Cube and albedo bundles
+  // for Scene 1 and Scene 2 so it can load them and verify mesh/texture.
+  const CUBE_GLTF_HASH = 'bafkreie5su6wnqzj7ppqzlbd4m2sgf3q76hkpzsfiqun5rfd54xvokepcm'
+  const ALBEDO_HASH_S1 = 'bafkreigy4f55gqd5g6citumtzcefwdwdtqh5nfnwia7dnwawigqem4wlhq'
+  const ALBEDO_HASH_S2 = 'bafybeich3nzq4bym2mufrymp3bg5yy7vdts2mgixfsutv5kzt5gm2j4m7m'
+
+  const s3Root = path.join(MOCK_S3_BASE, BUCKET_NAME)
+  const assetsDir = path.join(s3Root, abVersion, 'assets')
+
+  function findBundle(dir: string, hashPrefix: string): string | null {
+    if (!fs.existsSync(dir)) return null
+    const entries = fs.readdirSync(dir)
+    // Match the bundle file (not .manifest, not .br, not metadata subdir)
+    const match = entries.find(
+      (e) => e.startsWith(hashPrefix) && !e.includes('.') && fs.statSync(path.join(dir, e)).isFile()
+    )
+    return match ? path.join(dir, match) : null
+  }
+
+  // Scene 1 manifest was stored earlier — find Cube and albedo bundles
+  const scene1CubePath = findBundle(assetsDir, CUBE_GLTF_HASH)
+  const scene1AlbedoPath = findBundle(assetsDir, ALBEDO_HASH_S1)
+
+  // Scene 2 — Cube has a different depsDigest so it's a different file
+  // Find the Cube bundle that is NOT Scene 1's
+  const allCubeBundles = fs.existsSync(assetsDir)
+    ? fs.readdirSync(assetsDir).filter(
+        (e) => e.startsWith(CUBE_GLTF_HASH) && !e.includes('.') && fs.statSync(path.join(assetsDir, e)).isFile()
+      )
+    : []
+  const scene2CubeFile = allCubeBundles.find((f) => path.join(assetsDir, f) !== scene1CubePath)
+  const scene2CubePath = scene2CubeFile ? path.join(assetsDir, scene2CubeFile) : null
+  const scene2AlbedoPath = findBundle(assetsDir, ALBEDO_HASH_S2)
+
+  const bundlePaths = {
+    scene1CubePath,
+    scene1AlbedoPath,
+    scene2CubePath,
+    scene2AlbedoPath
+  }
+
+  const bundlePathsFile = '/tmp/e2e-bundle-paths.json'
+  fs.writeFileSync(bundlePathsFile, JSON.stringify(bundlePaths, null, 2))
+  logger.info(`Bundle paths written to ${bundlePathsFile}`)
+  logger.info(JSON.stringify(bundlePaths, null, 2))
+
+  if (!scene1CubePath || !scene1AlbedoPath || !scene2CubePath || !scene2AlbedoPath) {
+    logger.warn('Some bundle paths could not be resolved — Unity test may fail')
+  }
+
   logger.info('\n========== ALL SCENES PASSED ==========')
 }
 
