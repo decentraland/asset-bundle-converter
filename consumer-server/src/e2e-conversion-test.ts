@@ -250,8 +250,10 @@ async function main() {
     const exitCode = await executeConversion(components, entityId, sceneDef.baseUrl, false, 'legacy', false, abVersion)
     const elapsed = ((Date.now() - tStart) / 1000).toFixed(1)
 
+    // Unity ErrorCodes enum: 0 = SUCCESS, 12 = CONVERSION_ERRORS_TOLERATED
+    const acceptableExitCodes = [0, 12]
     logger.info(`${sceneLabel}: exitCode=${exitCode}, elapsed=${elapsed}s`)
-    if (exitCode !== 0 && exitCode !== 2) {
+    if (!acceptableExitCodes.includes(exitCode ?? -1)) {
       throw new Error(`${sceneLabel} conversion failed with exitCode=${exitCode}`)
     }
 
