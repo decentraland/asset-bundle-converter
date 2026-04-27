@@ -1,11 +1,17 @@
-// End-to-end test: resolve a Decentraland World scene by name, run the full
+// End-to-end test: resolve a Decentraland scene by pointer, run the full
 // conversion pipeline (real Unity, mock-aws-s3), then verify every bundle
 // listed in the manifest exists in the mock S3 store and is non-empty.
 //
+// Works with both regular catalysts and the worlds content server.
+//
 // Usage (inside the Docker image):
-//   node dist/e2e-world-conversion.js \
-//     --world ABTestScene1.dcl.eth \
+//   node dist/e2e-conversion-test.js \
+//     --pointer ABTestScene1.dcl.eth \
 //     --baseUrl https://worlds-content-server.decentraland.zone
+//
+//   node dist/e2e-conversion-test.js \
+//     --pointer 43,100 \
+//     --baseUrl https://peer.decentraland.org/content
 
 import arg from 'arg'
 import * as fs from 'fs'
@@ -22,11 +28,11 @@ import { getAbVersionEnvName } from './utils'
 import { ensureUlf } from './logic/ensure-ulf'
 
 const args = arg({
-  '--world': String,
+  '--pointer': String,
   '--baseUrl': String
 })
 
-const WORLD_NAME = args['--world'] || 'ABTestScene1.dcl.eth'
+const POINTER = args['--pointer'] || 'ABTestScene1.dcl.eth'
 const BASE_URL = args['--baseUrl'] || 'https://worlds-content-server.decentraland.zone'
 
 const $UNITY_PATH = process.env.UNITY_PATH
@@ -63,16 +69,16 @@ async function main() {
   })
   const metrics = await createMetricsComponent(metricDeclarations, { config })
   const logs = await createLogComponent({ metrics })
-  const logger = logs.getLogger('e2e-world-conversion')
+  const logger = logs.getLogger('e2e-conversion-test')
   const sentry = { captureMessage: () => {}, captureException: () => {} } as any
 
   const fetcher = await createFetchComponent()
 
-  // --- Step 1: Resolve world name to entity CID ---
-  logger.info(`Resolving world "${WORLD_NAME}" via ${BASE_URL}`)
-  const entities = await getEntities(fetcher, [WORLD_NAME], BASE_URL)
+  // --- Step 1: Resolve pointer to entity CID ---
+  logger.info(`Resolving pointer "${POINTER}" via ${BASE_URL}`)
+  const entities = await getEntities(fetcher, [POINTER], BASE_URL)
   if (!entities.length) {
-    throw new Error(`Could not resolve world "${WORLD_NAME}" at ${BASE_URL}`)
+    throw new Error(`Could not resolve pointer "${POINTER}" at ${BASE_URL}`)
   }
   const entityId = entities[0].id
   logger.info(`Resolved to entityId=${entityId}`)
