@@ -497,10 +497,21 @@ export async function executeConversion(
   // signal moves to `ab_converter_glb_skipped_total{reason}` for alerting;
   // Sentry stays for genuine fetch/infra failures in the digest catch.
   if (skippedAssets.size > 0) {
+    // Early-exit collect rather than `[...values()].slice(0, 5)` so a
+    // pathological scene (thousands of broken glbs in one entity) doesn't
+    // materialize the whole skipped Map into a temporary array just to
+    // discard all but the first 5. Cheap defence — Unity's working set is
+    // already the dominant memory consumer on these workers.
+    const SAMPLE_LIMIT = 5
+    const samples: SkippedAsset[] = []
+    for (const skip of skippedAssets.values()) {
+      if (samples.length >= SAMPLE_LIMIT) break
+      samples.push(skip)
+    }
     logger.warn('Skipping glb/gltf assets with missing or unparseable dependencies', {
       ...defaultLoggerMetadata,
       count: skippedAssets.size,
-      samples: [...skippedAssets.values()].slice(0, 5).map((s) => ({
+      samples: samples.map((s) => ({
         hash: s.hash,
         file: s.file,
         reason: s.reason,

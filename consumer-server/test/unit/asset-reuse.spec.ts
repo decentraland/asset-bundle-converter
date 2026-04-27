@@ -468,6 +468,37 @@ describe('when computing per-asset digests', () => {
     })
   })
 
+  describe('and a glb references a pathologically long URI absent from the entity content', () => {
+    // Defends against log poisoning: the SkippedAsset.detail field can carry
+    // user-controlled URI strings (the whole point of `missing-deps` is to
+    // surface them), and structured-log backends typically reject or silently
+    // drop fields above ~10 KB. Truncation at construction caps blast radius
+    // even if a single entity carries a glb with a 50 KB URI inside.
+    let result: Awaited<ReturnType<typeof computePerAssetDigests>>
+    const longUri = 'a'.repeat(50_000) + '.png'
+
+    beforeEach(async () => {
+      const entity = {
+        content: [{ file: 'a.glb', hash: 'hA' }]
+      }
+      const fetcher = makeFetcher(new Map([['hA', buildGlb([longUri])]]))
+      result = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })
+    })
+
+    it('should still record the skip with reason missing-deps', () => {
+      expect(result.skipped.get('hA')?.reason).toBe('missing-deps')
+    })
+
+    it('should truncate the detail field to a bounded length so logs cannot be poisoned', () => {
+      const detail = result.skipped.get('hA')?.detail ?? ''
+      expect(detail.length).toBeLessThan(300)
+    })
+
+    it('should signal that the detail was truncated rather than silently lopping off the tail', () => {
+      expect(result.skipped.get('hA')?.detail).toMatch(/…\(truncated\)$/)
+    })
+  })
+
   describe('and a glb dep subset differs from the entity-wide dep set', () => {
     let perAssetDigest: string
     let entityWideDigest: string

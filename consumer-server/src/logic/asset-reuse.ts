@@ -608,8 +608,28 @@ export type SkippedAsset = {
   reason: SkipReason
   /** Human-readable detail for log/metric inspection — first missing URI for
    * `missing-deps`, the parse/resolve error message for `unparseable`. Never
-   * read programmatically; freeform text. */
+   * read programmatically; freeform text. Truncated at construction (see
+   * `MAX_SKIP_DETAIL_LENGTH`) so a glb carrying a pathologically large URI
+   * inside its embedded JSON can't blow the size of the warn-log line that
+   * embeds these as `samples` — structured-log backends typically reject or
+   * silently drop fields above ~10 KB, and even short of that a 50 KB
+   * payload from a misbehaving exporter would dominate triage logs. */
   detail?: string
+}
+
+/**
+ * Upper bound on the length of `SkippedAsset.detail`. Picked empirically:
+ * the longest legitimate detail is `'glTF URI "<uri>" -> "<resolved>"'` for
+ * a `missing-deps` skip; real DCL entity paths and URIs are well under 100
+ * chars apiece, so 256 keeps the realistic message intact while still
+ * fitting comfortably under common structured-log field limits when five
+ * of these land in a single warn-log entry.
+ */
+const MAX_SKIP_DETAIL_LENGTH = 256
+
+function truncateSkipDetail(s: string): string {
+  if (s.length <= MAX_SKIP_DETAIL_LENGTH) return s
+  return s.slice(0, MAX_SKIP_DETAIL_LENGTH) + '…(truncated)'
 }
 
 export type PerAssetDigestResult = {
@@ -678,7 +698,12 @@ export async function computePerAssetDigests(
       } catch (err: any) {
         return {
           kind: 'skip',
-          skip: { hash: entry.hash, file: entry.file, reason: 'unparseable', detail: err?.message ?? String(err) }
+          skip: {
+            hash: entry.hash,
+            file: entry.file,
+            reason: 'unparseable',
+            detail: truncateSkipDetail(err?.message ?? String(err))
+          }
         }
       }
 
@@ -697,10 +722,17 @@ export async function computePerAssetDigests(
           // either. Treat as `unparseable` rather than `missing-deps` so
           // operators can distinguish "content team published a broken
           // entity" (missing deps) from "exporter emitted a malformed URI"
-          // (unparseable) at the metric layer.
+          // (unparseable) at the metric layer. The thrown message embeds
+          // the offending URI string verbatim, which is content-controlled —
+          // truncate before storing so a multi-KB URI can't poison logs.
           return {
             kind: 'skip',
-            skip: { hash: entry.hash, file: entry.file, reason: 'unparseable', detail: err?.message ?? String(err) }
+            skip: {
+              hash: entry.hash,
+              file: entry.file,
+              reason: 'unparseable',
+              detail: truncateSkipDetail(err?.message ?? String(err))
+            }
           }
         }
         const hash = contentByFile.get(resolved)
@@ -711,7 +743,7 @@ export async function computePerAssetDigests(
               hash: entry.hash,
               file: entry.file,
               reason: 'missing-deps',
-              detail: `"${uri}" -> "${resolved}"`
+              detail: truncateSkipDetail(`"${uri}" -> "${resolved}"`)
             }
           }
         }
