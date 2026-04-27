@@ -117,27 +117,42 @@ async function main() {
   }
 
   // --- Step 4: Verify each bundle exists in mock S3 ---
-  const bundlePrefix = `${abVersion}/assets`
+  // Bundles land at the canonical path (`{abVersion}/assets/`) when asset reuse
+  // is active, or at the entity-scoped path (`{abVersion}/{entityId}/`) when it
+  // isn't (e.g. worlds content server doesn't support getActiveEntity by ID, so
+  // the entity fetch inside executeConversion fails and reuse is disabled).
+  // Check both locations so the test works regardless.
+  const canonicalPrefix = `${abVersion}/assets`
+  const entityScopedPrefix = `${abVersion}/${entityId}`
   let failures = 0
 
   for (const bundleFilename of manifest.files) {
-    const key = `${bundlePrefix}/${bundleFilename}`
-    const filePath = path.join(MOCK_S3_BASE, BUCKET_NAME, key)
+    const canonicalKey = `${canonicalPrefix}/${bundleFilename}`
+    const entityScopedKey = `${entityScopedPrefix}/${bundleFilename}`
+    const canonicalPath = path.join(MOCK_S3_BASE, BUCKET_NAME, canonicalKey)
+    const entityScopedPath = path.join(MOCK_S3_BASE, BUCKET_NAME, entityScopedKey)
 
-    if (!fs.existsSync(filePath)) {
-      logger.error(`MISSING bundle: ${key}`)
+    const foundPath = fs.existsSync(canonicalPath)
+      ? canonicalPath
+      : fs.existsSync(entityScopedPath)
+        ? entityScopedPath
+        : null
+
+    if (!foundPath) {
+      logger.error(`MISSING bundle (checked ${canonicalKey} and ${entityScopedKey})`)
       failures++
       continue
     }
 
-    const stat = fs.statSync(filePath)
+    const stat = fs.statSync(foundPath)
     if (stat.size === 0) {
-      logger.error(`EMPTY bundle (0 bytes): ${key}`)
+      logger.error(`EMPTY bundle (0 bytes): ${foundPath}`)
       failures++
       continue
     }
 
-    logger.info(`OK: ${key} (${stat.size} bytes)`)
+    const usedKey = foundPath === canonicalPath ? canonicalKey : entityScopedKey
+    logger.info(`OK: ${usedKey} (${stat.size} bytes)`)
   }
 
   // --- Summary ---
