@@ -104,16 +104,12 @@ jobs:
         env:
           UNITY_2021_ULF: ${{ secrets.UNITY_2021_ULF }}
 
-      - name: Run e2e conversion test (ABTestScene1 + ABTestScene2 dedup)
+      - name: Run e2e conversion + dedup test
         run: |
           docker run --rm \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
             ${{ env.QUAY_URL }}${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
-              node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/e2e-conversion-test.js \
-                --world ABTestScene1.dcl.eth \
-                --coords 0,0 \
-                --world2 ABTestScene2.dcl.eth \
-                --coords2 0,0
+              node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/e2e-conversion-test.js
 
       - name: Run tests
         run: |

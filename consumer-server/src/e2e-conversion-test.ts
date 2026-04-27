@@ -1,16 +1,15 @@
-// End-to-end test: convert one or more Decentraland scenes through the full
-// pipeline (real Unity, mock-aws-s3), then verify every bundle listed in each
-// manifest exists in the mock S3 store and is non-empty.
+// End-to-end conversion + deduplication test.
 //
-// When two scenes share assets, the second conversion should reuse cached
-// bundles from the first — exercising the depsDigest deduplication logic.
+// Converts three scenes sequentially against the same mock-aws-s3 store:
+//   1. ABTestScene1.dcl.eth (worlds) — everything fresh
+//   2. ABTestScene2.dcl.eth (worlds) — shared assets should be reused from #1
+//   3. Catalyst scene at 19,3 (peer.decentraland.zone) — same scene as #2, cross-server dedup
 //
-// Usage (inside the Docker image):
-//   node dist/e2e-conversion-test.js --world ABTestScene1.dcl.eth --coords 0,0
-//   node dist/e2e-conversion-test.js --world ABTestScene1.dcl.eth --coords 0,0 --world2 ABTestScene2.dcl.eth --coords2 0,0
-//   node dist/e2e-conversion-test.js --coords 43,100 --baseUrl https://peer.decentraland.zone/content
+// After each conversion, verifies all manifest bundles exist and are non-empty.
+// After conversions #2 and #3, validates deduplication via mtime comparison:
+//   - Reused bundles: file existed before and mtime unchanged
+//   - Fresh bundles: new file or mtime changed
 
-import arg from 'arg'
 import * as fs from 'fs'
 import * as path from 'path'
 import MockAws from 'mock-aws-s3'
@@ -25,25 +24,29 @@ import { getAbVersionEnvName } from './utils'
 import { ensureUlf } from './logic/ensure-ulf'
 import { IFetchComponent } from '@well-known-components/interfaces'
 
-const args = arg({
-  '--world': String,
-  '--coords': String,
-  '--world2': String,
-  '--coords2': String,
-  '--baseUrl': String
-})
+// ---------------------------------------------------------------------------
+// Hardcoded test scenes
+// ---------------------------------------------------------------------------
 
-if (!args['--coords']) {
-  throw new Error('--coords <x,y> is required (e.g. --coords 0,0)')
-}
+const WORLDS_BASE_URL = 'https://worlds-content-server.decentraland.zone'
+const CATALYST_BASE_URL = 'https://peer.decentraland.zone/content'
 
-const WORLD_NAME = args['--world']
-const COORDS = args['--coords']
-const WORLD_NAME_2 = args['--world2']
-const COORDS_2 = args['--coords2']
-const BASE_URL =
-  args['--baseUrl'] ||
-  (WORLD_NAME ? 'https://worlds-content-server.decentraland.zone' : 'https://peer.decentraland.zone/content')
+// All three scenes contain several shared 3D models (Store_02, GeckoStone_01,
+// FloorBaseGrass_02) and a Cube.gltf. ABTestScene1 and ABTestScene2 share the
+// same Cube.gltf source hash but differ in the texture it references (albedo.png
+// has a different hash), so the depsDigest differs and Cube's bundle must be
+// reconverted — while the other shared models and leaf assets are reused.
+// ABTestScene2 and the catalyst scene at 19,3 are the exact same scene deployed
+// to different servers, so the second-to-third conversion should reuse everything.
+const SCENES = [
+  { name: 'ABTestScene1.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectFresh: true },
+  { name: 'ABTestScene2.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectFresh: true },
+  { name: 'Catalyst 19,3', coords: '19,3', baseUrl: CATALYST_BASE_URL, isWorld: false, expectFresh: false }
+]
+
+// ---------------------------------------------------------------------------
+// Env
+// ---------------------------------------------------------------------------
 
 const $UNITY_PATH = process.env.UNITY_PATH
 const $PROJECT_PATH = process.env.PROJECT_PATH
@@ -87,16 +90,14 @@ async function resolveWorldEntity(
 
 async function resolveEntityId(
   fetcher: IFetchComponent,
-  worldName: string | undefined,
-  coords: string,
-  baseUrl: string
+  sceneDef: (typeof SCENES)[number]
 ): Promise<string> {
-  if (worldName) {
-    return resolveWorldEntity(fetcher, worldName, coords, baseUrl)
+  if (sceneDef.isWorld) {
+    return resolveWorldEntity(fetcher, sceneDef.name, sceneDef.coords, sceneDef.baseUrl)
   }
-  const entities = await getEntities(fetcher, [coords], baseUrl)
+  const entities = await getEntities(fetcher, [sceneDef.coords], sceneDef.baseUrl)
   if (!entities.length) {
-    throw new Error(`Could not resolve coords "${coords}" at ${baseUrl}`)
+    throw new Error(`Could not resolve coords "${sceneDef.coords}" at ${sceneDef.baseUrl}`)
   }
   return entities[0].id
 }
@@ -112,22 +113,14 @@ function readManifest(cdnS3: any, entityId: string, buildTarget: string): Promis
     })
 }
 
-function verifyBundles(
-  manifest: Manifest,
-  entityId: string,
-  abVersion: string,
-  logger: any
-): { failures: number; bundleFiles: Set<string> } {
+function verifyBundles(manifest: Manifest, entityId: string, abVersion: string, logger: any): number {
   const canonicalPrefix = `${abVersion}/assets`
   const entityScopedPrefix = `${abVersion}/${entityId}`
   let failures = 0
-  const bundleFiles = new Set<string>()
 
   for (const bundleFilename of manifest.files) {
-    const canonicalKey = `${canonicalPrefix}/${bundleFilename}`
-    const entityScopedKey = `${entityScopedPrefix}/${bundleFilename}`
-    const canonicalPath = path.join(MOCK_S3_BASE, BUCKET_NAME, canonicalKey)
-    const entityScopedPath = path.join(MOCK_S3_BASE, BUCKET_NAME, entityScopedKey)
+    const canonicalPath = path.join(MOCK_S3_BASE, BUCKET_NAME, canonicalPrefix, bundleFilename)
+    const entityScopedPath = path.join(MOCK_S3_BASE, BUCKET_NAME, entityScopedPrefix, bundleFilename)
 
     const foundPath = fs.existsSync(canonicalPath)
       ? canonicalPath
@@ -136,7 +129,7 @@ function verifyBundles(
         : null
 
     if (!foundPath) {
-      logger.error(`MISSING bundle (checked ${canonicalKey} and ${entityScopedKey})`)
+      logger.error(`MISSING bundle (checked ${canonicalPrefix}/ and ${entityScopedPrefix}/)`)
       failures++
       continue
     }
@@ -148,12 +141,11 @@ function verifyBundles(
       continue
     }
 
-    const usedKey = foundPath === canonicalPath ? canonicalKey : entityScopedKey
+    const usedKey = foundPath === canonicalPath ? `${canonicalPrefix}/${bundleFilename}` : `${entityScopedPrefix}/${bundleFilename}`
     logger.info(`OK: ${usedKey} (${stat.size} bytes)`)
-    bundleFiles.add(bundleFilename)
   }
 
-  return { failures, bundleFiles }
+  return failures
 }
 
 /** Recursively snapshot all files under a directory with their mtimes. */
@@ -169,6 +161,41 @@ function snapshotFiles(dir: string): Map<string, number> {
     }
   }
   return result
+}
+
+function checkDedup(
+  manifest: Manifest,
+  entityId: string,
+  abVersion: string,
+  snapshotBefore: Map<string, number>,
+  logger: any
+): { reused: string[]; fresh: string[] } {
+  const canonicalPrefix = `${abVersion}/assets`
+  const entityScopedPrefix = `${abVersion}/${entityId}`
+  const reused: string[] = []
+  const fresh: string[] = []
+
+  for (const bundleFilename of manifest.files) {
+    const canonicalPath = path.join(MOCK_S3_BASE, BUCKET_NAME, canonicalPrefix, bundleFilename)
+    const entityScopedPath = path.join(MOCK_S3_BASE, BUCKET_NAME, entityScopedPrefix, bundleFilename)
+
+    const filePath = fs.existsSync(canonicalPath)
+      ? canonicalPath
+      : fs.existsSync(entityScopedPath)
+        ? entityScopedPath
+        : null
+
+    const previousMtime = filePath ? snapshotBefore.get(filePath) : undefined
+    const currentMtime = filePath ? fs.statSync(filePath).mtimeMs : undefined
+
+    if (previousMtime !== undefined && previousMtime === currentMtime) {
+      reused.push(bundleFilename)
+    } else {
+      fresh.push(bundleFilename)
+    }
+  }
+
+  return { reused, fresh }
 }
 
 // ---------------------------------------------------------------------------
@@ -205,109 +232,70 @@ async function main() {
   const fetcher = await createFetchComponent()
   const abVersion = await config.requireString(abVersionEnvName)
 
-  // ---- Conversion 1 ----
-  const entityId1 = await resolveEntityId(fetcher, WORLD_NAME, COORDS, BASE_URL)
-  logger.info(`Scene 1: entityId=${entityId1}`)
+  for (let i = 0; i < SCENES.length; i++) {
+    const sceneDef = SCENES[i]
+    const sceneLabel = `Scene ${i + 1} (${sceneDef.name})`
 
-  const exitCode1 = await executeConversion(components, entityId1, BASE_URL, false, 'legacy', false, abVersion)
-  logger.info(`Scene 1 conversion finished with exitCode=${exitCode1}`)
-  if (exitCode1 !== 0 && exitCode1 !== 2) {
-    throw new Error(`Scene 1 conversion failed with exitCode=${exitCode1}`)
-  }
+    logger.info(`\n========== ${sceneLabel} ==========`)
 
-  const manifest1 = await readManifest(cdnS3, entityId1, $BUILD_TARGET)
-  logger.info(`Scene 1 manifest: ${manifest1.files.length} bundle(s)`)
-  if (!manifest1.files.length) {
-    throw new Error('Scene 1 manifest has zero files')
-  }
+    const entityId = await resolveEntityId(fetcher, sceneDef)
+    logger.info(`${sceneLabel}: entityId=${entityId}`)
 
-  const result1 = verifyBundles(manifest1, entityId1, abVersion, logger)
-  if (result1.failures > 0) {
-    throw new Error(`Scene 1: ${result1.failures} bundle(s) missing or empty out of ${manifest1.files.length}`)
-  }
-  logger.info(`Scene 1: all ${manifest1.files.length} bundle(s) verified`)
+    // Snapshot before conversion so we can detect reuse
+    const snapshotBefore = snapshotFiles(path.join(MOCK_S3_BASE, BUCKET_NAME))
 
-  // ---- Conversion 2 (optional) ----
-  if (!WORLD_NAME_2 && !COORDS_2) {
-    logger.info('No second scene specified — done')
-    return
-  }
+    const tStart = Date.now()
+    const exitCode = await executeConversion(components, entityId, sceneDef.baseUrl, false, 'legacy', false, abVersion)
+    const elapsed = ((Date.now() - tStart) / 1000).toFixed(1)
 
-  if (!COORDS_2) {
-    throw new Error('--coords2 is required when --world2 is specified')
-  }
+    logger.info(`${sceneLabel}: exitCode=${exitCode}, elapsed=${elapsed}s`)
+    if (exitCode !== 0 && exitCode !== 2) {
+      throw new Error(`${sceneLabel} conversion failed with exitCode=${exitCode}`)
+    }
 
-  const baseUrl2 =
-    args['--baseUrl'] ||
-    (WORLD_NAME_2 ? 'https://worlds-content-server.decentraland.zone' : 'https://peer.decentraland.zone/content')
+    // Verify all bundles exist
+    const manifest = await readManifest(cdnS3, entityId, $BUILD_TARGET)
+    logger.info(`${sceneLabel}: manifest has ${manifest.files.length} bundle(s)`)
+    if (!manifest.files.length) {
+      throw new Error(`${sceneLabel} manifest has zero files`)
+    }
 
-  // Snapshot all files + mtimes in mock S3 before Scene 2 runs. After Scene 2,
-  // a bundle is truly reused only if the file existed AND its mtime is unchanged
-  // (not overwritten by a re-upload).
-  const snapshotBeforeScene2 = snapshotFiles(path.join(MOCK_S3_BASE, BUCKET_NAME))
+    const failures = verifyBundles(manifest, entityId, abVersion, logger)
+    if (failures > 0) {
+      throw new Error(`${sceneLabel}: ${failures} bundle(s) missing or empty out of ${manifest.files.length}`)
+    }
 
-  const entityId2 = await resolveEntityId(fetcher, WORLD_NAME_2, COORDS_2, baseUrl2)
-  logger.info(`Scene 2: entityId=${entityId2}`)
+    // Dedup check (skip for first scene — nothing to compare against)
+    if (i > 0) {
+      const { reused, fresh } = checkDedup(manifest, entityId, abVersion, snapshotBefore, logger)
 
-  const exitCode2 = await executeConversion(components, entityId2, baseUrl2, false, 'legacy', false, abVersion)
-  logger.info(`Scene 2 conversion finished with exitCode=${exitCode2}`)
-  if (exitCode2 !== 0 && exitCode2 !== 2) {
-    throw new Error(`Scene 2 conversion failed with exitCode=${exitCode2}`)
-  }
+      logger.info(`${sceneLabel} reused ${reused.length} bundle(s):`)
+      reused.forEach((f) => logger.info(`  REUSED: ${f}`))
 
-  const manifest2 = await readManifest(cdnS3, entityId2, $BUILD_TARGET)
-  logger.info(`Scene 2 manifest: ${manifest2.files.length} bundle(s)`)
-  if (!manifest2.files.length) {
-    throw new Error('Scene 2 manifest has zero files')
-  }
+      logger.info(`${sceneLabel} freshly converted ${fresh.length} bundle(s):`)
+      fresh.forEach((f) => logger.info(`  NEW: ${f}`))
 
-  const result2 = verifyBundles(manifest2, entityId2, abVersion, logger)
-  if (result2.failures > 0) {
-    throw new Error(`Scene 2: ${result2.failures} bundle(s) missing or empty out of ${manifest2.files.length}`)
-  }
-  logger.info(`Scene 2: all ${manifest2.files.length} bundle(s) verified`)
+      if (reused.length === 0) {
+        throw new Error(`${sceneLabel}: expected reused bundles, found none — deduplication not working`)
+      }
 
-  // ---- Cross-scene deduplication checks ----
-  // For each bundle in Scene 2's manifest, check whether the file on disk
-  // already existed before Scene 2 ran (= reused) or is new (= freshly converted).
-  const canonicalPrefix = `${abVersion}/assets`
-  const entityScopedPrefix2 = `${abVersion}/${entityId2}`
-  const reused: string[] = []
-  const freshlyConverted: string[] = []
+      if (sceneDef.expectFresh && fresh.length === 0) {
+        throw new Error(`${sceneLabel}: expected fresh bundles (scenes differ), but all were reused`)
+      }
 
-  for (const bundleFilename of manifest2.files) {
-    const canonicalPath = path.join(MOCK_S3_BASE, BUCKET_NAME, canonicalPrefix, bundleFilename)
-    const entityScopedPath = path.join(MOCK_S3_BASE, BUCKET_NAME, entityScopedPrefix2, bundleFilename)
+      if (!sceneDef.expectFresh && fresh.length > 0) {
+        throw new Error(
+          `${sceneLabel}: expected all bundles reused (identical scene), but ${fresh.length} were freshly converted`
+        )
+      }
 
-    const filePath = fs.existsSync(canonicalPath) ? canonicalPath : fs.existsSync(entityScopedPath) ? entityScopedPath : null
-
-    const previousMtime = filePath ? snapshotBeforeScene2.get(filePath) : undefined
-    const currentMtime = filePath ? fs.statSync(filePath).mtimeMs : undefined
-
-    if (previousMtime !== undefined && previousMtime === currentMtime) {
-      reused.push(bundleFilename)
+      logger.info(`${sceneLabel}: dedup verified — ${reused.length} reused, ${fresh.length} fresh, ${elapsed}s`)
     } else {
-      freshlyConverted.push(bundleFilename)
+      logger.info(`${sceneLabel}: all ${manifest.files.length} bundle(s) verified, ${elapsed}s`)
     }
   }
 
-  logger.info(`Scene 2 reused ${reused.length} bundle(s) from Scene 1:`)
-  reused.forEach((f) => logger.info(`  REUSED: ${f}`))
-
-  logger.info(`Scene 2 freshly converted ${freshlyConverted.length} bundle(s):`)
-  freshlyConverted.forEach((f) => logger.info(`  NEW: ${f}`))
-
-  if (reused.length === 0) {
-    throw new Error('Expected at least one reused bundle in Scene 2, found none — deduplication not working')
-  }
-
-  if (freshlyConverted.length === 0) {
-    throw new Error('Expected at least one freshly converted bundle in Scene 2 (albedo.png differs), but all were reused')
-  }
-
-  logger.info(
-    `Cross-scene deduplication verified: ${reused.length} reused, ${freshlyConverted.length} freshly converted`
-  )
+  logger.info('\n========== ALL SCENES PASSED ==========')
 }
 
 main()
