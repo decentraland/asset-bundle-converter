@@ -34,13 +34,21 @@ const CATALYST_BASE_URL = 'https://peer.decentraland.zone/content'
 // All three scenes share Cube.gltf (same hash), Cube.bin, Store_02.glb,
 // FloorBaseGrass_02.glb, file1.png, and Floor_Grass02.png.png.
 //
-// Scene 1 vs Scene 2:
+// Scene 1 vs Scene 2 (entity-wide depsDigest):
 //   - albedo.png has a different hash. Scene 2 has GeckoStone_01.glb which
-//     Scene 1 doesn't. The texture/buffer sets differ, so the depsDigest
-//     differs — all shared GLB/GLTF bundles (Cube, Store_02, FloorBaseGrass_02)
-//     get different composite canonical filenames and must be reconverted.
-//   - Leaf assets with the same hash (Cube.bin, file1.png, Floor_Grass02.png.png)
-//     should be reused from Scene 1.
+//     Scene 1 doesn't. The texture/buffer sets differ, so the entity-wide
+//     depsDigest differs — ALL shared GLB/GLTF bundles (Cube, Store_02,
+//     FloorBaseGrass_02) get different composite canonical filenames and
+//     must be reconverted, even though Store_02 and FloorBaseGrass_02 don't
+//     reference albedo.png at all.
+//   - Only leaf assets with the same hash are reused: file1.png and
+//     Floor_Grass02.png.png. (.bin is not probed — Unity inlines it.)
+//   - Expected: 2 reused, 6 fresh.
+//
+//   NOTE: With per-GLB depsDigest (PR #262), Store_02 and FloorBaseGrass_02
+//   would also be reused because their per-GLB digests only include their
+//   actual deps (file1.png / Floor_Grass02.png.png — same in both scenes).
+//   That PR should update expectedReused to 4 and expectedFresh to 4.
 //
 // Scene 2 vs Catalyst 19,3:
 //   - Same scene deployed to a different server (worlds vs catalyst).
@@ -49,9 +57,9 @@ const CATALYST_BASE_URL = 'https://peer.decentraland.zone/content'
 //     coords) but it's not a texture/buffer so it doesn't affect the digest.
 //   - All bundles should be fully reused — zero fresh conversions.
 const SCENES = [
-  { name: 'ABTestScene1.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectFresh: true },
-  { name: 'ABTestScene2.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectFresh: true },
-  { name: 'Catalyst 19,3', coords: '19,3', baseUrl: CATALYST_BASE_URL, isWorld: false, expectFresh: false }
+  { name: 'ABTestScene1.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectedReused: 0, expectedFresh: 0 },
+  { name: 'ABTestScene2.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectedReused: 2, expectedFresh: 6 },
+  { name: 'Catalyst 19,3', coords: '19,3', baseUrl: CATALYST_BASE_URL, isWorld: false, expectedReused: -1, expectedFresh: 0 }
 ]
 
 // ---------------------------------------------------------------------------
@@ -282,17 +290,26 @@ async function main() {
       logger.info(`${sceneLabel} freshly converted ${fresh.length} bundle(s):`)
       fresh.forEach((f) => logger.info(`  NEW: ${f}`))
 
-      if (reused.length === 0) {
-        throw new Error(`${sceneLabel}: expected reused bundles, found none — deduplication not working`)
-      }
+      // Exact count assertions. Use -1 to mean "any positive number".
+      const { expectedReused, expectedFresh } = sceneDef
 
-      if (sceneDef.expectFresh && fresh.length === 0) {
-        throw new Error(`${sceneLabel}: expected fresh bundles (scenes differ), but all were reused`)
-      }
-
-      if (!sceneDef.expectFresh && fresh.length > 0) {
+      if (expectedReused === -1) {
+        if (reused.length === 0) {
+          throw new Error(`${sceneLabel}: expected reused bundles, found none — deduplication not working`)
+        }
+      } else if (reused.length !== expectedReused) {
         throw new Error(
-          `${sceneLabel}: expected all bundles reused (identical scene), but ${fresh.length} were freshly converted`
+          `${sceneLabel}: expected exactly ${expectedReused} reused bundle(s), got ${reused.length}: [${reused.join(', ')}]`
+        )
+      }
+
+      if (expectedFresh === -1) {
+        if (fresh.length === 0) {
+          throw new Error(`${sceneLabel}: expected fresh bundles, found none`)
+        }
+      } else if (fresh.length !== expectedFresh) {
+        throw new Error(
+          `${sceneLabel}: expected exactly ${expectedFresh} fresh bundle(s), got ${fresh.length}: [${fresh.join(', ')}]`
         )
       }
 
