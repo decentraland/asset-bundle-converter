@@ -320,7 +320,7 @@ describe('when running the migration against a pre-rollout bucket', () => {
       // composition surfaces as a mismatch between expectation and reality.
       const glbBytes = buildGlb(['texture.png'])
       const gltfFetcher = makeGltfFetcher({ hashGlb: glbBytes })
-      const digests = await computePerAssetDigests({ content }, CATALYST, { fetcher: gltfFetcher })
+      const { digests } = await computePerAssetDigests({ content }, CATALYST, { fetcher: gltfFetcher })
       expectedComposite = canonicalFilenameForAsset('hashGlb', '.glb', 'windows', digests)
 
       const fetchEntity = makeFetchEntityStub({ 'bafy-entity-with-glb': content })
@@ -392,8 +392,12 @@ describe('when running the migration against a pre-rollout bucket', () => {
       // divergence is entirely in the entity content map — exactly the
       // invariant per-glb digest is designed to capture.
       const gltfFetcher = makeGltfFetcher({ hashGlb: buildGlb(['skin.png']) })
-      const digestsA = await computePerAssetDigests({ content: contentA }, CATALYST, { fetcher: gltfFetcher })
-      const digestsB = await computePerAssetDigests({ content: contentB }, CATALYST, { fetcher: gltfFetcher })
+      const { digests: digestsA } = await computePerAssetDigests({ content: contentA }, CATALYST, {
+        fetcher: gltfFetcher
+      })
+      const { digests: digestsB } = await computePerAssetDigests({ content: contentB }, CATALYST, {
+        fetcher: gltfFetcher
+      })
       expectedA = canonicalFilenameForAsset('hashGlb', '.glb', 'windows', digestsA)
       expectedB = canonicalFilenameForAsset('hashGlb', '.glb', 'windows', digestsB)
 
@@ -738,7 +742,7 @@ describe('when running the migration against a pre-rollout bucket', () => {
           { file: 'tex.png', hash: 'hashTexA' }
         ]
         const gltfFetcher = makeGltfFetcher({ hashGlbA: buildGlb(['tex.png']) })
-        const digests = await computePerAssetDigests({ content }, CATALYST, { fetcher: gltfFetcher })
+        const { digests } = await computePerAssetDigests({ content }, CATALYST, { fetcher: gltfFetcher })
         const glbComposite = canonicalFilenameForAsset('hashGlbA', '.glb', 'windows', digests)
         await seedObject(s3, 'manifest/bafy-preexist_windows.json', makeManifest('v48', ['hashGlbA_windows']))
         await seedObject(s3, 'v48/bafy-preexist/hashGlbA_windows', 'glb-bytes')
@@ -934,15 +938,13 @@ describe('when running the migration against a pre-rollout bucket', () => {
     })
   })
 
-  describe('and one entity has a malformed glb so per-glb digest computation fails', () => {
-    // Distinct from manifestsEntityFetchFailed: the catalyst served the
-    // `/entities/active` payload fine, but the glb underneath is corrupt
-    // (garbage bytes, not a valid glTF 2.0 binary). The loop should count
-    // this under the dedicated `manifestsDigestFailed` stat so an operator
-    // can distinguish "catalyst unreachable" from "entity's glb is broken"
-    // and keep processing the remaining manifests.
+  describe('and one entity has an unparseable glb (bytes that fail the glTF magic check)', () => {
+    // After the per-glb skip change, this is no longer a manifestsDigestFailed
+    // case — content-deterministic defects (bad bytes / missing deps) are
+    // skipped per-asset. The migration keeps the manifest, refuses to copy
+    // the broken bundle to a canonical path nothing will probe, and counts
+    // the dropped bundle under glbSkippedDuringMigration.
     let stats: Awaited<ReturnType<typeof runMigration>>
-    let logged: string[]
     let expectedGoodComposite: string
 
     beforeEach(async () => {
@@ -961,20 +963,25 @@ describe('when running the migration against a pre-rollout bucket', () => {
       })
       // Bad glb returns raw bytes that fail the magic-bytes check; good glb
       // is well-formed. `parseGltfDepRefs` rejects the bad one inside
-      // `computePerAssetDigests`, whose throw we expect to land under
-      // `manifestsDigestFailed`.
+      // `computePerAssetDigests`, which now records it as a per-glb skip
+      // (not a digest-step throw). The bundle is excluded from copy.
       const gltfFetcher = makeGltfFetcher({
         hashBadGlb: Buffer.from('not-a-glb-at-all'),
         hashGoodGlb: buildGlb(['tex.png'])
       })
 
       // Pin the good entity's canonical destination so we can assert the
-      // bundle actually landed there — proves the count-and-continue loop
-      // didn't just skip past the good manifest after hitting the bad one.
-      const goodDigests = await computePerAssetDigests({ content: goodContent }, CATALYST, { fetcher: gltfFetcher })
-      expectedGoodComposite = canonicalFilenameForAsset('hashGoodGlb', '.glb', 'windows', goodDigests)
+      // bundle actually landed there.
+      const goodDigestResult = await computePerAssetDigests({ content: goodContent }, CATALYST, {
+        fetcher: gltfFetcher
+      })
+      expectedGoodComposite = canonicalFilenameForAsset(
+        'hashGoodGlb',
+        '.glb',
+        'windows',
+        goodDigestResult.digests
+      )
 
-      logged = []
       stats = await runMigration({
         s3,
         bucket: BUCKET,
@@ -983,23 +990,25 @@ describe('when running the migration against a pre-rollout bucket', () => {
         dryRun: false,
         concurrency: 10,
         fetchEntity,
-        gltfFetcher,
-        log: (msg) => logged.push(msg)
+        gltfFetcher
       })
     })
 
-    it('should count only the corrupted entity under manifestsDigestFailed', () => {
-      expect(stats.manifestsDigestFailed).toBe(1)
-      expect(stats.manifestsEntityFetchFailed).toBe(0)
+    it('should NOT count the unparseable glb under manifestsDigestFailed', () => {
+      expect(stats.manifestsDigestFailed).toBe(0)
     })
 
-    it('should continue processing subsequent manifests (count-and-continue)', async () => {
-      expect(stats.manifestsKept).toBe(1)
+    it('should keep both manifests (broken glb is per-asset skip, not manifest failure)', () => {
+      expect(stats.manifestsKept).toBe(2)
+    })
+
+    it('should record the broken glb under glbSkippedDuringMigration', () => {
+      expect(stats.glbSkippedDuringMigration).toBe(1)
+    })
+
+    it('should NOT probe or copy the broken glb bundle', () => {
+      // Only the good entity's single bundle is probed/copied.
       expect(stats.bundlesCopied).toBe(1)
-    })
-
-    it('should log the per-glb digest failure with the bad manifest key', () => {
-      expect(logged.some((l) => l.includes('bafy-badglb_windows.json') && l.includes('per-glb digest'))).toBe(true)
     })
 
     it('should NOT copy the corrupt entity\'s bundle', async () => {

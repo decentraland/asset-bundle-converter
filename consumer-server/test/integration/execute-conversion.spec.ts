@@ -759,14 +759,19 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     })
   })
 
-  describe('and a glb is malformed so per-asset digest computation throws', () => {
+  describe('and a glb has unparseable bytes alongside a healthy sibling asset', () => {
     let exitCode: number
     let sentryCalls: any[]
+    let runConversionOptions: any
 
     beforeEach(async () => {
-      // Return garbage bytes for the glb hash — parseGltfDepRefs rejects
-      // (non-glTF magic). Before the fix, the unhandled throw escaped
-      // executeConversion and SQS would retry forever against a broken scene.
+      // The broken glb returns garbage bytes (`parseGltfDepRefs` throws on
+      // "glb too short" / "magic mismatch"). Per-asset digest treats that
+      // as a content-deterministic skip rather than a scene failure: the
+      // broken glb is silently dropped from the digest map, the rest of
+      // the scene continues, and Unity is told to skip it via
+      // `-skippedHashes`. The texture sibling proves the rest of the
+      // entity still flows through to Unity-produced output.
       const implementation = async (url: any) => {
         const asString = typeof url === 'string' ? url : url?.toString() ?? ''
         if (asString.endsWith('hBadGlb')) {
@@ -779,8 +784,22 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       mockedGetActiveEntity.mockResolvedValue({
         id: 'bafy-bad-glb',
         type: 'scene',
-        content: [{ file: 'broken.glb', hash: 'hBadGlb' }],
-        metadata: {}
+        content: [
+          { file: 'broken.glb', hash: 'hBadGlb' },
+          { file: 'texture.png', hash: 'hTex' }
+        ],
+        metadata: { main: 'index.js' }
+      })
+
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        runConversionOptions = options
+        // Unity ignores the broken glb (per `-skippedHashes`) and produces
+        // a bundle for the texture, which the integration test asserts
+        // ends up at the canonical prefix.
+        await fs.mkdir(options.outDirectory, { recursive: true })
+        await fs.writeFile(path.join(options.outDirectory, 'hTex_windows'), 'tex-bundle-bytes')
+        await fs.writeFile(options.logFile, 'unity log')
+        return 0
       })
 
       sentryCalls = components.sentry.captureException.mock.calls
@@ -795,7 +814,85 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       )
     })
 
-    it('should return UNEXPECTED_ERROR exit code (5) rather than propagating the throw', () => {
+    it('should NOT fail the whole scene (exit 0)', () => {
+      expect(exitCode).toBe(0)
+    })
+
+    it('should still invoke Unity for the rest of the scene', () => {
+      expect(mockedRunConversion).toHaveBeenCalledTimes(1)
+    })
+
+    it('should pass the broken glb hash via -skippedHashes so Unity drops it', () => {
+      expect(runConversionOptions.skippedHashes).toEqual(['hBadGlb'])
+    })
+
+    it('should NOT include the broken glb in the digest map sent to Unity', () => {
+      expect(runConversionOptions.depsDigestByHash?.has?.('hBadGlb') ?? false).toBe(false)
+    })
+
+    it('should NOT capture a Sentry exception for content-determined skips', () => {
+      expect(sentryCalls.length).toBe(0)
+    })
+
+    it('should NOT upload a failed-manifest sentinel (the scene succeeded)', async () => {
+      const failedBody = await read(components.cdnS3, 'test-bucket', 'manifest/bafy-bad-glb_failed.json')
+      expect(failedBody).toBeNull()
+    })
+
+    it('should upload the healthy sibling bundle to the canonical prefix', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/hTex_windows')).toBe('tex-bundle-bytes')
+    })
+
+    it('should NOT upload anything under the broken glb hash', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/hBadGlb_windows')).toBeNull()
+    })
+  })
+
+  describe('and the catalyst returns a non-OK HTTP status while fetching glb bytes', () => {
+    let exitCode: number
+    let sentryCalls: any[]
+
+    beforeEach(async () => {
+      // 500 from the catalyst on glb bytes is a fetch-level error (transient
+      // infra), not a content defect. Keep the existing fail-fast contract
+      // for these — SQS retry is the right response, and ops still wants
+      // Sentry visibility because it might indicate catalyst trouble.
+      const implementation = async (url: any) => {
+        const asString = typeof url === 'string' ? url : url?.toString() ?? ''
+        if (asString.endsWith('hBrokenFetch')) {
+          return {
+            ok: false,
+            status: 500,
+            statusText: 'Internal Server Error',
+            headers: { get: () => null },
+            arrayBuffer: async () => new ArrayBuffer(0),
+            text: async () => 'oops'
+          }
+        }
+        return responseFor(Buffer.from('fake-source-file'))
+      }
+      mockedFetch.mockImplementation(implementation)
+
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-bad-fetch',
+        type: 'scene',
+        content: [{ file: 'broken.glb', hash: 'hBrokenFetch' }],
+        metadata: {}
+      })
+
+      sentryCalls = components.sentry.captureException.mock.calls
+      exitCode = await executeConversion(
+        components,
+        'bafy-bad-fetch',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should return UNEXPECTED_ERROR exit code (5)', () => {
       expect(exitCode).toBe(5)
     })
 
@@ -803,22 +900,15 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       expect(mockedRunConversion).not.toHaveBeenCalled()
     })
 
-    it('should capture the thrown error via Sentry captureException with the entity tag', () => {
+    it('should capture the fetch error via Sentry captureException', () => {
       expect(sentryCalls.length).toBeGreaterThan(0)
-      // First arg is the Error object (captureException carries the stack);
-      // second arg is the captureContext with tags.
       expect(sentryCalls[0][0]).toBeInstanceOf(Error)
-      expect((sentryCalls[0][0] as Error).message).toMatch(/glb too short/)
-      expect(sentryCalls[0][1].tags.entityId).toBe('bafy-bad-glb')
       expect(sentryCalls[0][1].tags.phase).toBe('per-asset-digest')
     })
 
     it('should upload a failed-manifest sentinel so clients stop polling', async () => {
-      const failedBody = await read(components.cdnS3, 'test-bucket', 'manifest/bafy-bad-glb_failed.json')
+      const failedBody = await read(components.cdnS3, 'test-bucket', 'manifest/bafy-bad-fetch_failed.json')
       expect(failedBody).not.toBeNull()
-      const parsed = JSON.parse(failedBody!)
-      expect(parsed.entityId).toBe('bafy-bad-glb')
-      expect(parsed.error).toMatch(/glb too short/)
     })
   })
 

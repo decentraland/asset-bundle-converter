@@ -290,6 +290,19 @@ namespace DCL.ABConverter
                 log.Info($"Received {settings.cachedHashes.Count} cached hash(es) — these GLTF/GLB/BIN bundles will be skipped.");
             }
 
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_SKIPPED_HASHES, 1, out string[] skippedHashesArg)
+                && skippedHashesArg != null
+                && !string.IsNullOrEmpty(skippedHashesArg[0]))
+            {
+                foreach (var hash in skippedHashesArg[0].Split(';'))
+                {
+                    if (!string.IsNullOrWhiteSpace(hash))
+                        settings.skippedHashes.Add(hash.Trim());
+                }
+
+                log.Info($"Received {settings.skippedHashes.Count} skipped hash(es) — these glb/gltf assets have missing or unparseable dependencies and will not be converted.");
+            }
+
             if (Utils.ParseOption(commandLineArgs, Config.CLI_DEPS_DIGESTS_FILE, 1, out string[] depsDigestsFileArg)
                 && depsDigestsFileArg != null
                 && !string.IsNullOrWhiteSpace(depsDigestsFileArg[0]))

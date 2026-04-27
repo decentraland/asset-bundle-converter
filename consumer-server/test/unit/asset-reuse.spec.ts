@@ -93,7 +93,13 @@ function makeFetcher(byHash: Map<string, Buffer>): GltfFetcher {
 // Shorthand to compute the canonical S3 key a probe would HEAD for a single
 // hash given a pre-computed per-asset digest map. Mirrors the production
 // call-path exactly (`canonicalFilenameForAsset` → `${prefix}/assets/${name}`).
-function probeKeyFor(abVersion: string, hash: string, ext: string, target: string, digests: Map<string, string>) {
+function probeKeyFor(
+  abVersion: string,
+  hash: string,
+  ext: string,
+  target: string,
+  digests: ReadonlyMap<string, string>
+) {
   return `${abVersion}/assets/${canonicalFilenameForAsset(hash, ext, target, digests)}`
 }
 
@@ -303,7 +309,7 @@ describe('when computing deps digests against the cross-language golden vectors'
 
 describe('when computing per-asset digests', () => {
   describe('and two glbs reference disjoint dep sets', () => {
-    let digests: Map<string, string>
+    let digests: ReadonlyMap<string, string>
 
     beforeEach(async () => {
       const entity = {
@@ -320,7 +326,7 @@ describe('when computing per-asset digests', () => {
           ['hB', buildGlb(['y.png'])]
         ])
       )
-      digests = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })
+      digests = (await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })).digests
     })
 
     it('should assign each glb a distinct digest', () => {
@@ -329,7 +335,7 @@ describe('when computing per-asset digests', () => {
   })
 
   describe('and two glbs reference the same deps in reverse JSON order', () => {
-    let digests: Map<string, string>
+    let digests: ReadonlyMap<string, string>
 
     beforeEach(async () => {
       const entity = {
@@ -346,7 +352,7 @@ describe('when computing per-asset digests', () => {
           ['hB', buildGlb(['y.png', 'x.png'])]
         ])
       )
-      digests = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })
+      digests = (await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })).digests
     })
 
     it('should produce identical digests (order-invariance)', () => {
@@ -355,7 +361,7 @@ describe('when computing per-asset digests', () => {
   })
 
   describe('and one glb references the same texture twice while the other references it once', () => {
-    let digests: Map<string, string>
+    let digests: ReadonlyMap<string, string>
 
     beforeEach(async () => {
       const entity = {
@@ -371,7 +377,7 @@ describe('when computing per-asset digests', () => {
           ['hB', buildGlb(['x.png'])]
         ])
       )
-      digests = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })
+      digests = (await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })).digests
     })
 
     it('should produce identical digests (dedup-invariance)', () => {
@@ -380,14 +386,85 @@ describe('when computing per-asset digests', () => {
   })
 
   describe('and a glb references a file that is not in the entity content', () => {
-    it('should reject the whole computation', async () => {
+    let result: Awaited<ReturnType<typeof computePerAssetDigests>>
+
+    beforeEach(async () => {
+      const entity = {
+        content: [
+          { file: 'a.glb', hash: 'hA' },
+          { file: 'b.glb', hash: 'hB' },
+          { file: 'shared.png', hash: 'hShared' }
+        ]
+      }
+      const fetcher = makeFetcher(
+        new Map([
+          ['hA', buildGlb(['missing.png'])],
+          ['hB', buildGlb(['shared.png'])]
+        ])
+      )
+      result = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })
+    })
+
+    it('should not include the broken glb in the digest map', () => {
+      expect(result.digests.has('hA')).toBe(false)
+    })
+
+    it('should record the broken glb under skipped with reason missing-deps', () => {
+      expect(result.skipped.get('hA')).toEqual(
+        expect.objectContaining({
+          hash: 'hA',
+          file: 'a.glb',
+          reason: 'missing-deps'
+        })
+      )
+    })
+
+    it('should still produce a digest for the unaffected sibling glb', () => {
+      expect(result.digests.get('hB')).toMatch(/^[0-9a-f]{32}$/)
+    })
+  })
+
+  describe('and the entity has only one glb and it is broken', () => {
+    let result: Awaited<ReturnType<typeof computePerAssetDigests>>
+
+    beforeEach(async () => {
       const entity = {
         content: [{ file: 'a.glb', hash: 'hA' }]
       }
       const fetcher = makeFetcher(new Map([['hA', buildGlb(['missing.png'])]]))
-      await expect(
-        computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })
-      ).rejects.toThrow(/not in the entity content/)
+      result = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })
+    })
+
+    it('should resolve without throwing and produce no digests', () => {
+      expect(result.digests.size).toBe(0)
+    })
+
+    it('should record the broken glb in skipped', () => {
+      expect(result.skipped.size).toBe(1)
+    })
+  })
+
+  describe('and a glb URI uses a percent-encoding that fails to decode', () => {
+    let result: Awaited<ReturnType<typeof computePerAssetDigests>>
+
+    beforeEach(async () => {
+      const entity = {
+        content: [
+          { file: 'a.glb', hash: 'hA' },
+          { file: 'tex.png', hash: 'hTex' }
+        ]
+      }
+      // `%E0%A4` is an incomplete UTF-8 sequence — `decodeURIComponent` throws
+      // URIError, which `resolveUriToContentFile` rethrows. The new behaviour
+      // treats this as a structural defect (unparseable URI table) rather than
+      // a missing dep, since the URI literally can't be decoded to a content
+      // map key.
+      const fetcher = makeFetcher(new Map([['hA', buildGlb(['%E0%A4.png'])]]))
+      result = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })
+    })
+
+    it('should classify the glb as unparseable (not missing-deps)', () => {
+      expect(result.skipped.get('hA')?.reason).toBe('unparseable')
     })
   })
 
@@ -402,7 +479,7 @@ describe('when computing per-asset digests', () => {
         { file: 'unused.png', hash: 'hUnused' }
       ]
       const fetcher = makeFetcher(new Map([['hA', buildGlb(['x.png'])]]))
-      const digests = await computePerAssetDigests(
+      const { digests } = await computePerAssetDigests(
         { content: entityContent },
         'https://peer.decentraland.org/content',
         { fetcher }
@@ -423,7 +500,7 @@ describe('when computing per-asset digests', () => {
         calls.push(url)
         return Buffer.alloc(0)
       }
-      const digests = await computePerAssetDigests(
+      const { digests } = await computePerAssetDigests(
         { content: [{ file: 'tex.png', hash: 'hX' }] },
         'https://peer.decentraland.org/content',
         { fetcher }
@@ -434,7 +511,7 @@ describe('when computing per-asset digests', () => {
   })
 
   describe('and the glb sits in a subdirectory with a relative texture URI', () => {
-    let digests: Map<string, string>
+    let digests: ReadonlyMap<string, string>
 
     beforeEach(async () => {
       const entity = {
@@ -444,7 +521,7 @@ describe('when computing per-asset digests', () => {
         ]
       }
       const fetcher = makeFetcher(new Map([['hCar', buildGlb(['../textures/paint.png'])]]))
-      digests = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })
+      digests = (await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })).digests
     })
 
     it('should resolve the relative URI against the glb location and record the digest', () => {
@@ -455,7 +532,7 @@ describe('when computing per-asset digests', () => {
 
 describe('when computing per-asset digests with the default gltf fetcher', () => {
   describe('and a glb has a large BIN payload after the JSON chunk', () => {
-    let digests: Map<string, string>
+    let digests: ReadonlyMap<string, string>
     let cancel: jest.Mock
 
     beforeEach(async () => {
@@ -467,7 +544,7 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
       )
       mockedFetch.mockResolvedValue(responseForChunks([glb, Buffer.alloc(5 * 1024)], { body }))
 
-      digests = await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+      digests = (await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')).digests
     })
 
     it('should read enough bytes to compute the digest', () => {
@@ -520,7 +597,7 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
   })
 
   describe('and a stream errors before the GLB JSON chunk is complete but a retry succeeds', () => {
-    let digests: Map<string, string>
+    let digests: ReadonlyMap<string, string>
     let cancel: jest.Mock
 
     beforeEach(async () => {
@@ -541,7 +618,7 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
         .mockResolvedValueOnce(responseForChunks([glb.subarray(0, 10)], { body: failingBody }))
         .mockResolvedValueOnce(responseForChunks([glb]))
 
-      digests = await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+      digests = (await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')).digests
     })
 
     it('should retry and compute the digest from the next response', () => {
@@ -554,13 +631,13 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
   })
 
   describe('and native fetch returns a response without a body stream', () => {
-    let digests: Map<string, string>
+    let digests: ReadonlyMap<string, string>
 
     beforeEach(async () => {
       const glb = buildGlb(['texture.png'])
       mockedFetch.mockResolvedValue(responseWithoutBody(glb))
 
-      digests = await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+      digests = (await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')).digests
     })
 
     it('should fall back to guarded arrayBuffer reads', () => {
@@ -569,14 +646,14 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
   })
 
   describe('and a transient HTTP status is followed by a successful response', () => {
-    let digests: Map<string, string>
+    let digests: ReadonlyMap<string, string>
 
     beforeEach(async () => {
       const glb = buildGlb(['texture.png'])
       mockedFetch.mockResolvedValueOnce(responseForChunks([Buffer.from('busy')], { status: 503 }))
       mockedFetch.mockResolvedValueOnce(responseForChunks([glb]))
 
-      digests = await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+      digests = (await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')).digests
     })
 
     it('should retry and compute the digest', () => {
@@ -589,7 +666,7 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
     // it (up to MAX_RETRY_AFTER_MS), and the next attempt succeeds. We keep the
     // delay small here so the test finishes quickly while still covering the
     // "honour the hint" branch end-to-end.
-    let digests: Map<string, string>
+    let digests: ReadonlyMap<string, string>
     let setTimeoutSpy: jest.SpyInstance
     let observedDelays: number[]
 
@@ -612,7 +689,7 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
       )
       mockedFetch.mockResolvedValueOnce(responseForChunks([glb]))
 
-      digests = await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+      digests = (await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')).digests
     })
 
     afterEach(() => {
@@ -633,7 +710,7 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
     // Catalyst says "wait an hour"; we cap at MAX_RETRY_AFTER_MS (30s) and
     // still attempt the retry. Any longer and we'd block a worker slot past
     // the SQS visibility window.
-    let digests: Map<string, string>
+    let digests: ReadonlyMap<string, string>
     let setTimeoutSpy: jest.SpyInstance
     let observedDelays: number[]
 
@@ -651,7 +728,7 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
       )
       mockedFetch.mockResolvedValueOnce(responseForChunks([glb]))
 
-      digests = await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+      digests = (await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')).digests
     })
 
     afterEach(() => {
@@ -708,27 +785,29 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
   })
 
   describe('and the streamed GLB is malformed but complete enough to parse', () => {
-    let thrown: unknown
+    let result: Awaited<ReturnType<typeof computePerAssetDigests>>
 
     beforeEach(async () => {
       const malformed = Buffer.alloc(20)
       mockedFetch.mockResolvedValue(responseForChunks([malformed]))
-      try {
-        await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
-      } catch (err: unknown) {
-        thrown = err
-      }
+      result = await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
     })
 
-    it('should reject without retrying parse failures', () => {
-      expect(thrown).toBeInstanceOf(Error)
-      expect((thrown as Error).message).toMatch(/magic mismatch/)
+    it('should record the glb as unparseable rather than throw', () => {
+      expect(result.skipped.get('hGlb')?.reason).toBe('unparseable')
+    })
+
+    it('should not include the unparseable glb in the digest map', () => {
+      expect(result.digests.has('hGlb')).toBe(false)
+    })
+
+    it('should not retry the parse failure', () => {
       expect(mockedFetch).toHaveBeenCalledTimes(1)
     })
   })
 
   describe('and the asset is a text gltf', () => {
-    let digests: Map<string, string>
+    let digests: ReadonlyMap<string, string>
 
     beforeEach(async () => {
       const gltf = Buffer.from(JSON.stringify({ images: [{ uri: 'texture.png' }] }), 'utf8')
@@ -740,7 +819,7 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
       }
       mockedFetch.mockResolvedValue(responseForChunks([gltf.subarray(0, 8), gltf.subarray(8)]))
 
-      digests = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content')
+      digests = (await computePerAssetDigests(entity, 'https://peer.decentraland.org/content')).digests
     })
 
     it('should stream the full JSON document and compute the digest', () => {
@@ -868,12 +947,12 @@ describe('when checking the asset cache against S3', () => {
       const glbBytes = buildGlb(['skin.png'])
       const fetcher = makeFetcher(new Map([['sharedGlb', glbBytes]]))
 
-      const digestsA = await computePerAssetDigests(
+      const { digests: digestsA } = await computePerAssetDigests(
         { content: sceneAContent },
         'https://peer.decentraland.org/content',
         { fetcher }
       )
-      const digestsB = await computePerAssetDigests(
+      const { digests: digestsB } = await computePerAssetDigests(
         { content: sceneBContent },
         'https://peer.decentraland.org/content',
         { fetcher }
@@ -917,12 +996,16 @@ describe('when checking the asset cache against S3', () => {
       ]
       const fetcher = makeFetcher(new Map([['sharedGlb', glbBytes]]))
 
-      const digestsA = await computePerAssetDigests({ content: sceneA }, 'https://peer.decentraland.org/content', {
-        fetcher
-      })
-      const digestsB = await computePerAssetDigests({ content: sceneB }, 'https://peer.decentraland.org/content', {
-        fetcher
-      })
+      const { digests: digestsA } = await computePerAssetDigests(
+        { content: sceneA },
+        'https://peer.decentraland.org/content',
+        { fetcher }
+      )
+      const { digests: digestsB } = await computePerAssetDigests(
+        { content: sceneB },
+        'https://peer.decentraland.org/content',
+        { fetcher }
+      )
 
       expect(digestsA.get('sharedGlb')).toBe(digestsB.get('sharedGlb'))
       expect(probeKeyFor('v48', 'sharedGlb', '.glb', 'windows', digestsA)).toBe(

@@ -1112,6 +1112,22 @@ namespace DCL.ABConverter
                 List<AssetPath> bufferPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.bufferExtensions);
                 List<AssetPath> texturePaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
 
+                // Drop glb/gltf entries the consumer-server flagged as unconvertible
+                // (missing dependencies or unparseable bytes) before any download or
+                // import attempt. Identical mechanism to cachedHashes below, but
+                // semantically distinct: cached hashes correspond to existing canonical
+                // bundles upstream, while skipped hashes have no bundle anywhere — the
+                // asset is silently absent from the output. Done first so a hash that
+                // somehow appears in both lists is treated as "skipped" (the stricter
+                // case — never downloaded, never marked).
+                if (settings.skippedHashes != null && settings.skippedHashes.Count > 0)
+                {
+                    int gltfDropped = gltfPaths.RemoveAll(p => settings.skippedHashes.Contains(p.hash));
+                    int bufferDropped = bufferPaths.RemoveAll(p => settings.skippedHashes.Contains(p.hash));
+
+                    log.Info($"Dropped {gltfDropped} broken glb/gltf(s) and {bufferDropped} associated buffer(s) — flagged by consumer-server (missing deps or unparseable bytes).");
+                }
+
                 // Skip GLTFs/buffers whose canonical asset bundle already exists on the CDN.
                 // Textures are never skipped here — they may still be referenced from within
                 // non-cached GLTFs and are required to be in the contentTable for import.

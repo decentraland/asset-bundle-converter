@@ -589,6 +589,35 @@ async function defaultGltfFetcher(url: string, ext: '.glb' | '.gltf'): Promise<B
 }
 
 /**
+ * Reason a glb/gltf was excluded from the digest map. `missing-deps` covers
+ * the common production case where the glb references a texture/buffer URI
+ * that is not present in the entity's `content` map — Unity can't resolve
+ * the dependency either, so attempting conversion would fail. `unparseable`
+ * covers structural defects in the glb itself (bad magic, truncated JSON
+ * chunk, non-object root, URI escapes that violate the resolver's rules) —
+ * Unity wouldn't be able to import it either.
+ *
+ * Both reasons are content-deterministic: re-running against the same entity
+ * always produces the same skip set, so workers don't flap on retry.
+ */
+export type SkipReason = 'missing-deps' | 'unparseable'
+
+export type SkippedAsset = {
+  hash: string
+  file: string
+  reason: SkipReason
+  /** Human-readable detail for log/metric inspection — first missing URI for
+   * `missing-deps`, the parse/resolve error message for `unparseable`. Never
+   * read programmatically; freeform text. */
+  detail?: string
+}
+
+export type PerAssetDigestResult = {
+  digests: ReadonlyMap<string, string>
+  skipped: ReadonlyMap<string, SkippedAsset>
+}
+
+/**
  * Compute a per-glb/gltf deps digest for every gltf-extension asset in the
  * entity. For each glb/gltf: download the bytes, parse the embedded JSON to
  * enumerate its external URI refs, resolve each URI against `entity.content`
@@ -601,15 +630,19 @@ async function defaultGltfFetcher(url: string, ext: '.glb' | '.gltf'): Promise<B
  * `computeDepsDigest`'s own sort. Two glbs whose dep sets differ in any entry
  * produce distinct digests.
  *
- * Malformed glTF / missing URI target / invalid percent-encoding: the promise
- * rejects. Callers (scene conversion) convert this into a scene failure, which
- * matches what Unity would do if it tried to convert the same bad content.
+ * Returns `{ digests, skipped }`. A glb that references a URI absent from
+ * `entity.content`, or whose bytes are structurally malformed, lands in
+ * `skipped` instead of `digests` — the caller is expected to forward those
+ * hashes to Unity so they're not converted (the bundle they'd produce can't
+ * render in-world anyway). Catalyst fetch failures keep their throw
+ * semantics: those are transient network conditions where retrying via SQS
+ * is the right response, not a content defect.
  */
 export async function computePerAssetDigests(
   entity: Pick<Entity, 'content'>,
   contentServerUrl: string,
   options?: { fetcher?: GltfFetcher; concurrency?: number }
-): Promise<Map<string, string>> {
+): Promise<PerAssetDigestResult> {
   const fetcher = options?.fetcher ?? defaultGltfFetcher
   // 20 in-flight catalyst fetches — below the S3 HEAD probe concurrency (50)
   // because catalyst fetches are heavier and more rate-limit-sensitive, but
@@ -624,37 +657,79 @@ export async function computePerAssetDigests(
 
   const gltfEntries = content.filter((e) => GLTF_EXTENSIONS_SET.has(fileExtension(e.file)))
   const digests = new Map<string, string>()
-  if (gltfEntries.length === 0) return digests
+  const skipped = new Map<string, SkippedAsset>()
+  if (gltfEntries.length === 0) return { digests, skipped }
 
-  const results = await mapBounded(gltfEntries, concurrency, async (entry) => {
-    const ext = fileExtension(entry.file) as '.glb' | '.gltf'
-    const bytes = await fetcher(`${contentsBaseUrl}${entry.hash}`, ext)
-    const uris = parseGltfDepRefs(bytes, ext)
+  type WorkerResult = { kind: 'ok'; hash: string; digest: string } | { kind: 'skip'; skip: SkippedAsset }
 
-    // Resolve URIs against entity content, dedup on (file, hash) — the glTF
-    // URI layer already dedups by URI, but two distinct URIs could resolve to
-    // the same content file via percent-encoding variants or path aliases.
-    const seen = new Set<string>()
-    const deps: Array<{ file: string; hash: string }> = []
-    for (const uri of uris) {
-      const resolved = resolveUriToContentFile(uri, entry.file)
-      const hash = contentByFile.get(resolved)
-      if (!hash) {
-        throw new Error(
-          `glTF ${entry.file} references "${uri}" (resolved to "${resolved}") which is not in the entity content`
-        )
+  const results = await mapBounded<(typeof gltfEntries)[number], WorkerResult>(
+    gltfEntries,
+    concurrency,
+    async (entry): Promise<WorkerResult> => {
+      const ext = fileExtension(entry.file) as '.glb' | '.gltf'
+      // Fetch errors stay throws — they're transient and bubble up to
+      // `executeConversion` where they trigger SQS retry. Only content-
+      // determined defects (parse + resolve) become skips.
+      const bytes = await fetcher(`${contentsBaseUrl}${entry.hash}`, ext)
+
+      let uris: string[]
+      try {
+        uris = parseGltfDepRefs(bytes, ext)
+      } catch (err: any) {
+        return {
+          kind: 'skip',
+          skip: { hash: entry.hash, file: entry.file, reason: 'unparseable', detail: err?.message ?? String(err) }
+        }
       }
-      const key = `${resolved}\0${hash}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      deps.push({ file: resolved, hash })
+
+      // Resolve URIs against entity content, dedup on (file, hash) — the glTF
+      // URI layer already dedups by URI, but two distinct URIs could resolve to
+      // the same content file via percent-encoding variants or path aliases.
+      const seen = new Set<string>()
+      const deps: Array<{ file: string; hash: string }> = []
+      for (const uri of uris) {
+        let resolved: string
+        try {
+          resolved = resolveUriToContentFile(uri, entry.file)
+        } catch (err: any) {
+          // Bad percent-encoding / scheme / escapes-root URIs are still
+          // structural defects in the glTF — Unity wouldn't accept them
+          // either. Treat as `unparseable` rather than `missing-deps` so
+          // operators can distinguish "content team published a broken
+          // entity" (missing deps) from "exporter emitted a malformed URI"
+          // (unparseable) at the metric layer.
+          return {
+            kind: 'skip',
+            skip: { hash: entry.hash, file: entry.file, reason: 'unparseable', detail: err?.message ?? String(err) }
+          }
+        }
+        const hash = contentByFile.get(resolved)
+        if (!hash) {
+          return {
+            kind: 'skip',
+            skip: {
+              hash: entry.hash,
+              file: entry.file,
+              reason: 'missing-deps',
+              detail: `"${uri}" -> "${resolved}"`
+            }
+          }
+        }
+        const key = `${resolved}\0${hash}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        deps.push({ file: resolved, hash })
+      }
+
+      return { kind: 'ok', hash: entry.hash, digest: computeDepsDigest(deps) }
     }
+  )
 
-    return { hash: entry.hash, digest: computeDepsDigest(deps) }
-  })
-
-  for (const { hash, digest } of results) digests.set(hash, digest)
-  return digests
+  for (const r of results) {
+    if (r.kind === 'ok') digests.set(r.hash, r.digest)
+    else skipped.set(r.skip.hash, r.skip)
+  }
+  return { digests, skipped }
 }
 
 type CheckAssetCacheParams = {
@@ -699,7 +774,12 @@ export async function checkAssetCache(
     if (!params.contentServerUrl) {
       throw new Error('checkAssetCache: either depsDigestByHash or contentServerUrl must be supplied')
     }
-    depsDigestByHash = await computePerAssetDigests(entity, params.contentServerUrl, { fetcher: params.fetcher })
+    // Skipped glbs simply don't appear in `digests`; the probe loop below
+    // already excludes glb/gltf hashes that aren't in the digest map, so
+    // skipped hashes naturally land in neither `cachedHashes` nor
+    // `missingHashes`. No separate handling required for the fallback path.
+    const result = await computePerAssetDigests(entity, params.contentServerUrl, { fetcher: params.fetcher })
+    depsDigestByHash = result.digests
   }
 
   type Probe = { hash: string; skippable: boolean; filename: string; key: string }
@@ -713,6 +793,13 @@ export async function checkAssetCache(
     // producing a standalone `{hash}_{target}` object, so probing would
     // always miss and permanently block the full-cache short-circuit.
     if (!PROBE_EXTENSIONS.has(ext)) continue
+    // Glbs/gltfs that the digest computation marked as broken (missing deps
+    // or unparseable bytes) won't ever be converted. Skip them from the
+    // probe so they appear in neither `cachedHashes` nor `missingHashes` —
+    // the canonical bundle they'd point at can't exist (Unity won't produce
+    // it), and counting them as a miss would force a Unity run for a scene
+    // whose remaining assets might all be cached.
+    if (GLTF_EXTENSIONS_SET.has(ext) && !depsDigestByHash.has(entry.hash)) continue
     if (seen.has(entry.hash)) continue
     seen.add(entry.hash)
     const filename = canonicalFilenameForAsset(entry.hash, ext, buildTarget, depsDigestByHash)

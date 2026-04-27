@@ -9,7 +9,13 @@ import * as path from 'path'
 import { hasContentChange } from './has-content-changed-task'
 import { getUnityBuildTarget, normalizeContentsBaseUrl } from '../utils'
 import { getActiveEntity } from './fetch-entity-by-pointer'
-import { checkAssetCache, computePerAssetDigests, purgeCachedBundlesFromOutput, AssetCacheResult } from './asset-reuse'
+import {
+  checkAssetCache,
+  computePerAssetDigests,
+  purgeCachedBundlesFromOutput,
+  AssetCacheResult,
+  SkippedAsset
+} from './asset-reuse'
 
 type Manifest = {
   version: string
@@ -424,9 +430,12 @@ export async function executeConversion(
   // main catch does, publish the failed-manifest sentinel, and return
   // UNEXPECTED_ERROR.
   let depsDigestByHash: ReadonlyMap<string, string> | undefined
+  let skippedAssets: ReadonlyMap<string, SkippedAsset> = new Map()
   if (useAssetReuse && entity) {
     try {
-      depsDigestByHash = await computePerAssetDigests(entity, contentServerUrl)
+      const digestResult = await computePerAssetDigests(entity, contentServerUrl)
+      depsDigestByHash = digestResult.digests
+      skippedAssets = digestResult.skipped
     } catch (err: any) {
       logger.error(`Per-asset digest computation failed: ${err?.message ?? err}`, defaultLoggerMetadata as any)
       components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
@@ -471,6 +480,31 @@ export async function executeConversion(
         )
       }
       return 5 // UNEXPECTED_ERROR exit code
+    }
+  }
+
+  // Visibility for the skip path: aggregate count + reason-labelled counter so
+  // ops can alert on skip-rate spikes without scraping logs. Sample up to five
+  // entries into the warn line so a misbehaving scene is diagnosable from the
+  // log without a separate per-asset entry; the cap keeps a pathological
+  // entity (50+ broken glbs) from blowing the line size.
+  if (skippedAssets.size > 0) {
+    logger.warn('Skipping glb/gltf assets with missing or unparseable dependencies', {
+      ...defaultLoggerMetadata,
+      count: skippedAssets.size,
+      samples: [...skippedAssets.values()].slice(0, 5).map((s) => ({
+        hash: s.hash,
+        file: s.file,
+        reason: s.reason,
+        detail: s.detail
+      }))
+    } as any)
+    for (const skip of skippedAssets.values()) {
+      components.metrics.increment('ab_converter_glb_skipped_total', {
+        build_target: $BUILD_TARGET,
+        ab_version: abVersion,
+        reason: skip.reason
+      })
     }
   }
 
@@ -595,6 +629,7 @@ export async function executeConversion(
         animation: animation,
         doISS: doISS,
         cachedHashes: useAssetReuse && cacheResult ? cacheResult.unitySkippableHashes : undefined,
+        skippedHashes: skippedAssets.size > 0 ? [...skippedAssets.keys()] : undefined,
         depsDigestByHash
       })
     } else {

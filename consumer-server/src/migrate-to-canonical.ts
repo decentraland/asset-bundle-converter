@@ -60,6 +60,15 @@ export type MigrationStats = {
   bundlesCopied: number
   glbRenamedCount: number
   bundlesMissingSource: number
+  /** Glb bundle entries listed in a kept manifest whose hash was marked
+   * skipped by the digest computation (missing deps / unparseable bytes).
+   * The live converter would never produce a canonical bundle for them, so
+   * we don't migrate them either — copying the pre-PR entity-scoped bundle
+   * to a canonical key nothing probes would just create dead storage.
+   * Distinct from `manifestsDigestFailed`: that one is "the whole digest
+   * step threw"; this one is "the step succeeded but the manifest carries
+   * bundles the live converter no longer emits." */
+  glbSkippedDuringMigration: number
   errors: number
 }
 
@@ -76,6 +85,7 @@ function emptyStats(): MigrationStats {
     bundlesCopied: 0,
     glbRenamedCount: 0,
     bundlesMissingSource: 0,
+    glbSkippedDuringMigration: 0,
     errors: 0
   }
 }
@@ -301,15 +311,19 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
     // pre-port path (one-shot hash of entity.content) but matches the live
     // converter byte-for-byte, which is the invariant we care about.
     let depsDigestByHash: ReadonlyMap<string, string>
+    let skippedHashes: ReadonlySet<string>
     try {
-      depsDigestByHash = await computePerAssetDigests({ content: entityContent }, catalystUrl, {
+      const digestResult = await computePerAssetDigests({ content: entityContent }, catalystUrl, {
         fetcher: opts.gltfFetcher
       })
+      depsDigestByHash = digestResult.digests
+      skippedHashes = new Set(digestResult.skipped.keys())
     } catch (err: any) {
-      // Catalyst returned 404 on a glb fetch, glb is malformed, URI escapes
-      // entity root, etc. Count separately from entity-fetch failures so an
-      // operator can triage "catalyst unreachable" vs "manifest's entity has
-      // corrupt content" with a single glance at the stats.
+      // Catalyst returned 404 on a glb byte fetch, network failure, etc.
+      // Content-deterministic defects (missing deps / unparseable bytes)
+      // land in `digestResult.skipped` instead of throwing — those are
+      // counted per-bundle below as `glbSkippedDuringMigration`. Only true
+      // fetch/infra failures reach this branch.
       log(`[${obj.Key}] failed to compute per-glb digests: ${err.message}`)
       stats.manifestsDigestFailed++
       continue
@@ -321,6 +335,17 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
     const candidates = manifest.files.filter((f) => bundlePattern.test(f))
 
     await mapBounded(candidates, concurrency, async (filename) => {
+      // Bundles whose content hash the live converter would never produce
+      // (missing deps / unparseable glb) have no canonical destination —
+      // skip without probe so we don't even count the work. The pre-PR
+      // entity-scoped bundle stays where it is; once entity-scoped storage
+      // is purged in a follow-up, those orphan keys disappear naturally.
+      const skipParts = splitBundleName(filename, target)
+      if (skipParts && skippedHashes.has(skipParts.hash)) {
+        stats.glbSkippedDuringMigration++
+        return
+      }
+
       stats.bundlesProbed++
 
       // Source file on pre-PR entity-scoped layout retains the bare filename

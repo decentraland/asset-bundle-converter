@@ -149,6 +149,12 @@ export async function runConversion(
     animation: string | undefined
     doISS: boolean | undefined
     cachedHashes?: string[]
+    /** Content hashes whose glb/gltf bytes the consumer-server determined are
+     * unconvertible (missing dependencies / unparseable). Unity drops these
+     * from `gltfPaths` and `bufferPaths` before any download or import
+     * attempt, so no bundle is produced for them. Distinct from
+     * `cachedHashes` which presumes the canonical bundle exists upstream. */
+    skippedHashes?: string[]
     depsDigestByHash?: ReadonlyMap<string, string>
   }
 ) {
@@ -190,6 +196,10 @@ export async function runConversion(
 
   if (options.cachedHashes && options.cachedHashes.length > 0) {
     childArguments.push('-cachedHashes', options.cachedHashes.join(';'))
+  }
+
+  if (options.skippedHashes && options.skippedHashes.length > 0) {
+    childArguments.push('-skippedHashes', options.skippedHashes.join(';'))
   }
 
   // Per-asset deps digests go out via a temp JSON file rather than an inline

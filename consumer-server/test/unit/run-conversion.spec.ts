@@ -374,6 +374,99 @@ describe('when runConversion pushes the legacy -cachedHashes flag', () => {
   })
 })
 
+describe('when runConversion forwards the -skippedHashes flag', () => {
+  let outDirectory: string
+
+  beforeEach(async () => {
+    outDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'run-conv-skipped-'))
+    mockedSpawn.mockReset()
+    mockedSpawn.mockImplementation(() => makeChildStub(0))
+  })
+
+  afterEach(async () => {
+    await fs.rm(outDirectory, { recursive: true, force: true })
+  })
+
+  describe('and skippedHashes is a non-empty array', () => {
+    let argv: string[]
+
+    beforeEach(async () => {
+      await runConversion(makeMockLogger(), makeMockComponents(), {
+        logFile: path.join(outDirectory, 'log.txt'),
+        outDirectory,
+        entityId: 'bafy',
+        entityType: 'scene',
+        contentServerUrl: 'https://peer.decentraland.org/content',
+        unityPath: '/fake/unity',
+        projectPath: '/fake/project',
+        timeout: 60_000,
+        unityBuildTarget: 'StandaloneWindows64',
+        animation: 'legacy',
+        doISS: false,
+        skippedHashes: ['brokenA', 'brokenB']
+      })
+      argv = mockedSpawn.mock.calls[0][1]
+    })
+
+    it('should join them with semicolons and pass after the flag', () => {
+      const idx = argv.indexOf('-skippedHashes')
+      expect(idx).toBeGreaterThan(-1)
+      expect(argv[idx + 1]).toBe('brokenA;brokenB')
+    })
+  })
+
+  describe('and skippedHashes is undefined (back-compat with older callers)', () => {
+    let argv: string[]
+
+    beforeEach(async () => {
+      await runConversion(makeMockLogger(), makeMockComponents(), {
+        logFile: path.join(outDirectory, 'log.txt'),
+        outDirectory,
+        entityId: 'bafy',
+        entityType: 'scene',
+        contentServerUrl: 'https://peer.decentraland.org/content',
+        unityPath: '/fake/unity',
+        projectPath: '/fake/project',
+        timeout: 60_000,
+        unityBuildTarget: 'StandaloneWindows64',
+        animation: 'legacy',
+        doISS: false
+      })
+      argv = mockedSpawn.mock.calls[0][1]
+    })
+
+    it('should NOT push the flag (Unity behaves as before when omitted)', () => {
+      expect(argv).not.toContain('-skippedHashes')
+    })
+  })
+
+  describe('and skippedHashes is an empty array', () => {
+    let argv: string[]
+
+    beforeEach(async () => {
+      await runConversion(makeMockLogger(), makeMockComponents(), {
+        logFile: path.join(outDirectory, 'log.txt'),
+        outDirectory,
+        entityId: 'bafy',
+        entityType: 'scene',
+        contentServerUrl: 'https://peer.decentraland.org/content',
+        unityPath: '/fake/unity',
+        projectPath: '/fake/project',
+        timeout: 60_000,
+        unityBuildTarget: 'StandaloneWindows64',
+        animation: 'legacy',
+        doISS: false,
+        skippedHashes: []
+      })
+      argv = mockedSpawn.mock.calls[0][1]
+    })
+
+    it('should NOT push the flag (empty is the no-op shape)', () => {
+      expect(argv).not.toContain('-skippedHashes')
+    })
+  })
+})
+
 describe('when runConversion selects the animation method', () => {
   let outDirectory: string
 
