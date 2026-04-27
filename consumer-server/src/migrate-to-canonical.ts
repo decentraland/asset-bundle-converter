@@ -335,13 +335,17 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
     const candidates = manifest.files.filter((f) => bundlePattern.test(f))
 
     await mapBounded(candidates, concurrency, async (filename) => {
+      // Single split serves both the skip-filter below and the canonical-
+      // name derivation further down. Splitting twice was harmless but the
+      // regex match isn't free on long candidate lists.
+      const parts = splitBundleName(filename, target)
+
       // Bundles whose content hash the live converter would never produce
       // (missing deps / unparseable glb) have no canonical destination —
       // skip without probe so we don't even count the work. The pre-PR
       // entity-scoped bundle stays where it is; once entity-scoped storage
       // is purged in a follow-up, those orphan keys disappear naturally.
-      const skipParts = splitBundleName(filename, target)
-      if (skipParts && skippedHashes.has(skipParts.hash)) {
+      if (parts && skippedHashes.has(parts.hash)) {
         stats.glbSkippedDuringMigration++
         return
       }
@@ -352,7 +356,6 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
       // Unity originally produced — we only rename on the canonical destination.
       const sourceKey = `${sourcePrefix}/${filename}`
 
-      const parts = splitBundleName(filename, target)
       const ext = parts ? (extByHash.get(parts.hash) ?? '') : ''
       // `canonicalFilenameForAsset` throws when asked for a glb/gltf hash that
       // is missing from the digest map — that shouldn't happen here because

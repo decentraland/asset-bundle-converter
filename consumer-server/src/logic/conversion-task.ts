@@ -433,7 +433,15 @@ export async function executeConversion(
   let skippedAssets: ReadonlyMap<string, SkippedAsset> = new Map()
   if (useAssetReuse && entity) {
     try {
-      const digestResult = await computePerAssetDigests(entity, contentServerUrl)
+      // 60 s aggregate cap on the digest pass. Each catalyst fetch is already
+      // bounded (3 retry attempts × ≤30 s Retry-After clamp), but a scene
+      // with dozens of glbs each backing off to the cap could compound past
+      // SQS's visibility window. Past this point we throw, fall into the
+      // catch below, publish the failed-manifest sentinel, and let SQS
+      // retry — preferable to silently holding the worker for minutes.
+      const digestResult = await computePerAssetDigests(entity, contentServerUrl, {
+        aggregateTimeoutMs: 60_000
+      })
       depsDigestByHash = digestResult.digests
       skippedAssets = digestResult.skipped
     } catch (err: any) {

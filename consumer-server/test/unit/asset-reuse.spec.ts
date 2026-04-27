@@ -6,9 +6,11 @@ import {
   checkAssetCache,
   computeDepsDigest,
   computePerAssetDigests,
+  MAX_SKIP_DETAIL_LENGTH,
   parseRetryAfterMs,
   probeHitCache,
   purgeCachedBundlesFromOutput,
+  SKIP_DETAIL_TRUNCATION_MARKER,
   GltfFetcher
 } from '../../src/logic/asset-reuse'
 import { buildGlb } from '../helpers/glb-fixtures'
@@ -489,13 +491,67 @@ describe('when computing per-asset digests', () => {
       expect(result.skipped.get('hA')?.reason).toBe('missing-deps')
     })
 
-    it('should truncate the detail field to a bounded length so logs cannot be poisoned', () => {
-      const detail = result.skipped.get('hA')?.detail ?? ''
-      expect(detail.length).toBeLessThan(300)
+    it('should truncate the detail field to exactly MAX_SKIP_DETAIL_LENGTH + marker length', () => {
+      // Pinned to the exact length so any drift in MAX_SKIP_DETAIL_LENGTH or
+      // the truncation marker shape will fail the test rather than silently
+      // pass under a looser bound.
+      expect(result.skipped.get('hA')?.detail).toHaveLength(
+        MAX_SKIP_DETAIL_LENGTH + SKIP_DETAIL_TRUNCATION_MARKER.length
+      )
     })
 
     it('should signal that the detail was truncated rather than silently lopping off the tail', () => {
-      expect(result.skipped.get('hA')?.detail).toMatch(/…\(truncated\)$/)
+      expect(result.skipped.get('hA')?.detail?.endsWith(SKIP_DETAIL_TRUNCATION_MARKER)).toBe(true)
+    })
+  })
+
+  describe('and a glb URI carries embedded ASCII control characters', () => {
+    // Defense-in-depth alongside the length cap: a URI containing literal
+    // \n / \r / NUL bytes would otherwise inject phantom lines into plaintext
+    // log backends and crash some structured-log shippers. Truncation
+    // sanitises these before storing, replacing each control char with a
+    // single space.
+    let result: Awaited<ReturnType<typeof computePerAssetDigests>>
+    const evilUri = 'a\nb\rc\tmissing.png\x00x'
+
+    beforeEach(async () => {
+      const entity = { content: [{ file: 'a.glb', hash: 'hA' }] }
+      const fetcher = makeFetcher(new Map([['hA', buildGlb([evilUri])]]))
+      result = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })
+    })
+
+    it('should record the skip with reason missing-deps', () => {
+      expect(result.skipped.get('hA')?.reason).toBe('missing-deps')
+    })
+
+    it('should strip control characters from the stored detail', () => {
+      const detail = result.skipped.get('hA')?.detail ?? ''
+      expect(detail).not.toMatch(/[\x00-\x1f\x7f]/) // eslint-disable-line no-control-regex
+    })
+  })
+
+  describe('and a glb digest pass exceeds its aggregate timeout', () => {
+    // The aggregate cap prevents a scene with many glbs all retrying from
+    // running past the SQS visibility window. The fetcher here hangs forever
+    // on purpose; a 50 ms cap forces the timeout branch deterministically.
+    let thrown: unknown
+
+    beforeEach(async () => {
+      const hangingFetcher: GltfFetcher = () => new Promise<Buffer>(() => {})
+      const entity = { content: [{ file: 'a.glb', hash: 'hA' }] }
+      try {
+        await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', {
+          fetcher: hangingFetcher,
+          aggregateTimeoutMs: 50
+        })
+      } catch (err) {
+        thrown = err
+      }
+    })
+
+    it('should reject with an error citing the configured aggregate timeout', () => {
+      expect(thrown).toBeInstanceOf(Error)
+      expect((thrown as Error).message).toMatch(/exceeded 50ms aggregate timeout/)
     })
   })
 

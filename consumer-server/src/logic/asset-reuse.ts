@@ -625,11 +625,22 @@ export type SkippedAsset = {
  * fitting comfortably under common structured-log field limits when five
  * of these land in a single warn-log entry.
  */
-const MAX_SKIP_DETAIL_LENGTH = 256
+export const MAX_SKIP_DETAIL_LENGTH = 256
+export const SKIP_DETAIL_TRUNCATION_MARKER = '…(truncated)'
 
+/**
+ * Strip ASCII control chars (NUL through US, plus DEL) before truncating.
+ * A glb URI carrying a literal `\n` / `\r` could inject phantom lines into
+ * plaintext log backends, and some structured-log shippers crash on raw
+ * control chars. JSON encoders already escape these, so this is strictly
+ * defense-in-depth — but it's cheap and the field is freeform diagnostic
+ * text where there's no legitimate reason for control chars to appear.
+ */
 function truncateSkipDetail(s: string): string {
-  if (s.length <= MAX_SKIP_DETAIL_LENGTH) return s
-  return s.slice(0, MAX_SKIP_DETAIL_LENGTH) + '…(truncated)'
+  // eslint-disable-next-line no-control-regex
+  const sanitized = s.replace(/[\x00-\x1f\x7f]/g, ' ')
+  if (sanitized.length <= MAX_SKIP_DETAIL_LENGTH) return sanitized
+  return sanitized.slice(0, MAX_SKIP_DETAIL_LENGTH) + SKIP_DETAIL_TRUNCATION_MARKER
 }
 
 export type PerAssetDigestResult = {
@@ -661,13 +672,22 @@ export type PerAssetDigestResult = {
 export async function computePerAssetDigests(
   entity: Pick<Entity, 'content'>,
   contentServerUrl: string,
-  options?: { fetcher?: GltfFetcher; concurrency?: number }
+  options?: { fetcher?: GltfFetcher; concurrency?: number; aggregateTimeoutMs?: number }
 ): Promise<PerAssetDigestResult> {
   const fetcher = options?.fetcher ?? defaultGltfFetcher
   // 20 in-flight catalyst fetches — below the S3 HEAD probe concurrency (50)
   // because catalyst fetches are heavier and more rate-limit-sensitive, but
   // high enough to amortize TCP/TLS setup across a scene with dozens of glbs.
   const concurrency = options?.concurrency ?? 20
+  // Aggregate wall-clock cap on the entire digest pass. Per-fetch retries are
+  // already bounded (3 attempts × ≤30 s Retry-After cap), but a scene with
+  // dozens of glbs each retrying could compound to several minutes — past the
+  // SQS visibility window the worker is otherwise expected to respect. The
+  // timeout fires reject; in-flight fetches are not actively cancelled (their
+  // sockets close on their own when the worker finally moves on), so the
+  // process doesn't hang on lingering tasks. Default undefined keeps the
+  // public API non-breaking — callers opt in.
+  const aggregateTimeoutMs = options?.aggregateTimeoutMs
 
   const content = entity.content ?? []
   const contentByFile = new Map<string, string>()
@@ -682,7 +702,7 @@ export async function computePerAssetDigests(
 
   type WorkerResult = { kind: 'ok'; hash: string; digest: string } | { kind: 'skip'; skip: SkippedAsset }
 
-  const results = await mapBounded<(typeof gltfEntries)[number], WorkerResult>(
+  const work = mapBounded<(typeof gltfEntries)[number], WorkerResult>(
     gltfEntries,
     concurrency,
     async (entry): Promise<WorkerResult> => {
@@ -756,6 +776,29 @@ export async function computePerAssetDigests(
       return { kind: 'ok', hash: entry.hash, digest: computeDepsDigest(deps) }
     }
   )
+
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let results: WorkerResult[]
+  try {
+    if (aggregateTimeoutMs && aggregateTimeoutMs > 0) {
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `Per-asset digest computation exceeded ${aggregateTimeoutMs}ms aggregate timeout (${gltfEntries.length} glb/gltf assets)`
+              )
+            ),
+          aggregateTimeoutMs
+        )
+      })
+      results = await Promise.race([work, timeoutPromise])
+    } else {
+      results = await work
+    }
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
 
   for (const r of results) {
     if (r.kind === 'ok') digests.set(r.hash, r.digest)

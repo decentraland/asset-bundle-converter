@@ -14,6 +14,23 @@ async function setupStartDirectories(options: { logFile: string; outDirectory: s
   closeSync(openSync(options.logFile, 'w'))
 }
 
+// Strict CID shape — content hashes flowing into Unity CLI flags are
+// alphanumeric (Decentraland uses base32-lower CIDv1 and base58 CIDv0,
+// both subsets of `[a-zA-Z0-9]`). Reject anything else before joining
+// with `;` so a hypothetical compromised catalyst can't inject extra
+// separators (or shell metacharacters) into the argv we hand to Unity.
+// Pre-existing pattern for `-cachedHashes` had no such guard; this
+// helper closes that systemic gap while introducing `-skippedHashes`.
+const HASH_SHAPE_RE = /^[a-zA-Z0-9]+$/
+function joinValidatedHashes(hashes: ReadonlyArray<string>, flagName: string): string {
+  for (const h of hashes) {
+    if (!HASH_SHAPE_RE.test(h)) {
+      throw new Error(`${flagName} contains a malformed hash ${JSON.stringify(h)} — refusing to forward to Unity`)
+    }
+  }
+  return hashes.join(';')
+}
+
 export function startManifestBuilder(sceneId: string, outputPath: string, catalyst: string) {
   const cmd = process.platform === 'win32' ? 'npm.cmd' : 'npm'
   const child = spawn(
@@ -195,11 +212,11 @@ export async function runConversion(
   ]
 
   if (options.cachedHashes && options.cachedHashes.length > 0) {
-    childArguments.push('-cachedHashes', options.cachedHashes.join(';'))
+    childArguments.push('-cachedHashes', joinValidatedHashes(options.cachedHashes, 'cachedHashes'))
   }
 
   if (options.skippedHashes && options.skippedHashes.length > 0) {
-    childArguments.push('-skippedHashes', options.skippedHashes.join(';'))
+    childArguments.push('-skippedHashes', joinValidatedHashes(options.skippedHashes, 'skippedHashes'))
   }
 
   // Per-asset deps digests go out via a temp JSON file rather than an inline
