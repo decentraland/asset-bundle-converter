@@ -774,10 +774,18 @@ export async function checkAssetCache(
     if (!params.contentServerUrl) {
       throw new Error('checkAssetCache: either depsDigestByHash or contentServerUrl must be supplied')
     }
-    // Skipped glbs simply don't appear in `digests`; the probe loop below
-    // already excludes glb/gltf hashes that aren't in the digest map, so
-    // skipped hashes naturally land in neither `cachedHashes` nor
-    // `missingHashes`. No separate handling required for the fallback path.
+    // Fallback path — used by tests and any caller that hasn't yet wired in
+    // the per-asset digest pre-compute. Probe correctness is preserved
+    // (skipped glbs aren't in `digests`, the probe loop below excludes
+    // glb/gltf hashes missing from the digest map, so skipped hashes land
+    // in neither `cachedHashes` nor `missingHashes`). What is NOT preserved
+    // is observability: `result.skipped` is dropped here, so callers using
+    // this branch get no signal about WHY a glb wasn't probed. The
+    // production path in `executeConversion` always passes
+    // `depsDigestByHash` explicitly and tracks `skipped` from its own
+    // `computePerAssetDigests` call — that's the path that emits the warn
+    // log + `ab_converter_glb_skipped_total` counter. New callers should
+    // follow the production pattern rather than relying on this fallback.
     const result = await computePerAssetDigests(entity, params.contentServerUrl, { fetcher: params.fetcher })
     depsDigestByHash = result.digests
   }

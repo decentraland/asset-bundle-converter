@@ -1120,6 +1120,16 @@ namespace DCL.ABConverter
                 // asset is silently absent from the output. Done first so a hash that
                 // somehow appears in both lists is treated as "skipped" (the stricter
                 // case — never downloaded, never marked).
+                //
+                // The bufferPaths sweep is defensive: in the current consumer-server
+                // architecture `skippedHashes` only ever contains glb/gltf hashes
+                // (computePerAssetDigests filters by the gltf-extension set), so
+                // `bufferDropped` is expected to be 0 in production. The line stays
+                // for parallel structure with the cachedHashes block and to avoid
+                // having to revisit Unity if a future consumer-server release ever
+                // starts surfacing buffer-level skips. Mirror with the cachedHashes
+                // block immediately below — same shape, same expected-zero behaviour
+                // for buffers, same justification.
                 if (settings.skippedHashes != null && settings.skippedHashes.Count > 0)
                 {
                     int gltfDropped = gltfPaths.RemoveAll(p => settings.skippedHashes.Contains(p.hash));

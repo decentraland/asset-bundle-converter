@@ -488,6 +488,14 @@ export async function executeConversion(
   // entries into the warn line so a misbehaving scene is diagnosable from the
   // log without a separate per-asset entry; the cap keeps a pathological
   // entity (50+ broken glbs) from blowing the line size.
+  //
+  // Deliberate Sentry omission: pre-change every broken glb fired
+  // `sentry.captureException(... phase: 'per-asset-digest')` from the digest
+  // catch above. Per-glb defects are now content-deterministic skips, not
+  // exceptions — they no longer warrant a Sentry event per occurrence
+  // (would flood triage with thousands of "broken-by-design" entries). The
+  // signal moves to `ab_converter_glb_skipped_total{reason}` for alerting;
+  // Sentry stays for genuine fetch/infra failures in the digest catch.
   if (skippedAssets.size > 0) {
     logger.warn('Skipping glb/gltf assets with missing or unparseable dependencies', {
       ...defaultLoggerMetadata,
