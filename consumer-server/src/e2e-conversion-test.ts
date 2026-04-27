@@ -35,7 +35,8 @@ if (!args['--coords']) {
 const WORLD_NAME = args['--world']
 const COORDS = args['--coords']
 const BASE_URL =
-  args['--baseUrl'] || (WORLD_NAME ? 'https://worlds-content-server.decentraland.zone' : 'https://peer.decentraland.org/content')
+  args['--baseUrl'] ||
+  (WORLD_NAME ? 'https://worlds-content-server.decentraland.zone' : 'https://peer.decentraland.zone/content')
 
 const $UNITY_PATH = process.env.UNITY_PATH
 const $PROJECT_PATH = process.env.PROJECT_PATH
