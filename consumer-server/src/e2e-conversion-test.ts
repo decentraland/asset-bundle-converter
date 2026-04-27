@@ -49,7 +49,7 @@ const SCENES: SceneDef[] = [
     coords: '0,0',
     baseUrl: WORLDS_BASE_URL,
     isWorld: true,
-    expectedNewFiles: 6,
+    expectedNewFiles: 12,
     expectMissingHash: null
   },
   {
