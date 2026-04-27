@@ -324,6 +324,7 @@ namespace DCL.ABConverter
                         var message = $"GLTF is invalid or contains errors: {gltfUrl}, {gltfImport.LastErrorCode}";
                         log.Error(message);
                         errorReporter.ReportError(message, settings);
+                        assetsToMark.Remove(gltf.AssetPath);
                         continue;
                     }
 
@@ -368,6 +369,7 @@ namespace DCL.ABConverter
                             log.Error(message);
                             errorReporter.ReportError(message, settings);
                             SetExitState(ErrorCodes.GLTFAST_CRITICAL_ERROR);
+                            assetsToMark.Remove(gltf.AssetPath);
                             continue;
                         }
                     }
@@ -377,6 +379,7 @@ namespace DCL.ABConverter
                         log.Error(message);
                         errorReporter.ReportError(message, settings);
                         SetExitState(ErrorCodes.GLTF_IMPORTER_NOT_FOUND);
+                        assetsToMark.Remove(gltf.AssetPath);
                         continue;
                     }
 
@@ -417,6 +420,7 @@ namespace DCL.ABConverter
                     Debug.LogException(e);
                     errorReporter.ReportException(new ConversionException(ConversionStep.Import, settings, e));
                     SetExitState(ErrorCodes.GLTFAST_CRITICAL_ERROR);
+                    assetsToMark.Remove(gltf.AssetPath);
                     continue;
                 }
                 finally
