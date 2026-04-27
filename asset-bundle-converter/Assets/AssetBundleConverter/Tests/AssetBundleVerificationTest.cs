@@ -122,11 +122,12 @@ namespace AssetBundleConverter.Tests
             Assert.IsNotNull(tex1, "Scene 1 Cube has no albedo texture");
             Assert.IsNotNull(tex2, "Scene 2 Cube has no albedo texture");
 
-            // Read pixel data from CPU memory — works without GPU
-            var pixels1 = tex1.GetPixels32();
-            var pixels2 = tex2.GetPixels32();
+            // GetRawTextureData returns the compressed texture bytes from CPU memory.
+            // Unlike GetPixels32, it does NOT require isReadable and works in batch mode.
+            var hash1 = Hash128.Compute(tex1.GetRawTextureData());
+            var hash2 = Hash128.Compute(tex2.GetRawTextureData());
 
-            Assert.IsFalse(pixels1.SequenceEqual(pixels2),
+            Assert.AreNotEqual(hash1, hash2,
                 "Cube textures should differ between scenes (different albedo.png hashes)");
         }
 

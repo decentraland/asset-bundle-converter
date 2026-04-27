@@ -101,14 +101,15 @@ async function resolveWorldEntity(
   if (!scenesRes.ok) {
     throw new Error(`Failed to fetch world scenes: ${scenesRes.status} ${scenesRes.statusText}`)
   }
-  const scenesBody = await scenesRes.json()
-  const scenes = (scenesBody as any).scenes as any[]
-  if (!scenes?.length) {
+  type WorldScene = { parcels: string[]; entityId: string }
+  type WorldScenesResponse = { scenes: WorldScene[] }
+  const scenesBody = (await scenesRes.json()) as WorldScenesResponse
+  if (!scenesBody.scenes?.length) {
     throw new Error(`World "${worldName}" has no scenes`)
   }
-  const scene = scenes.find((s: any) => s.parcels?.includes(coords))
+  const scene = scenesBody.scenes.find((s) => s.parcels?.includes(coords))
   if (!scene) {
-    const available = scenes.map((s: any) => s.parcels?.join(', ')).join(' | ')
+    const available = scenesBody.scenes.map((s) => s.parcels?.join(', ')).join(' | ')
     throw new Error(`Coords "${coords}" not found in world "${worldName}". Available parcels: ${available}`)
   }
   return scene.entityId
@@ -152,7 +153,7 @@ function verifyBundles(manifest: Manifest, entityId: string, abVersion: string, 
         : null
 
     if (!foundPath) {
-      logger.error(`MISSING bundle (checked ${canonicalPrefix}/ and ${entityScopedPrefix}/)`)
+      logger.error(`MISSING bundle ${bundleFilename} (checked ${canonicalPrefix}/ and ${entityScopedPrefix}/)`)
       failures++
       continue
     }
@@ -320,6 +321,8 @@ async function main() {
   const scene1CubePath = findBundle(assetsDir, CUBE_GLTF_HASH)
   const scene1AlbedoPath = findBundle(assetsDir, ALBEDO_HASH_S1)
 
+  if (!scene1CubePath) throw new Error('scene1CubePath is null — Cube bundle not found after Scene 1')
+
   // Scene 2's Cube has a different depsDigest — find the one that isn't Scene 1's
   const allCubeBundles = fs.existsSync(assetsDir)
     ? fs
@@ -328,19 +331,22 @@ async function main() {
           (e) => e.startsWith(CUBE_GLTF_HASH) && !e.includes('.') && fs.statSync(path.join(assetsDir, e)).isFile()
         )
     : []
-  const scene2CubeFile = allCubeBundles.find((f) => path.join(assetsDir, f) !== scene1CubePath)
-  const scene2CubePath = scene2CubeFile ? path.join(assetsDir, scene2CubeFile) : null
+  if (allCubeBundles.length !== 2) {
+    throw new Error(`Expected 2 Cube bundles (one per depsDigest), found ${allCubeBundles.length}: [${allCubeBundles.join(', ')}]`)
+  }
+  const scene2CubeFile = allCubeBundles.find((f) => path.join(assetsDir, f) !== scene1CubePath)!
+  const scene2CubePath = path.join(assetsDir, scene2CubeFile)
   const scene2AlbedoPath = findBundle(assetsDir, ALBEDO_HASH_S2)
+
+  if (!scene1AlbedoPath || !scene2AlbedoPath) {
+    throw new Error(`Missing albedo bundle: scene1=${scene1AlbedoPath}, scene2=${scene2AlbedoPath}`)
+  }
 
   const bundlePaths = { scene1CubePath, scene1AlbedoPath, scene2CubePath, scene2AlbedoPath }
   const bundlePathsFile = '/tmp/e2e-bundle-paths.json'
   fs.writeFileSync(bundlePathsFile, JSON.stringify(bundlePaths, null, 2))
   logger.info(`\nBundle paths for Unity test: ${bundlePathsFile}`)
   logger.info(JSON.stringify(bundlePaths, null, 2))
-
-  if (!scene1CubePath || !scene1AlbedoPath || !scene2CubePath || !scene2AlbedoPath) {
-    logger.warn('Some bundle paths could not be resolved — Unity test may fail')
-  }
 
   logger.info('\n========== ALL SCENES PASSED ==========')
 }
