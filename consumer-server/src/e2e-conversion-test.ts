@@ -179,6 +179,31 @@ function countFiles(dir: string): number {
   return fs.readdirSync(dir).filter((e) => fs.statSync(path.join(dir, e)).isFile()).length
 }
 
+/** Snapshot mtimes of all files directly in a directory. */
+function snapshotMtimes(dir: string): Map<string, number> {
+  const result = new Map<string, number>()
+  if (!fs.existsSync(dir)) return result
+  for (const entry of fs.readdirSync(dir)) {
+    const full = path.join(dir, entry)
+    if (fs.statSync(full).isFile()) {
+      result.set(entry, fs.statSync(full).mtimeMs)
+    }
+  }
+  return result
+}
+
+/** Compare mtimes before and after — returns filenames that were overwritten. */
+function findOverwrites(before: Map<string, number>, dir: string): string[] {
+  const overwrites: string[] = []
+  for (const [name, mtimeBefore] of before) {
+    const full = path.join(dir, name)
+    if (fs.existsSync(full) && fs.statSync(full).mtimeMs !== mtimeBefore) {
+      overwrites.push(name)
+    }
+  }
+  return overwrites
+}
+
 /** Find a bundle file by hash prefix in the assets dir. */
 function findBundle(dir: string, hashPrefix: string): string | null {
   if (!fs.existsSync(dir)) return null
@@ -232,6 +257,7 @@ async function main() {
     filesBefore: number
     filesAfter: number
     newFiles: number
+    overwrites: number
     missingHashAbsent?: boolean
   }
   const results: SceneResult[] = []
@@ -246,6 +272,7 @@ async function main() {
     logger.info(`${sceneLabel}: entityId=${entityId}`)
 
     const filesBefore = countFiles(assetsDir)
+    const mtimesBefore = snapshotMtimes(assetsDir)
 
     const tStart = Date.now()
     const exitCode = await executeConversion(components, entityId, sceneDef.baseUrl, false, 'legacy', false, abVersion)
@@ -287,6 +314,17 @@ async function main() {
       throw new Error(`${sceneLabel}: expected ${sceneDef.expectedNewFiles} new file(s) in assets/, got ${newFiles}`)
     }
 
+    // Check for overwrites — existing files whose mtime changed
+    const overwrites = findOverwrites(mtimesBefore, assetsDir)
+    if (overwrites.length > 0) {
+      logger.warn(`${sceneLabel}: ${overwrites.length} file(s) overwritten: [${overwrites.join(', ')}]`)
+    }
+    if (sceneDef.expectedNewFiles === 0 && overwrites.length > 0) {
+      throw new Error(
+        `${sceneLabel}: expected no changes (full reuse), but ${overwrites.length} file(s) were overwritten: [${overwrites.join(', ')}]`
+      )
+    }
+
     results.push({
       label: sceneLabel,
       entityId,
@@ -296,6 +334,7 @@ async function main() {
       filesBefore,
       filesAfter,
       newFiles,
+      overwrites: overwrites.length,
       missingHashAbsent: sceneDef.expectMissingHash ? true : undefined
     })
   }
@@ -311,6 +350,7 @@ async function main() {
     logger.info(`  Files before: ${r.filesBefore}`)
     logger.info(`  Files after:  ${r.filesAfter}`)
     logger.info(`  New files:    ${r.newFiles}`)
+    logger.info(`  Overwrites:   ${r.overwrites}`)
     if (r.missingHashAbsent) {
       logger.info(`  Broken ref:   Cube hash correctly absent from manifest`)
     }
