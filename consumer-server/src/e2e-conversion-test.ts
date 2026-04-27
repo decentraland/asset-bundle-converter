@@ -329,9 +329,11 @@ async function main() {
   // Scene 2 — Cube has a different depsDigest so it's a different file
   // Find the Cube bundle that is NOT Scene 1's
   const allCubeBundles = fs.existsSync(assetsDir)
-    ? fs.readdirSync(assetsDir).filter(
-        (e) => e.startsWith(CUBE_GLTF_HASH) && !e.includes('.') && fs.statSync(path.join(assetsDir, e)).isFile()
-      )
+    ? fs
+        .readdirSync(assetsDir)
+        .filter(
+          (e) => e.startsWith(CUBE_GLTF_HASH) && !e.includes('.') && fs.statSync(path.join(assetsDir, e)).isFile()
+        )
     : []
   const scene2CubeFile = allCubeBundles.find((f) => path.join(assetsDir, f) !== scene1CubePath)
   const scene2CubePath = scene2CubeFile ? path.join(assetsDir, scene2CubeFile) : null
