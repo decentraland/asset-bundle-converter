@@ -88,10 +88,7 @@ async function resolveWorldEntity(
   return scene.entityId
 }
 
-async function resolveEntityId(
-  fetcher: IFetchComponent,
-  sceneDef: (typeof SCENES)[number]
-): Promise<string> {
+async function resolveEntityId(fetcher: IFetchComponent, sceneDef: (typeof SCENES)[number]): Promise<string> {
   if (sceneDef.isWorld) {
     return resolveWorldEntity(fetcher, sceneDef.name, sceneDef.coords, sceneDef.baseUrl)
   }
@@ -141,7 +138,8 @@ function verifyBundles(manifest: Manifest, entityId: string, abVersion: string, 
       continue
     }
 
-    const usedKey = foundPath === canonicalPath ? `${canonicalPrefix}/${bundleFilename}` : `${entityScopedPrefix}/${bundleFilename}`
+    const usedKey =
+      foundPath === canonicalPath ? `${canonicalPrefix}/${bundleFilename}` : `${entityScopedPrefix}/${bundleFilename}`
     logger.info(`OK: ${usedKey} (${stat.size} bytes)`)
   }
 
@@ -167,8 +165,7 @@ function checkDedup(
   manifest: Manifest,
   entityId: string,
   abVersion: string,
-  snapshotBefore: Map<string, number>,
-  logger: any
+  snapshotBefore: Map<string, number>
 ): { reused: string[]; fresh: string[] } {
   const canonicalPrefix = `${abVersion}/assets`
   const entityScopedPrefix = `${abVersion}/${entityId}`
@@ -267,7 +264,7 @@ async function main() {
 
     // Dedup check (skip for first scene — nothing to compare against)
     if (i > 0) {
-      const { reused, fresh } = checkDedup(manifest, entityId, abVersion, snapshotBefore, logger)
+      const { reused, fresh } = checkDedup(manifest, entityId, abVersion, snapshotBefore)
 
       logger.info(`${sceneLabel} reused ${reused.length} bundle(s):`)
       reused.forEach((f) => logger.info(`  REUSED: ${f}`))
