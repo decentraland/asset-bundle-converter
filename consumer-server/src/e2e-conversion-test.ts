@@ -332,7 +332,9 @@ async function main() {
         )
     : []
   if (allCubeBundles.length !== 2) {
-    throw new Error(`Expected 2 Cube bundles (one per depsDigest), found ${allCubeBundles.length}: [${allCubeBundles.join(', ')}]`)
+    throw new Error(
+      `Expected 2 Cube bundles (one per depsDigest), found ${allCubeBundles.length}: [${allCubeBundles.join(', ')}]`
+    )
   }
   const scene2CubeFile = allCubeBundles.find((f) => path.join(assetsDir, f) !== scene1CubePath)!
   const scene2CubePath = path.join(assetsDir, scene2CubeFile)
