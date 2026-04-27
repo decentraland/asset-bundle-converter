@@ -56,10 +56,21 @@ const CATALYST_BASE_URL = 'https://peer.decentraland.zone/content'
 //     so the depsDigest is the same. scene.json differs (different parcel
 //     coords) but it's not a texture/buffer so it doesn't affect the digest.
 //   - All bundles should be fully reused — zero fresh conversions.
+//
+// ABTestScene3.dcl.eth (broken reference):
+//   - Has Cube.gltf with the same hash, but albedo.png is missing from the
+//     entity content. The GLTF references a texture that doesn't exist, so
+//     Unity should fail to import the Cube. The manifest should NOT contain
+//     the Cube hash. Other assets (Store_02, FloorBaseGrass_02) should still
+//     convert. Exit code 2 (CONVERSION_ERRORS_TOLERATED) is expected.
+
+const CUBE_GLTF_HASH = 'bafkreie5su6wnqzj7ppqzlbd4m2sgf3q76hkpzsfiqun5rfd54xvokepcm'
+
 const SCENES = [
-  { name: 'ABTestScene1.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectedReused: 0, expectedFresh: 0 },
-  { name: 'ABTestScene2.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectedReused: 2, expectedFresh: 6 },
-  { name: 'Catalyst 19,3', coords: '19,3', baseUrl: CATALYST_BASE_URL, isWorld: false, expectedReused: -1, expectedFresh: 0 }
+  { name: 'ABTestScene1.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectedReused: 0, expectedFresh: 0, expectMissingHash: null },
+  { name: 'ABTestScene2.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectedReused: 2, expectedFresh: 6, expectMissingHash: null },
+  { name: 'Catalyst 19,3', coords: '19,3', baseUrl: CATALYST_BASE_URL, isWorld: false, expectedReused: -1, expectedFresh: 0, expectMissingHash: null },
+  { name: 'ABTestScene3.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectedReused: -1, expectedFresh: -1, expectMissingHash: CUBE_GLTF_HASH }
 ]
 
 // ---------------------------------------------------------------------------
@@ -247,6 +258,18 @@ async function main() {
   const fetcher = await createFetchComponent()
   const abVersion = await config.requireString(abVersionEnvName)
 
+  type SceneResult = {
+    label: string
+    entityId: string
+    exitCode: number
+    elapsed: string
+    bundleCount: number
+    reused: string[]
+    fresh: string[]
+    missingHashAbsent?: boolean
+  }
+  const results: SceneResult[] = []
+
   for (let i = 0; i < SCENES.length; i++) {
     const sceneDef = SCENES[i]
     const sceneLabel = `Scene ${i + 1} (${sceneDef.name})`
@@ -271,8 +294,19 @@ async function main() {
     // Verify all bundles exist
     const manifest = await readManifest(cdnS3, entityId, $BUILD_TARGET)
     logger.info(`${sceneLabel}: manifest has ${manifest.files.length} bundle(s)`)
-    if (!manifest.files.length) {
+    if (!sceneDef.expectMissingHash && !manifest.files.length) {
       throw new Error(`${sceneLabel} manifest has zero files`)
+    }
+
+    // Check that a specific hash is NOT in the manifest (broken reference test)
+    if (sceneDef.expectMissingHash) {
+      const found = manifest.files.some((f: string) => f.startsWith(sceneDef.expectMissingHash!))
+      if (found) {
+        throw new Error(
+          `${sceneLabel}: expected hash ${sceneDef.expectMissingHash} to be ABSENT from manifest (broken reference), but it was found`
+        )
+      }
+      logger.info(`${sceneLabel}: confirmed hash ${sceneDef.expectMissingHash} is absent from manifest (broken ref)`)
     }
 
     const failures = verifyBundles(manifest, entityId, abVersion, logger)
@@ -314,15 +348,55 @@ async function main() {
       }
 
       logger.info(`${sceneLabel}: dedup verified — ${reused.length} reused, ${fresh.length} fresh, ${elapsed}s`)
+      results.push({
+        label: sceneLabel,
+        entityId,
+        exitCode: exitCode ?? -1,
+        elapsed,
+        bundleCount: manifest.files.length,
+        reused,
+        fresh,
+        missingHashAbsent: sceneDef.expectMissingHash ? true : undefined
+      })
     } else {
       logger.info(`${sceneLabel}: all ${manifest.files.length} bundle(s) verified, ${elapsed}s`)
+      results.push({
+        label: sceneLabel,
+        entityId,
+        exitCode: exitCode ?? -1,
+        elapsed,
+        bundleCount: manifest.files.length,
+        reused: [],
+        fresh: manifest.files
+      })
     }
   }
+
+  // ---- Final report ----
+  logger.info('\n========== E2E TEST REPORT ==========')
+  for (const r of results) {
+    logger.info(`\n${r.label}`)
+    logger.info(`  Entity:   ${r.entityId}`)
+    logger.info(`  Exit:     ${r.exitCode}`)
+    logger.info(`  Time:     ${r.elapsed}s`)
+    logger.info(`  Bundles:  ${r.bundleCount}`)
+    logger.info(`  Reused:   ${r.reused.length}`)
+    if (r.reused.length > 0) {
+      r.reused.forEach((f) => logger.info(`    - ${f}`))
+    }
+    logger.info(`  Fresh:    ${r.fresh.length}`)
+    if (r.fresh.length > 0) {
+      r.fresh.forEach((f) => logger.info(`    - ${f}`))
+    }
+    if (r.missingHashAbsent) {
+      logger.info(`  Broken ref: Cube hash correctly absent from manifest`)
+    }
+  }
+  logger.info('\n=====================================')
 
   // ---- Write bundle paths JSON for Unity test ----
   // The Unity test needs to know where to find the Cube and albedo bundles
   // for Scene 1 and Scene 2 so it can load them and verify mesh/texture.
-  const CUBE_GLTF_HASH = 'bafkreie5su6wnqzj7ppqzlbd4m2sgf3q76hkpzsfiqun5rfd54xvokepcm'
   const ALBEDO_HASH_S1 = 'bafkreigy4f55gqd5g6citumtzcefwdwdtqh5nfnwia7dnwawigqem4wlhq'
   const ALBEDO_HASH_S2 = 'bafybeich3nzq4bym2mufrymp3bg5yy7vdts2mgixfsutv5kzt5gm2j4m7m'
 
