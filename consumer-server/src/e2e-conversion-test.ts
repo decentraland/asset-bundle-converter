@@ -31,13 +31,23 @@ import { IFetchComponent } from '@well-known-components/interfaces'
 const WORLDS_BASE_URL = 'https://worlds-content-server.decentraland.zone'
 const CATALYST_BASE_URL = 'https://peer.decentraland.zone/content'
 
-// All three scenes contain several shared 3D models (Store_02, GeckoStone_01,
-// FloorBaseGrass_02) and a Cube.gltf. ABTestScene1 and ABTestScene2 share the
-// same Cube.gltf source hash but differ in the texture it references (albedo.png
-// has a different hash), so the depsDigest differs and Cube's bundle must be
-// reconverted — while the other shared models and leaf assets are reused.
-// ABTestScene2 and the catalyst scene at 19,3 are the exact same scene deployed
-// to different servers, so the second-to-third conversion should reuse everything.
+// All three scenes share Cube.gltf (same hash), Cube.bin, Store_02.glb,
+// FloorBaseGrass_02.glb, file1.png, and Floor_Grass02.png.png.
+//
+// Scene 1 vs Scene 2:
+//   - albedo.png has a different hash. Scene 2 has GeckoStone_01.glb which
+//     Scene 1 doesn't. The texture/buffer sets differ, so the depsDigest
+//     differs — all shared GLB/GLTF bundles (Cube, Store_02, FloorBaseGrass_02)
+//     get different composite canonical filenames and must be reconverted.
+//   - Leaf assets with the same hash (Cube.bin, file1.png, Floor_Grass02.png.png)
+//     should be reused from Scene 1.
+//
+// Scene 2 vs Catalyst 19,3:
+//   - Same scene deployed to a different server (worlds vs catalyst).
+//     All bundleable assets (textures, buffers, GLBs) have identical hashes,
+//     so the depsDigest is the same. scene.json differs (different parcel
+//     coords) but it's not a texture/buffer so it doesn't affect the digest.
+//   - All bundles should be fully reused — zero fresh conversions.
 const SCENES = [
   { name: 'ABTestScene1.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectFresh: true },
   { name: 'ABTestScene2.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectFresh: true },
