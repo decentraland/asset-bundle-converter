@@ -1,17 +1,12 @@
-// End-to-end test: resolve a Decentraland scene by pointer, run the full
-// conversion pipeline (real Unity, mock-aws-s3), then verify every bundle
-// listed in the manifest exists in the mock S3 store and is non-empty.
+// End-to-end test: resolve a Decentraland scene, run the full conversion
+// pipeline (real Unity, mock-aws-s3), then verify every bundle listed in the
+// manifest exists in the mock S3 store and is non-empty.
 //
-// Works with both regular catalysts and the worlds content server.
+// Works with both regular catalysts (--coords) and the worlds content server (--world).
 //
 // Usage (inside the Docker image):
-//   node dist/e2e-conversion-test.js \
-//     --pointer ABTestScene1.dcl.eth \
-//     --baseUrl https://worlds-content-server.decentraland.zone
-//
-//   node dist/e2e-conversion-test.js \
-//     --pointer 43,100 \
-//     --baseUrl https://peer.decentraland.org/content
+//   node dist/e2e-conversion-test.js --world ABTestScene1.dcl.eth --coords 0,0
+//   node dist/e2e-conversion-test.js --coords 43,100 --baseUrl https://peer.decentraland.org/content
 
 import arg from 'arg'
 import * as fs from 'fs'
@@ -28,12 +23,19 @@ import { getAbVersionEnvName } from './utils'
 import { ensureUlf } from './logic/ensure-ulf'
 
 const args = arg({
-  '--pointer': String,
+  '--world': String,
+  '--coords': String,
   '--baseUrl': String
 })
 
-const POINTER = args['--pointer'] || 'ABTestScene1.dcl.eth'
-const BASE_URL = args['--baseUrl'] || 'https://worlds-content-server.decentraland.zone'
+if (!args['--coords']) {
+  throw new Error('--coords <x,y> is required (e.g. --coords 0,0)')
+}
+
+const WORLD_NAME = args['--world']
+const COORDS = args['--coords']
+const BASE_URL =
+  args['--baseUrl'] || (WORLD_NAME ? 'https://worlds-content-server.decentraland.zone' : 'https://peer.decentraland.org/content')
 
 const $UNITY_PATH = process.env.UNITY_PATH
 const $PROJECT_PATH = process.env.PROJECT_PATH
@@ -74,14 +76,40 @@ async function main() {
 
   const fetcher = await createFetchComponent()
 
-  // --- Step 1: Resolve pointer to entity CID ---
-  logger.info(`Resolving pointer "${POINTER}" via ${BASE_URL}`)
-  const entities = await getEntities(fetcher, [POINTER], BASE_URL)
-  if (!entities.length) {
-    throw new Error(`Could not resolve pointer "${POINTER}" at ${BASE_URL}`)
+  // --- Step 1: Resolve to entity CID ---
+  let entityId: string
+
+  if (WORLD_NAME) {
+    // Fetch the world's scene list and find the scene that contains the requested coords.
+    const scenesUrl = `${BASE_URL}/world/${WORLD_NAME}/scenes`
+    logger.info(`Fetching world scenes from ${scenesUrl}`)
+    const scenesRes = await fetcher.fetch(scenesUrl)
+    if (!scenesRes.ok) {
+      throw new Error(`Failed to fetch world scenes: ${scenesRes.status} ${scenesRes.statusText}`)
+    }
+    const scenesBody = await scenesRes.json()
+    const scenes = (scenesBody as any).scenes as any[]
+    if (!scenes?.length) {
+      throw new Error(`World "${WORLD_NAME}" has no scenes`)
+    }
+
+    const scene = scenes.find((s: any) => s.parcels?.includes(COORDS))
+    if (!scene) {
+      const available = scenes.map((s: any) => s.parcels?.join(', ')).join(' | ')
+      throw new Error(`Coords "${COORDS}" not found in world "${WORLD_NAME}". Available parcels: ${available}`)
+    }
+
+    entityId = scene.entityId
+    logger.info(`World "${WORLD_NAME}" scene at ${COORDS} → entityId=${entityId}`)
+  } else {
+    logger.info(`Resolving coords "${COORDS}" via ${BASE_URL}`)
+    const entities = await getEntities(fetcher, [COORDS], BASE_URL)
+    if (!entities.length) {
+      throw new Error(`Could not resolve coords "${COORDS}" at ${BASE_URL}`)
+    }
+    entityId = entities[0].id
+    logger.info(`Resolved to entityId=${entityId}`)
   }
-  const entityId = entities[0].id
-  logger.info(`Resolved to entityId=${entityId}`)
 
   // --- Step 2: Run the full conversion pipeline ---
   const abVersion = await config.requireString(abVersionEnvName)
