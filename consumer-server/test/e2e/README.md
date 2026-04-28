@@ -15,7 +15,7 @@ A final Unity EditMode test (`E2EVerification` category) loads the Cube asset bu
 
 ### Scene 1 — ABTestScene1.dcl.eth (worlds, 0,0)
 
-![ABTestScene1](../docs/images/ABTestScene1.dcl.eth.png)
+![ABTestScene1](../../docs/images/ABTestScene1.dcl.eth.png)
 
 First conversion. Everything is fresh — no prior bundles exist.
 
@@ -37,7 +37,7 @@ First conversion. Everything is fresh — no prior bundles exist.
 
 ### Scene 2 — ABTestScene2.dcl.eth (worlds, 0,0)
 
-![ABTestScene2](../docs/images/ABTestScene2.dcl.eth.png)
+![ABTestScene2](../../docs/images/ABTestScene2.dcl.eth.png)
 
 Second conversion. Shares most assets with Scene 1 but differs in two ways:
 - `albedo.png` has a **different hash** (`bafybeich3nzq...` vs Scene 1's `bafkreigy4f55...`)
@@ -69,7 +69,7 @@ Because the **entity-wide depsDigest** is computed from ALL textures and buffers
 
 ### Scene 3 — Catalyst 19,3 (peer.decentraland.zone)
 
-![Catalyst 19,3](../docs/images/19,3.png)
+![Catalyst 19,3](../../docs/images/19,3.png)
 
 Third conversion. This is the **exact same scene** as Scene 2, deployed to the regular catalyst instead of the worlds content server.
 
@@ -81,7 +81,7 @@ All bundleable assets (textures, buffers, GLBs) have identical hashes. `scene.js
 
 ### Scene 4 — ABTestScene3.dcl.eth (worlds, 0,0)
 
-![ABTestScene3](../docs/images/ABSceneTest3.dcl.eth.png)
+![ABTestScene3](../../docs/images/ABSceneTest3.dcl.eth.png)
 
 Fourth conversion. This scene has `Cube.gltf` with the same hash as the other scenes, but **`albedo.png` is missing from the entity content**. The GLTF internally references a texture that doesn't exist, so Unity should fail to import the Cube.
 

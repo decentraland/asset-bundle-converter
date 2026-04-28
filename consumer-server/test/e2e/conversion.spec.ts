@@ -1,5 +1,5 @@
 // E2E conversion + deduplication test.
-// See consumer-server/src/e2e-conversion-test.README.md for scene descriptions and expected behavior.
+// See test/e2e/README.md for scene descriptions and expected behavior.
 //
 // Requires Unity — runs inside the Docker image, not during `yarn test`.
 // Invoked via: npx jest --config jest.e2e.config.js
