@@ -7,10 +7,15 @@ import { runConversion, runLodsConversion } from './run-conversion'
 import * as fs from 'fs'
 import * as path from 'path'
 import { hasContentChange } from './has-content-changed-task'
-import { getUnityBuildTarget } from '../utils'
+import { getUnityBuildTarget, normalizeContentsBaseUrl } from '../utils'
 import { getActiveEntity } from './fetch-entity-by-pointer'
-import fetch from 'node-fetch'
-import { checkAssetCache, computeDepsDigest, purgeCachedBundlesFromOutput, AssetCacheResult } from './asset-reuse'
+import {
+  checkAssetCache,
+  computePerAssetDigests,
+  purgeCachedBundlesFromOutput,
+  AssetCacheResult,
+  SkippedAsset
+} from './asset-reuse'
 
 type Manifest = {
   version: string
@@ -19,6 +24,16 @@ type Manifest = {
   contentServerUrl?: string
   date: string
 }
+
+// Upper bound on a single `/entities/active` catalyst call before we fall back
+// to "couldn't fetch entity, upload to entity-scoped path without source files".
+// Historically unset, which meant a wedged catalyst would pin the worker slot
+// until SQS visibility (1-2 min) retried the whole job — by which point the
+// replacement worker would hit the same wedge. Bounding at 30s lets us degrade
+// gracefully within a single visibility window: the probe path can't run, but
+// the conversion still proceeds against raw hashes, and Unity still produces
+// usable bundles. Matches the default the migration script uses.
+const CATALYST_FETCH_TIMEOUT_MS = 30_000
 
 async function getCdnBucket(components: Pick<AppComponents, 'config'>) {
   return (await components.config.getString('CDN_BUCKET')) || 'CDN_BUCKET'
@@ -119,12 +134,7 @@ async function uploadSceneSourceFilesToCDN(
     filesToUpload.push(mainScript)
   }
 
-  // Normalize content server URL to the /contents/ endpoint
-  let contentsBaseUrl = contentServerUrl
-  if (!contentsBaseUrl.endsWith('/')) contentsBaseUrl += '/'
-  if (contentsBaseUrl !== 'https://sdk-team-cdn.decentraland.org/ipfs/' && !contentsBaseUrl.endsWith('contents/')) {
-    contentsBaseUrl += 'contents/'
-  }
+  const contentsBaseUrl = normalizeContentsBaseUrl(contentServerUrl)
 
   // Fetch+upload all source files in parallel. Independent files, each a catalyst
   // round-trip + S3 PUT; serializing them was tens-of-ms × N files of tail latency.
@@ -142,7 +152,7 @@ async function uploadSceneSourceFilesToCDN(
 
       try {
         const fileUrl = `${contentsBaseUrl}${contentDef.hash}`
-        const response = await fetch(fileUrl)
+        const response = await globalThis.fetch(fileUrl)
 
         if (!response.ok) {
           logger.error(
@@ -151,7 +161,7 @@ async function uploadSceneSourceFilesToCDN(
           return
         }
 
-        const content = await response.buffer()
+        const content = Buffer.from(await response.arrayBuffer())
         const contentType = fileName.endsWith('.js')
           ? 'application/javascript'
           : fileName.endsWith('.json')
@@ -375,10 +385,15 @@ export async function executeConversion(
   // longer has this entity active — promote that to an explicit throw so the
   // catch below logs something actionable instead of "cannot read property
   // 'type' of undefined".
+  //
+  // Timeout: passing CATALYST_FETCH_TIMEOUT_MS prevents a wedged catalyst from
+  // holding the worker slot indefinitely. On abort the catch below degrades us
+  // to "no entity, no asset-reuse, no source-file upload" — conversion still
+  // runs against raw hashes.
   let entityType = 'undefined'
   let entity: Awaited<ReturnType<typeof getActiveEntity>> | null = null
   try {
-    const fetched = await getActiveEntity(entityId, contentServerUrl)
+    const fetched = await getActiveEntity(entityId, contentServerUrl, CATALYST_FETCH_TIMEOUT_MS)
     if (!fetched) throw new Error('entity no longer active on catalyst (redeployed or evicted)')
     entity = fetched
     entityType = entity.type
@@ -407,8 +422,118 @@ export async function executeConversion(
   // Computed eagerly (not from cacheResult) so the glb/gltf composite key stays
   // well-defined even when the probe throws and cacheResult ends up null —
   // otherwise a probe failure would silently reintroduce the hash-only collision
-  // bug by asking Unity to emit bare `{hash}_{target}` names.
-  const depsDigest = useAssetReuse && entity ? computeDepsDigest(entity.content ?? []) : undefined
+  // bug by asking Unity to emit bare `{hash}_{target}` names. Malformed glTF /
+  // network failures fail this step; rather than letting the error propagate
+  // past service.ts (where it would be swallowed with no failed-manifest
+  // upload and SQS would retry forever against the same broken scene), we
+  // treat it as a scene conversion failure: emit the same observability the
+  // main catch does, publish the failed-manifest sentinel, and return
+  // UNEXPECTED_ERROR.
+  let depsDigestByHash: ReadonlyMap<string, string> | undefined
+  let skippedAssets: ReadonlyMap<string, SkippedAsset> = new Map()
+  if (useAssetReuse && entity) {
+    try {
+      // 60 s aggregate cap on the digest pass. Each catalyst fetch is already
+      // bounded (3 retry attempts × ≤30 s Retry-After clamp), but a scene
+      // with dozens of glbs each backing off to the cap could compound past
+      // SQS's visibility window. Past this point we throw, fall into the
+      // catch below, publish the failed-manifest sentinel, and let SQS
+      // retry — preferable to silently holding the worker for minutes.
+      const digestResult = await computePerAssetDigests(entity, contentServerUrl, {
+        aggregateTimeoutMs: 60_000
+      })
+      depsDigestByHash = digestResult.digests
+      skippedAssets = digestResult.skipped
+    } catch (err: any) {
+      logger.error(`Per-asset digest computation failed: ${err?.message ?? err}`, defaultLoggerMetadata as any)
+      components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
+      // captureException (vs captureMessage) so Sentry gets the full error
+      // object including stack — the failed-manifest body carries the same
+      // message for clients, but Sentry triage needs the stack to find where
+      // the throw originated (glb parse? URI escape? catalyst 404?).
+      components.sentry.captureException(err, {
+        level: 'error',
+        tags: {
+          entityId,
+          contentServerUrl,
+          unityBuildTarget,
+          version: abVersion,
+          phase: 'per-asset-digest'
+        }
+      })
+      try {
+        await components.cdnS3
+          .upload({
+            Bucket: cdnBucket,
+            Key: failedManifestFile,
+            ContentType: 'application/json',
+            Body: JSON.stringify({
+              entityId,
+              contentServerUrl,
+              version: abVersion,
+              error: err?.message ?? String(err),
+              date: new Date().toISOString()
+            }),
+            CacheControl: 'max-age=3600,s-maxage=3600',
+            ACL: 'public-read'
+          })
+          .promise()
+      } catch (uploadErr: any) {
+        // If the sentinel upload ALSO fails, we lose the one signal clients
+        // have that this scene won't convert. Surface at warn level so ops
+        // sees a cascading failure instead of silence.
+        logger.warn(
+          `Failed to upload failed-manifest sentinel after digest failure: ${uploadErr?.message ?? uploadErr}`,
+          defaultLoggerMetadata as any
+        )
+      }
+      return 5 // UNEXPECTED_ERROR exit code
+    }
+  }
+
+  // Visibility for the skip path: aggregate count + reason-labelled counter so
+  // ops can alert on skip-rate spikes without scraping logs. Sample up to five
+  // entries into the warn line so a misbehaving scene is diagnosable from the
+  // log without a separate per-asset entry; the cap keeps a pathological
+  // entity (50+ broken glbs) from blowing the line size.
+  //
+  // Deliberate Sentry omission: pre-change every broken glb fired
+  // `sentry.captureException(... phase: 'per-asset-digest')` from the digest
+  // catch above. Per-glb defects are now content-deterministic skips, not
+  // exceptions — they no longer warrant a Sentry event per occurrence
+  // (would flood triage with thousands of "broken-by-design" entries). The
+  // signal moves to `ab_converter_glb_skipped_total{reason}` for alerting;
+  // Sentry stays for genuine fetch/infra failures in the digest catch.
+  if (skippedAssets.size > 0) {
+    // Early-exit collect rather than `[...values()].slice(0, 5)` so a
+    // pathological scene (thousands of broken glbs in one entity) doesn't
+    // materialize the whole skipped Map into a temporary array just to
+    // discard all but the first 5. Cheap defence — Unity's working set is
+    // already the dominant memory consumer on these workers.
+    const SAMPLE_LIMIT = 5
+    const samples: SkippedAsset[] = []
+    for (const skip of skippedAssets.values()) {
+      if (samples.length >= SAMPLE_LIMIT) break
+      samples.push(skip)
+    }
+    logger.warn('Skipping glb/gltf assets with missing or unparseable dependencies', {
+      ...defaultLoggerMetadata,
+      count: skippedAssets.size,
+      samples: samples.map((s) => ({
+        hash: s.hash,
+        file: s.file,
+        reason: s.reason,
+        detail: s.detail
+      }))
+    } as any)
+    for (const skip of skippedAssets.values()) {
+      components.metrics.increment('ab_converter_glb_skipped_total', {
+        build_target: $BUILD_TARGET,
+        ab_version: abVersion,
+        reason: skip.reason
+      })
+    }
+  }
 
   let cacheResult: AssetCacheResult | null = null
   let fullCacheHit = false
@@ -419,7 +544,7 @@ export async function executeConversion(
         abVersion,
         buildTarget: $BUILD_TARGET,
         cdnBucket,
-        depsDigest
+        depsDigestByHash
       })
       const totalProbed = cacheResult.cachedHashes.length + cacheResult.missingHashes.length
       fullCacheHit = totalProbed > 0 && cacheResult.missingHashes.length === 0
@@ -531,7 +656,8 @@ export async function executeConversion(
         animation: animation,
         doISS: doISS,
         cachedHashes: useAssetReuse && cacheResult ? cacheResult.unitySkippableHashes : undefined,
-        depsDigest
+        skippedHashes: skippedAssets.size > 0 ? [...skippedAssets.keys()] : undefined,
+        depsDigestByHash
       })
     } else {
       exitCode = 0

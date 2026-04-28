@@ -4,6 +4,7 @@ import type { CaptureContext, SeverityLevel } from '@sentry/types'
 
 export type SentryComponent = {
   captureMessage: (message: string, captureContext?: CaptureContext | SeverityLevel) => void
+  captureException: (error: unknown, captureContext?: CaptureContext) => void
 }
 
 export async function createSentryComponent({ config }: Pick<AppComponents, 'config'>) {
@@ -17,13 +18,20 @@ export async function createSentryComponent({ config }: Pick<AppComponents, 'con
     })
   }
 
-  async function captureMessage(message: string) {
+  function captureMessage(message: string, captureContext?: CaptureContext | SeverityLevel) {
     if (sentryDsn) {
-      Sentry.captureMessage(message)
+      Sentry.captureMessage(message, captureContext)
+    }
+  }
+
+  function captureException(error: unknown, captureContext?: CaptureContext) {
+    if (sentryDsn) {
+      Sentry.captureException(error, captureContext)
     }
   }
 
   return {
-    captureMessage
+    captureMessage,
+    captureException
   }
 }

@@ -9,7 +9,12 @@ import { rimraf } from 'rimraf'
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const MockAws = require('mock-aws-s3')
-import { canonicalFilename, computeDepsDigest } from '../../src/logic/asset-reuse'
+import {
+  canonicalFilenameForAsset,
+  computePerAssetDigests,
+  GltfFetcher
+} from '../../src/logic/asset-reuse'
+import { buildGlb } from '../helpers/glb-fixtures'
 import { runMigration } from '../../src/migrate-to-canonical'
 
 const BUCKET = 'test-migrate-bucket'
@@ -44,6 +49,21 @@ function makeFetchEntityStub(entityContentByEntityId: Record<string, { file: str
     if (!content) throw new Error(`no stubbed entity for ${entityId}`)
     return { content }
   })
+}
+
+/**
+ * Build a `gltfFetcher` that returns in-memory glb bytes keyed by content hash
+ * (the `{hash}` portion of the catalyst URL `{base}/contents/{hash}`). Tests
+ * that don't involve glb/gltf assets can omit this — `computePerAssetDigests`
+ * only invokes the fetcher for entries whose extension is in the gltf set.
+ */
+function makeGltfFetcher(bytesByHash: Record<string, Buffer>): GltfFetcher {
+  return async (url: string) => {
+    const hash = url.split('/').pop() ?? ''
+    const buf = bytesByHash[hash]
+    if (!buf) throw new Error(`no stubbed glb/gltf for hash ${hash}`)
+    return buf
+  }
 }
 
 describe('when running the migration against a pre-rollout bucket', () => {
@@ -293,8 +313,15 @@ describe('when running the migration against a pre-rollout bucket', () => {
         { file: 'model.glb', hash: 'hashGlb' },
         { file: 'texture.png', hash: 'hashTex' }
       ]
-      const digest = computeDepsDigest(content)
-      expectedComposite = canonicalFilename('hashGlb', '.glb', 'windows', digest)
+      // The glb references the texture, so the per-glb digest hashes just
+      // that one dep. Using `computePerAssetDigests` here rather than
+      // hand-rolling the digest keeps the test honest about the end-to-end
+      // contract — any drift between digest derivation and canonical-name
+      // composition surfaces as a mismatch between expectation and reality.
+      const glbBytes = buildGlb(['texture.png'])
+      const gltfFetcher = makeGltfFetcher({ hashGlb: glbBytes })
+      const { digests } = await computePerAssetDigests({ content }, CATALYST, { fetcher: gltfFetcher })
+      expectedComposite = canonicalFilenameForAsset('hashGlb', '.glb', 'windows', digests)
 
       const fetchEntity = makeFetchEntityStub({ 'bafy-entity-with-glb': content })
 
@@ -305,7 +332,8 @@ describe('when running the migration against a pre-rollout bucket', () => {
         target: 'windows',
         dryRun: false,
         concurrency: 10,
-        fetchEntity
+        fetchEntity,
+        gltfFetcher
       })
     })
 
@@ -328,7 +356,21 @@ describe('when running the migration against a pre-rollout bucket', () => {
     })
   })
 
-  describe('and two entities share a glb hash but differ in textures', () => {
+  describe('and two entities share an identical glb whose URI resolves to different texture hashes', () => {
+    // Realistic cross-scene divergence: the glb content hash is identical
+    // across both entities (same bytes ⇒ same CID), and the glb references
+    // the same filename "skin.png" from its JSON. The difference is in the
+    // entities' content maps — "skin.png" resolves to different content
+    // hashes in entity A vs entity B. Per-glb digest hashes the resolved
+    // (filename, hash) tuple set, so the two entities produce distinct
+    // digests and the bundles land at distinct canonical paths.
+    //
+    // This is the real scenario the per-glb digest exists to handle; the
+    // entity-wide digest would also diverge here (different content lists)
+    // but the per-glb digest is strictly narrower: it'd collide if only
+    // the shared-glb-relevant subset matched. That tighter invariant is
+    // what enables cross-scene reuse in other scenarios (shared glb + same
+    // resolved deps → identical path, even with unrelated content around).
     let expectedA: string
     let expectedB: string
 
@@ -340,14 +382,24 @@ describe('when running the migration against a pre-rollout bucket', () => {
 
       const contentA = [
         { file: 'model.glb', hash: 'hashGlb' },
-        { file: 'skin-red.png', hash: 'hashRed' }
+        { file: 'skin.png', hash: 'hashRed' } // "skin.png" → red in scene A
       ]
       const contentB = [
         { file: 'model.glb', hash: 'hashGlb' },
-        { file: 'skin-blue.png', hash: 'hashBlue' }
+        { file: 'skin.png', hash: 'hashBlue' } // same filename, different content hash in scene B
       ]
-      expectedA = canonicalFilename('hashGlb', '.glb', 'windows', computeDepsDigest(contentA))
-      expectedB = canonicalFilename('hashGlb', '.glb', 'windows', computeDepsDigest(contentB))
+      // Single glb fixture: identical bytes, identical URI reference. The
+      // divergence is entirely in the entity content map — exactly the
+      // invariant per-glb digest is designed to capture.
+      const gltfFetcher = makeGltfFetcher({ hashGlb: buildGlb(['skin.png']) })
+      const { digests: digestsA } = await computePerAssetDigests({ content: contentA }, CATALYST, {
+        fetcher: gltfFetcher
+      })
+      const { digests: digestsB } = await computePerAssetDigests({ content: contentB }, CATALYST, {
+        fetcher: gltfFetcher
+      })
+      expectedA = canonicalFilenameForAsset('hashGlb', '.glb', 'windows', digestsA)
+      expectedB = canonicalFilenameForAsset('hashGlb', '.glb', 'windows', digestsB)
 
       const fetchEntity = makeFetchEntityStub({ 'bafy-A': contentA, 'bafy-B': contentB })
 
@@ -358,7 +410,8 @@ describe('when running the migration against a pre-rollout bucket', () => {
         target: 'windows',
         dryRun: false,
         concurrency: 10,
-        fetchEntity
+        fetchEntity,
+        gltfFetcher
       })
     })
 
@@ -688,8 +741,9 @@ describe('when running the migration against a pre-rollout bucket', () => {
           { file: 'model.glb', hash: 'hashGlbA' },
           { file: 'tex.png', hash: 'hashTexA' }
         ]
-        const digest = computeDepsDigest(content)
-        const glbComposite = canonicalFilename('hashGlbA', '.glb', 'windows', digest)
+        const gltfFetcher = makeGltfFetcher({ hashGlbA: buildGlb(['tex.png']) })
+        const { digests } = await computePerAssetDigests({ content }, CATALYST, { fetcher: gltfFetcher })
+        const glbComposite = canonicalFilenameForAsset('hashGlbA', '.glb', 'windows', digests)
         await seedObject(s3, 'manifest/bafy-preexist_windows.json', makeManifest('v48', ['hashGlbA_windows']))
         await seedObject(s3, 'v48/bafy-preexist/hashGlbA_windows', 'glb-bytes')
         await seedObject(s3, `v48/assets/${glbComposite}`, 'already-there')
@@ -703,7 +757,8 @@ describe('when running the migration against a pre-rollout bucket', () => {
           target: 'windows',
           dryRun: false,
           concurrency: 10,
-          fetchEntity
+          fetchEntity,
+          gltfFetcher
         })
       })
 
@@ -726,6 +781,7 @@ describe('when running the migration against a pre-rollout bucket', () => {
         await seedObject(s3, 'v48/bafy-fresh/hashGlbB_windows', 'glb-bytes')
 
         const fetchEntity = makeFetchEntityStub({ 'bafy-fresh': content })
+        const gltfFetcher = makeGltfFetcher({ hashGlbB: buildGlb(['tex.png']) })
 
         stats = await runMigration({
           s3,
@@ -734,7 +790,8 @@ describe('when running the migration against a pre-rollout bucket', () => {
           target: 'windows',
           dryRun: false,
           concurrency: 10,
-          fetchEntity
+          fetchEntity,
+          gltfFetcher
         })
       })
 
@@ -756,6 +813,7 @@ describe('when running the migration against a pre-rollout bucket', () => {
         await seedObject(s3, 'v48/bafy-dry/hashGlbC_windows', 'glb-bytes')
 
         const fetchEntity = makeFetchEntityStub({ 'bafy-dry': content })
+        const gltfFetcher = makeGltfFetcher({ hashGlbC: buildGlb(['tex.png']) })
 
         stats = await runMigration({
           s3,
@@ -764,7 +822,8 @@ describe('when running the migration against a pre-rollout bucket', () => {
           target: 'windows',
           dryRun: true,
           concurrency: 10,
-          fetchEntity
+          fetchEntity,
+          gltfFetcher
         })
       })
 
@@ -876,6 +935,88 @@ describe('when running the migration against a pre-rollout bucket', () => {
       expect(stats.bundlesCopied).toBe(1)
       expect(await read(s3, 'v48/assets/hashG_windows')).toBe('good-bytes')
       expect(await read(s3, 'v48/assets/hashB_windows')).toBeNull()
+    })
+  })
+
+  describe('and one entity has an unparseable glb (bytes that fail the glTF magic check)', () => {
+    // After the per-glb skip change, this is no longer a manifestsDigestFailed
+    // case — content-deterministic defects (bad bytes / missing deps) are
+    // skipped per-asset. The migration keeps the manifest, refuses to copy
+    // the broken bundle to a canonical path nothing will probe, and counts
+    // the dropped bundle under glbSkippedDuringMigration.
+    let stats: Awaited<ReturnType<typeof runMigration>>
+    let expectedGoodComposite: string
+
+    beforeEach(async () => {
+      await seedObject(s3, 'manifest/bafy-badglb_windows.json', makeManifest('v48', ['hashBadGlb_windows']))
+      await seedObject(s3, 'manifest/bafy-goodglb_windows.json', makeManifest('v48', ['hashGoodGlb_windows']))
+      await seedObject(s3, 'v48/bafy-badglb/hashBadGlb_windows', 'bad-glb-bundle')
+      await seedObject(s3, 'v48/bafy-goodglb/hashGoodGlb_windows', 'good-glb-bundle')
+
+      const goodContent = [
+        { file: 'ok.glb', hash: 'hashGoodGlb' },
+        { file: 'tex.png', hash: 'hashTex' }
+      ]
+      const fetchEntity = makeFetchEntityStub({
+        'bafy-badglb': [{ file: 'broken.glb', hash: 'hashBadGlb' }],
+        'bafy-goodglb': goodContent
+      })
+      // Bad glb returns raw bytes that fail the magic-bytes check; good glb
+      // is well-formed. `parseGltfDepRefs` rejects the bad one inside
+      // `computePerAssetDigests`, which now records it as a per-glb skip
+      // (not a digest-step throw). The bundle is excluded from copy.
+      const gltfFetcher = makeGltfFetcher({
+        hashBadGlb: Buffer.from('not-a-glb-at-all'),
+        hashGoodGlb: buildGlb(['tex.png'])
+      })
+
+      // Pin the good entity's canonical destination so we can assert the
+      // bundle actually landed there.
+      const goodDigestResult = await computePerAssetDigests({ content: goodContent }, CATALYST, {
+        fetcher: gltfFetcher
+      })
+      expectedGoodComposite = canonicalFilenameForAsset(
+        'hashGoodGlb',
+        '.glb',
+        'windows',
+        goodDigestResult.digests
+      )
+
+      stats = await runMigration({
+        s3,
+        bucket: BUCKET,
+        abVersion: 'v48',
+        target: 'windows',
+        dryRun: false,
+        concurrency: 10,
+        fetchEntity,
+        gltfFetcher
+      })
+    })
+
+    it('should NOT count the unparseable glb under manifestsDigestFailed', () => {
+      expect(stats.manifestsDigestFailed).toBe(0)
+    })
+
+    it('should keep both manifests (broken glb is per-asset skip, not manifest failure)', () => {
+      expect(stats.manifestsKept).toBe(2)
+    })
+
+    it('should record the broken glb under glbSkippedDuringMigration', () => {
+      expect(stats.glbSkippedDuringMigration).toBe(1)
+    })
+
+    it('should NOT probe or copy the broken glb bundle', () => {
+      // Only the good entity's single bundle is probed/copied.
+      expect(stats.bundlesCopied).toBe(1)
+    })
+
+    it('should NOT copy the corrupt entity\'s bundle', async () => {
+      expect(await read(s3, 'v48/assets/hashBadGlb_windows')).toBeNull()
+    })
+
+    it('should copy the good entity\'s bundle to its composite canonical path', async () => {
+      expect(await read(s3, `v48/assets/${expectedGoodComposite}`)).toBe('good-glb-bundle')
     })
   })
 
