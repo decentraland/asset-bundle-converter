@@ -28,15 +28,15 @@ type SceneDef = {
   coords: string
   baseUrl: string
   isWorld: boolean
-  expectedNewFiles: number // -1 = don't check exact count
-  expectMissingHash: string | null
+  expectedNewFiles?: number
+  expectMissingHash?: string
 }
 
 const SCENES: SceneDef[] = [
-  { name: 'ABTestScene1.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectedNewFiles: -1, expectMissingHash: null },
-  { name: 'ABTestScene2.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectedNewFiles: 8, expectMissingHash: null },
-  { name: 'Catalyst 19,3', coords: '19,3', baseUrl: CATALYST_BASE_URL, isWorld: false, expectedNewFiles: 0, expectMissingHash: null },
-  { name: 'ABTestScene3.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectedNewFiles: -1, expectMissingHash: CUBE_GLTF_HASH }
+  { name: 'ABTestScene1.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true },
+  { name: 'ABTestScene2.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectedNewFiles: 8 },
+  { name: 'Catalyst 19,3', coords: '19,3', baseUrl: CATALYST_BASE_URL, isWorld: false, expectedNewFiles: 0 },
+  { name: 'ABTestScene3.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectMissingHash: CUBE_GLTF_HASH }
 ]
 
 // ---------------------------------------------------------------------------
@@ -220,7 +220,7 @@ test('when converting scenes end-to-end via queue-task', ({ components }) => {
         expect(missing).toEqual([])
       })
 
-      if (sceneDef.expectedNewFiles >= 0) {
+      if (sceneDef.expectedNewFiles !== undefined) {
         it(`should have exactly ${sceneDef.expectedNewFiles} new file(s) in assets/`, () => {
           const filesAfter = countFiles(assetsDir)
           const newFiles = filesAfter - filesBefore

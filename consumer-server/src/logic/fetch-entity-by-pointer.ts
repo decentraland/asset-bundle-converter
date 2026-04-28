@@ -35,6 +35,9 @@ export async function getActiveEntity(id: string, contentServer: string, timeout
     // GET /contents/{CID} returns the entity snapshot directly. Works on both
     // regular catalysts and the worlds content server (which doesn't support
     // POST /entities/active with { ids: [...] }).
+    if (!/^[a-zA-Z0-9]+$/.test(id)) {
+      throw new Error(`Invalid entity ID format: ${id}`)
+    }
     const base = contentServer.endsWith('/') ? contentServer : contentServer + '/'
     const url = `${base}contents/${id}`
     const res = await fetch(url, { signal: controller?.signal })
