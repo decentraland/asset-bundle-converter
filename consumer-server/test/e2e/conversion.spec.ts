@@ -5,13 +5,13 @@
 // Invoked via: npx jest --config jest.e2e.config.js
 //
 // Starts the full consumer-server (HTTP + in-memory queue), POSTs jobs to
-// /queue-task, and polls mock S3 for manifests to verify results.
+// /queue-task via localFetch, and polls mock S3 for manifests.
 
 import * as fs from 'fs'
 import * as path from 'path'
-import { initComponents } from '../../src/components'
-import { main } from '../../src/service'
+import { test } from '../components'
 import { ensureUlf } from '../../src/logic/ensure-ulf'
+import { getAbVersionEnvName } from '../../src/utils'
 
 // ---------------------------------------------------------------------------
 // Test scenes
@@ -38,20 +38,17 @@ const SCENES: SceneDef[] = [
 ]
 
 // ---------------------------------------------------------------------------
-// Env — set defaults for the config component
+// Env
 // ---------------------------------------------------------------------------
 
 const $BUILD_TARGET = process.env.BUILD_TARGET || 'webgl'
-const TMP_SECRET = 'e2e-test-secret'
-
-// These env vars are read by initComponents via createDotEnvConfigComponent
+const TMP_SECRET = process.env.TMP_SECRET || 'e2e-test-secret'
 process.env.TMP_SECRET = TMP_SECRET
 process.env.PLATFORM = $BUILD_TARGET
 process.env.ASSET_REUSE_ENABLED = 'true'
-// CDN_BUCKET unset → mock-aws-s3; TASK_QUEUE unset → memory queue
 
 const MOCK_S3_BASE = '/tmp/e2e-mock-s3'
-const BUCKET_NAME = 'CDN_BUCKET' // default bucket name when CDN_BUCKET env is unset
+const BUCKET_NAME = 'CDN_BUCKET' // default when CDN_BUCKET env is unset
 
 type Manifest = { version: string; files: string[]; exitCode: number | null }
 
@@ -63,8 +60,7 @@ type WorldScene = { parcels: string[]; entityId: string }
 type WorldScenesResponse = { scenes: WorldScene[] }
 
 async function resolveWorldEntity(worldName: string, coords: string, baseUrl: string): Promise<string> {
-  const scenesUrl = `${baseUrl}/world/${worldName}/scenes`
-  const res = await fetch(scenesUrl)
+  const res = await fetch(`${baseUrl}/world/${worldName}/scenes`)
   if (!res.ok) throw new Error(`Failed to fetch world scenes: ${res.status}`)
   const body = (await res.json()) as WorldScenesResponse
   if (!body.scenes?.length) throw new Error(`World "${worldName}" has no scenes`)
@@ -149,12 +145,7 @@ function verifyAllBundlesExist(manifest: Manifest, entityId: string, abVersion: 
   return missing
 }
 
-/** Poll until the manifest appears in mock S3, or timeout. */
-async function waitForManifest(
-  buildTarget: string,
-  entityId: string,
-  timeoutMs: number = 600000
-): Promise<Manifest> {
+async function waitForManifest(buildTarget: string, entityId: string, timeoutMs: number = 600000): Promise<Manifest> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     const manifest = readManifestFromDisk(buildTarget, entityId)
@@ -165,52 +156,21 @@ async function waitForManifest(
 }
 
 // ---------------------------------------------------------------------------
-// Test
+// Test — uses the test runner from test/components.ts which manages the
+// full server lifecycle (HTTP + in-memory queue + all components).
 // ---------------------------------------------------------------------------
 
-describe('when converting scenes end-to-end via queue-task', () => {
-  let serverPort: number
+ensureUlf()
+fs.mkdirSync(MOCK_S3_BASE, { recursive: true })
+
+test('when converting scenes end-to-end via queue-task', ({ components }) => {
   let abVersion: string
   let assetsDir: string
-  let stopProgram: () => Promise<void>
 
   beforeAll(async () => {
-    ensureUlf()
-
-    // Ensure mock S3 base exists
-    fs.mkdirSync(MOCK_S3_BASE, { recursive: true })
-
-    // initComponents reads env vars — mock-aws-s3 when CDN_BUCKET unset,
-    // memory queue when TASK_QUEUE unset
-    const components = await initComponents()
-
-    // Derive AB_VERSION from config
-    const abVersionEnvName =
-      $BUILD_TARGET === 'windows' ? 'AB_VERSION_WINDOWS' : $BUILD_TARGET === 'mac' ? 'AB_VERSION_MAC' : 'AB_VERSION'
+    const abVersionEnvName = getAbVersionEnvName($BUILD_TARGET)
     abVersion = (await components.config.getString(abVersionEnvName)) || 'v48'
     assetsDir = path.join(MOCK_S3_BASE, BUCKET_NAME, abVersion, 'assets')
-
-    // Start the full server (HTTP + queue consumer loop)
-    const program = {
-      components,
-      startComponents: async () => {
-        await components.server.start({})
-        // Get the port the server is listening on
-        const addr = (components.server as any).app?.server?.address()
-        serverPort = typeof addr === 'object' ? addr.port : 5000
-      },
-      stop: async () => {
-        await components.server.stop()
-      }
-    }
-
-    stopProgram = program.stop
-    await main(program as any)
-    await program.startComponents()
-  }, 60000)
-
-  afterAll(async () => {
-    if (stopProgram) await stopProgram()
   })
 
   async function queueConversion(entityId: string, contentServerUrl: string): Promise<void> {
@@ -222,7 +182,7 @@ describe('when converting scenes end-to-end via queue-task', () => {
       contentServerUrls: [contentServerUrl]
     }
 
-    const res = await fetch(`http://localhost:${serverPort}/queue-task`, {
+    const res = await components.localFetch.fetch('/queue-task', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -249,12 +209,10 @@ describe('when converting scenes end-to-end via queue-task', () => {
         filesBefore = countFiles(assetsDir)
         mtimesBefore = snapshotMtimes(assetsDir)
 
-        // Queue the job via HTTP
         await queueConversion(entityId, sceneDef.baseUrl)
 
-        // Wait for the manifest to appear (conversion complete)
         manifest = await waitForManifest($BUILD_TARGET, entityId)
-      }, 600000) // 10 min timeout per scene
+      }, 600000)
 
       it('should produce a manifest with bundles', () => {
         expect(manifest.files.length).toBeGreaterThan(0)
@@ -281,7 +239,7 @@ describe('when converting scenes end-to-end via queue-task', () => {
       }
 
       if (sceneDef.expectMissingHash) {
-        it(`should not include broken hash in manifest`, () => {
+        it('should not include broken hash in manifest', () => {
           const found = manifest.files.some((f: string) => f.startsWith(sceneDef.expectMissingHash!))
           expect(found).toBe(false)
         })

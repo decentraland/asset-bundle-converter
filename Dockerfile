@@ -31,6 +31,8 @@ RUN yarn test
 
 # Snapshot with devDependencies for e2e tests (needs ts-jest + jest).
 # The e2e tests run in the final image with Unity, not in this build stage.
+# Trade-off: adds ~100MB of devDeps to the ~5GB image. Could be split into
+# a separate Docker target if image size becomes a concern.
 RUN cp -r /consumer-server /consumer-server-e2e
 
 # remove devDependencies, keep only used dependencies
