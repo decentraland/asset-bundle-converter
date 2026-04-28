@@ -12,6 +12,7 @@ import * as path from 'path'
 import { test } from '../components'
 import { ensureUlf } from '../../src/logic/ensure-ulf'
 import { getAbVersionEnvName } from '../../src/utils'
+import { AuthLinkType } from '@dcl/schemas/dist/misc/auth-chain'
 
 // ---------------------------------------------------------------------------
 // Test scenes
@@ -180,7 +181,7 @@ test('when converting scenes end-to-end via queue-task', ({ components }) => {
     await components.taskQueue.publish({
       entity: {
         entityId,
-        authChain: [{ type: 'SIGNER', payload: '0x0000000000000000000000000000000000000000', signature: '' }]
+        authChain: [{ type: AuthLinkType.SIGNER, payload: '0x0000000000000000000000000000000000000000', signature: '' }]
       },
       contentServerUrls: [contentServerUrl]
     })
