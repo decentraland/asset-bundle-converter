@@ -9,6 +9,7 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
+import MockAws from 'mock-aws-s3'
 import { test } from '../components'
 import { ensureUlf } from '../../src/logic/ensure-ulf'
 import { getAbVersionEnvName } from '../../src/utils'
@@ -163,6 +164,9 @@ async function waitForManifest(buildTarget: string, entityId: string, timeoutMs:
 
 ensureUlf()
 fs.mkdirSync(MOCK_S3_BASE, { recursive: true })
+// Set mock-aws-s3 basePath BEFORE initComponents creates the S3 client.
+// Without this, mock S3 writes to cwd instead of MOCK_S3_BASE.
+MockAws.config.basePath = MOCK_S3_BASE
 
 test('when converting scenes end-to-end via queue-task', ({ components }) => {
   let abVersion: string
