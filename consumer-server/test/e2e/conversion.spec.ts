@@ -42,10 +42,10 @@ const SCENES: SceneDef[] = [
 // ---------------------------------------------------------------------------
 
 const $BUILD_TARGET = process.env.BUILD_TARGET || 'webgl'
-const TMP_SECRET = process.env.TMP_SECRET || 'e2e-test-secret'
-process.env.TMP_SECRET = TMP_SECRET
 process.env.PLATFORM = $BUILD_TARGET
 process.env.ASSET_REUSE_ENABLED = 'true'
+// AWS_SNS_ARN is required by the publisher component at init time
+process.env.AWS_SNS_ARN = process.env.AWS_SNS_ARN || 'arn:aws:sns:us-east-1:000000000000:e2e-test'
 
 const MOCK_S3_BASE = '/tmp/e2e-mock-s3'
 const BUCKET_NAME = 'CDN_BUCKET' // default when CDN_BUCKET env is unset
@@ -174,24 +174,16 @@ test('when converting scenes end-to-end via queue-task', ({ components }) => {
   })
 
   async function queueConversion(entityId: string, contentServerUrl: string): Promise<void> {
-    const body = {
+    // Publish directly to the in-memory queue — bypasses the HTTP handler
+    // (which requires SNS) but still exercises the queue consumer loop in
+    // service.ts that calls executeConversion.
+    await components.taskQueue.publish({
       entity: {
         entityId,
         authChain: [{ type: 'SIGNER', payload: '0x0000000000000000000000000000000000000000', signature: '' }]
       },
       contentServerUrls: [contentServerUrl]
-    }
-
-    const res = await components.localFetch.fetch('/queue-task', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        Authorization: TMP_SECRET
-      },
-      body: JSON.stringify(body)
     })
-
-    expect(res.status).toBe(201)
   }
 
   for (let i = 0; i < SCENES.length; i++) {
