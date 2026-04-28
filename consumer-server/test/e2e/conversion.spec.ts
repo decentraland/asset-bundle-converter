@@ -3,20 +3,15 @@
 //
 // Requires Unity — runs inside the Docker image, not during `yarn test`.
 // Invoked via: npx jest --config jest.e2e.config.js
+//
+// Starts the full consumer-server (HTTP + in-memory queue), POSTs jobs to
+// /queue-task, and polls mock S3 for manifests to verify results.
 
 import * as fs from 'fs'
 import * as path from 'path'
-import MockAws from 'mock-aws-s3'
-import { createConfigComponent } from '@well-known-components/env-config-provider'
-import { createLogComponent } from '@well-known-components/logger'
-import { createMetricsComponent } from '@well-known-components/metrics'
-import { metricDeclarations } from '../../src/metrics'
-import { getEntities } from '../../src/logic/fetch-entity-by-pointer'
-import { createFetchComponent } from '../../src/adapters/fetch'
-import { executeConversion } from '../../src/logic/conversion-task'
-import { getAbVersionEnvName } from '../../src/utils'
+import { initComponents } from '../../src/components'
+import { main } from '../../src/service'
 import { ensureUlf } from '../../src/logic/ensure-ulf'
-import { IFetchComponent } from '@well-known-components/interfaces'
 
 // ---------------------------------------------------------------------------
 // Test scenes
@@ -43,15 +38,20 @@ const SCENES: SceneDef[] = [
 ]
 
 // ---------------------------------------------------------------------------
-// Env
+// Env — set defaults for the config component
 // ---------------------------------------------------------------------------
 
-const $UNITY_PATH = process.env.UNITY_PATH
-const $PROJECT_PATH = process.env.PROJECT_PATH
 const $BUILD_TARGET = process.env.BUILD_TARGET || 'webgl'
+const TMP_SECRET = 'e2e-test-secret'
+
+// These env vars are read by initComponents via createDotEnvConfigComponent
+process.env.TMP_SECRET = TMP_SECRET
+process.env.PLATFORM = $BUILD_TARGET
+process.env.ASSET_REUSE_ENABLED = 'true'
+// CDN_BUCKET unset → mock-aws-s3; TASK_QUEUE unset → memory queue
 
 const MOCK_S3_BASE = '/tmp/e2e-mock-s3'
-const BUCKET_NAME = 'e2e-test-bucket'
+const BUCKET_NAME = 'CDN_BUCKET' // default bucket name when CDN_BUCKET env is unset
 
 type Manifest = { version: string; files: string[]; exitCode: number | null }
 
@@ -62,49 +62,33 @@ type Manifest = { version: string; files: string[]; exitCode: number | null }
 type WorldScene = { parcels: string[]; entityId: string }
 type WorldScenesResponse = { scenes: WorldScene[] }
 
-async function resolveWorldEntity(
-  fetcher: IFetchComponent,
-  worldName: string,
-  coords: string,
-  baseUrl: string
-): Promise<string> {
+async function resolveWorldEntity(worldName: string, coords: string, baseUrl: string): Promise<string> {
   const scenesUrl = `${baseUrl}/world/${worldName}/scenes`
-  const scenesRes = await fetcher.fetch(scenesUrl)
-  if (!scenesRes.ok) {
-    throw new Error(`Failed to fetch world scenes: ${scenesRes.status} ${scenesRes.statusText}`)
-  }
-  const scenesBody = (await scenesRes.json()) as WorldScenesResponse
-  if (!scenesBody.scenes?.length) {
-    throw new Error(`World "${worldName}" has no scenes`)
-  }
-  const scene = scenesBody.scenes.find((s) => s.parcels?.includes(coords))
+  const res = await fetch(scenesUrl)
+  if (!res.ok) throw new Error(`Failed to fetch world scenes: ${res.status}`)
+  const body = (await res.json()) as WorldScenesResponse
+  if (!body.scenes?.length) throw new Error(`World "${worldName}" has no scenes`)
+  const scene = body.scenes.find((s) => s.parcels?.includes(coords))
   if (!scene) {
-    const available = scenesBody.scenes.map((s) => s.parcels?.join(', ')).join(' | ')
-    throw new Error(`Coords "${coords}" not found in world "${worldName}". Available parcels: ${available}`)
+    const available = body.scenes.map((s) => s.parcels?.join(', ')).join(' | ')
+    throw new Error(`Coords "${coords}" not found in world "${worldName}". Available: ${available}`)
   }
   return scene.entityId
 }
 
-async function resolveEntityId(fetcher: IFetchComponent, sceneDef: SceneDef): Promise<string> {
+async function resolveEntityId(sceneDef: SceneDef): Promise<string> {
   if (sceneDef.isWorld) {
-    return resolveWorldEntity(fetcher, sceneDef.name, sceneDef.coords, sceneDef.baseUrl)
+    return resolveWorldEntity(sceneDef.name, sceneDef.coords, sceneDef.baseUrl)
   }
-  const entities = await getEntities(fetcher, [sceneDef.coords], sceneDef.baseUrl)
-  if (!entities.length) {
-    throw new Error(`Could not resolve coords "${sceneDef.coords}" at ${sceneDef.baseUrl}`)
-  }
+  const res = await fetch(`${sceneDef.baseUrl}/entities/active`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ pointers: [sceneDef.coords] })
+  })
+  if (!res.ok) throw new Error(`Failed to resolve ${sceneDef.coords}: ${res.status}`)
+  const entities = (await res.json()) as { id: string }[]
+  if (!entities.length) throw new Error(`No entity at ${sceneDef.coords}`)
   return entities[0].id
-}
-
-function readManifest(cdnS3: any, entityId: string, buildTarget: string): Promise<Manifest> {
-  const manifestKey = buildTarget !== 'webgl' ? `manifest/${entityId}_${buildTarget}.json` : `manifest/${entityId}.json`
-  return cdnS3
-    .getObject({ Bucket: BUCKET_NAME, Key: manifestKey })
-    .promise()
-    .then((res: any) => JSON.parse(res.Body!.toString()))
-    .catch((err: any) => {
-      throw new Error(`Manifest not found at ${manifestKey}: ${err.message}`)
-    })
 }
 
 function countFiles(dir: string): number {
@@ -135,6 +119,14 @@ function findOverwrites(before: Map<string, number>, dir: string): string[] {
   return overwrites
 }
 
+function readManifestFromDisk(buildTarget: string, entityId: string): Manifest | null {
+  const manifestKey =
+    buildTarget !== 'webgl' ? `manifest/${entityId}_${buildTarget}.json` : `manifest/${entityId}.json`
+  const filePath = path.join(MOCK_S3_BASE, BUCKET_NAME, manifestKey)
+  if (!fs.existsSync(filePath)) return null
+  return JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+}
+
 function verifyAllBundlesExist(manifest: Manifest, entityId: string, abVersion: string): string[] {
   const canonicalPrefix = `${abVersion}/assets`
   const entityScopedPrefix = `${abVersion}/${entityId}`
@@ -154,57 +146,93 @@ function verifyAllBundlesExist(manifest: Manifest, entityId: string, abVersion: 
       missing.push(bundleFilename)
     }
   }
-
   return missing
+}
+
+/** Poll until the manifest appears in mock S3, or timeout. */
+async function waitForManifest(
+  buildTarget: string,
+  entityId: string,
+  timeoutMs: number = 600000
+): Promise<Manifest> {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    const manifest = readManifestFromDisk(buildTarget, entityId)
+    if (manifest) return manifest
+    await new Promise((r) => setTimeout(r, 2000))
+  }
+  throw new Error(`Timed out waiting for manifest of ${entityId} after ${timeoutMs / 1000}s`)
 }
 
 // ---------------------------------------------------------------------------
 // Test
 // ---------------------------------------------------------------------------
 
-describe('when converting scenes end-to-end with real Unity', () => {
-  let components: any
-  let fetcher: IFetchComponent
+describe('when converting scenes end-to-end via queue-task', () => {
+  let serverPort: number
   let abVersion: string
   let assetsDir: string
+  let stopProgram: () => Promise<void>
 
   beforeAll(async () => {
-    if (!$UNITY_PATH) throw new Error('UNITY_PATH env var is not defined')
-    if (!$PROJECT_PATH) throw new Error('PROJECT_PATH env var is not defined')
-
     ensureUlf()
 
+    // Ensure mock S3 base exists
     fs.mkdirSync(MOCK_S3_BASE, { recursive: true })
-    MockAws.config.basePath = MOCK_S3_BASE
-    const cdnS3 = new MockAws.S3({ params: { Bucket: BUCKET_NAME } })
 
-    const abVersionEnvName = getAbVersionEnvName($BUILD_TARGET)
+    // initComponents reads env vars — mock-aws-s3 when CDN_BUCKET unset,
+    // memory queue when TASK_QUEUE unset
+    const components = await initComponents()
 
-    const config = createConfigComponent({
-      UNITY_PATH: $UNITY_PATH!,
-      PROJECT_PATH: $PROJECT_PATH!,
-      BUILD_TARGET: $BUILD_TARGET,
-      [abVersionEnvName]: process.env[abVersionEnvName] || 'v48',
-      AB_VERSION: process.env.AB_VERSION || '',
-      AB_VERSION_WINDOWS: process.env.AB_VERSION_WINDOWS || '',
-      AB_VERSION_MAC: process.env.AB_VERSION_MAC || '',
-      ASSET_REUSE_ENABLED: 'true',
-      CDN_BUCKET: BUCKET_NAME,
-      LOGS_BUCKET: ''
-    })
-    const metrics = await createMetricsComponent(metricDeclarations, { config })
-    const logs = await createLogComponent({ metrics })
-    const sentry = { captureMessage: () => {}, captureException: () => {} } as any
-    components = { logs, metrics, config, cdnS3, sentry }
-
-    fetcher = await createFetchComponent()
-    abVersion = await config.requireString(abVersionEnvName)
+    // Derive AB_VERSION from config
+    const abVersionEnvName =
+      $BUILD_TARGET === 'windows' ? 'AB_VERSION_WINDOWS' : $BUILD_TARGET === 'mac' ? 'AB_VERSION_MAC' : 'AB_VERSION'
+    abVersion = (await components.config.getString(abVersionEnvName)) || 'v48'
     assetsDir = path.join(MOCK_S3_BASE, BUCKET_NAME, abVersion, 'assets')
+
+    // Start the full server (HTTP + queue consumer loop)
+    const program = {
+      components,
+      startComponents: async () => {
+        await components.server.start({})
+        // Get the port the server is listening on
+        const addr = (components.server as any).app?.server?.address()
+        serverPort = typeof addr === 'object' ? addr.port : 5000
+      },
+      stop: async () => {
+        await components.server.stop()
+      }
+    }
+
+    stopProgram = program.stop
+    await main(program as any)
+    await program.startComponents()
+  }, 60000)
+
+  afterAll(async () => {
+    if (stopProgram) await stopProgram()
   })
 
-  // Scenes run sequentially sharing the same mock S3 store.
-  // Each `it` block converts one scene and verifies the results.
-  // Order matters — later scenes depend on bundles from earlier ones.
+  async function queueConversion(entityId: string, contentServerUrl: string): Promise<void> {
+    const body = {
+      entity: {
+        entityId,
+        authChain: [{ type: 'SIGNER', payload: '0x0000000000000000000000000000000000000000', signature: '' }]
+      },
+      contentServerUrls: [contentServerUrl]
+    }
+
+    const res = await fetch(`http://localhost:${serverPort}/queue-task`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: TMP_SECRET
+      },
+      body: JSON.stringify(body)
+    })
+
+    expect(res.status).toBe(201)
+  }
 
   for (let i = 0; i < SCENES.length; i++) {
     const sceneDef = SCENES[i]
@@ -215,30 +243,18 @@ describe('when converting scenes end-to-end with real Unity', () => {
       let manifest: Manifest
       let filesBefore: number
       let mtimesBefore: Map<string, number>
-      let exitCode: number | undefined
 
       beforeAll(async () => {
-        entityId = await resolveEntityId(fetcher, sceneDef)
+        entityId = await resolveEntityId(sceneDef)
         filesBefore = countFiles(assetsDir)
         mtimesBefore = snapshotMtimes(assetsDir)
 
-        exitCode = await executeConversion(
-          components,
-          entityId,
-          sceneDef.baseUrl,
-          false,
-          'legacy',
-          false,
-          abVersion
-        )
+        // Queue the job via HTTP
+        await queueConversion(entityId, sceneDef.baseUrl)
 
-        manifest = await readManifest(components.cdnS3, entityId, $BUILD_TARGET)
-      })
-
-      it('should finish with an acceptable exit code', () => {
-        // 0 = SUCCESS, 12 = CONVERSION_ERRORS_TOLERATED
-        expect([0, 12]).toContain(exitCode)
-      })
+        // Wait for the manifest to appear (conversion complete)
+        manifest = await waitForManifest($BUILD_TARGET, entityId)
+      }, 600000) // 10 min timeout per scene
 
       it('should produce a manifest with bundles', () => {
         expect(manifest.files.length).toBeGreaterThan(0)
@@ -265,7 +281,7 @@ describe('when converting scenes end-to-end with real Unity', () => {
       }
 
       if (sceneDef.expectMissingHash) {
-        it(`should not include hash ${sceneDef.expectMissingHash.slice(0, 16)}... in manifest (broken reference)`, () => {
+        it(`should not include broken hash in manifest`, () => {
           const found = manifest.files.some((f: string) => f.startsWith(sceneDef.expectMissingHash!))
           expect(found).toBe(false)
         })
