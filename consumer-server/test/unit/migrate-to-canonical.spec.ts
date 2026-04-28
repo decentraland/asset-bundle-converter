@@ -1,5 +1,5 @@
 import { buildBundlePattern, parseManifestKey, splitBundleName } from '../../src/migrate-to-canonical'
-import { canonicalFilename, computeDepsDigest, fileExtension } from '../../src/logic/asset-reuse'
+import { canonicalFilenameForAsset, fileExtension } from '../../src/logic/asset-reuse'
 import { isS3NotFound } from '../../src/logic/s3-helpers'
 
 describe('when parsing a manifest key', () => {
@@ -164,21 +164,30 @@ describe('when detecting an S3 not-found error', () => {
 })
 
 // Pin that the migration script's rename composition — `splitBundleName` then
-// `canonicalFilename(…, computeDepsDigest(entity.content))` — produces the
-// exact same key a fresh conversion would upload to. The migrate script
-// shares the `canonicalFilename`/`computeDepsDigest` helpers with the live
-// converter, but parses pre-PR filenames through its own `splitBundleName`;
-// silent drift in that parser would deposit migrated bundles at paths the
-// runtime probe never hits, silently poisoning the canonical prefix.
+// `canonicalFilenameForAsset(…, depsDigestByHash)` — produces the exact same
+// key a fresh conversion would upload to. The migrate script shares the
+// `canonicalFilenameForAsset` helper with the live converter, but parses pre-PR
+// filenames through its own `splitBundleName`; silent drift in that parser
+// would deposit migrated bundles at paths the runtime probe never hits,
+// silently poisoning the canonical prefix.
+//
+// These tests feed synthetic `depsDigestByHash` maps rather than running the
+// full `computePerAssetDigests` pipeline — we're pinning the composition, not
+// the digest-derivation logic (covered in asset-reuse.spec.ts).
 describe('when the migration script derives a canonical destination key', () => {
-  function deriveMigratedKey(sourceFilename: string, target: string, abVersion: string, entityContent: { file: string; hash: string }[]): string | null {
+  function deriveMigratedKey(
+    sourceFilename: string,
+    target: string,
+    abVersion: string,
+    entityContent: { file: string; hash: string }[],
+    depsDigestByHash: Map<string, string>
+  ): string | null {
     const parts = splitBundleName(sourceFilename, target)
     if (!parts) return null
     const extByHash = new Map<string, string>()
     for (const c of entityContent) extByHash.set(c.hash, fileExtension(c.file))
     const ext = extByHash.get(parts.hash) ?? ''
-    const depsDigest = computeDepsDigest(entityContent)
-    const destFilename = `${canonicalFilename(parts.hash, ext, target, depsDigest)}${parts.variant}`
+    const destFilename = `${canonicalFilenameForAsset(parts.hash, ext, target, depsDigestByHash)}${parts.variant}`
     return `${abVersion}/assets/${destFilename}`
   }
 
@@ -188,10 +197,11 @@ describe('when the migration script derives a canonical destination key', () => 
         { file: 'model.glb', hash: 'hGlb' },
         { file: 'diffuse.png', hash: 'hTex' }
       ]
-      const digest = computeDepsDigest(entityContent)
-      const expected = `v48/assets/${canonicalFilename('hGlb', '.glb', 'windows', digest)}`
+      const digest = 'abcd1234abcd1234abcd1234abcd1234'
+      const digests = new Map([['hGlb', digest]])
+      const expected = `v48/assets/${canonicalFilenameForAsset('hGlb', '.glb', 'windows', digests)}`
 
-      expect(deriveMigratedKey('hGlb_windows', 'windows', 'v48', entityContent)).toBe(expected)
+      expect(deriveMigratedKey('hGlb_windows', 'windows', 'v48', entityContent, digests)).toBe(expected)
     })
   })
 
@@ -201,10 +211,11 @@ describe('when the migration script derives a canonical destination key', () => 
         { file: 'model.glb', hash: 'hGlb' },
         { file: 'diffuse.png', hash: 'hTex' }
       ]
-      const digest = computeDepsDigest(entityContent)
-      const expected = `v48/assets/${canonicalFilename('hGlb', '.glb', 'windows', digest)}.br`
+      const digest = 'abcd1234abcd1234abcd1234abcd1234'
+      const digests = new Map([['hGlb', digest]])
+      const expected = `v48/assets/${canonicalFilenameForAsset('hGlb', '.glb', 'windows', digests)}.br`
 
-      expect(deriveMigratedKey('hGlb_windows.br', 'windows', 'v48', entityContent)).toBe(expected)
+      expect(deriveMigratedKey('hGlb_windows.br', 'windows', 'v48', entityContent, digests)).toBe(expected)
     })
   })
 
@@ -214,8 +225,11 @@ describe('when the migration script derives a canonical destination key', () => 
         { file: 'model.glb', hash: 'hGlb' },
         { file: 'diffuse.png', hash: 'hTex' }
       ]
+      const digests = new Map([['hGlb', 'abcd1234abcd1234abcd1234abcd1234']])
 
-      expect(deriveMigratedKey('hTex_windows', 'windows', 'v48', entityContent)).toBe('v48/assets/hTex_windows')
+      expect(deriveMigratedKey('hTex_windows', 'windows', 'v48', entityContent, digests)).toBe(
+        'v48/assets/hTex_windows'
+      )
     })
   })
 
@@ -225,23 +239,27 @@ describe('when the migration script derives a canonical destination key', () => 
         { file: 'model.glb', hash: 'hGlb' },
         { file: 'diffuse.png', hash: 'hTex' }
       ]
-      const digest = computeDepsDigest(entityContent)
-      const expected = `v48/assets/${canonicalFilename('hGlb', '.glb', 'windows', digest)}.manifest`
+      const digest = 'abcd1234abcd1234abcd1234abcd1234'
+      const digests = new Map([['hGlb', digest]])
+      const expected = `v48/assets/${canonicalFilenameForAsset('hGlb', '.glb', 'windows', digests)}.manifest`
 
-      expect(deriveMigratedKey('hGlb_windows.manifest', 'windows', 'v48', entityContent)).toBe(expected)
+      expect(deriveMigratedKey('hGlb_windows.manifest', 'windows', 'v48', entityContent, digests)).toBe(expected)
     })
   })
 
   describe('and the source hash is not present in the entity content', () => {
     it('should fall back to bare form because the extension lookup resolves to empty', () => {
       // Defensive: a pre-PR manifest may list a hash whose entity content entry
-      // has been rotated out by the time the migration runs. We don't want the
-      // script to throw; instead it just copies to the bare canonical form
-      // (same hash, same target, no digest) which matches what a fresh run
-      // would produce for an unrecognized extension.
+      // has been rotated out by the time the migration runs. `fileExtension`
+      // returns '' for unknown hashes; `canonicalFilenameForAsset` treats any
+      // extension that's not in the gltf set as a leaf and emits the bare
+      // `{hash}_{target}` form without consulting the digest map.
       const entityContent = [{ file: 'diffuse.png', hash: 'hTex' }]
+      const digests = new Map<string, string>()
 
-      expect(deriveMigratedKey('hOrphan_windows', 'windows', 'v48', entityContent)).toBe('v48/assets/hOrphan_windows')
+      expect(deriveMigratedKey('hOrphan_windows', 'windows', 'v48', entityContent, digests)).toBe(
+        'v48/assets/hOrphan_windows'
+      )
     })
   })
 

@@ -92,13 +92,28 @@ namespace AssetBundleConverter
             public HashSet<string> cachedHashes = new HashSet<string>();
 
             /// <summary>
-            /// Entity-wide deps digest (short hex). When non-empty, GLB/GLTF bundles are
-            /// named `{hash}_{depsDigest}_{target}` instead of `{hash}_{target}` so their
-            /// canonical path factors in the dep set — two scenes sharing a glb source
-            /// hash but differing in deps produce distinct canonical paths.
-            /// BIN and texture bundles are unchanged (they're leaves with no dep refs).
+            /// Content hashes whose glb/gltf bytes the consumer-server determined are
+            /// unconvertible — either because the glb references texture/buffer URIs that
+            /// are not in the entity's content map, or because the glb bytes are
+            /// structurally malformed. These hashes are dropped from gltfPaths and
+            /// bufferPaths before any download or import attempt, so no bundle is produced
+            /// for them. Distinct from <see cref="cachedHashes"/>: cached hashes correspond
+            /// to existing canonical bundles upstream, whereas skipped hashes have no
+            /// bundle anywhere — the asset is simply absent from the output.
             /// </summary>
-            public string depsDigest = string.Empty;
+            public HashSet<string> skippedHashes = new HashSet<string>();
+
+            /// <summary>
+            /// Per-asset deps digests keyed by asset content hash. When non-empty, each
+            /// GLB/GLTF bundle is named `{hash}_{depsDigestByHash[hash]}_{target}` instead
+            /// of `{hash}_{target}` so its canonical path factors in the specific textures
+            /// and buffers that glb references — two scenes sharing a glb source hash AND
+            /// its referenced deps produce identical canonical paths (cross-scene reuse).
+            /// BIN and texture bundles are unchanged (they're leaves with no inbound dep
+            /// refs from their own bundle).
+            /// Populated from the CLI `-depsDigestsFile` flag.
+            /// </summary>
+            public Dictionary<string, string> depsDigestByHash = new Dictionary<string, string>();
             public bool reportErrors = false;
             public bool isWearable;
             public BuildTarget buildTarget = BuildTarget.WebGL;

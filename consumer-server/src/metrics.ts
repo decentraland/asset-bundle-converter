@@ -59,6 +59,11 @@ export const metricDeclarations = {
     help: 'Counter of asset cache probe failures (S3 error propagated; conversion fell back to full Unity run)',
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target', 'ab_version']
+  },
+  ab_converter_glb_skipped_total: {
+    help: 'Counter of glb/gltf assets silently skipped (missing dependencies or unparseable bytes)',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['build_target', 'ab_version', 'reason']
   }
 }
 

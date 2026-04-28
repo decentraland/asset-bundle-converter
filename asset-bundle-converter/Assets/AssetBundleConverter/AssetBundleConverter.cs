@@ -912,11 +912,13 @@ namespace DCL.ABConverter
                 // Otherwise, mark each asset as its own bundle. GLB/GLTF bundles embed
                 // dep-bundle references whose names are derived from dep content hashes.
                 // Two scenes that share a glb source hash but differ in deps therefore
-                // produce byte-different bundles — we fold the entity-wide depsDigest
-                // into the glb/gltf bundle name so those byte-different bundles land at
-                // distinct canonical paths. BIN and texture bundles are leaves (no
-                // inbound dep refs from their own bundle) so hash-only naming is safe.
-                bool useDigest = !string.IsNullOrEmpty(settings.depsDigest);
+                // produce byte-different bundles — we fold a per-asset depsDigest into
+                // the glb/gltf bundle name so those byte-different bundles land at
+                // distinct canonical paths, and two glbs with the same deps land at
+                // the same path regardless of what else is in the scene. BIN and
+                // texture bundles are leaves (no inbound dep refs from their own
+                // bundle) so hash-only naming is safe.
+                bool useDigest = settings.depsDigestByHash != null && settings.depsDigestByHash.Count > 0;
                 // `PlatformUtils.GetPlatform()` already returns the leading
                 // underscore (e.g. "_windows" / "_mac" / "_webgl"), so the
                 // string interpolations below produce `{hash}_{digest}_{target}`
@@ -939,9 +941,32 @@ namespace DCL.ABConverter
                     bool isGltf = useDigest
                         && (assetPath.finalPath.EndsWith(".glb", System.StringComparison.OrdinalIgnoreCase)
                             || assetPath.finalPath.EndsWith(".gltf", System.StringComparison.OrdinalIgnoreCase));
-                    string assetBundleName = isGltf
-                        ? $"{assetPath.hash}_{settings.depsDigest}{platform}"
-                        : assetPath.hash + platform;
+                    string assetBundleName;
+                    if (isGltf)
+                    {
+                        // A missing digest for a glb/gltf means the consumer-server
+                        // probed one canonical key but Unity would emit bare bundles
+                        // that the probe-side logic could never find. Throw loudly.
+                        // Treat a null/empty digest the same as a missing key — both
+                        // would silently collapse into `{hash}__{platform}` which
+                        // never matches what the consumer-server probes.
+                        if (!settings.depsDigestByHash.TryGetValue(assetPath.hash, out string digest)
+                            || string.IsNullOrEmpty(digest))
+                        {
+                            // Log before throwing — Unity's crash handler
+                            // sometimes truncates exception stacks in the
+                            // uploaded log file, so duplicate the message
+                            // through the logger to ensure S3 captures it.
+                            string message = $"No per-asset deps digest found for glb/gltf hash {assetPath.hash} (path {assetPath.finalPath}). The consumer-server must pass every glb/gltf via -depsDigestsFile.";
+                            log.Error(message);
+                            throw new System.InvalidOperationException(message);
+                        }
+                        assetBundleName = $"{assetPath.hash}_{digest}{platform}";
+                    }
+                    else
+                    {
+                        assetBundleName = assetPath.hash + platform;
+                    }
                     env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, assetBundleName);
                 }
             }
@@ -1091,6 +1116,32 @@ namespace DCL.ABConverter
                 List<AssetPath> bufferPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.bufferExtensions);
                 List<AssetPath> texturePaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
 
+                // Drop glb/gltf entries the consumer-server flagged as unconvertible
+                // (missing dependencies or unparseable bytes) before any download or
+                // import attempt. Identical mechanism to cachedHashes below, but
+                // semantically distinct: cached hashes correspond to existing canonical
+                // bundles upstream, while skipped hashes have no bundle anywhere — the
+                // asset is silently absent from the output. Done first so a hash that
+                // somehow appears in both lists is treated as "skipped" (the stricter
+                // case — never downloaded, never marked).
+                //
+                // The bufferPaths sweep is defensive: in the current consumer-server
+                // architecture `skippedHashes` only ever contains glb/gltf hashes
+                // (computePerAssetDigests filters by the gltf-extension set), so
+                // `bufferDropped` is expected to be 0 in production. The line stays
+                // for parallel structure with the cachedHashes block and to avoid
+                // having to revisit Unity if a future consumer-server release ever
+                // starts surfacing buffer-level skips. Mirror with the cachedHashes
+                // block immediately below — same shape, same expected-zero behaviour
+                // for buffers, same justification.
+                if (settings.skippedHashes != null && settings.skippedHashes.Count > 0)
+                {
+                    int gltfDropped = gltfPaths.RemoveAll(p => settings.skippedHashes.Contains(p.hash));
+                    int bufferDropped = bufferPaths.RemoveAll(p => settings.skippedHashes.Contains(p.hash));
+
+                    log.Info($"Dropped {gltfDropped} broken glb/gltf(s) and {bufferDropped} associated buffer(s) — flagged by consumer-server (missing deps or unparseable bytes).");
+                }
+
                 // Skip GLTFs/buffers whose canonical asset bundle already exists on the CDN.
                 // Textures are never skipped here — they may still be referenced from within
                 // non-cached GLTFs and are required to be in the contentTable for import.
@@ -1101,8 +1152,8 @@ namespace DCL.ABConverter
 
                     log.Info($"Skipped {gltfSkipped} cached GLTF(s) and {bufferSkipped} cached buffer(s).");
                 } else {
-                    if (!string.IsNullOrEmpty(settings.depsDigest))
-                        log.Info($"No cached hashes — full cache miss. depsDigest={settings.depsDigest}, proceeding to convert all {gltfPaths.Count} gltf and {bufferPaths.Count} buffer");
+                    if (settings.depsDigestByHash != null && settings.depsDigestByHash.Count > 0)
+                        log.Info($"No cached hashes — full cache miss. Received {settings.depsDigestByHash.Count} per-asset digest(s), proceeding to convert all {gltfPaths.Count} gltf and {bufferPaths.Count} buffer");
                 }
 
                 if (!FilterDumpList(ref gltfPaths))

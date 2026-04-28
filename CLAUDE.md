@@ -24,7 +24,7 @@ yarn lint:fix                # eslint --fix (prettier runs via eslint-plugin-pre
 
 # Standalone runnables (after `yarn build`):
 yarn test-conversion         # Runs a real Unity conversion locally. Requires UNITY_PATH + PROJECT_PATH + BUILD_TARGET env + a valid Unity license.
-yarn migrate                 # Backfills old entity-scoped bundles into the canonical prefix. See consumer-server/src/migrate-to-canonical.ts for flags.
+yarn migrate                 # Backfills old entity-scoped bundles into the canonical prefix. Fetches each glb's bytes from the catalyst per entity to compute the per-glb digest (heavier on catalyst than the original entity-wide-digest form — rate-limit-aware). See consumer-server/src/migrate-to-canonical.ts for flags.
 ```
 
 Local Docker:
@@ -42,14 +42,17 @@ docker run -p 5001:5000 ab-converter  # curl localhost:5001/metrics to verify
 - **Entity** — a scene / wearable / emote. Identified by `entityId` (itself a CID). An entity's `content` is a list of `{file, hash}` pairs fetched from a Decentraland catalyst (`{contentServerUrl}/entities/active`).
 - **Top-level entity manifest** — `manifest/{entityId}[_{target}].json`. Lists bundle filenames that were produced for this entity and the `AB_VERSION` they were produced with. Clients fetch this first to discover what's been converted. Uploaded with `Cache-Control: private, max-age=0, no-cache` — **do not override this**.
 
-## Bundle URL scheme (as of PR #258)
+## Bundle URL scheme (as of PR #258 + per-glb digest)
 
 Two upload paths exist simultaneously:
 
 ```
-{AB_VERSION}/assets/{hash}_{target}         # canonical — new PR-#258 path, deduped across scenes
-{AB_VERSION}/{entityId}/{hash}_{target}     # entity-scoped — legacy path, still used when ASSET_REUSE_ENABLED=false
+{AB_VERSION}/assets/{hash}_{depsDigest}_{target}   # canonical glb/gltf, keyed by per-asset dep digest
+{AB_VERSION}/assets/{hash}_{target}                # canonical bin/texture (leaves, no digest)
+{AB_VERSION}/{entityId}/{hash}_{target}            # entity-scoped — legacy path, still used when ASSET_REUSE_ENABLED=false
 ```
+
+`depsDigest` is computed per-glb/gltf from the specific `images[].uri` + `buffers[].uri` it references (resolved against the entity's `content` map). Two scenes sharing a glb CID AND the exact set of referenced deps land at the same canonical path; any difference in the referenced deps produces a distinct path. BINs and textures are leaves — their bundle output doesn't reference siblings, so they stay hash-only.
 
 Per-scene source files stay entity-scoped (genuinely per-scene):
 
@@ -112,7 +115,7 @@ This service doesn't live in isolation. Changes here often imply changes in one 
 
 - Deploy **with `ASSET_REUSE_ENABLED=false`** first. Baseline.
 - Flip to `true` **per build target pool** (Windows → Mac → WebGL). Each pool has one `BUILD_TARGET`, so flipping is per-pool.
-- Run `yarn migrate --ab-version {v} --target {webgl|windows|mac}` (dry-run first) to backfill pre-PR entity-scoped bundles into canonical.
+- Run `yarn migrate --ab-version {v} --target {webgl|windows|mac}` (dry-run first) to backfill pre-PR entity-scoped bundles into canonical. The script computes per-glb digests by downloading each glb from the catalyst — noticeably heavier than the previous entity-wide-digest form, so expect longer wall-clock runs and be ready to throttle via `--concurrency` if the catalyst rate-limits. The run is idempotent: re-running after a failure only re-probes (HEAD) the already-canonical objects.
 - Once the canonical prefix is fully populated, swap the Cloudflare Worker for a plain Transform Rule (follow-up MR in `dcl/cloudflare-workers`).
 - Then `hasContentChange` can be deleted here.
 
@@ -132,3 +135,6 @@ This service doesn't live in isolation. Changes here often imply changes in one 
 Significant functional changes worth capturing here as they land:
 
 - **2026-04 — PR #258**: per-asset reuse via canonical `{AB_VERSION}/assets/` path. `ASSET_REUSE_ENABLED` kill-switch. `yarn migrate` backfill script. Unity `-cachedHashes` CLI flag.
+- **2026-04 — per-glb digest**: replaced the entity-wide `depsDigest` with a per-asset digest derived from each glb/gltf's actual URI references (`images[].uri` + `buffers[].uri`). Consumer-server now parses glb bytes server-side (`src/logic/gltf-deps.ts`) and passes Unity a `{hash → digest}` map via a temp JSON file (`-depsDigestsFile` CLI flag, replaces `-depsDigest`). Two scenes sharing a glb CID and its referenced textures now land at the same canonical path even when the rest of the scene differs, closing the cross-scene reuse gap that the entity-wide digest left open. **No `AB_VERSION` bump required** — the new filename `{hash}_{perGlbDigest}_{target}` is byte-distinct from the pre-change `{hash}_{entityWideDigest}_{target}`, so old manifests continue to resolve to their (still-present) old canonical bundles while new conversions upload to the new per-glb paths. The two populations coexist in `{AB_VERSION}/assets/` without collision; storage grows modestly as old paths become orphaned over time.
+- **2026-04 — migrate-to-canonical ported to per-glb digest**: `yarn migrate` now computes the same per-glb digests the live converter produces (via `computePerAssetDigests` against the catalyst) instead of the entity-wide digest. Re-running the script no longer produces dead storage under the canonical prefix. Requires a reachable catalyst per-entity and one glb-bytes fetch per glb in each kept manifest — noticeably heavier than the original form. New `manifestsDigestFailed` stat distinguishes "catalyst served entity metadata but glb bytes failed to parse" from the existing "entity fetch failed" case. Also added: `Retry-After` honouring in the shared fetcher (parses delta-seconds + HTTP-date, capped at 30 s so a pathological catalyst can't park a worker past SQS visibility). Catalyst fetch from `executeConversion` now bounded at 30 s via the same timeout path.
+- **2026-04 — per-glb skip for missing/unparseable deps**: scenes regularly carry glbs that reference URIs absent from the entity's `content` map, or whose bytes are structurally malformed (bad magic, truncated JSON chunk, percent-encoding that fails to decode). Pre-change those caused `computePerAssetDigests` to throw and fail the entire scene with exit code 5 + Sentry + `_failed.json` sentinel — even when the rest of the scene was convertible. `computePerAssetDigests` now returns `{ digests, skipped }`; broken glbs land in `skipped` (with reason `'missing-deps'` / `'unparseable'`) and the scene continues. New CLI flag `-skippedHashes` tells Unity to drop those hashes from `gltfPaths` / `bufferPaths` in `ResolveAssets` before any download or import attempt — same RemoveAll mechanism as `-cachedHashes`, distinct semantics (cached has a canonical bundle upstream; skipped has no bundle anywhere). New metric `ab_converter_glb_skipped_total{build_target,ab_version,reason}` plus a per-scene warn log carrying up to five sample skip records. Migration script's `glbSkippedDuringMigration` counter tracks skipped bundles dropped from canonical copy (distinct from `manifestsDigestFailed`, which now fires only on actual fetch/infra errors). Catalyst 5xx / network errors stay as throws — those are transient and SQS retry remains the right response. Scope: canonical path only (`useAssetReuse=true`); the legacy path already survives broken glbs via Unity's `UNCAUGHT FATAL` handler. **No `AB_VERSION` bump.**

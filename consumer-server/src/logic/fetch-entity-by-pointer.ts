@@ -1,6 +1,5 @@
 import { Entity } from '@dcl/schemas'
 import { IFetchComponent } from '@well-known-components/interfaces'
-import fetch from 'node-fetch'
 
 export async function getEntities(
   fetcher: IFetchComponent,
