@@ -108,8 +108,9 @@ jobs:
         run: |
           docker run --rm \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
+            --workdir /consumer-server-e2e \
             ${{ env.QUAY_URL }}${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
-              node --trace-warnings --abort-on-uncaught-exception --unhandled-rejections=strict dist/e2e-conversion-test.js
+              npx jest --config jest.e2e.config.js --verbose --forceExit
 
       - name: Run tests
         run: |

@@ -29,6 +29,10 @@ COPY consumer-server /consumer-server
 RUN yarn build
 RUN yarn test
 
+# Snapshot with devDependencies for e2e tests (needs ts-jest + jest).
+# The e2e tests run in the final image with Unity, not in this build stage.
+RUN cp -r /consumer-server /consumer-server-e2e
+
 # remove devDependencies, keep only used dependencies
 RUN yarn --prod --frozen-lockfile
 
@@ -69,9 +73,9 @@ ENV NODE_PATH=$NVM_DIR/versions/node/$NODE_VERSION/lib/node_modules
 ENV PATH=$NVM_DIR/versions/node/$NODE_VERSION/bin:$PATH
 
 # Change this value ONLY if we have done breaking changes for every material, doing so is VERY costly
-ENV AB_VERSION=v49
-ENV AB_VERSION_WINDOWS=v49
-ENV AB_VERSION_MAC=v49
+ENV AB_VERSION=v48
+ENV AB_VERSION_WINDOWS=v48
+ENV AB_VERSION_MAC=v48
 
 # NODE_ENV is used to configure some runtime options, like JSON logger
 ENV NODE_ENV=production
@@ -88,6 +92,7 @@ RUN mkdir -p /root/.cache/unity3d && mkdir -p /root/.local/share/unity3d/Unity/
 
 COPY /asset-bundle-converter /asset-bundle-converter
 COPY --from=builderenv /consumer-server /consumer-server
+COPY --from=builderenv /consumer-server-e2e /consumer-server-e2e
 COPY --from=lod-builder /scene-lod-entities-manifest-builder /scene-lod-entities-manifest-builder
 COPY --from=builderenv /tini /tini
 
