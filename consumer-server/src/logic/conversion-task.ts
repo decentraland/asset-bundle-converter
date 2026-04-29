@@ -571,7 +571,19 @@ export async function executeConversion(
       cached: cacheResult.cachedHashes.length
     } as any)
 
-    const files = cacheResult.cachedHashes.map((h) => cacheResult!.canonicalNameByHash[h])
+    // Each cached asset has both a bundle (`{name}`) and Unity's per-bundle
+    // manifest (`{name}.manifest`) at canonical — Unity always emits the pair
+    // and the previous conversion uploaded both. List both so the entity
+    // manifest matches the shape produced by the partial-cache path (where
+    // `readdir(outDirectory)` would surface both companions for non-cached
+    // assets) and so any consumer that walks `manifest.files` for `.manifest`
+    // companions doesn't see cached entries as half-present.
+    const files: string[] = []
+    for (const hash of cacheResult.cachedHashes) {
+      const bundleName = cacheResult.canonicalNameByHash[hash]
+      if (!bundleName) continue
+      files.push(bundleName, `${bundleName}.manifest`)
+    }
     const manifest: Manifest = {
       version: abVersion,
       files,
@@ -687,11 +699,24 @@ export async function executeConversion(
     // Top-level entity manifest must advertise every hash that resolves — including
     // the cached ones we intentionally did not produce locally. The canonical name
     // (composite for glb/gltf, bare for BINs/textures) comes from the probe result.
+    // Also append Unity's per-bundle `.manifest` companion: `readdir(outDirectory)`
+    // surfaces it for non-cached entries (Unity always pairs them), and the
+    // previous conversion uploaded both at canonical, so cached entries should
+    // mirror the same shape rather than appear half-present.
     if (useAssetReuse && cacheResult && cacheResult.cachedHashes.length > 0) {
       const seen = new Set(manifest.files)
       for (const hash of cacheResult.cachedHashes) {
         const bundleName = cacheResult.canonicalNameByHash[hash]
-        if (bundleName && !seen.has(bundleName)) manifest.files.push(bundleName)
+        if (!bundleName) continue
+        if (!seen.has(bundleName)) {
+          manifest.files.push(bundleName)
+          seen.add(bundleName)
+        }
+        const companion = `${bundleName}.manifest`
+        if (!seen.has(companion)) {
+          manifest.files.push(companion)
+          seen.add(companion)
+        }
       }
     }
 

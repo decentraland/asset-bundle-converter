@@ -79,7 +79,12 @@ namespace DCL.ABConverter
             return "";
         }
 
-        //This method removes the platform from the path, since they are absolute in the downloaded project
+        // Strip the trailing platform suffix (`_windows` / `_mac` / `_webgl` /
+        // `_linux`) from a bundle name. Uses an EndsWith + Substring rather than
+        // Replace so an interior occurrence of the suffix string can never be
+        // stripped — content hashes (CIDs) and per-asset digests (hex) can't
+        // contain these substrings today, but Replace would silently corrupt
+        // any future name format that did.
         public static string RemovePlatform(string pathToRemovePlatform)
         {
             string currentPlatform = GetPlatform();
@@ -87,8 +92,10 @@ namespace DCL.ABConverter
             if (string.IsNullOrEmpty(currentPlatform))
                 return pathToRemovePlatform;
 
-            string updatedPath = pathToRemovePlatform.Replace(currentPlatform, "");
-            return updatedPath;
+            if (!pathToRemovePlatform.EndsWith(currentPlatform))
+                return pathToRemovePlatform;
+
+            return pathToRemovePlatform.Substring(0, pathToRemovePlatform.Length - currentPlatform.Length);
         }
     }
 

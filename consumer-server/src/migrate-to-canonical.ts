@@ -174,8 +174,12 @@ export type RunMigrationOptions = {
    * Default 100. */
   progressInterval?: number
   /** Catalyst fetcher — normally `getActiveEntity`; tests pass a stub so they
-   * don't depend on network fetches. Must return the entity's `.content` array. */
-  fetchEntity?: (entityId: string, contentServerUrl: string) => Promise<{ content: { file: string; hash: string }[] }>
+   * don't depend on network fetches. Must return the entity's `.content` array,
+   * or `undefined` when the entity is no longer active on the catalyst. */
+  fetchEntity?: (
+    entityId: string,
+    contentServerUrl: string
+  ) => Promise<{ content: { file: string; hash: string }[] } | undefined>
   /** GLB/GLTF byte fetcher used by `computePerAssetDigests`. Forwarded to the
    * digest-computation helper so tests can stub glb downloads without hitting
    * a real catalyst. Defaults to the production fetcher that talks to the
