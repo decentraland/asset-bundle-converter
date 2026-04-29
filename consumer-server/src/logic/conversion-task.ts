@@ -9,7 +9,6 @@ import * as path from 'path'
 import { hasContentChange } from './has-content-changed-task'
 import { getUnityBuildTarget, normalizeContentsBaseUrl } from '../utils'
 import { getActiveEntity } from './fetch-entity-by-pointer'
-import fetch from 'node-fetch'
 import { classifyHasContentChangeFailure } from './classify-has-content-change-failure'
 import { scrubUnityProjectState } from './scrub-unity-project-state'
 import {
@@ -19,8 +18,6 @@ import {
   AssetCacheResult,
   SkippedAsset
 } from './asset-reuse'
-
-
 
 type Manifest = {
   version: string
@@ -395,8 +392,6 @@ export async function executeConversion(
   logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
   await scrubUnityProjectState($PROJECT_PATH, logger, defaultLoggerMetadata)
 
-
-
   // Fetch the entity up-front — needed both for the per-asset cache probe (when
   // enabled) and for uploading scene source files regardless of whether Unity runs.
   // `getActiveEntity` throws on non-200 responses. The `!fetched` guard below
@@ -478,22 +473,14 @@ export async function executeConversion(
         }
       })
       try {
-        await components.cdnS3
-          .upload({
-            Bucket: cdnBucket,
-            Key: failedManifestFile,
-            ContentType: 'application/json',
-            Body: JSON.stringify({
-              entityId,
-              contentServerUrl,
-              version: abVersion,
-              error: err?.message ?? String(err),
-              date: new Date().toISOString()
-            }),
-            CacheControl: 'max-age=3600,s-maxage=3600',
-            ACL: 'public-read'
-          })
-          .promise()
+        const manifest: Manifest = {
+          version: abVersion,
+          files: [],
+          exitCode: NODE_CAUGHT_ERROR_EXIT_CODE,
+          contentServerUrl,
+          date: new Date().toISOString()
+        }
+        await uploadEntityManifest(components, cdnBucket, manifestFile, manifest)
       } catch (uploadErr: any) {
         // If the sentinel upload ALSO fails, we lose the one signal clients
         // have that this scene won't convert. Surface at warn level so ops
@@ -503,7 +490,7 @@ export async function executeConversion(
           defaultLoggerMetadata as any
         )
       }
-      return 5 // UNEXPECTED_ERROR exit code
+      return UNEXPECTED_ERROR_EXIT_CODE
     }
   }
 
