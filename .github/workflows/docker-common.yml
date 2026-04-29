@@ -108,7 +108,7 @@ jobs:
         run: |
           docker run --rm \
             -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
-            --workdir /consumer-server-e2e \
+            --workdir /consumer-server \
             ${{ env.QUAY_URL }}${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
               npx jest --config jest.e2e.config.js --verbose --forceExit
 

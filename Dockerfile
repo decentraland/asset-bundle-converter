@@ -29,12 +29,6 @@ COPY consumer-server /consumer-server
 RUN yarn build
 RUN yarn test
 
-# Snapshot with devDependencies for e2e tests (needs ts-jest + jest).
-# The e2e tests run in the final image with Unity, not in this build stage.
-# Trade-off: adds ~100MB of devDeps to the ~5GB image. Could be split into
-# a separate Docker target if image size becomes a concern.
-RUN cp -r /consumer-server /consumer-server-e2e
-
 # remove devDependencies, keep only used dependencies
 RUN yarn --prod --frozen-lockfile
 
@@ -94,7 +88,6 @@ RUN mkdir -p /root/.cache/unity3d && mkdir -p /root/.local/share/unity3d/Unity/
 
 COPY /asset-bundle-converter /asset-bundle-converter
 COPY --from=builderenv /consumer-server /consumer-server
-COPY --from=builderenv /consumer-server-e2e /consumer-server-e2e
 COPY --from=lod-builder /scene-lod-entities-manifest-builder /scene-lod-entities-manifest-builder
 COPY --from=builderenv /tini /tini
 
