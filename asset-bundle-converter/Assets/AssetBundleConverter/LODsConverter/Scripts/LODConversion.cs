@@ -215,8 +215,7 @@ public class LODConversion
         AssetDatabase.SaveAssets();
 
         // 1. Query inter-bundle dependencies from the AssetDatabase without building.
-        var dbManifest = new AssetDatabaseManifest();
-        string[] lodAssetBundles = dbManifest.GetAllAssetBundles();
+        string[] lodAssetBundles = AssetDatabase.GetAllAssetBundleNames();
         foreach (string assetBundle in lodAssetBundles)
         {
             if (assetBundle.Contains("_ignore"))
@@ -224,7 +223,7 @@ public class LODConversion
 
             string lodName = PlatformUtils.RemovePlatform(assetBundle);
             AssetBundleMetadataBuilder.GenerateLODMetadata(lodPathHandler.tempPath,
-                dbManifest.GetAllDependencies(assetBundle), $"{lodName}.prefab", lodName);
+                AssetDatabase.GetAssetBundleDependencies(assetBundle, true), $"{lodName}.prefab", lodName);
         }
 
         AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using UnityEditor;
 using UnityEngine;
 
 [assembly: InternalsVisibleTo("AssetBundleBuilderEditorTests")]
@@ -24,8 +25,7 @@ namespace DCL.ABConverter
         /// </summary>
         public static void Generate(IFile file, string path, Dictionary<string, string> hashLowercaseToHashProper, string version = "1.0")
         {
-            var manifest = new AssetDatabaseManifest();
-            string[] assetBundles = manifest.GetAllAssetBundles();
+            string[] assetBundles = AssetDatabase.GetAllAssetBundleNames();
 
             for (int i = 0; i < assetBundles.Length; i++)
             {
@@ -33,7 +33,7 @@ namespace DCL.ABConverter
                     continue;
 
                 var metadata = new AssetBundleMetadata { version = version, timestamp = DateTime.UtcNow.Ticks };
-                string[] deps = manifest.GetAllDependencies(assetBundles[i]);
+                string[] deps = AssetDatabase.GetAssetBundleDependencies(assetBundles[i], true);
 
                 if (deps.Length > 0)
                 {
