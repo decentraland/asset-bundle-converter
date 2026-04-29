@@ -23,7 +23,7 @@ namespace DCL.ABConverter
         /// <summary>
         /// Creates the asset bundle metadata file (dependencies, version, timestamp)
         /// </summary>
-        public static void Generate(IFile file, string path, Dictionary<string, string> hashLowercaseToHashProper, string version = "1.0")
+        public static void Generate(IFile file, string path, Dictionary<string, string> bundleNameToHash, string version = "1.0")
         {
             string[] assetBundles = AssetDatabase.GetAllAssetBundleNames();
 
@@ -41,7 +41,7 @@ namespace DCL.ABConverter
 
                     metadata.dependencies = deps.Select(x =>
                                                  {
-                                                     if (hashLowercaseToHashProper.TryGetValue(x, out string expression))
+                                                     if (bundleNameToHash.TryGetValue(x, out string expression))
                                                          return expression;
 
                                                      return x;
@@ -51,7 +51,7 @@ namespace DCL.ABConverter
 
                 string json = JsonUtility.ToJson(metadata);
 
-                if (hashLowercaseToHashProper.TryGetValue(assetBundles[i], out string assetHashName)
+                if (bundleNameToHash.TryGetValue(assetBundles[i], out string assetHashName)
                     && !string.IsNullOrEmpty(assetHashName))
                 {
                     file.WriteAllText(path + $"/{assetHashName}/metadata.json", json);

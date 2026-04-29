@@ -66,9 +66,9 @@ namespace DCL
                 return importer;
             }
 
-            public void BuildMetadata(IFile envFile, string finalDownloadedPath, Dictionary<string, string> lowerCaseHashes, string version)
+            public void BuildMetadata(IFile envFile, string finalDownloadedPath, Dictionary<string, string> bundleNameToHash, string version)
             {
-                AssetBundleMetadataBuilder.Generate(envFile, finalDownloadedPath, lowerCaseHashes, version);
+                AssetBundleMetadataBuilder.Generate(envFile, finalDownloadedPath, bundleNameToHash, version);
             }
 
             public void SaveImporter(AssetImporter gltfImporter)
