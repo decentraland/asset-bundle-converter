@@ -8,7 +8,8 @@ namespace DCL.ABConverter
         public string[] GetAllAssetBundles() =>
             AssetDatabase.GetAllAssetBundleNames();
 
-        //WE dont want it to be recursive. Each asset bundle should only know its direct dependencies
+        // false = direct deps only; transitive deps are walked by the runtime
+        // loader, so including them here would produce redundant entries.
         public string[] GetAllDependencies(string assetBundle) =>
             AssetDatabase.GetAssetBundleDependencies(assetBundle, false);
     }

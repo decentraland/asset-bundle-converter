@@ -223,7 +223,7 @@ public class LODConversion
 
             string lodName = PlatformUtils.RemovePlatform(assetBundle);
             AssetBundleMetadataBuilder.GenerateLODMetadata(lodPathHandler.tempPath,
-                AssetDatabase.GetAssetBundleDependencies(assetBundle, true), $"{lodName}.prefab", lodName);
+                AssetDatabase.GetAssetBundleDependencies(assetBundle, false), $"{lodName}.prefab", lodName);
         }
 
         AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
