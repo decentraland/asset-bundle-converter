@@ -3,7 +3,6 @@ using AssetBundleConverter.Wrappers.Interfaces;
 using DCL;
 using DCL.ABConverter;
 using NSubstitute;
-using NSubstitute.Core;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -32,8 +31,7 @@ namespace AssetBundleConverter.Tests
             bundleNameToHash = new Dictionary<string, string>();
             capturedJson = null;
 
-            file.WhenForAny(f => f.WriteAllText(default, default))
-                .Do(ci => capturedJson = ci.ArgAt<string>(1));
+            file.WriteAllText(Arg.Any<string>(), Arg.Do<string>(json => capturedJson = json));
         }
 
         private AssetBundleMetadata ParseCaptured()
