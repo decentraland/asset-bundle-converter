@@ -1,4 +1,3 @@
-using AssetBundleConverter.Wrappers.Interfaces;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -23,8 +22,9 @@ namespace DCL.ABConverter
         /// <summary>
         /// Creates the asset bundle metadata file (dependencies, version, timestamp)
         /// </summary>
-        public static void Generate(IFile file, string path, Dictionary<string, string> hashLowercaseToHashProper, IAssetBundleManifest manifest, string version = "1.0")
+        public static void Generate(IFile file, string path, Dictionary<string, string> hashLowercaseToHashProper, string version = "1.0")
         {
+            var manifest = new AssetDatabaseManifest();
             string[] assetBundles = manifest.GetAllAssetBundles();
 
             for (int i = 0; i < assetBundles.Length; i++)
