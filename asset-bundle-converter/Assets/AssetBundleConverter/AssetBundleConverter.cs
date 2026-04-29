@@ -43,6 +43,7 @@ namespace DCL.ABConverter
         private const string LOOP_PARAMETER = "Loop";
 
         private readonly Dictionary<string, string> lowerCaseHashes = new ();
+        private readonly Dictionary<string, string> bundleNameToHash = new ();
         public ConversionState CurrentState { get; } = new ();
         private Environment env;
         private ClientSettings settings;
@@ -968,6 +969,8 @@ namespace DCL.ABConverter
                         assetBundleName = assetPath.hash + platform;
                     }
                     env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, assetBundleName);
+
+                    bundleNameToHash[assetBundleName] = assetPath.hash;
                 }
             }
 
@@ -1017,7 +1020,23 @@ namespace DCL.ABConverter
 
             var afterRefreshTime = EditorApplication.timeSinceStartup;
 
-            // 1. Convert flagged folders to asset bundles only to automatically get dependencies for the metadata
+            // 1. Query inter-bundle dependencies from the AssetDatabase without building.
+            //    MarkAllAssetBundles already called SetAssetBundleNameAndVariant on each
+            //    folder, so the AssetDatabase can resolve which bundles reference assets
+            //    in other bundles from import metadata alone.
+            var assetDatabaseProvider = new AssetDatabaseProvider();
+            env.assetDatabase.BuildMetadata(env.file, finalDownloadedPath, bundleNameToHash, assetDatabaseProvider, VERSION);
+
+            var afterMetadata = EditorApplication.timeSinceStartup;
+
+            env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+
+            env.assetDatabase.SaveAssets();
+
+            var afterMetadataRefresh = EditorApplication.timeSinceStartup;
+
+            // 2. Single build — metadata.json files are already in each asset folder,
+            //    so the resulting bundles embed dependency info on the first pass.
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
                 BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
                 BuildAssetBundleOptions.AssetBundleStripUnityVersion,
@@ -1032,29 +1051,12 @@ namespace DCL.ABConverter
                 return false;
             }
 
-            var afterFirstBuild = EditorApplication.timeSinceStartup;
+            var afterBuild = EditorApplication.timeSinceStartup;
 
-            // 2. Create metadata (dependencies, version, timestamp) and store in the target folders to be converted again later with the metadata inside
-            env.assetDatabase.BuildMetadata(env.file, finalDownloadedPath, lowerCaseHashes, manifest, VERSION);
-
-            env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
-
-            env.assetDatabase.SaveAssets();
-
-            var afterSecondRefresh = EditorApplication.timeSinceStartup;
-
-            // 3. Convert flagged folders to asset bundles again but this time they have the metadata file inside
-            manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
-                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
-                BuildAssetBundleOptions.AssetBundleStripUnityVersion,
-                target);
-
-            var afterSecondBuild = EditorApplication.timeSinceStartup;
-
-            logBuffer += $"Step 0: {afterRefreshTime - abStartTime}\n";
-            logBuffer += $"Step 1: {afterFirstBuild - afterRefreshTime}\n";
-            logBuffer += $"Step 2: {afterSecondRefresh - afterFirstBuild}\n";
-            logBuffer += $"Step 3: {afterSecondBuild - afterSecondRefresh}\n";
+            logBuffer += $"Step 0 (refresh+move): {afterRefreshTime - abStartTime}\n";
+            logBuffer += $"Step 1 (metadata):     {afterMetadata - afterRefreshTime}\n";
+            logBuffer += $"Step 2 (meta refresh): {afterMetadataRefresh - afterMetadata}\n";
+            logBuffer += $"Step 3 (build):        {afterBuild - afterMetadataRefresh}\n";
 
             logBuffer += $"Generating asset bundles at path: {settings.finalAssetBundlePath}\n";
 
