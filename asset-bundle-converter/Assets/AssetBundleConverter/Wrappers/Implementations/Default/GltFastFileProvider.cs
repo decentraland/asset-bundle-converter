@@ -23,19 +23,12 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
             else { Error = $"Cannot find resource at path {path}"; }
         }
 
-        protected SyncFileLoader(string error)
-        {
-            Error = error;
-        }
-
-        public static SyncFileLoader Failed(string error) => new SyncFileLoader(error);
-
         public virtual bool Success => Data != null;
 
         public string Error { get; protected set; }
         public byte[] Data { get; }
 
-        public string Text => Data == null ? string.Empty : System.Text.Encoding.UTF8.GetString(Data);
+        public string Text => System.Text.Encoding.UTF8.GetString(Data);
 
         public bool? IsBinary
         {
@@ -89,10 +82,6 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
             if (Texture == null) { Error = $"Couldn't load texture at {url.OriginalString}"; }
         }
-
-        private SyncTextureLoader(string error) : base(error) { }
-
-        public static SyncTextureLoader Failed(string error) => new SyncTextureLoader(error);
     }
 
     public class GltFastFileProvider : IEditorDownloadProvider, IDisposable
@@ -117,14 +106,7 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
         public async Task<IDownload> RequestAsync(Uri url)
         {
-            // A missing dependency must surface as a failed download, not a thrown exception:
-            // synchronous throws out of async methods leave GLTFast's import pipeline in a
-            // state where the Editor can hang indefinitely on batch-mode runs.
-            if (!TryGetDependencyPath(RebuildUrl(url), out Uri newUrl, out string missingPath))
-            {
-                Debug.LogWarning($"<b>{hash}</b> will skip missing buffer dependency <b>{missingPath}</b>");
-                return SyncFileLoader.Failed($"Missing buffer dependency {missingPath} for {hash}");
-            }
+            Uri newUrl = GetDependenciesPaths(RebuildUrl(url));
 
             gltfAssetDependencies.Add(new GltfAssetDependency
             {
@@ -138,11 +120,7 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
         public async Task<ITextureDownload> RequestTextureAsync(Uri url, bool nonReadable, bool forceLinear)
         {
-            if (!TryGetDependencyPath(RebuildUrl(url), out Uri newUrl, out string missingPath))
-            {
-                Debug.LogWarning($"<b>{hash}</b> will skip missing texture dependency <b>{missingPath}</b>");
-                return SyncTextureLoader.Failed($"Missing texture dependency {missingPath} for {hash}");
-            }
+            Uri newUrl = GetDependenciesPaths(RebuildUrl(url));
 
             gltfAssetDependencies.Add(new GltfAssetDependency
             {
@@ -162,18 +140,16 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
             return new Uri(relativePath, UriKind.Relative);
         }
 
-        private bool TryGetDependencyPath(Uri url, out Uri resolved, out string originalPath)
+        private Uri GetDependenciesPaths(Uri url)
         {
-            originalPath = Utils.EnsureStartWithSlash(url.OriginalString).ToLower();
+            string originalPath = Utils.EnsureStartWithSlash(url.OriginalString).ToLower();
+            bool isContained = contentTable.ContainsKey(originalPath);
 
-            if (!contentTable.TryGetValue(originalPath, out string finalPath))
-            {
-                resolved = null;
-                return false;
-            }
+            if (!isContained)
+                throw new AssetNotMappedException(originalPath, hash);
 
-            resolved = new Uri(finalPath, UriKind.Relative);
-            return true;
+            string finalPath = contentTable[originalPath];
+            return new Uri(finalPath, UriKind.Relative);
         }
 
         public void Dispose()
@@ -187,5 +163,19 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
 
             set { }
         }
+    }
+
+    public class AssetNotMappedException : Exception
+    {
+        private readonly string missingDependency;
+        private readonly string fileName;
+
+        public AssetNotMappedException(string missingDependency, string fileName) : base(missingDependency)
+        {
+            this.missingDependency = missingDependency;
+            this.fileName = fileName;
+        }
+
+        public override string Message => $"<b>{fileName}</b> will be skipped since one of its dependencies is missing: <b>{missingDependency}</b>";
     }
 }

@@ -13,12 +13,11 @@ import fetch from 'node-fetch'
 import { classifyHasContentChangeFailure } from './classify-has-content-change-failure'
 import { scrubUnityProjectState } from './scrub-unity-project-state'
 
+// Exit codes aligned with ManifestStatusCode in asset-bundle-registry.
 // Returned from executeConversion / executeLODConversion when the catch block
-// traps an exception (runConversion threw, S3 upload threw, etc.). Distinct
-// from Unity's own exit codes so the registry can tell "Node-side failure"
-// from "Unity reported an error". -1 is already the sentinel used elsewhere
-// for "exit code unknown".
-const NODE_CAUGHT_ERROR_EXIT_CODE = -1
+// traps an exception so the registry can classify the failure.
+const NODE_CAUGHT_ERROR_EXIT_CODE = 14
+const NODE_TIMEOUT_EXIT_CODE = 15
 
 type Manifest = {
   version: string
@@ -130,10 +129,9 @@ async function shouldIgnoreConversion(
     if (!obj.Body) return false
     const json: Manifest = JSON.parse(obj.Body?.toString())
 
-    // not ignored when previous run had exit code
-    if (json.exitCode) return false
-
-    // ignored only when previous version is the same as current version
+    // ignored when previous version is the same as current version
+    // (regardless of exit code — a failed conversion with the same version
+    // should not be retried until the converter is updated)
     if (json.version === $AB_VERSION) return true
   } catch {}
 
@@ -217,14 +215,15 @@ export async function executeLODConversion(
     try {
       logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
     } catch {}
-    components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
+    const isTimeout = error?.message === 'Process did not finish'
+    components.metrics.increment('ab_converter_exit_codes', { exit_code: isTimeout ? 'TIMEOUT' : 'FAIL' })
     logger.error(error)
 
     // Return a failure exit code instead of rethrowing. The service.ts task
     // runner will publish an AssetBundleConversionFinishedEvent with this
     // statusCode so the registry learns the entity failed, and the worker
     // goes on to pick up the next SQS message.
-    return NODE_CAUGHT_ERROR_EXIT_CODE
+    return isTimeout ? NODE_TIMEOUT_EXIT_CODE : NODE_CAUGHT_ERROR_EXIT_CODE
   } finally {
     // Finally-block operations must not throw: an uncaught throw here would
     // replace the try/catch's return value and service.ts would skip the
@@ -299,7 +298,6 @@ export async function executeConversion(
 
   const cdnBucket = await getCdnBucket(components)
   const manifestFile = manifestKeyForEntity(entityId, $BUILD_TARGET)
-  const failedManifestFile = `manifest/${entityId}_failed.json`
 
   const logFile = `/tmp/asset_bundles_logs/export_log_${entityId}_${Date.now()}.txt`
   const s3LogKey = `logs/${abVersion}/${entityId}/${new Date().toISOString()}.txt`
@@ -453,7 +451,11 @@ export async function executeConversion(
     try {
       logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
     } catch {}
-    components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
+
+    const isTimeout = err?.message === 'Process did not finish'
+    const failedExitCode = isTimeout ? NODE_TIMEOUT_EXIT_CODE : NODE_CAUGHT_ERROR_EXIT_CODE
+
+    components.metrics.increment('ab_converter_exit_codes', { exit_code: isTimeout ? 'TIMEOUT' : 'FAIL' })
     logger.error(err)
 
     components.sentry.captureMessage(`Error during ab conversion`, {
@@ -471,21 +473,24 @@ export async function executeConversion(
       }
     })
 
+    // Upload a failed manifest to the main manifest key so that
+    // shouldIgnoreConversion can find it and skip re-processing the same
+    // entity with the same converter version.
     try {
-      // and then replace the manifest
+      const manifest: Manifest = {
+        version: abVersion,
+        files: [],
+        exitCode: failedExitCode,
+        contentServerUrl,
+        date: new Date().toISOString()
+      }
       await components.cdnS3
         .upload({
           Bucket: cdnBucket,
-          Key: failedManifestFile,
+          Key: manifestFile,
           ContentType: 'application/json',
-          Body: JSON.stringify({
-            entityId,
-            contentServerUrl,
-            version: abVersion,
-            log: s3LogKey,
-            date: new Date().toISOString()
-          }),
-          CacheControl: 'max-age=3600,s-maxage=3600',
+          Body: JSON.stringify(manifest),
+          CacheControl: 'private, max-age=0, no-cache',
           ACL: 'public-read'
         })
         .promise()
@@ -495,7 +500,7 @@ export async function executeConversion(
     // runner will publish an AssetBundleConversionFinishedEvent with this
     // statusCode so the registry learns the entity failed, and the worker
     // goes on to pick up the next SQS message.
-    return NODE_CAUGHT_ERROR_EXIT_CODE
+    return failedExitCode
   } finally {
     // Finally-block operations must not throw: an uncaught throw here would
     // replace the try/catch's return value and service.ts would skip the
