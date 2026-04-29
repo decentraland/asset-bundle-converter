@@ -14,8 +14,8 @@ import { classifyHasContentChangeFailure } from './classify-has-content-change-f
 import { scrubUnityProjectState } from './scrub-unity-project-state'
 
 // Exit codes aligned with ManifestStatusCode in asset-bundle-registry.
-// Returned from executeConversion / executeLODConversion when the catch block
-// traps an exception so the registry can classify the failure.
+const UNEXPECTED_ERROR_EXIT_CODE = 5
+const ALREADY_CONVERTED_EXIT_CODE = 13
 const NODE_CAUGHT_ERROR_EXIT_CODE = 14
 const NODE_TIMEOUT_EXIT_CODE = 15
 
@@ -163,7 +163,7 @@ export async function executeLODConversion(
 
   if (!unityBuildTarget) {
     logger.error('Could not find a build target', { ...defaultLoggerMetadata } as any)
-    return 5 // UNEXPECTED_ERROR exit code
+    return UNEXPECTED_ERROR_EXIT_CODE
   }
 
   await scrubUnityProjectState($PROJECT_PATH, logger, defaultLoggerMetadata)
@@ -188,7 +188,7 @@ export async function executeLODConversion(
       // this is an error, if succeeded, we should see at least a manifest file
       components.metrics.increment('ab_converter_empty_conversion', { ab_version: abVersion })
       logger.error('Empty conversion', { ...defaultLoggerMetadata } as any)
-      return 5 // UNEXPECTED_ERROR exit code
+      return UNEXPECTED_ERROR_EXIT_CODE
     }
 
     await uploadDir(components.cdnS3, cdnBucket, outDirectory, 'LOD', {
@@ -284,13 +284,13 @@ export async function executeConversion(
   const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
   if (!unityBuildTarget) {
     logger.error(`Invalid build target ${$BUILD_TARGET}`)
-    return 5 // UNEXPECTED_ERROR exit code
+    return UNEXPECTED_ERROR_EXIT_CODE
   }
 
   if (!force) {
     if (await shouldIgnoreConversion(components, entityId, abVersion, $BUILD_TARGET)) {
       logger.info('Ignoring conversion', { entityId, contentServerUrl, abVersion })
-      return 13 // ALREADY_CONVERTED exit code
+      return ALREADY_CONVERTED_EXIT_CODE
     }
   } else {
     logger.info('Forcing conversion', { entityId, contentServerUrl, abVersion })
