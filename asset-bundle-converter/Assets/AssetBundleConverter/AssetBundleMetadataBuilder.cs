@@ -50,11 +50,12 @@ namespace DCL.ABConverter
                 }
 
                 string json = JsonUtility.ToJson(metadata);
-                string assetHashName = assetBundles[i];
 
-                hashLowercaseToHashProper.TryGetValue(PlatformUtils.RemovePlatform(assetBundles[i]), out assetHashName);
-
-                if (!string.IsNullOrEmpty(assetHashName)) { file.WriteAllText(path + $"/{assetHashName}/metadata.json", json); }
+                if (hashLowercaseToHashProper.TryGetValue(assetBundles[i], out string assetHashName)
+                    && !string.IsNullOrEmpty(assetHashName))
+                {
+                    file.WriteAllText(path + $"/{assetHashName}/metadata.json", json);
+                }
             }
         }
     }

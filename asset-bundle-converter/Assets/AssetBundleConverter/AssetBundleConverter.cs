@@ -43,6 +43,7 @@ namespace DCL.ABConverter
         private const string LOOP_PARAMETER = "Loop";
 
         private readonly Dictionary<string, string> lowerCaseHashes = new ();
+        private readonly Dictionary<string, string> bundleNameToHash = new ();
         public ConversionState CurrentState { get; } = new ();
         private Environment env;
         private ClientSettings settings;
@@ -964,6 +965,8 @@ namespace DCL.ABConverter
                         assetBundleName = assetPath.hash + platform;
                     }
                     env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, assetBundleName);
+
+                    bundleNameToHash[assetBundleName] = assetPath.hash;
                 }
             }
 
@@ -1017,7 +1020,7 @@ namespace DCL.ABConverter
             //    MarkAllAssetBundles already called SetAssetBundleNameAndVariant on each
             //    folder, so the AssetDatabase can resolve which bundles reference assets
             //    in other bundles from import metadata alone.
-            env.assetDatabase.BuildMetadata(env.file, finalDownloadedPath, lowerCaseHashes, VERSION);
+            env.assetDatabase.BuildMetadata(env.file, finalDownloadedPath, bundleNameToHash, VERSION);
 
             var afterMetadata = EditorApplication.timeSinceStartup;
 
