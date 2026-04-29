@@ -34,6 +34,41 @@ export const metricDeclarations = {
     help: 'Counter of hasContentChange calls that failed and forced a reconversion',
     type: IMetricsComponent.CounterType,
     labelNames: ['reason']
+  },
+  ab_converter_asset_cache_hits_total: {
+    help: 'Counter of per-asset cache hits (asset hash already canonicalized)',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['build_target', 'ab_version']
+  },
+  ab_converter_asset_cache_misses_total: {
+    help: 'Counter of per-asset cache misses (asset hash needs conversion)',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['build_target', 'ab_version']
+  },
+  ab_converter_asset_reuse_short_circuit_total: {
+    help: 'Counter of scenes that skipped Unity entirely because all assets were cached',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['build_target', 'ab_version']
+  },
+  ab_converter_asset_probe_hit_cache_total: {
+    help: 'Counter of asset cache probes served from the process-local hit-cache (skipping S3 HEAD)',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['build_target', 'ab_version']
+  },
+  ab_converter_asset_probe_head_total: {
+    help: 'Counter of asset cache probes that required a fresh S3 HEAD request',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['build_target', 'ab_version']
+  },
+  ab_converter_asset_cache_probe_errors_total: {
+    help: 'Counter of asset cache probe failures (S3 error propagated; conversion fell back to full Unity run)',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['build_target', 'ab_version']
+  },
+  ab_converter_glb_skipped_total: {
+    help: 'Counter of glb/gltf assets silently skipped (missing dependencies or unparseable bytes)',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['build_target', 'ab_version', 'reason']
   }
 }
 

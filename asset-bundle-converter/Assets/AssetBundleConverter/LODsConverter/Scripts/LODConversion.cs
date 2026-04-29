@@ -214,9 +214,23 @@ public class LODConversion
         AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
         AssetDatabase.SaveAssets();
 
-        IBuildPipeline buildPipeline = new ScriptableBuildPipeline();
+        // 1. Query inter-bundle dependencies from the AssetDatabase without building.
+        string[] lodAssetBundles = AssetDatabase.GetAllAssetBundleNames();
+        foreach (string assetBundle in lodAssetBundles)
+        {
+            if (assetBundle.Contains("_ignore"))
+                continue;
 
-        // 1. Convert flagged folders to asset bundles only to automatically get dependencies for the metadata
+            string lodName = PlatformUtils.RemovePlatform(assetBundle);
+            AssetBundleMetadataBuilder.GenerateLODMetadata(lodPathHandler.tempPath,
+                AssetDatabase.GetAssetBundleDependencies(assetBundle, false), $"{lodName}.prefab", lodName);
+        }
+
+        AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+        AssetDatabase.SaveAssets();
+
+        // 2. Single build — metadata.json files are already in each asset folder.
+        IBuildPipeline buildPipeline = new ScriptableBuildPipeline();
         var manifest = buildPipeline.BuildAssetBundles(lodPathHandler.outputPath,
             BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
             BuildAssetBundleOptions.AssetBundleStripUnityVersion,
@@ -227,28 +241,6 @@ public class LODConversion
             string message = "Error generating asset bundle!";
             Utils.Exit(1);
         }
-
-        string[] lodAssetBundles = manifest.GetAllAssetBundles();
-        foreach (string assetBundle in lodAssetBundles)
-        {
-            if (assetBundle.Contains("_ignore"))
-                continue;
-
-            string lodName = PlatformUtils.RemovePlatform(assetBundle);
-            // 2. Create metadata (dependencies, version, timestamp) and store in the target folders to be converted again later with the metadata inside
-            AssetBundleMetadataBuilder.GenerateLODMetadata(lodPathHandler.tempPath,
-                manifest.GetAllDependencies(assetBundle), $"{lodName}.prefab", lodName);
-        }
-
-
-        AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
-        AssetDatabase.SaveAssets();
-
-        // 3. Convert flagged folders to asset bundles again but this time they have the metadata file inside
-        buildPipeline.BuildAssetBundles(lodPathHandler.outputPath,
-            BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
-            BuildAssetBundleOptions.AssetBundleStripUnityVersion,
-            target);
     }
 
 

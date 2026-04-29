@@ -1,6 +1,5 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import fetch from 'node-fetch'
 import { ILoggerComponent } from '@well-known-components/interfaces'
 import { getActiveEntity } from './fetch-entity-by-pointer'
 
@@ -12,7 +11,7 @@ async function getManifestFiles(
 ): Promise<any | null> {
   const url = `https://ab-cdn.decentraland.${env}/manifest/${entityID}_${buildTarget}.json?no-cache=123`
 
-  const res = await fetch(url)
+  const res = await globalThis.fetch(url)
   const response = await res.json()
 
   if (!res.ok) {
@@ -34,7 +33,7 @@ async function getLastEntityIdByBase(
 ): Promise<string | null> {
   const url = `${contentServer}/pointer-changes?entityType=scene&sortingField=localTimestamp`
 
-  const res = await fetch(url)
+  const res = await globalThis.fetch(url)
   const response = await res.json()
 
   if (!res.ok) {
@@ -53,18 +52,10 @@ async function getLastEntityIdByBase(
   return null
 }
 
-// Extension lists
-const bufferExtensions = ['.bin']
-const gltfExtensions = ['.glb', '.gltf']
-const textureExtensions = ['.jpg', '.png', '.jpeg', '.tga', '.gif', '.bmp', '.psd', '.tiff', '.iff', '.ktx']
-
-// Helper function to check if the file has a valid extension
-function hasValidExtension(file: string): boolean {
-  const extension = file.substring(file.lastIndexOf('.')).toLowerCase()
-  return (
-    bufferExtensions.includes(extension) || gltfExtensions.includes(extension) || textureExtensions.includes(extension)
-  )
-}
+// Re-exports for backwards compatibility — the canonical home is
+// `./extensions.ts` so these survive this legacy module's eventual deletion.
+export { bufferExtensions, gltfExtensions, textureExtensions, hasValidExtension } from './extensions'
+import { hasValidExtension } from './extensions'
 
 // Function to extract hashes from the entity JSON based on valid extensions
 function extractValidHashesFromEntity(content: { file: string; hash: string }[]): string[] {
@@ -101,13 +92,13 @@ async function downloadFilesFromManifestSuccesfully(
     const fileToDownload = `${file}_${buildTarget}`
     const fileUrl = `${baseUrl}${fileToDownload}`
     try {
-      const res = await fetch(fileUrl)
+      const res = await globalThis.fetch(fileUrl)
 
       if (!res.ok) {
         throw new Error(`HasContentChanged: Failed to download file: ${fileUrl}`)
       }
 
-      const buffer = await res.buffer() // Download as buffer
+      const buffer = Buffer.from(await res.arrayBuffer())
       const outputPath = path.join(outputFolder, fileToDownload) // Path to save the file
 
       // Write the file to the output folder

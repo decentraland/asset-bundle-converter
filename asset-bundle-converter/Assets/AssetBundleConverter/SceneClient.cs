@@ -1,9 +1,12 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using AssetBundleConverter;
 using AssetBundleConverter.Wearables;
 using GLTFast;
+using Newtonsoft.Json;
 using UnityEditor;
 using UnityEngine;
 using Environment = AssetBundleConverter.Environment;
@@ -83,6 +86,8 @@ namespace DCL.ABConverter
             try
             {
                 ParseCommonSettings(commandLineArgs, settings);
+
+                log.Info($"Asset reuse state: cachedHashes={settings.cachedHashes?.Count ?? 0}, depsDigestByHash={settings.depsDigestByHash?.Count ?? 0} entries");
 
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_SHADER_TARGET, 1, out string[] shaderTarget))
                 {
@@ -271,6 +276,54 @@ namespace DCL.ABConverter
 
             if (Utils.ParseOption(commandLineArgs, Config.CLI_INCLUDE_SHADER_VARIANTS, 0, out _))
                 settings.includeShaderVariants = true;
+
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_CACHED_HASHES, 1, out string[] cachedHashesArg)
+                && cachedHashesArg != null
+                && !string.IsNullOrEmpty(cachedHashesArg[0]))
+            {
+                foreach (var hash in cachedHashesArg[0].Split(';'))
+                {
+                    if (!string.IsNullOrWhiteSpace(hash))
+                        settings.cachedHashes.Add(hash.Trim());
+                }
+
+                log.Info($"Received {settings.cachedHashes.Count} cached hash(es) — these GLTF/GLB/BIN bundles will be skipped.");
+            }
+
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_SKIPPED_HASHES, 1, out string[] skippedHashesArg)
+                && skippedHashesArg != null
+                && !string.IsNullOrEmpty(skippedHashesArg[0]))
+            {
+                foreach (var hash in skippedHashesArg[0].Split(';'))
+                {
+                    if (!string.IsNullOrWhiteSpace(hash))
+                        settings.skippedHashes.Add(hash.Trim());
+                }
+
+                log.Info($"Received {settings.skippedHashes.Count} skipped hash(es) — these glb/gltf assets have missing or unparseable dependencies and will not be converted.");
+            }
+
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_DEPS_DIGESTS_FILE, 1, out string[] depsDigestsFileArg)
+                && depsDigestsFileArg != null
+                && !string.IsNullOrWhiteSpace(depsDigestsFileArg[0]))
+            {
+                string filePath = depsDigestsFileArg[0].Trim();
+                // Malformed / missing file MUST throw (rather than silently falling
+                // back to bare `{hash}_{target}` names) because that would mis-align
+                // Unity's output with the canonical keys the consumer-server already
+                // probed — every glb would miss its own cache entry and be re-uploaded
+                // to a path no future scene would probe.
+                if (!File.Exists(filePath))
+                    throw new ArgumentException($"-depsDigestsFile points at '{filePath}' which does not exist");
+
+                string payload = File.ReadAllText(filePath);
+                Dictionary<string, string> map = JsonConvert.DeserializeObject<Dictionary<string, string>>(payload);
+                if (map == null)
+                    throw new ArgumentException($"-depsDigestsFile '{filePath}' did not parse as a string-to-string map");
+
+                settings.depsDigestByHash = map;
+                log.Info($"Loaded {settings.depsDigestByHash.Count} per-asset deps digest(s) from {filePath} — GLB/GLTF bundles will be named with the matching digest.");
+            }
 
             // Target is setup during the commandline argument -buildTarget
             settings.buildTarget = EditorUserBuildSettings.activeBuildTarget;

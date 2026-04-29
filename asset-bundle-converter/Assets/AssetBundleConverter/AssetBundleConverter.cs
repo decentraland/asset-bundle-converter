@@ -43,6 +43,7 @@ namespace DCL.ABConverter
         private const string LOOP_PARAMETER = "Loop";
 
         private readonly Dictionary<string, string> lowerCaseHashes = new ();
+        private readonly Dictionary<string, string> bundleNameToHash = new ();
         public ConversionState CurrentState { get; } = new ();
         private Environment env;
         private ClientSettings settings;
@@ -324,6 +325,7 @@ namespace DCL.ABConverter
                         var message = $"GLTF is invalid or contains errors: {gltfUrl}, {gltfImport.LastErrorCode}";
                         log.Error(message);
                         errorReporter.ReportError(message, settings);
+                        assetsToMark.Remove(gltf.AssetPath);
                         continue;
                     }
 
@@ -368,6 +370,7 @@ namespace DCL.ABConverter
                             log.Error(message);
                             errorReporter.ReportError(message, settings);
                             SetExitState(ErrorCodes.GLTFAST_CRITICAL_ERROR);
+                            assetsToMark.Remove(gltf.AssetPath);
                             continue;
                         }
                     }
@@ -377,6 +380,7 @@ namespace DCL.ABConverter
                         log.Error(message);
                         errorReporter.ReportError(message, settings);
                         SetExitState(ErrorCodes.GLTF_IMPORTER_NOT_FOUND);
+                        assetsToMark.Remove(gltf.AssetPath);
                         continue;
                     }
 
@@ -417,6 +421,7 @@ namespace DCL.ABConverter
                     Debug.LogException(e);
                     errorReporter.ReportException(new ConversionException(ConversionStep.Import, settings, e));
                     SetExitState(ErrorCodes.GLTFAST_CRITICAL_ERROR);
+                    assetsToMark.Remove(gltf.AssetPath);
                     continue;
                 }
                 finally
@@ -905,14 +910,67 @@ namespace DCL.ABConverter
                 env.sceneStateGenerator.GenerateISSAssetBundle(assetPaths, gltfImporters, finalDownloadedPath);
             else
             {
-                // Otherwise, mark each asset as its own bundle
+                // Otherwise, mark each asset as its own bundle. GLB/GLTF bundles embed
+                // dep-bundle references whose names are derived from dep content hashes.
+                // Two scenes that share a glb source hash but differ in deps therefore
+                // produce byte-different bundles — we fold a per-asset depsDigest into
+                // the glb/gltf bundle name so those byte-different bundles land at
+                // distinct canonical paths, and two glbs with the same deps land at
+                // the same path regardless of what else is in the scene. BIN and
+                // texture bundles are leaves (no inbound dep refs from their own
+                // bundle) so hash-only naming is safe.
+                bool useDigest = settings.depsDigestByHash != null && settings.depsDigestByHash.Count > 0;
+                // `PlatformUtils.GetPlatform()` already returns the leading
+                // underscore (e.g. "_windows" / "_mac" / "_webgl"), so the
+                // string interpolations below produce `{hash}_{digest}_{target}`
+                // and `{hash}_{target}` without an explicit underscore before
+                // `platform`. Keep this in mind when editing the bundle-name
+                // format — adding another `_` here would produce a double
+                // underscore that the consumer-server's canonical probe would
+                // then miss.
+                string platform = PlatformUtils.GetPlatform();
+
                 foreach (var assetPath in assetPaths)
                 {
                     if (assetPath == null) continue;
-                    if (assetPath.finalPath.EndsWith(".bin")) continue;
+                    // Case-insensitive to match the consumer-server side, which
+                    // normalises via `.toLowerCase()` before classifying extensions.
+                    // Keeping the two sides consistent prevents a `.GLB` input from
+                    // being probed as composite but emitted as bare (or vice versa).
+                    if (assetPath.finalPath.EndsWith(".bin", System.StringComparison.OrdinalIgnoreCase)) continue;
 
-                    string assetBundleName = assetPath.hash + PlatformUtils.GetPlatform();
+                    bool isGltf = useDigest
+                        && (assetPath.finalPath.EndsWith(".glb", System.StringComparison.OrdinalIgnoreCase)
+                            || assetPath.finalPath.EndsWith(".gltf", System.StringComparison.OrdinalIgnoreCase));
+                    string assetBundleName;
+                    if (isGltf)
+                    {
+                        // A missing digest for a glb/gltf means the consumer-server
+                        // probed one canonical key but Unity would emit bare bundles
+                        // that the probe-side logic could never find. Throw loudly.
+                        // Treat a null/empty digest the same as a missing key — both
+                        // would silently collapse into `{hash}__{platform}` which
+                        // never matches what the consumer-server probes.
+                        if (!settings.depsDigestByHash.TryGetValue(assetPath.hash, out string digest)
+                            || string.IsNullOrEmpty(digest))
+                        {
+                            // Log before throwing — Unity's crash handler
+                            // sometimes truncates exception stacks in the
+                            // uploaded log file, so duplicate the message
+                            // through the logger to ensure S3 captures it.
+                            string message = $"No per-asset deps digest found for glb/gltf hash {assetPath.hash} (path {assetPath.finalPath}). The consumer-server must pass every glb/gltf via -depsDigestsFile.";
+                            log.Error(message);
+                            throw new System.InvalidOperationException(message);
+                        }
+                        assetBundleName = $"{assetPath.hash}_{digest}{platform}";
+                    }
+                    else
+                    {
+                        assetBundleName = assetPath.hash + platform;
+                    }
                     env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, assetBundleName);
+
+                    bundleNameToHash[assetBundleName] = assetPath.hash;
                 }
             }
 
@@ -962,7 +1020,23 @@ namespace DCL.ABConverter
 
             var afterRefreshTime = EditorApplication.timeSinceStartup;
 
-            // 1. Convert flagged folders to asset bundles only to automatically get dependencies for the metadata
+            // 1. Query inter-bundle dependencies from the AssetDatabase without building.
+            //    MarkAllAssetBundles already called SetAssetBundleNameAndVariant on each
+            //    folder, so the AssetDatabase can resolve which bundles reference assets
+            //    in other bundles from import metadata alone.
+            var assetDatabaseProvider = new AssetDatabaseProvider();
+            env.assetDatabase.BuildMetadata(env.file, finalDownloadedPath, bundleNameToHash, assetDatabaseProvider, VERSION);
+
+            var afterMetadata = EditorApplication.timeSinceStartup;
+
+            env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
+
+            env.assetDatabase.SaveAssets();
+
+            var afterMetadataRefresh = EditorApplication.timeSinceStartup;
+
+            // 2. Single build — metadata.json files are already in each asset folder,
+            //    so the resulting bundles embed dependency info on the first pass.
             manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
                 BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
                 BuildAssetBundleOptions.AssetBundleStripUnityVersion,
@@ -977,29 +1051,12 @@ namespace DCL.ABConverter
                 return false;
             }
 
-            var afterFirstBuild = EditorApplication.timeSinceStartup;
+            var afterBuild = EditorApplication.timeSinceStartup;
 
-            // 2. Create metadata (dependencies, version, timestamp) and store in the target folders to be converted again later with the metadata inside
-            env.assetDatabase.BuildMetadata(env.file, finalDownloadedPath, lowerCaseHashes, manifest, VERSION);
-
-            env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
-
-            env.assetDatabase.SaveAssets();
-
-            var afterSecondRefresh = EditorApplication.timeSinceStartup;
-
-            // 3. Convert flagged folders to asset bundles again but this time they have the metadata file inside
-            manifest = env.buildPipeline.BuildAssetBundles(settings.finalAssetBundlePath,
-                BuildAssetBundleOptions.ChunkBasedCompression | BuildAssetBundleOptions.ForceRebuildAssetBundle |
-                BuildAssetBundleOptions.AssetBundleStripUnityVersion,
-                target);
-
-            var afterSecondBuild = EditorApplication.timeSinceStartup;
-
-            logBuffer += $"Step 0: {afterRefreshTime - abStartTime}\n";
-            logBuffer += $"Step 1: {afterFirstBuild - afterRefreshTime}\n";
-            logBuffer += $"Step 2: {afterSecondRefresh - afterFirstBuild}\n";
-            logBuffer += $"Step 3: {afterSecondBuild - afterSecondRefresh}\n";
+            logBuffer += $"Step 0 (refresh+move): {afterRefreshTime - abStartTime}\n";
+            logBuffer += $"Step 1 (metadata):     {afterMetadata - afterRefreshTime}\n";
+            logBuffer += $"Step 2 (meta refresh): {afterMetadataRefresh - afterMetadata}\n";
+            logBuffer += $"Step 3 (build):        {afterBuild - afterMetadataRefresh}\n";
 
             logBuffer += $"Generating asset bundles at path: {settings.finalAssetBundlePath}\n";
 
@@ -1061,6 +1118,46 @@ namespace DCL.ABConverter
                 List<AssetPath> bufferPaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.bufferExtensions);
                 List<AssetPath> texturePaths = Utils.GetPathsFromPairs(finalDownloadedPath, rawContents, Config.textureExtensions);
 
+                // Drop glb/gltf entries the consumer-server flagged as unconvertible
+                // (missing dependencies or unparseable bytes) before any download or
+                // import attempt. Identical mechanism to cachedHashes below, but
+                // semantically distinct: cached hashes correspond to existing canonical
+                // bundles upstream, while skipped hashes have no bundle anywhere — the
+                // asset is silently absent from the output. Done first so a hash that
+                // somehow appears in both lists is treated as "skipped" (the stricter
+                // case — never downloaded, never marked).
+                //
+                // The bufferPaths sweep is defensive: in the current consumer-server
+                // architecture `skippedHashes` only ever contains glb/gltf hashes
+                // (computePerAssetDigests filters by the gltf-extension set), so
+                // `bufferDropped` is expected to be 0 in production. The line stays
+                // for parallel structure with the cachedHashes block and to avoid
+                // having to revisit Unity if a future consumer-server release ever
+                // starts surfacing buffer-level skips. Mirror with the cachedHashes
+                // block immediately below — same shape, same expected-zero behaviour
+                // for buffers, same justification.
+                if (settings.skippedHashes != null && settings.skippedHashes.Count > 0)
+                {
+                    int gltfDropped = gltfPaths.RemoveAll(p => settings.skippedHashes.Contains(p.hash));
+                    int bufferDropped = bufferPaths.RemoveAll(p => settings.skippedHashes.Contains(p.hash));
+
+                    log.Info($"Dropped {gltfDropped} broken glb/gltf(s) and {bufferDropped} associated buffer(s) — flagged by consumer-server (missing deps or unparseable bytes).");
+                }
+
+                // Skip GLTFs/buffers whose canonical asset bundle already exists on the CDN.
+                // Textures are never skipped here — they may still be referenced from within
+                // non-cached GLTFs and are required to be in the contentTable for import.
+                if (settings.cachedHashes != null && settings.cachedHashes.Count > 0)
+                {
+                    int gltfSkipped = gltfPaths.RemoveAll(p => settings.cachedHashes.Contains(p.hash));
+                    int bufferSkipped = bufferPaths.RemoveAll(p => settings.cachedHashes.Contains(p.hash));
+
+                    log.Info($"Skipped {gltfSkipped} cached GLTF(s) and {bufferSkipped} cached buffer(s).");
+                } else {
+                    if (settings.depsDigestByHash != null && settings.depsDigestByHash.Count > 0)
+                        log.Info($"No cached hashes — full cache miss. Received {settings.depsDigestByHash.Count} per-asset digest(s), proceeding to convert all {gltfPaths.Count} gltf and {bufferPaths.Count} buffer");
+                }
+
                 if (!FilterDumpList(ref gltfPaths))
                     return false;
 
@@ -1072,6 +1169,10 @@ namespace DCL.ABConverter
 
                 int totalAssetsToDownload = gltfPaths.Count + bufferPaths.Count + texturePaths.Count;
                 int progress = 0;
+                int logStride = Math.Max(1, totalAssetsToDownload / 10);
+                int lastLoggedProgress = 0;
+
+                log.Info($"Starting download of {totalAssetsToDownload} asset(s) (gltf:{gltfPaths.Count}, buffer:{bufferPaths.Count}, texture:{texturePaths.Count})");
 
                 long GetTotalMegabytesDownloaded() =>
                     downloadedData.Values.Sum(array => array.LongLength) / (1024 * 1024);
@@ -1080,6 +1181,13 @@ namespace DCL.ABConverter
                 {
                     await Task.WhenAll(downloadTasks);
                     log.Verbose($"{nameof(ResolveAssets)}: {progress}/{totalAssetsToDownload}; {GetTotalMegabytesDownloaded()} MB");
+
+                    if (progress - lastLoggedProgress >= logStride || progress == totalAssetsToDownload)
+                    {
+                        log.Info($"Download progress: {progress}/{totalAssetsToDownload} ({totalAssetsToDownload - progress} remaining); {GetTotalMegabytesDownloaded()} MB");
+                        lastLoggedProgress = progress;
+                    }
+
                     downloadTasks.Clear();
                 }
 
