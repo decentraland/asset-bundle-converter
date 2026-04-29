@@ -1020,7 +1020,8 @@ namespace DCL.ABConverter
             //    MarkAllAssetBundles already called SetAssetBundleNameAndVariant on each
             //    folder, so the AssetDatabase can resolve which bundles reference assets
             //    in other bundles from import metadata alone.
-            env.assetDatabase.BuildMetadata(env.file, finalDownloadedPath, bundleNameToHash, VERSION);
+            var assetDatabaseProvider = new AssetDatabaseProvider();
+            env.assetDatabase.BuildMetadata(env.file, finalDownloadedPath, bundleNameToHash, assetDatabaseProvider, VERSION);
 
             var afterMetadata = EditorApplication.timeSinceStartup;
 
