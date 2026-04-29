@@ -816,7 +816,9 @@ export async function executeConversion(
           ACL: 'public-read'
         })
         .promise()
-    } catch {}
+    } catch (uploadErr: any) {
+      logger.error(`Failed to upload failed manifest: ${uploadErr?.message ?? uploadErr}`, defaultLoggerMetadata)
+    }
 
     // Return a failure exit code instead of rethrowing. The service.ts task
     // runner will publish an AssetBundleConversionFinishedEvent with this
