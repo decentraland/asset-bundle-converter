@@ -6,5 +6,6 @@ module.exports = {
   coverageDirectory: 'coverage',
   collectCoverageFrom: ['src/**/*.ts', '!src/proto/**'],
   testMatch: ['**/*.spec.(ts)'],
+  testPathIgnorePatterns: ['/node_modules/', '/test/e2e/'],
   testEnvironment: 'node'
 }

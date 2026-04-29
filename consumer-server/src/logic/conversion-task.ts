@@ -381,10 +381,8 @@ export async function executeConversion(
 
   // Fetch the entity up-front — needed both for the per-asset cache probe (when
   // enabled) and for uploading scene source files regardless of whether Unity runs.
-  // `getActiveEntity` returns `undefined` (not an error) when the catalyst no
-  // longer has this entity active — promote that to an explicit throw so the
-  // catch below logs something actionable instead of "cannot read property
-  // 'type' of undefined".
+  // `getActiveEntity` throws on non-200 responses. The `!fetched` guard below
+  // is defense-in-depth in case the response parses to null/empty.
   //
   // Timeout: passing CATALYST_FETCH_TIMEOUT_MS prevents a wedged catalyst from
   // holding the worker slot indefinitely. On abort the catch below degrades us

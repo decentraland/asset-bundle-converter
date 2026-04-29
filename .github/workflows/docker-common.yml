@@ -104,6 +104,14 @@ jobs:
         env:
           UNITY_2021_ULF: ${{ secrets.UNITY_2021_ULF }}
 
+      - name: Run e2e conversion + dedup test
+        run: |
+          docker run --rm \
+            -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
+            --workdir /consumer-server \
+            ${{ env.QUAY_URL }}${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
+              npx jest --config jest.e2e.config.js --verbose --forceExit
+
       - name: Run tests
         run: |
           docker run --rm \
@@ -122,7 +130,7 @@ jobs:
                 --pointer urn:decentraland:off-chain:base-avatars:brown_pants \
                 --outDir /tmp-ab \
                 --logFile /tmp-ab/log.txt
-          
+
       - name: Run test conversion of scene 43,100
         run: |
           docker run --rm \
@@ -133,7 +141,7 @@ jobs:
                 --pointer 43,100 \
                 --outDir /tmp-ab \
                 --logFile /tmp-ab/log.txt
-          
+
       - name: Run test conversion of scene 43,100 with ISS
         run: |
           docker run --rm \
@@ -145,7 +153,7 @@ jobs:
                 --outDir /tmp-ab \
                 --logFile /tmp-ab/log.txt \
                 --doISS true
-          
+
       - name: Run test conversion of scene 20,4 Goerli with ISS
         run: |
           docker run --rm \
