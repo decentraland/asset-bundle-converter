@@ -379,7 +379,14 @@ namespace DCL.ABConverter
             IWebRequest webRequest)
         {
 
-            string url = "https://peer.decentraland.org/content/entities/active/";
+            // baseUrl points at the /contents/ endpoint (e.g.
+            // "https://peer.decentraland.zone/content/contents/") used for
+            // downloading assets by hash. Strip the trailing "contents/" to
+            // reach the /content/ root, then append the entities path.
+            string contentRoot = settings.baseUrl;
+            if (contentRoot.EndsWith("contents/"))
+                contentRoot = contentRoot.Substring(0, contentRoot.Length - "contents/".Length);
+            string url = $"{contentRoot}entities/active/";
             DownloadHandler downloadHandler = null;
 
             try
