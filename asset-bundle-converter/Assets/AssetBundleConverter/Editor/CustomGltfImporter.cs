@@ -33,6 +33,7 @@ namespace AssetBundleConverter.Editor
     {
         [SerializeField] private bool useCustomFileProvider = false;
         [SerializeField] public bool useOriginalMaterials;
+        [SerializeField] public bool usePassthroughImport = false;
         [HideInInspector] [SerializeField] private ContentMap[] contentMaps;
         [SerializeField] private string fileRootPath;
         [SerializeField] private string hash;
@@ -57,6 +58,13 @@ namespace AssetBundleConverter.Editor
 
         public override void OnImportAsset(AssetImportContext ctx)
         {
+            // Passthrough: plain glTFast import with no custom material/texture handling
+            if (usePassthroughImport)
+            {
+                base.OnImportAsset(ctx);
+                return;
+            }
+
             if (useCustomFileProvider)
             {
                 contentTable = new Dictionary<string, string>();
