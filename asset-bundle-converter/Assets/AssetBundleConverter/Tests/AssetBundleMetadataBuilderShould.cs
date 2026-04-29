@@ -3,6 +3,7 @@ using AssetBundleConverter.Wrappers.Interfaces;
 using DCL;
 using DCL.ABConverter;
 using NSubstitute;
+using NSubstitute.Core;
 using NUnit.Framework;
 using UnityEngine;
 
