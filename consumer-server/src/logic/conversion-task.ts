@@ -9,6 +9,8 @@ import * as path from 'path'
 import { hasContentChange } from './has-content-changed-task'
 import { getUnityBuildTarget, normalizeContentsBaseUrl } from '../utils'
 import { getActiveEntity } from './fetch-entity-by-pointer'
+import { classifyHasContentChangeFailure } from './classify-has-content-change-failure'
+import { scrubUnityProjectState } from './scrub-unity-project-state'
 import {
   checkAssetCache,
   computePerAssetDigests,
@@ -34,6 +36,11 @@ type Manifest = {
 // the conversion still proceeds against raw hashes, and Unity still produces
 // usable bundles. Matches the default the migration script uses.
 const CATALYST_FETCH_TIMEOUT_MS = 30_000
+// Exit codes aligned with ManifestStatusCode in asset-bundle-registry.
+const UNEXPECTED_ERROR_EXIT_CODE = 5
+const ALREADY_CONVERTED_EXIT_CODE = 13
+const NODE_CAUGHT_ERROR_EXIT_CODE = 14
+const NODE_TIMEOUT_EXIT_CODE = 15
 
 async function getCdnBucket(components: Pick<AppComponents, 'config'>) {
   return (await components.config.getString('CDN_BUCKET')) || 'CDN_BUCKET'
@@ -202,10 +209,9 @@ async function shouldIgnoreConversion(
     if (!obj.Body) return false
     const json: Manifest = JSON.parse(obj.Body?.toString())
 
-    // not ignored when previous run had exit code
-    if (json.exitCode) return false
-
-    // ignored only when previous version is the same as current version
+    // ignored when previous version is the same as current version
+    // (regardless of exit code — a failed conversion with the same version
+    // should not be retried until the converter is updated)
     if (json.version === $AB_VERSION) return true
   } catch {}
 
@@ -237,8 +243,10 @@ export async function executeLODConversion(
 
   if (!unityBuildTarget) {
     logger.error('Could not find a build target', { ...defaultLoggerMetadata } as any)
-    return 5 // UNEXPECTED_ERROR exit code
+    return UNEXPECTED_ERROR_EXIT_CODE
   }
+
+  await scrubUnityProjectState($PROJECT_PATH, logger, defaultLoggerMetadata)
 
   try {
     const exitCode = await runLodsConversion(logger, components, {
@@ -260,7 +268,7 @@ export async function executeLODConversion(
       // this is an error, if succeeded, we should see at least a manifest file
       components.metrics.increment('ab_converter_empty_conversion', { ab_version: abVersion })
       logger.error('Empty conversion', { ...defaultLoggerMetadata } as any)
-      return 5 // UNEXPECTED_ERROR exit code
+      return UNEXPECTED_ERROR_EXIT_CODE
     }
 
     await uploadDir(components.cdnS3, cdnBucket, outDirectory, 'LOD', {
@@ -280,34 +288,46 @@ export async function executeLODConversion(
 
     return exitCode ?? -1
   } catch (error: any) {
-    logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
-    components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
+    // readFile is wrapped because the log file may not exist (e.g. if
+    // setupStartDirectories itself failed). A throw here would propagate
+    // through finally and prevent service.ts from publishing the failure
+    // event — defeating the catch block's whole purpose of always returning.
+    try {
+      logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
+    } catch {}
+    const isTimeout = error?.message === 'Process did not finish'
+    components.metrics.increment('ab_converter_exit_codes', { exit_code: isTimeout ? 'TIMEOUT' : 'FAIL' })
     logger.error(error)
 
-    setTimeout(() => {
-      // kill the process in one minute, enough time to allow prometheus to collect the metrics
-      process.exit(199)
-    }, 60_000)
-
-    throw error
+    // Return a failure exit code instead of rethrowing. The service.ts task
+    // runner will publish an AssetBundleConversionFinishedEvent with this
+    // statusCode so the registry learns the entity failed, and the worker
+    // goes on to pick up the next SQS message.
+    return isTimeout ? NODE_TIMEOUT_EXIT_CODE : NODE_CAUGHT_ERROR_EXIT_CODE
   } finally {
+    // Finally-block operations must not throw: an uncaught throw here would
+    // replace the try/catch's return value and service.ts would skip the
+    // event publish, so the registry wouldn't learn about the outcome.
     if ($LOGS_BUCKET) {
       const log = `https://${$LOGS_BUCKET}.s3.amazonaws.com/${s3LogKey}`
-
       logger.info(`LogFile=${log}`, defaultLoggerMetadata)
-      await components.cdnS3
-        .upload({
-          Bucket: $LOGS_BUCKET,
-          Key: s3LogKey,
-          Body: await promises.readFile(logFile),
-          ACL: 'public-read'
-        })
-        .promise()
+      try {
+        await components.cdnS3
+          .upload({
+            Bucket: $LOGS_BUCKET,
+            Key: s3LogKey,
+            Body: await promises.readFile(logFile),
+            ACL: 'public-read'
+          })
+          .promise()
+      } catch (err: any) {
+        logger.error(`Failed to upload LOD log file to S3: ${err?.message ?? err}`, defaultLoggerMetadata)
+      }
     } else {
       logger.info(`!!!!!!!! Log file not deleted or uploaded ${logFile}`, defaultLoggerMetadata)
     }
 
-    // delete output files
+    // delete job-specific artefacts
     try {
       await rimraf(logFile, { maxRetries: 3 })
     } catch (err: any) {
@@ -318,15 +338,8 @@ export async function executeLODConversion(
     } catch (err: any) {
       logger.error(err, defaultLoggerMetadata)
     }
-    // delete library folder
-    try {
-      await rimraf(`${$PROJECT_PATH}/Library`, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
-    }
 
-    // delete scene manifest folder
-    await deleteSceneManifestFolder($PROJECT_PATH, logger, defaultLoggerMetadata)
+    await scrubUnityProjectState($PROJECT_PATH, logger, defaultLoggerMetadata)
   }
 
   logger.debug('LOD Conversion finished', defaultLoggerMetadata)
@@ -354,14 +367,14 @@ export async function executeConversion(
 
   const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
   if (!unityBuildTarget) {
-    logger.info('Invalid build target ' + $BUILD_TARGET)
-    return 5 // UNEXPECTED_ERROR exit code
+    logger.error(`Invalid build target ${$BUILD_TARGET}`)
+    return UNEXPECTED_ERROR_EXIT_CODE
   }
 
   if (!force) {
     if (await shouldIgnoreConversion(components, abVersion, entityId, $BUILD_TARGET)) {
       logger.info('Ignoring conversion', { entityId, contentServerUrl, abVersion })
-      return 13 // ALREADY_CONVERTED exit code
+      return ALREADY_CONVERTED_EXIT_CODE
     }
   } else {
     logger.info('Forcing conversion', { entityId, contentServerUrl, abVersion })
@@ -369,7 +382,6 @@ export async function executeConversion(
 
   const cdnBucket = await getCdnBucket(components)
   const manifestFile = manifestKeyForEntity(entityId, $BUILD_TARGET)
-  const failedManifestFile = `manifest/${entityId}_failed.json`
 
   const logFile = `/tmp/asset_bundles_logs/export_log_${entityId}_${Date.now()}.txt`
   const s3LogKey = `logs/${abVersion}/${entityId}/${new Date().toISOString()}.txt`
@@ -378,6 +390,7 @@ export async function executeConversion(
   const defaultLoggerMetadata = { entityId, contentServerUrl, version: abVersion, logFile: s3LogKey }
 
   logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
+  await scrubUnityProjectState($PROJECT_PATH, logger, defaultLoggerMetadata)
 
   // Fetch the entity up-front — needed both for the per-asset cache probe (when
   // enabled) and for uploading scene source files regardless of whether Unity runs.
@@ -460,22 +473,14 @@ export async function executeConversion(
         }
       })
       try {
-        await components.cdnS3
-          .upload({
-            Bucket: cdnBucket,
-            Key: failedManifestFile,
-            ContentType: 'application/json',
-            Body: JSON.stringify({
-              entityId,
-              contentServerUrl,
-              version: abVersion,
-              error: err?.message ?? String(err),
-              date: new Date().toISOString()
-            }),
-            CacheControl: 'max-age=3600,s-maxage=3600',
-            ACL: 'public-read'
-          })
-          .promise()
+        const manifest: Manifest = {
+          version: abVersion,
+          files: [],
+          exitCode: NODE_CAUGHT_ERROR_EXIT_CODE,
+          contentServerUrl,
+          date: new Date().toISOString()
+        }
+        await uploadEntityManifest(components, cdnBucket, manifestFile, manifest)
       } catch (uploadErr: any) {
         // If the sentinel upload ALSO fails, we lose the one signal clients
         // have that this scene won't convert. Surface at warn level so ops
@@ -485,7 +490,7 @@ export async function executeConversion(
           defaultLoggerMetadata as any
         )
       }
-      return 5 // UNEXPECTED_ERROR exit code
+      return UNEXPECTED_ERROR_EXIT_CODE
     }
   }
 
@@ -632,8 +637,17 @@ export async function executeConversion(
         abVersion,
         logger
       )
-    } catch (e) {
-      logger.info('HasContentChanged failed with error ' + e)
+    } catch (e: any) {
+      // Upstream (content-server) failure — we fall back to reconverting, which
+      // can produce a reconversion loop for entities whose content-server
+      // endpoints are broken. Tag the metric with the reason so the failure mode
+      // is visible in Grafana.
+      const reason = classifyHasContentChangeFailure(e)
+      components.metrics.increment('ab_converter_has_content_change_failures', { reason })
+      logger.warn(`HasContentChanged failed (${reason}), falling back to reconvert: ${e?.message ?? e}`, {
+        ...defaultLoggerMetadata,
+        contentServerUrl
+      } as any)
     }
     logger.info(`HasContentChanged for ${entityId} result was ${hasContentChanged}`)
   }
@@ -752,8 +766,18 @@ export async function executeConversion(
 
     return exitCode ?? -1
   } catch (err: any) {
-    logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
-    components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
+    // readFile is wrapped because the log file may not exist (e.g. if
+    // setupStartDirectories itself failed). A throw here would propagate
+    // through finally and prevent service.ts from publishing the failure
+    // event — defeating the catch block's whole purpose of always returning.
+    try {
+      logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
+    } catch {}
+
+    const isTimeout = err?.message === 'Process did not finish'
+    const failedExitCode = isTimeout ? NODE_TIMEOUT_EXIT_CODE : NODE_CAUGHT_ERROR_EXIT_CODE
+
+    components.metrics.increment('ab_converter_exit_codes', { exit_code: isTimeout ? 'TIMEOUT' : 'FAIL' })
     logger.error(err)
 
     components.sentry.captureMessage(`Error during ab conversion`, {
@@ -762,57 +786,67 @@ export async function executeConversion(
         entityId,
         contentServerUrl,
         unityBuildTarget,
-        unityExitCode: exitCode || 'unknown',
+        // Nullish coalescing instead of `||`: a successful-but-post-upload-failing
+        // run has exitCode === 0 and we want Sentry to report 0, not 'unknown'.
+        unityExitCode: exitCode ?? 'unknown',
         version: abVersion,
         log: s3LogKey,
         date: new Date().toISOString()
       }
     })
 
+    // Upload a failed manifest to the main manifest key so that
+    // shouldIgnoreConversion can find it and skip re-processing the same
+    // entity with the same converter version.
     try {
-      // and then replace the manifest
+      const manifest: Manifest = {
+        version: abVersion,
+        files: [],
+        exitCode: failedExitCode,
+        contentServerUrl,
+        date: new Date().toISOString()
+      }
       await components.cdnS3
         .upload({
           Bucket: cdnBucket,
-          Key: failedManifestFile,
+          Key: manifestFile,
           ContentType: 'application/json',
-          Body: JSON.stringify({
-            entityId,
-            contentServerUrl,
-            version: abVersion,
-            log: s3LogKey,
-            date: new Date().toISOString()
-          }),
-          CacheControl: 'max-age=3600,s-maxage=3600',
+          Body: JSON.stringify(manifest),
+          CacheControl: 'private, max-age=0, no-cache',
           ACL: 'public-read'
         })
         .promise()
     } catch {}
 
-    setTimeout(() => {
-      // kill the process in one minute, enough time to allow prometheus to collect the metrics
-      process.exit(199)
-    }, 60_000)
-
-    throw err
+    // Return a failure exit code instead of rethrowing. The service.ts task
+    // runner will publish an AssetBundleConversionFinishedEvent with this
+    // statusCode so the registry learns the entity failed, and the worker
+    // goes on to pick up the next SQS message.
+    return failedExitCode
   } finally {
+    // Finally-block operations must not throw: an uncaught throw here would
+    // replace the try/catch's return value and service.ts would skip the
+    // event publish, so the registry wouldn't learn about the outcome.
     if ($LOGS_BUCKET && hasContentChanged) {
       const log = `https://${$LOGS_BUCKET}.s3.amazonaws.com/${s3LogKey}`
-
       logger.info(`LogFile=${log}`, defaultLoggerMetadata)
-      await components.cdnS3
-        .upload({
-          Bucket: $LOGS_BUCKET,
-          Key: s3LogKey,
-          Body: await promises.readFile(logFile),
-          ACL: 'public-read'
-        })
-        .promise()
+      try {
+        await components.cdnS3
+          .upload({
+            Bucket: $LOGS_BUCKET,
+            Key: s3LogKey,
+            Body: await promises.readFile(logFile),
+            ACL: 'public-read'
+          })
+          .promise()
+      } catch (err: any) {
+        logger.error(`Failed to upload log file to S3: ${err?.message ?? err}`, defaultLoggerMetadata)
+      }
     } else {
       logger.info(`!!!!!!!! Log file not deleted or uploaded ${logFile}`, defaultLoggerMetadata)
     }
 
-    // delete output files
+    // delete job-specific artefacts
     try {
       await rimraf(logFile, { maxRetries: 3 })
     } catch (err: any) {
@@ -823,47 +857,13 @@ export async function executeConversion(
     } catch (err: any) {
       logger.error(err, defaultLoggerMetadata)
     }
-    // delete library folder
-    try {
-      await rimraf(`${$PROJECT_PATH}/Library`, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(`Error deleting library folder: ${err}`, defaultLoggerMetadata)
-    }
-    //delete _Download folder
-    try {
-      await rimraf(`${$PROJECT_PATH}/Assets/_Downloaded`, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
-    }
 
-    // delete scene manifest folder
-    await deleteSceneManifestFolder($PROJECT_PATH, logger, defaultLoggerMetadata)
+    await scrubUnityProjectState($PROJECT_PATH, logger, defaultLoggerMetadata)
   }
 
   logger.debug('Conversion finished', defaultLoggerMetadata)
   logger.debug(`Full project size ${getFolderSize($PROJECT_PATH)}`)
   printFolderSizes($PROJECT_PATH, logger)
-}
-
-async function deleteSceneManifestFolder(projectPath: string, logger: any, defaultLoggerMetadata: any): Promise<void> {
-  const sceneManifestPath = `${projectPath}/Assets/_SceneManifest`
-  logger.info(`Attempting to delete scene manifest folder: ${sceneManifestPath}`, defaultLoggerMetadata)
-  try {
-    await rimraf(sceneManifestPath, { maxRetries: 3 })
-    const folderStillExists = fs.existsSync(sceneManifestPath)
-    if (folderStillExists) {
-      logger.warn(`Scene manifest folder still exists after deletion: ${sceneManifestPath}`, defaultLoggerMetadata)
-    } else {
-      logger.info(`Scene manifest folder successfully deleted: ${sceneManifestPath}`, defaultLoggerMetadata)
-    }
-  } catch (err: any) {
-    logger.error(`Error deleting scene manifest folder ${sceneManifestPath}:`, {
-      ...defaultLoggerMetadata,
-      error: err
-    })
-    const folderStillExists = fs.existsSync(sceneManifestPath)
-    logger.warn(`Scene manifest folder exists after failed deletion: ${folderStillExists}`, defaultLoggerMetadata)
-  }
 }
 
 /**
