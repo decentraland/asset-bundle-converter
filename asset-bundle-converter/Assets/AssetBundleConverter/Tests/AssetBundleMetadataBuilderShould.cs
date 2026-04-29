@@ -160,7 +160,7 @@ namespace AssetBundleConverter.Tests
             AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, manifest, VERSION);
 
             var metadata = ParseCaptured();
-            Assert.IsNull(metadata.dependencies);
+            Assert.IsEmpty(metadata.dependencies);
         }
     }
 }
