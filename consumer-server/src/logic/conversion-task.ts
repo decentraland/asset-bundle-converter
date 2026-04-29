@@ -676,9 +676,18 @@ export async function executeConversion(
       }
     }
 
+    // Drop the `dcl/` subtree from both the manifest listing and the upload sweep
+    // below. Unity emits a shared shader bundle (`dcl/scene_ignore_mac` and friends —
+    // the `_IGNORE` token comes from `Utils.AssignShaderBundle`) as a side-effect of
+    // bundling glTF materials. The runtime never fetches it from the CDN: the
+    // explorer's `PrepareAssetBundleLoadingParametersSystemBase.COMMON_SHADERS`
+    // allow-list resolves these names to streaming-asset paths embedded in the
+    // client build. Uploading it costs an S3 PUT per scene for bytes nobody reads,
+    // and surfacing the bare `dcl` directory entry from the non-recursive `readdir`
+    // makes the manifest claim "dcl" is a file when it's actually a folder.
     const manifest: Manifest = {
       version: abVersion,
-      files: await promises.readdir(outDirectory),
+      files: (await promises.readdir(outDirectory)).filter((f) => f !== 'dcl'),
       exitCode,
       contentServerUrl,
       date: new Date().toISOString()
@@ -709,6 +718,15 @@ export async function executeConversion(
     await uploadDir(components.cdnS3, cdnBucket, outDirectory, bundleUploadPath, {
       concurrency: 10,
       matches: [
+        {
+          // Skip the shared shader bundle Unity drops here as a build artifact.
+          // `mergeConfiguration` in the cdn-uploader is first-match-wins per key,
+          // so listing this matcher BEFORE the catch-all `**/*` is what makes
+          // `ignore: true` stick — the catch-all still merges into the result
+          // afterwards, but it doesn't override the already-set ignore flag.
+          match: 'dcl/**',
+          ignore: true
+        },
         {
           match: '**/*.manifest',
           contentType: 'text/cache-manifest',

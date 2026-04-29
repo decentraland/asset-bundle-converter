@@ -390,6 +390,146 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     })
   })
 
+  describe('and Unity emits a dcl/ shared shader bundle alongside the scene assets', () => {
+    // Unity bundles the DCL/Scene shader as a side-effect of marking glTF
+    // materials (via `Utils.AssignShaderBundle`'s `_IGNORE` naming). The bundle
+    // name contains a slash so it lands in a `dcl/` subfolder of outDirectory.
+    // The runtime never fetches it from the CDN — the explorer's
+    // `PrepareAssetBundleLoadingParametersSystemBase.COMMON_SHADERS` allow-list
+    // resolves these names to streaming-asset paths embedded in the client. The
+    // converter should therefore skip it from both the upload sweep and the
+    // top-level manifest listing rather than wasting an S3 PUT per scene and
+    // surfacing the bare `dcl` directory entry as if it were a file.
+    let exitCode: number
+    let glbFilename: string
+
+    beforeEach(() => {
+      // Hoisted so the assertion blocks below don't need to re-derive the
+      // composite filename and stay in sync with what the mocked Unity writes.
+      glbFilename = canonicalFilenameForAsset(
+        'hOnlyGlb',
+        '.glb',
+        'windows',
+        new Map([['hOnlyGlb', computeDepsDigest([])]])
+      )
+    })
+
+    describe('and ASSET_REUSE_ENABLED is on (canonical upload prefix)', () => {
+      beforeEach(async () => {
+        mockedGetActiveEntity.mockResolvedValue({
+          id: 'bafy-dcl-skip',
+          type: 'scene',
+          content: [{ file: 'model.glb', hash: 'hOnlyGlb' }],
+          metadata: {}
+        })
+
+        setupFetchMock(new Map([['hOnlyGlb', buildGlb([])]]))
+
+        mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+          await fs.mkdir(path.join(options.outDirectory, 'dcl'), { recursive: true })
+          await fs.writeFile(path.join(options.outDirectory, glbFilename), 'glb-bundle')
+          await fs.writeFile(path.join(options.outDirectory, 'dcl', 'scene_ignore_windows'), 'shader-bytes')
+          return 0
+        })
+
+        exitCode = await executeConversion(
+          components,
+          'bafy-dcl-skip',
+          'https://peer.decentraland.org/content',
+          false,
+          undefined,
+          undefined,
+          'v48'
+        )
+      })
+
+      it('should NOT upload the dcl/ shader bundle to the canonical prefix', async () => {
+        expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/dcl/scene_ignore_windows')).toBeNull()
+      })
+
+      it('should NOT upload the brotli variant of the dcl/ shader bundle either', async () => {
+        expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/dcl/scene_ignore_windows.br')).toBeNull()
+      })
+
+      it('should still list the actual glb bundle in the top-level manifest while omitting the bare dcl directory entry', async () => {
+        // Two-sided assertion to catch over-eager filtering: a bug that drops
+        // legitimate bundles (e.g. a regex matching anything starting with `d`)
+        // would still pass a `not.toContain('dcl')` check but fail this one.
+        const manifest = JSON.parse(
+          (await read(components.cdnS3, 'test-bucket', 'manifest/bafy-dcl-skip_windows.json')) as string
+        )
+        expect(manifest.files).toContain(glbFilename)
+        expect(manifest.files).not.toContain('dcl')
+      })
+
+      it('should still upload the actual glb bundle Unity emitted alongside the dcl/ artifact', async () => {
+        expect(await read(components.cdnS3, 'test-bucket', `v48/assets/${glbFilename}`)).toContain('glb-bundle')
+      })
+
+      it('should return exit code 0 — the dcl skip is invisible to the conversion outcome', () => {
+        expect(exitCode).toBe(0)
+      })
+    })
+
+    describe('and ASSET_REUSE_ENABLED is off (legacy entity-scoped upload prefix)', () => {
+      // Same skip rules apply when the kill switch is off — the matcher lives
+      // in the shared uploadDir block that runs in both modes. A regression
+      // that gates the matcher behind `useAssetReuse` would only surface here.
+      beforeEach(async () => {
+        const off = buildComponents(workDir, { assetReuseEnabled: 'false' })
+        const metrics = await createMetricsComponent(metricDeclarations, { config: off.config })
+        const logs = await createLogComponent({ metrics })
+        components = { ...off, metrics, logs }
+
+        mockedGetActiveEntity.mockResolvedValue({
+          id: 'bafy-dcl-skip-legacy',
+          type: 'scene',
+          content: [{ file: 'model.glb', hash: 'hOnlyGlb' }],
+          metadata: {}
+        })
+
+        mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+          // In legacy mode Unity emits bare `{hash}_{target}` names — no per-glb
+          // digest in the filename — but the dcl/ side artifact is identical.
+          await fs.mkdir(path.join(options.outDirectory, 'dcl'), { recursive: true })
+          await fs.writeFile(path.join(options.outDirectory, 'hOnlyGlb_windows'), 'glb-bundle-legacy')
+          await fs.writeFile(path.join(options.outDirectory, 'dcl', 'scene_ignore_windows'), 'shader-bytes')
+          return 0
+        })
+
+        exitCode = await executeConversion(
+          components,
+          'bafy-dcl-skip-legacy',
+          'https://peer.decentraland.org/content',
+          false,
+          undefined,
+          undefined,
+          'v48'
+        )
+      })
+
+      it('should NOT upload the dcl/ shader bundle to the entity-scoped prefix', async () => {
+        expect(
+          await read(components.cdnS3, 'test-bucket', 'v48/bafy-dcl-skip-legacy/dcl/scene_ignore_windows')
+        ).toBeNull()
+      })
+
+      it('should still upload the actual glb bundle to the entity-scoped prefix', async () => {
+        expect(await read(components.cdnS3, 'test-bucket', 'v48/bafy-dcl-skip-legacy/hOnlyGlb_windows')).toContain(
+          'glb-bundle-legacy'
+        )
+      })
+
+      it('should still list the glb in the manifest while omitting the bare dcl entry', async () => {
+        const manifest = JSON.parse(
+          (await read(components.cdnS3, 'test-bucket', 'manifest/bafy-dcl-skip-legacy_windows.json')) as string
+        )
+        expect(manifest.files).toContain('hOnlyGlb_windows')
+        expect(manifest.files).not.toContain('dcl')
+      })
+    })
+  })
+
   describe('and ASSET_REUSE_ENABLED is off and the canonical prefix is fully populated', () => {
     let exitCode: number
 
