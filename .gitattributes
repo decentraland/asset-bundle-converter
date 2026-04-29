@@ -1,0 +1,5 @@
+consumer-server/docs/*.png filter=lfs diff=lfs merge=lfs -text
+consumer-server/docs/*.jpg filter=lfs diff=lfs merge=lfs -text
+consumer-server/docs/images/*.png filter=lfs diff=lfs merge=lfs -text
+consumer-server/docs/images/*.jpg filter=lfs diff=lfs merge=lfs -text
+consumer-server/docs/images/*.jpeg filter=lfs diff=lfs merge=lfs -text
