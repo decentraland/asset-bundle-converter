@@ -80,6 +80,7 @@ async function main() {
 
   // Fetch the entity to get its type
   const entity = await getActiveEntity(entityId, BASE_URL)
+  if (!entity) throw new Error(`Entity ${entityId} is not active on the catalyst`)
   const entityType = entity.type
 
   try {

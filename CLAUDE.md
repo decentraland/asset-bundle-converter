@@ -103,7 +103,6 @@ This service doesn't live in isolation. Changes here often imply changes in one 
 
 ## Known gotchas
 
-- **`shouldIgnoreConversion` has a pre-existing argument-order bug** (`conversion-task.ts:110-132`). The function takes `($AB_VERSION, entityId, target)` but the caller at line ~295 passes `(entityId, abVersion, target)` — swapped. The fast path has been dead code for a while. Fixing it silently changes production skip behavior, so handle in a dedicated PR with explicit review.
 - **Don't override `Cache-Control` on `manifest/*.json`**. The converter uploads with `private, max-age=0, no-cache` deliberately so clients revalidate after each conversion. Overriding anywhere (worker, Page Rule, converter) means clients stop seeing new scene hashes.
 - **Don't bump `AB_VERSION` casually.** Invalidates every existing canonical and entity-scoped bundle at that version. Full re-conversion of active scenes required. Ops-level decision.
 - **`hasContentChange` is legacy and narrow** (`has-content-changed-task.ts`). Non-WebGL, scenes only, immediate-previous-version only, all-or-nothing. Superseded by per-asset reuse — kept only as fallback when `ASSET_REUSE_ENABLED=false`. Plan to delete once new path proves.

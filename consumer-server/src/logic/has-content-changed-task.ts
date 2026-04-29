@@ -140,13 +140,26 @@ export async function hasContentChange(
   logger: ILoggerComponent.ILogger
 ): Promise<boolean> {
   const entity = await getActiveEntity(entityId, contentServerUrl)
+  // `getActiveEntity` returns `undefined` when the catalyst no longer has the
+  // entity active (redeployed or evicted). Without this guard, `entity.type`
+  // throws and the outer catch swallows it as a generic "HasContentChanged
+  // failed" — operators lose the actionable signal.
+  if (!entity) {
+    logger.info(`HasContentChanged: Entity ${entityId} is no longer active on the catalyst`)
+    return true
+  }
   if (entity.type === 'scene') {
     logger.info(`HasContentChanged: Entity ${entityId} is a scene`)
-    const environemnt = contentServerUrl.includes('org') ? 'org' : 'zone'
-    const previousHash = await getLastEntityIdByBase(entityId, entity.metadata.scene.base, contentServerUrl)
+    const sceneBase = entity.metadata?.scene?.base
+    if (!sceneBase) {
+      logger.info(`HasContentChanged Error: Entity ${entityId} has no scene.base metadata`)
+      return true
+    }
+    const environment = contentServerUrl.includes('org') ? 'org' : 'zone'
+    const previousHash = await getLastEntityIdByBase(entityId, sceneBase, contentServerUrl)
     if (previousHash !== null) {
       logger.info(`HasContentChanged: Previous hash is ${previousHash}`)
-      const manifest = await getManifestFiles(previousHash, buildTarget, environemnt, logger)
+      const manifest = await getManifestFiles(previousHash, buildTarget, environment, logger)
       if (manifest !== null) {
         logger.info(`HasContentChanged: Manifest exists for hash ${previousHash}`)
         if (manifest.version === abVersion) {
@@ -161,7 +174,7 @@ export async function hasContentChange(
               buildTarget,
               previousHash,
               outputFolder,
-              environemnt,
+              environment,
               logger
             )
             if (allFilesDownloadSuccesfully) {

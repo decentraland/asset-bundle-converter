@@ -188,7 +188,12 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       expect(manifestBody).not.toBeNull()
       const manifest = JSON.parse(manifestBody!)
       expect(manifest.exitCode).toBe(0)
-      expect(manifest.files.sort()).toEqual([glbFilename, texFilename].sort())
+      // Cached entries surface both the bundle and Unity's per-bundle `.manifest`
+      // companion — the previous Unity run uploaded both to canonical, so the
+      // entity manifest should advertise both.
+      expect(manifest.files.sort()).toEqual(
+        [glbFilename, `${glbFilename}.manifest`, texFilename, `${texFilename}.manifest`].sort()
+      )
       expect(manifest.version).toBe('v48')
 
       // Scene source files uploaded to the entity prefix (not canonical).
@@ -247,7 +252,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       const manifest = JSON.parse(
         (await read(components.cdnS3, 'test-bucket', 'manifest/bafy-gltf_windows.json')) as string
       )
-      expect(manifest.files).toEqual([gltfFilename])
+      expect(manifest.files).toEqual([gltfFilename, `${gltfFilename}.manifest`])
     })
   })
 
@@ -347,13 +352,17 @@ describe('when executing a conversion with asset-reuse enabled', () => {
 
       // Mocked Unity: writes the non-cached bundles to outDirectory and returns 0.
       // GLB output uses the composite filename (Unity-side depsDigest naming);
-      // BIN stays at the bare `{hash}_{target}` form.
+      // BIN stays at the bare `{hash}_{target}` form. Each bundle is paired with
+      // its `.manifest` companion so the test exercises the same readdir shape
+      // production Unity produces.
       mockedRunConversion.mockImplementation(async (_logger: any, _components: any, options: any) => {
         expect(options.depsDigestByHash.get('hGlb')).toBe(perGlbDigest)
         expect(options.depsDigestByHash.get('hNewGlb')).toBe(perGlbDigest)
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(path.join(options.outDirectory, hNewGlbFilename), 'new-glb-bundle')
+        await fs.writeFile(path.join(options.outDirectory, `${hNewGlbFilename}.manifest`), 'new-glb-manifest')
         await fs.writeFile(path.join(options.outDirectory, 'hNewBuf_windows'), 'new-buf-bundle')
+        await fs.writeFile(path.join(options.outDirectory, 'hNewBuf_windows.manifest'), 'new-buf-manifest')
         return 0
       })
 
@@ -380,12 +389,23 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       // Pre-seeded canonical glb untouched (still the old bytes).
       expect(await read(components.cdnS3, 'test-bucket', `v48/assets/${hGlbFilename}`)).toBe('old-glb')
 
-      // Entity manifest lists all four bundle filenames (new + cached).
+      // Entity manifest lists every bundle plus its `.manifest` companion —
+      // both for assets Unity built locally (via readdir) and for cached assets
+      // appended from the probe result.
       const manifest = JSON.parse(
         (await read(components.cdnS3, 'test-bucket', 'manifest/bafy-entity-2_windows.json')) as string
       )
       expect(manifest.files.sort()).toEqual(
-        [hGlbFilename, 'hNewBuf_windows', hNewGlbFilename, 'hTex_windows'].sort()
+        [
+          hGlbFilename,
+          `${hGlbFilename}.manifest`,
+          'hNewBuf_windows',
+          'hNewBuf_windows.manifest',
+          hNewGlbFilename,
+          `${hNewGlbFilename}.manifest`,
+          'hTex_windows',
+          'hTex_windows.manifest'
+        ].sort()
       )
     })
   })

@@ -287,7 +287,7 @@ namespace DCL.ABConverter
                         settings.cachedHashes.Add(hash.Trim());
                 }
 
-                log.Info($"Received {settings.cachedHashes.Count} cached hash(es) — these GLTF/GLB/BIN bundles will be skipped.");
+                log.Info($"Received {settings.cachedHashes.Count} cached hash(es) — these GLTF/GLB bundles will be skipped.");
             }
 
             if (Utils.ParseOption(commandLineArgs, Config.CLI_SKIPPED_HASHES, 1, out string[] skippedHashesArg)
