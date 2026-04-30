@@ -131,14 +131,13 @@ namespace AssetBundleConverter.Tests
         }
 
         [Test]
-        public void ResolveDepNamesViaBundleNameToHash()
+        public void PreserveBundleNamesWithPlatformSuffixInDeps()
         {
             var bundleName = HASH + "_mac";
             const string DEP_BUNDLE = "lowercasehash_mac";
-            const string DEP_PROPER = "ProperCasedHash";
 
             bundleNameToHash[bundleName] = HASH;
-            bundleNameToHash[DEP_BUNDLE] = DEP_PROPER;
+            bundleNameToHash[DEP_BUNDLE] = "ProperCasedHash";
             manifest.GetAllAssetBundles().Returns(new[] { bundleName });
             manifest.GetAllDependencies(bundleName).Returns(new[] { DEP_BUNDLE });
 
@@ -146,7 +145,7 @@ namespace AssetBundleConverter.Tests
 
             var metadata = ParseCaptured();
             Assert.AreEqual(1, metadata.dependencies.Length);
-            Assert.AreEqual(DEP_PROPER, metadata.dependencies[0]);
+            Assert.AreEqual(DEP_BUNDLE, metadata.dependencies[0]);
         }
 
         [Test]
