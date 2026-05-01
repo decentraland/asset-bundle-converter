@@ -357,7 +357,9 @@ namespace DCL.ABConverter
                     log.Verbose($"Importing {relativePath}");
 
                     configureGltftime.Start();
-                    bool importerSuccess = env.gltfImporter.ConfigureImporter(relativePath, contentMap, gltf.AssetPath.fileRootPath, gltf.AssetPath.hash, settings.shaderType, importSettings.AnimationMethod);
+                    HashSet<string> omittedTextureUris = null;
+                    settings.partialOmittedUrisByHash?.TryGetValue(gltf.AssetPath.hash, out omittedTextureUris);
+                    bool importerSuccess = env.gltfImporter.ConfigureImporter(relativePath, contentMap, gltf.AssetPath.fileRootPath, gltf.AssetPath.hash, settings.shaderType, importSettings.AnimationMethod, omittedTextureUris);
                     configureGltftime.Stop();
 
                     if (importerSuccess)
@@ -1579,8 +1581,12 @@ namespace DCL.ABConverter
             return outputPath;
         }
 
-        private IGltfImport CreateGltfImport(AssetPath filePath) =>
-            env.gltfImporter.GetImporter(filePath, contentTable, settings.shaderType, settings.buildTarget);
+        private IGltfImport CreateGltfImport(AssetPath filePath)
+        {
+            HashSet<string> omittedTextureUris = null;
+            settings.partialOmittedUrisByHash?.TryGetValue(filePath.hash, out omittedTextureUris);
+            return env.gltfImporter.GetImporter(filePath, contentTable, settings.shaderType, settings.buildTarget, omittedTextureUris);
+        }
 
         private void ReduceTextureSizeIfNeeded(string texturePath, float maxSize)
         {

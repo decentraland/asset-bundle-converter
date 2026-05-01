@@ -114,6 +114,21 @@ namespace AssetBundleConverter
             /// Populated from the CLI `-depsDigestsFile` flag.
             /// </summary>
             public Dictionary<string, string> depsDigestByHash = new Dictionary<string, string>();
+
+            /// <summary>
+            /// Per-glb image URIs Unity should placeholder during import instead of failing.
+            /// Each entry maps a glb content hash to the set of glTF `images[].uri` strings
+            /// that did NOT resolve in the entity's content map. The provider returns a 1×1
+            /// transparent texture for those URIs, so the rest of the glb (geometry plus
+            /// resolvable textures) imports normally instead of being hard-skipped.
+            /// Distinct from <see cref="skippedHashes"/>: a hash that lands here produces a
+            /// (slightly degraded) bundle, whereas a skipped hash produces no bundle at all.
+            /// Keys are normalized to leading-slash, lowercased form at parse time so the
+            /// per-import contains-check is a plain string match against the same shape
+            /// `GltFastFileProvider.GetDependenciesPaths` produces.
+            /// Populated from the CLI `-partialOmittedUrisFile` flag.
+            /// </summary>
+            public Dictionary<string, HashSet<string>> partialOmittedUrisByHash = new Dictionary<string, HashSet<string>>();
             public bool reportErrors = false;
             public bool isWearable;
             public BuildTarget buildTarget = BuildTarget.WebGL;

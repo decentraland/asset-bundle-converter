@@ -853,6 +853,75 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     })
   })
 
+  describe('and a glb references one missing image URI but resolves all its other deps', () => {
+    let exitCode: number
+    let runConversionOptions: any
+
+    beforeEach(async () => {
+      // The glb references two textures: tex_a.png is in the entity content
+      // map, tex_missing.png is not. Pre-change this would have skipped the
+      // glb entirely; now it classifies as `partial` — Unity placeholders
+      // tex_missing.png and the rest of the glb still imports.
+      const partialGlb = buildGlb(['tex_a.png', 'tex_missing.png'])
+      const implementation = async (url: any) => {
+        const asString = typeof url === 'string' ? url : url?.toString() ?? ''
+        if (asString.endsWith('hPartialGlb')) {
+          return responseFor(partialGlb)
+        }
+        return responseFor(Buffer.from('fake-source-file'))
+      }
+      mockedFetch.mockImplementation(implementation)
+
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-partial',
+        type: 'scene',
+        content: [
+          { file: 'partial.glb', hash: 'hPartialGlb' },
+          { file: 'tex_a.png', hash: 'hTexA' }
+          // tex_missing.png intentionally absent
+        ],
+        metadata: { main: 'index.js' }
+      })
+
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        runConversionOptions = options
+        await fs.mkdir(options.outDirectory, { recursive: true })
+        // Unity produces a partial bundle for the glb plus the resolvable texture.
+        const glbName = `hPartialGlb_${[...options.depsDigestByHash.get('hPartialGlb')]
+          .join('')}_windows`
+        await fs.writeFile(path.join(options.outDirectory, glbName), 'partial-glb-bundle')
+        await fs.writeFile(path.join(options.outDirectory, 'hTexA_windows'), 'tex-a-bundle')
+        return 0
+      })
+
+      exitCode = await executeConversion(
+        components,
+        'bafy-partial',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should NOT fail the scene and should still invoke Unity', () => {
+      expect(exitCode).toBe(0)
+    })
+
+    it('should NOT pass the partial hash via -skippedHashes (it should still be converted)', () => {
+      expect(runConversionOptions.skippedHashes).toBeUndefined()
+    })
+
+    it('should pass the missing image URI to Unity via partialOmittedUrisByHash', () => {
+      expect(runConversionOptions.partialOmittedUrisByHash.get('hPartialGlb')).toEqual(['tex_missing.png'])
+    })
+
+    it('should include the partial glb hash in the digest map sent to Unity', () => {
+      expect(runConversionOptions.depsDigestByHash.has('hPartialGlb')).toBe(true)
+    })
+  })
+
   describe('and the catalyst returns a non-OK HTTP status while fetching glb bytes', () => {
     let exitCode: number
     let sentryCalls: any[]

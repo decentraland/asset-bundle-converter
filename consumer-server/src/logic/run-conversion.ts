@@ -172,6 +172,11 @@ export async function runConversion(
      * attempt, so no bundle is produced for them. Distinct from
      * `cachedHashes` which presumes the canonical bundle exists upstream. */
     skippedHashes?: string[]
+    /** Per-glb map of image URIs to placeholder during import. The glb itself
+     * is converted normally — Unity only substitutes a 1×1 transparent texture
+     * for the listed URIs. Mutually exclusive with `skippedHashes` for the
+     * same hash: a hash that would be hard-skipped never lands here. */
+    partialOmittedUrisByHash?: ReadonlyMap<string, string[]>
     depsDigestByHash?: ReadonlyMap<string, string>
   }
 ) {
@@ -242,12 +247,35 @@ export async function runConversion(
       ? `${resolve(options.outDirectory)}.deps-digests.json`
       : undefined
 
+  // Same sidecar pattern as `-depsDigestsFile`: written adjacent to the output
+  // directory so a stray orphan can't leak into the bundle upload, removed in
+  // the finally below regardless of how the run exits. Mapping is glb hash →
+  // list of glTF URI strings to placeholder.
+  const partialOmittedUrisFile =
+    options.partialOmittedUrisByHash && options.partialOmittedUrisByHash.size > 0
+      ? `${resolve(options.outDirectory)}.partial-omitted-uris.json`
+      : undefined
+
   try {
     if (depsDigestsFile && options.depsDigestByHash) {
       const payload: Record<string, string> = {}
       for (const [hash, digest] of options.depsDigestByHash) payload[hash] = digest
       await fs.writeFile(depsDigestsFile, JSON.stringify(payload), 'utf8')
       childArguments.push('-depsDigestsFile', depsDigestsFile)
+    }
+
+    if (partialOmittedUrisFile && options.partialOmittedUrisByHash) {
+      const payload: Record<string, string[]> = {}
+      for (const [hash, uris] of options.partialOmittedUrisByHash) {
+        if (!HASH_SHAPE_RE.test(hash)) {
+          throw new Error(
+            `partialOmittedUrisByHash contains a malformed hash ${JSON.stringify(hash)} — refusing to forward to Unity`
+          )
+        }
+        payload[hash] = [...uris]
+      }
+      await fs.writeFile(partialOmittedUrisFile, JSON.stringify(payload), 'utf8')
+      childArguments.push('-partialOmittedUrisFile', partialOmittedUrisFile)
     }
 
     return await executeProgram({
@@ -265,6 +293,11 @@ export async function runConversion(
       // so a half-written sidecar can't leak past the process.
       try {
         await fs.unlink(depsDigestsFile)
+      } catch {}
+    }
+    if (partialOmittedUrisFile) {
+      try {
+        await fs.unlink(partialOmittedUrisFile)
       } catch {}
     }
   }

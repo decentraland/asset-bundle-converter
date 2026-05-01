@@ -69,6 +69,17 @@ export type MigrationStats = {
    * step threw"; this one is "the step succeeded but the manifest carries
    * bundles the live converter no longer emits." */
   glbSkippedDuringMigration: number
+  /** Glb bundle entries whose hash now resolves as `partial` (image URI
+   * unresolvable in the catalyst's current entity content). The pre-PR
+   * bundle was produced when those deps WERE available, so its byte content
+   * doesn't match what the live converter would emit today (placeholder
+   * texture). Migrating it to the partial canonical path would silently put
+   * mismatched bytes at a content-addressed key — the next live conversion
+   * of any sharer of this glb would inherit the wrong bundle. We skip the
+   * copy; the next live conversion produces the correct partial bundle at
+   * its canonical path. The pre-PR entity-scoped bundle stays put as a
+   * fallback the Cloudflare Worker can route to. */
+  glbPartialSkippedDuringMigration: number
   errors: number
 }
 
@@ -86,6 +97,7 @@ function emptyStats(): MigrationStats {
     glbRenamedCount: 0,
     bundlesMissingSource: 0,
     glbSkippedDuringMigration: 0,
+    glbPartialSkippedDuringMigration: 0,
     errors: 0
   }
 }
@@ -309,12 +321,14 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
     // converter byte-for-byte, which is the invariant we care about.
     let depsDigestByHash: ReadonlyMap<string, string>
     let skippedHashes: ReadonlySet<string>
+    let partialHashes: ReadonlySet<string>
     try {
       const digestResult = await computePerAssetDigests({ content: entityContent }, catalystUrl, {
         fetcher: opts.gltfFetcher
       })
       depsDigestByHash = digestResult.digests
       skippedHashes = new Set(digestResult.skipped.keys())
+      partialHashes = new Set(digestResult.partial.keys())
     } catch (err: any) {
       // Catalyst returned 404 on a glb byte fetch, network failure, etc.
       // Content-deterministic defects (missing deps / unparseable bytes)
@@ -344,6 +358,18 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
       // is purged in a follow-up, those orphan keys disappear naturally.
       if (parts && skippedHashes.has(parts.hash)) {
         stats.glbSkippedDuringMigration++
+        return
+      }
+
+      // Bundles now classified `partial` are similarly not migrated: the
+      // pre-PR bytes were produced when deps were complete, but the canonical
+      // partial path is keyed by a digest that includes `<missing>` markers,
+      // and the bytes Unity emits there carry placeholder textures. Copying
+      // the pre-PR (all-resolved) bundle into the partial-keyed slot would
+      // silently put the wrong bytes at a content-addressed key. The next
+      // live conversion produces the correct partial bundle.
+      if (parts && partialHashes.has(parts.hash)) {
+        stats.glbPartialSkippedDuringMigration++
         return
       }
 

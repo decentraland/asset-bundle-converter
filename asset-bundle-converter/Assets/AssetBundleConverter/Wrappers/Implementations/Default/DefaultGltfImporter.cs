@@ -24,7 +24,8 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
             this.assetDatabase = assetDatabase;
         }
 
-        public IGltfImport GetImporter(AssetPath filePath, Dictionary<string, string> contentTable, ShaderType shaderType, BuildTarget buildTarget)
+        public IGltfImport GetImporter(AssetPath filePath, Dictionary<string, string> contentTable, ShaderType shaderType, BuildTarget buildTarget,
+            HashSet<string> omittedTextureUris = null)
         {
             if (shaderType != ShaderType.Dcl)
                 throw new ArgumentException($"Shader type: {shaderType} cannot be used with this importer, it must be ShaderType.Dcl");
@@ -32,19 +33,19 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
             getNewMaterialGenerator = new AssetBundleConverterMaterialGenerator();
 
             return new GltfImportWrapper(
-                new GltFastFileProvider(filePath.fileRootPath, filePath.hash, contentTable),
+                new GltFastFileProvider(filePath.fileRootPath, filePath.hash, contentTable, omittedTextureUris),
                 uninterruptedDeferAgent,
                 getNewMaterialGenerator,
                 gltfLogger);
         }
 
         public bool ConfigureImporter(string relativePath, ContentMap[] contentMap, string fileRootPath, string hash, ShaderType shaderType,
-            AnimationMethod animationMethod)
+            AnimationMethod animationMethod, HashSet<string> omittedTextureUris = null)
         {
             var gltfImporter = AssetImporter.GetAtPath(relativePath) as CustomGltfImporter;
             if (gltfImporter != null)
             {
-                gltfImporter.SetupCustomFileProvider(contentMap, fileRootPath, hash);
+                gltfImporter.SetupCustomFileProvider(contentMap, fileRootPath, hash, omittedTextureUris);
 
                 gltfImporter.useOriginalMaterials = shaderType == ShaderType.GlTFast;
                 gltfImporter.importSettings.AnimationMethod = animationMethod;

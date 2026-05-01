@@ -66,14 +66,26 @@ function extractGltfJson(bytes: Buffer, ext: '.glb' | '.gltf'): string {
 }
 
 /**
- * Parse a glb/gltf buffer and return the deduplicated set of external URI
+ * The split between image and buffer URIs is load-bearing for partial-
+ * conversion classification: a missing buffer URI means the glb has no
+ * geometry and must be hard-skipped, while a missing image URI is recoverable
+ * (Unity substitutes a placeholder texture and the rest of the glb still
+ * imports). Callers that don't care about the distinction can flatten.
+ */
+export type GltfDepRefs = {
+  images: string[]
+  buffers: string[]
+}
+
+/**
+ * Parse a glb/gltf buffer and return the deduplicated sets of external URI
  * references (glTF `images[].uri` and `buffers[].uri`). Data-URIs and
  * embedded buffers (missing `uri`) are filtered out — they're not external
  * dependencies.
  *
  * Order-invariance is a load-bearing correctness property: two glbs with
  * identical dep sets listed in different JSON order MUST produce identical
- * outputs here so per-asset digests collide. We return a plain array sorted
+ * outputs here so per-asset digests collide. Each array is sorted
  * ASCIIbetically; downstream code sorts again before hashing, but sorting
  * here makes the contract explicit at the parser boundary.
  *
@@ -82,7 +94,7 @@ function extractGltfJson(bytes: Buffer, ext: '.glb' | '.gltf'): string {
  * texture referenced from one `images[]` slot vs two. Same dep set either
  * way — same digest either way.
  */
-export function parseGltfDepRefs(bytes: Buffer, ext: '.glb' | '.gltf'): string[] {
+export function parseGltfDepRefs(bytes: Buffer, ext: '.glb' | '.gltf'): GltfDepRefs {
   const jsonText = extractGltfJson(bytes, ext)
 
   let parsed: unknown
@@ -102,21 +114,23 @@ export function parseGltfDepRefs(bytes: Buffer, ext: '.glb' | '.gltf'): string[]
   }
   const doc = parsed as GltfJson
 
-  const uris = new Set<string>()
-  const collectFrom = (arr: GltfJson['images'] | GltfJson['buffers']) => {
-    if (!Array.isArray(arr)) return
+  const collectFrom = (arr: GltfJson['images'] | GltfJson['buffers']): string[] => {
+    if (!Array.isArray(arr)) return []
+    const set = new Set<string>()
     for (const entry of arr) {
       if (!entry || typeof entry !== 'object') continue
       const uri = (entry as any).uri
       if (typeof uri !== 'string') continue // embedded / bufferView-backed
       if (uri.startsWith('data:')) continue // inline base64, not an external dep
-      uris.add(uri)
+      set.add(uri)
     }
+    return Array.from(set).sort()
   }
-  collectFrom(doc.images)
-  collectFrom(doc.buffers)
 
-  return Array.from(uris).sort()
+  return {
+    images: collectFrom(doc.images),
+    buffers: collectFrom(doc.buffers)
+  }
 }
 
 /**
