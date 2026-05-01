@@ -36,6 +36,14 @@ namespace AssetBundleConverter.Editor
         [HideInInspector] [SerializeField] private ContentMap[] contentMaps;
         [SerializeField] private string fileRootPath;
         [SerializeField] private string hash;
+        // Glb image URIs (lower-cased, leading-slash form) the consumer-server
+        // flagged as known-missing. The provider returns a transparent
+        // placeholder for these instead of throwing, so the rest of the glb
+        // imports normally. Serialized so it survives Unity's asynchronous
+        // OnImportAsset call: SetupCustomFileProvider runs during the
+        // converter's main pass, OnImportAsset runs whenever Unity decides to
+        // reimport the .meta asset, potentially in a separate process tick.
+        [HideInInspector] [SerializeField] private string[] omittedTextureUris;
 
         private Dictionary<string, string> contentTable;
         private HashSet<string> assetNames = new ();
@@ -47,11 +55,18 @@ namespace AssetBundleConverter.Editor
         private HashSet<Texture2D> metallics;
         private IEditorDownloadProvider downloadProvider;
 
-        public void SetupCustomFileProvider(ContentMap[] contentMap, string fileRootPath, string hash)
+        public void SetupCustomFileProvider(ContentMap[] contentMap, string fileRootPath, string hash,
+            HashSet<string> omittedTextureUris = null)
         {
             this.hash = hash;
             this.fileRootPath = fileRootPath;
             contentMaps = contentMap;
+            // Materialize HashSet → array for serialization. Empty set / null
+            // both serialize to null so the deserializer can branch on a single
+            // null check rather than length-zero array semantics.
+            this.omittedTextureUris = omittedTextureUris != null && omittedTextureUris.Count > 0
+                ? omittedTextureUris.ToArray()
+                : null;
             useCustomFileProvider = true;
         }
 
@@ -66,7 +81,11 @@ namespace AssetBundleConverter.Editor
                 foreach (ContentMap contentMap in contentMaps)
                     contentTable.Add(contentMap.file, contentMap.path);
 
-                SetupCustomGltfDownloadProvider(new GltFastFileProvider(fileRootPath, hash, contentTable));
+                HashSet<string> omittedSet = omittedTextureUris != null && omittedTextureUris.Length > 0
+                    ? new HashSet<string>(omittedTextureUris)
+                    : null;
+
+                SetupCustomGltfDownloadProvider(new GltFastFileProvider(fileRootPath, hash, contentTable, omittedSet));
             }
             else
             {

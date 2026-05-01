@@ -75,17 +75,35 @@ export type AssetCacheResult = {
  * Sort is filename-primary, hash-secondary so it's stable regardless of
  * catalyst response order and robust to two different filenames sharing a hash.
  *
+ * `missingUris` — optional list of glTF `images[].uri` strings that did NOT
+ * resolve in the entity's content map. Folded into the hash so two scenes
+ * referencing the same glb with DIFFERENT sets of missing image URIs produce
+ * DIFFERENT digests (Unity substitutes a placeholder for each missing image,
+ * so the bundle output bytes differ — distinct canonical filename required).
+ * When omitted/empty the payload shape is byte-identical to the pre-partial
+ * version, so existing golden vectors stay valid.
+ *
  * Exported for unit testing.
  */
-export function computeDepsDigest(entityContent: ReadonlyArray<{ file: string; hash: string }>): string {
+export function computeDepsDigest(
+  entityContent: ReadonlyArray<{ file: string; hash: string }>,
+  missingUris?: ReadonlyArray<string>
+): string {
   const deps = entityContent.filter((e) => GLB_DEP_EXTENSIONS.has(fileExtension(e.file)))
   deps.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0))
+  const missing = missingUris && missingUris.length > 0 ? [...missingUris].sort() : []
   // Feed JSON.stringify of the sorted tuple array rather than a hand-rolled
   // `${file}\t${hash}\n` concatenation so a filename that happens to contain a
   // tab or newline can't line-shift its neighbour's bytes into an identical
   // digest for a different dep set. DCL filenames are well-formed in practice,
   // but correctness shouldn't rely on that.
-  const payload = JSON.stringify(deps.map((d) => [d.file, d.hash]))
+  // Two payload shapes: bare array when no missing URIs (preserves the original
+  // wire format and all cross-language golden vectors), wrapper array
+  // `[deps, missing]` when at least one URI is missing (partial conversion).
+  const payload =
+    missing.length === 0
+      ? JSON.stringify(deps.map((d) => [d.file, d.hash]))
+      : JSON.stringify([deps.map((d) => [d.file, d.hash]), missing.map((u) => [u, '<missing>'])])
   // 32 hex = 128-bit. Birthday-paradox collision probability at k tuples is
   // ~k² / 2·2¹²⁸ ≈ k² / 6.8·10³⁸. Even at 10¹⁸ tuples (astronomically
   // beyond any realistic DCL scale) the probability is ~10⁻³; at 10⁹ it's
@@ -618,6 +636,29 @@ export type SkippedAsset = {
 }
 
 /**
+ * A glb/gltf that has at least one unresolvable IMAGE URI but is otherwise
+ * convertible — buffers all resolve, JSON parses, every URI is well-formed.
+ * Unity substitutes a 1×1 placeholder texture for each entry in
+ * `missingImageUris`; the rest of the asset (geometry plus the resolvable
+ * textures) imports normally. Distinct from `SkippedAsset` because partial
+ * conversions DO produce a canonical bundle — they just produce a different
+ * one than the all-resolved variant of the same glb hash.
+ */
+export type PartialAsset = {
+  hash: string
+  file: string
+  /** Same digest field that goes into `{hash}_{digest}_{target}`. Computed
+   * over (resolved deps + sorted missing URIs as `<missing>` markers) so the
+   * canonical filename differs from the all-resolved variant. */
+  digest: string
+  /** Image URIs that didn't resolve. Verbatim glTF URI strings — Unity
+   * normalizes these to `Utils.EnsureStartWithSlash(...).ToLower()` at parse
+   * time so the runtime contains-check is a plain string match. Sorted to
+   * keep digest input deterministic. */
+  missingImageUris: string[]
+}
+
+/**
  * Upper bound on the length of `SkippedAsset.detail`. Picked empirically:
  * the longest legitimate detail is `'glTF URI "<uri>" -> "<resolved>"'` for
  * a `missing-deps` skip; real DCL entity paths and URIs are well under 100
@@ -644,8 +685,18 @@ function truncateSkipDetail(s: string): string {
 }
 
 export type PerAssetDigestResult = {
+  /** Hash → digest for every glb/gltf that produces a bundle. Includes both
+   * fully-resolved (`ok`) and `partial` glbs — the `digest` differs between
+   * the two cases for the same glb hash, ensuring canonical paths don't
+   * collide between an all-resolved variant and a partial one. */
   digests: ReadonlyMap<string, string>
+  /** Hard-skip set: unparseable glbs and glbs missing a buffer URI. Forwarded
+   * to Unity via `-skippedHashes` so they're dropped before download. */
   skipped: ReadonlyMap<string, SkippedAsset>
+  /** Glbs missing one or more IMAGE URIs but otherwise convertible. Unity
+   * substitutes a placeholder for each missing URI (via the
+   * `-partialOmittedUrisFile` flag). These hashes ALSO appear in `digests`. */
+  partial: ReadonlyMap<string, PartialAsset>
 }
 
 /**
@@ -661,13 +712,20 @@ export type PerAssetDigestResult = {
  * `computeDepsDigest`'s own sort. Two glbs whose dep sets differ in any entry
  * produce distinct digests.
  *
- * Returns `{ digests, skipped }`. A glb that references a URI absent from
- * `entity.content`, or whose bytes are structurally malformed, lands in
- * `skipped` instead of `digests` — the caller is expected to forward those
- * hashes to Unity so they're not converted (the bundle they'd produce can't
- * render in-world anyway). Catalyst fetch failures keep their throw
- * semantics: those are transient network conditions where retrying via SQS
- * is the right response, not a content defect.
+ * Returns `{ digests, skipped, partial }`. Three classifications:
+ *   - `ok`: every URI resolves. Hash lands in `digests` only.
+ *   - `partial`: at least one IMAGE URI doesn't resolve, but every BUFFER URI
+ *     does and the glb parses cleanly. Hash lands in BOTH `digests` (with a
+ *     digest computed over resolved deps + sorted missing URIs as `<missing>`
+ *     markers) and `partial` (with the verbatim list of missing URIs that
+ *     Unity should placeholder).
+ *   - `skipped`: glb is unparseable OR is missing at least one buffer URI
+ *     (geometry data isn't recoverable). Forwarded to Unity so the bundle
+ *     isn't even attempted.
+ *
+ * Catalyst fetch failures keep their throw semantics: those are transient
+ * network conditions where retrying via SQS is the right response, not a
+ * content defect.
  */
 export async function computePerAssetDigests(
   entity: Pick<Entity, 'content'>,
@@ -698,9 +756,13 @@ export async function computePerAssetDigests(
   const gltfEntries = content.filter((e) => GLTF_EXTENSIONS_SET.has(fileExtension(e.file)))
   const digests = new Map<string, string>()
   const skipped = new Map<string, SkippedAsset>()
-  if (gltfEntries.length === 0) return { digests, skipped }
+  const partial = new Map<string, PartialAsset>()
+  if (gltfEntries.length === 0) return { digests, skipped, partial }
 
-  type WorkerResult = { kind: 'ok'; hash: string; digest: string } | { kind: 'skip'; skip: SkippedAsset }
+  type WorkerResult =
+    | { kind: 'ok'; hash: string; digest: string }
+    | { kind: 'partial'; partial: PartialAsset }
+    | { kind: 'skip'; skip: SkippedAsset }
 
   const work = mapBounded<(typeof gltfEntries)[number], WorkerResult>(
     gltfEntries,
@@ -712,9 +774,9 @@ export async function computePerAssetDigests(
       // determined defects (parse + resolve) become skips.
       const bytes = await fetcher(`${contentsBaseUrl}${entry.hash}`, ext)
 
-      let uris: string[]
+      let refs: { images: string[]; buffers: string[] }
       try {
-        uris = parseGltfDepRefs(bytes, ext)
+        refs = parseGltfDepRefs(bytes, ext)
       } catch (err: any) {
         return {
           kind: 'skip',
@@ -727,33 +789,40 @@ export async function computePerAssetDigests(
         }
       }
 
-      // Resolve URIs against entity content, dedup on (file, hash) — the glTF
-      // URI layer already dedups by URI, but two distinct URIs could resolve to
-      // the same content file via percent-encoding variants or path aliases.
+      // Bad percent-encoding / scheme / escapes-root URIs are structural
+      // defects in the glTF — Unity wouldn't accept them either. Treat as
+      // `unparseable` rather than `missing-deps` so operators can distinguish
+      // "content team published a broken entity" (missing deps) from
+      // "exporter emitted a malformed URI" (unparseable) at the metric layer.
+      // The thrown message embeds the offending URI string verbatim, which is
+      // content-controlled — truncate before storing so a multi-KB URI can't
+      // poison logs.
+      const unparseableSkip = (err: unknown): WorkerResult => ({
+        kind: 'skip',
+        skip: {
+          hash: entry.hash,
+          file: entry.file,
+          reason: 'unparseable',
+          detail: truncateSkipDetail((err as any)?.message ?? String(err))
+        }
+      })
+
+      // Resolve buffers first — a missing BUFFER means no geometry, so the
+      // glb is hard-skipped. Any buffer-URI shape error stays `unparseable`.
+      const resolvedDeps: Array<{ file: string; hash: string }> = []
       const seen = new Set<string>()
-      const deps: Array<{ file: string; hash: string }> = []
-      for (const uri of uris) {
+      const pushDep = (file: string, hash: string) => {
+        const key = `${file}\0${hash}`
+        if (seen.has(key)) return
+        seen.add(key)
+        resolvedDeps.push({ file, hash })
+      }
+      for (const uri of refs.buffers) {
         let resolved: string
         try {
           resolved = resolveUriToContentFile(uri, entry.file)
         } catch (err: any) {
-          // Bad percent-encoding / scheme / escapes-root URIs are still
-          // structural defects in the glTF — Unity wouldn't accept them
-          // either. Treat as `unparseable` rather than `missing-deps` so
-          // operators can distinguish "content team published a broken
-          // entity" (missing deps) from "exporter emitted a malformed URI"
-          // (unparseable) at the metric layer. The thrown message embeds
-          // the offending URI string verbatim, which is content-controlled —
-          // truncate before storing so a multi-KB URI can't poison logs.
-          return {
-            kind: 'skip',
-            skip: {
-              hash: entry.hash,
-              file: entry.file,
-              reason: 'unparseable',
-              detail: truncateSkipDetail(err?.message ?? String(err))
-            }
-          }
+          return unparseableSkip(err)
         }
         const hash = contentByFile.get(resolved)
         if (!hash) {
@@ -767,13 +836,48 @@ export async function computePerAssetDigests(
             }
           }
         }
-        const key = `${resolved}\0${hash}`
-        if (seen.has(key)) continue
-        seen.add(key)
-        deps.push({ file: resolved, hash })
+        pushDep(resolved, hash)
       }
 
-      return { kind: 'ok', hash: entry.hash, digest: computeDepsDigest(deps) }
+      // Resolve images — accumulate misses without short-circuiting. A glb
+      // with image-only misses becomes `partial`: Unity placeholders the
+      // missing slots and the rest of the asset still imports.
+      const missingImageUris: string[] = []
+      for (const uri of refs.images) {
+        let resolved: string
+        try {
+          resolved = resolveUriToContentFile(uri, entry.file)
+        } catch (err: any) {
+          // URI-shape error on an image still indicates an exporter bug — a
+          // glb with this defect won't import cleanly under any classification,
+          // so keep the existing `unparseable` semantics rather than
+          // pretending the image is recoverable.
+          return unparseableSkip(err)
+        }
+        const hash = contentByFile.get(resolved)
+        if (!hash) {
+          // De-dup raw URI strings; the parser already de-dups by URI but
+          // double-defends against any future change there.
+          if (!missingImageUris.includes(uri)) missingImageUris.push(uri)
+          continue
+        }
+        pushDep(resolved, hash)
+      }
+
+      if (missingImageUris.length === 0) {
+        return { kind: 'ok', hash: entry.hash, digest: computeDepsDigest(resolvedDeps) }
+      }
+
+      missingImageUris.sort()
+      return {
+        kind: 'partial',
+        partial: {
+          hash: entry.hash,
+          file: entry.file,
+          digest: computeDepsDigest(resolvedDeps, missingImageUris),
+          missingImageUris
+        }
+      }
     }
   )
 
@@ -801,10 +905,18 @@ export async function computePerAssetDigests(
   }
 
   for (const r of results) {
-    if (r.kind === 'ok') digests.set(r.hash, r.digest)
-    else skipped.set(r.skip.hash, r.skip)
+    if (r.kind === 'ok') {
+      digests.set(r.hash, r.digest)
+    } else if (r.kind === 'partial') {
+      // Partials carry a digest just like `ok` so the cache-probe path treats
+      // them uniformly — `canonicalFilenameForAsset` reads the same map.
+      digests.set(r.partial.hash, r.partial.digest)
+      partial.set(r.partial.hash, r.partial)
+    } else {
+      skipped.set(r.skip.hash, r.skip)
+    }
   }
-  return { digests, skipped }
+  return { digests, skipped, partial }
 }
 
 type CheckAssetCacheParams = {

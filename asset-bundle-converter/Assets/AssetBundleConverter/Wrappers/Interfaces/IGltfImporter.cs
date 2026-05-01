@@ -8,9 +8,10 @@ namespace AssetBundleConverter.Wrappers.Interfaces
 {
     public interface IGltfImporter
     {
-        IGltfImport GetImporter(AssetPath filePath, Dictionary<string, string> contentTable, ShaderType shaderType, BuildTarget buildTarget);
+        IGltfImport GetImporter(AssetPath filePath, Dictionary<string, string> contentTable, ShaderType shaderType, BuildTarget buildTarget,
+            HashSet<string> omittedTextureUris = null);
 
         bool ConfigureImporter(string relativePath, ContentMap[] contentMap, string fileRootPath, string hash, ShaderType shaderType,
-            AnimationMethod animationMethod);
+            AnimationMethod animationMethod, HashSet<string> omittedTextureUris = null);
     }
 }

@@ -21,7 +21,7 @@ function buildGlbWithRawJson(jsonBody: string): Buffer {
 
 describe('when parsing a .gltf buffer', () => {
   describe('and the document references textures and buffers', () => {
-    let result: string[]
+    let result: { images: string[]; buffers: string[] }
 
     beforeEach(() => {
       const gltf = JSON.stringify({
@@ -31,13 +31,13 @@ describe('when parsing a .gltf buffer', () => {
       result = parseGltfDepRefs(Buffer.from(gltf, 'utf8'), '.gltf')
     })
 
-    it('should return the URIs sorted ASCIIbetically', () => {
-      expect(result).toEqual(['buffer.bin', 'textures/a.png', 'textures/b.png'])
+    it('should return images and buffers in separate, sorted arrays', () => {
+      expect(result).toEqual({ images: ['textures/a.png', 'textures/b.png'], buffers: ['buffer.bin'] })
     })
   })
 
   describe('and the same URI is referenced from multiple entries', () => {
-    let result: string[]
+    let result: { images: string[]; buffers: string[] }
 
     beforeEach(() => {
       const gltf = JSON.stringify({
@@ -47,13 +47,13 @@ describe('when parsing a .gltf buffer', () => {
       result = parseGltfDepRefs(Buffer.from(gltf, 'utf8'), '.gltf')
     })
 
-    it('should collapse duplicates to one entry', () => {
-      expect(result).toEqual(['b.bin', 'other.png', 'tex.png'])
+    it('should collapse duplicates to one entry per kind', () => {
+      expect(result).toEqual({ images: ['other.png', 'tex.png'], buffers: ['b.bin'] })
     })
   })
 
   describe('and images use data URIs', () => {
-    let result: string[]
+    let result: { images: string[]; buffers: string[] }
 
     beforeEach(() => {
       const gltf = JSON.stringify({
@@ -64,12 +64,12 @@ describe('when parsing a .gltf buffer', () => {
     })
 
     it('should skip data URIs and return only external references', () => {
-      expect(result).toEqual(['real.png'])
+      expect(result).toEqual({ images: ['real.png'], buffers: [] })
     })
   })
 
   describe('and entries lack a uri field', () => {
-    let result: string[]
+    let result: { images: string[]; buffers: string[] }
 
     beforeEach(() => {
       const gltf = JSON.stringify({
@@ -80,7 +80,7 @@ describe('when parsing a .gltf buffer', () => {
     })
 
     it('should skip embedded entries', () => {
-      expect(result).toEqual(['tex.png'])
+      expect(result).toEqual({ images: ['tex.png'], buffers: [] })
     })
   })
 
@@ -88,7 +88,7 @@ describe('when parsing a .gltf buffer', () => {
     // Defensive: glTF spec requires object entries, but a malformed doc could
     // produce `images: [null]` or `images: ["tex.png"]`. Parser must skip,
     // not crash.
-    let result: string[]
+    let result: { images: string[]; buffers: string[] }
 
     beforeEach(() => {
       const gltf = JSON.stringify({
@@ -98,7 +98,7 @@ describe('when parsing a .gltf buffer', () => {
     })
 
     it('should skip non-object entries and return only well-formed URIs', () => {
-      expect(result).toEqual(['good.png'])
+      expect(result).toEqual({ images: ['good.png'], buffers: [] })
     })
   })
 
@@ -132,21 +132,21 @@ describe('when parsing a .gltf buffer', () => {
 
 describe('when parsing a .glb buffer', () => {
   describe('and the buffer is a well-formed glTF 2.0 binary with external references', () => {
-    let result: string[]
+    let result: { images: string[]; buffers: string[] }
 
     beforeEach(() => {
       const glb = buildGlbWithRawJson(JSON.stringify({ images: [{ uri: 'tex.png' }], buffers: [{ uri: 'b.bin' }] }))
       result = parseGltfDepRefs(glb, '.glb')
     })
 
-    it('should extract URIs from the embedded JSON chunk', () => {
-      expect(result).toEqual(['b.bin', 'tex.png'])
+    it('should extract URIs from the embedded JSON chunk into the images and buffers arrays', () => {
+      expect(result).toEqual({ images: ['tex.png'], buffers: ['b.bin'] })
     })
   })
 
   describe('and two glbs carry the same dep set in reverse order', () => {
-    let first: string[]
-    let second: string[]
+    let first: { images: string[]; buffers: string[] }
+    let second: { images: string[]; buffers: string[] }
 
     beforeEach(() => {
       const a = buildGlbWithRawJson(JSON.stringify({ images: [{ uri: 'a.png' }, { uri: 'b.png' }] }))
@@ -212,7 +212,7 @@ describe('when parsing a .glb buffer', () => {
     // glTF 2.0 requires 0x20 space padding, but some older exporters emit 0x00.
     // `JSON.parse` rejects trailing nulls with "Unexpected non-whitespace
     // character"; our parser strips them to match Unity/GLTFast tolerance.
-    let result: string[]
+    let result: { images: string[]; buffers: string[] }
 
     beforeEach(() => {
       const jsonBody = JSON.stringify({ images: [{ uri: 'tex.png' }] })
@@ -233,7 +233,7 @@ describe('when parsing a .glb buffer', () => {
     })
 
     it('should strip trailing null padding and parse the JSON cleanly', () => {
-      expect(result).toEqual(['tex.png'])
+      expect(result).toEqual({ images: ['tex.png'], buffers: [] })
     })
   })
 })

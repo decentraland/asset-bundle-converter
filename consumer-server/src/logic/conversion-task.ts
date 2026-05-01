@@ -14,6 +14,7 @@ import {
   computePerAssetDigests,
   purgeCachedBundlesFromOutput,
   AssetCacheResult,
+  PartialAsset,
   SkippedAsset
 } from './asset-reuse'
 
@@ -37,6 +38,23 @@ const CATALYST_FETCH_TIMEOUT_MS = 30_000
 
 async function getCdnBucket(components: Pick<AppComponents, 'config'>) {
   return (await components.config.getString('CDN_BUCKET')) || 'CDN_BUCKET'
+}
+
+/**
+ * Project the per-asset partial result into the wire shape Unity consumes via
+ * `-partialOmittedUrisFile`: `{ glbHash → [omittedUri, …] }`. Returns undefined
+ * (not an empty map) when there's nothing to send so `runConversion` skips the
+ * sidecar write entirely — keeps the no-partial path free of temp-file I/O.
+ */
+function buildPartialOmittedMap(
+  partialAssets: ReadonlyMap<string, PartialAsset>
+): ReadonlyMap<string, string[]> | undefined {
+  if (partialAssets.size === 0) return undefined
+  const out = new Map<string, string[]>()
+  for (const p of partialAssets.values()) {
+    out.set(p.hash, [...p.missingImageUris])
+  }
+  return out
 }
 
 /**
@@ -429,6 +447,7 @@ export async function executeConversion(
   // UNEXPECTED_ERROR.
   let depsDigestByHash: ReadonlyMap<string, string> | undefined
   let skippedAssets: ReadonlyMap<string, SkippedAsset> = new Map()
+  let partialAssets: ReadonlyMap<string, PartialAsset> = new Map()
   if (useAssetReuse && entity) {
     try {
       // 60 s aggregate cap on the digest pass. Each catalyst fetch is already
@@ -442,6 +461,7 @@ export async function executeConversion(
       })
       depsDigestByHash = digestResult.digests
       skippedAssets = digestResult.skipped
+      partialAssets = digestResult.partial
     } catch (err: any) {
       logger.error(`Per-asset digest computation failed: ${err?.message ?? err}`, defaultLoggerMetadata as any)
       components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
@@ -529,6 +549,41 @@ export async function executeConversion(
         build_target: $BUILD_TARGET,
         ab_version: abVersion,
         reason: skip.reason
+      })
+    }
+  }
+
+  // Partial conversions: glbs with one or more missing image URIs but otherwise
+  // convertible. Unity placeholders the missing texture slot(s) and the rest of
+  // the asset still imports. Logged separately from `skipped` because partial is
+  // a success path — mixing the two would conflate "asset rendered visibly
+  // wrong" (recoverable) with "asset not produced at all" (hard failure) on
+  // dashboards.
+  if (partialAssets.size > 0) {
+    const SAMPLE_LIMIT = 5
+    const samples: PartialAsset[] = []
+    let totalOmittedUris = 0
+    for (const p of partialAssets.values()) {
+      totalOmittedUris += p.missingImageUris.length
+      if (samples.length < SAMPLE_LIMIT) samples.push(p)
+    }
+    logger.info('Partially converting glb/gltf assets with missing image URIs', {
+      ...defaultLoggerMetadata,
+      count: partialAssets.size,
+      totalOmittedUris,
+      samples: samples.map((s) => ({
+        hash: s.hash,
+        file: s.file,
+        // Cap per-sample URI count so a glb referencing hundreds of broken
+        // textures can't dominate the log line.
+        missingImageUris: s.missingImageUris.slice(0, 5),
+        missingImageUriCount: s.missingImageUris.length
+      }))
+    } as any)
+    for (let i = 0; i < partialAssets.size; i++) {
+      components.metrics.increment('ab_converter_glb_partial_total', {
+        build_target: $BUILD_TARGET,
+        ab_version: abVersion
       })
     }
   }
@@ -655,6 +710,7 @@ export async function executeConversion(
         doISS: doISS,
         cachedHashes: useAssetReuse && cacheResult ? cacheResult.unitySkippableHashes : undefined,
         skippedHashes: skippedAssets.size > 0 ? [...skippedAssets.keys()] : undefined,
+        partialOmittedUrisByHash: buildPartialOmittedMap(partialAssets),
         depsDigestByHash
       })
     } else {

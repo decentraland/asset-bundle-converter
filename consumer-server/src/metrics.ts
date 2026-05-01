@@ -64,6 +64,11 @@ export const metricDeclarations = {
     help: 'Counter of glb/gltf assets silently skipped (missing dependencies or unparseable bytes)',
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target', 'ab_version', 'reason']
+  },
+  ab_converter_glb_partial_total: {
+    help: 'Counter of glb/gltf assets partially converted (one or more image URIs missing; Unity placeholdered the missing slot(s) and the rest of the asset imported normally)',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['build_target', 'ab_version']
   }
 }
 

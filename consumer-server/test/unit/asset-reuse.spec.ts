@@ -387,7 +387,7 @@ describe('when computing per-asset digests', () => {
     })
   })
 
-  describe('and a glb references a file that is not in the entity content', () => {
+  describe('and a glb references an IMAGE file that is not in the entity content', () => {
     let result: Awaited<ReturnType<typeof computePerAssetDigests>>
 
     beforeEach(async () => {
@@ -407,6 +407,43 @@ describe('when computing per-asset digests', () => {
       result = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })
     })
 
+    it('should classify the glb as partial rather than skipped', () => {
+      expect(result.skipped.has('hA')).toBe(false)
+    })
+
+    it('should still produce a digest for the partial glb so canonical filenames work', () => {
+      expect(result.digests.get('hA')).toMatch(/^[0-9a-f]{32}$/)
+    })
+
+    it('should record the missing image URI verbatim under partial', () => {
+      expect(result.partial.get('hA')).toEqual(
+        expect.objectContaining({
+          hash: 'hA',
+          file: 'a.glb',
+          missingImageUris: ['missing.png']
+        })
+      )
+    })
+
+    it('should still produce a digest for the unaffected sibling glb', () => {
+      expect(result.digests.get('hB')).toMatch(/^[0-9a-f]{32}$/)
+    })
+  })
+
+  describe('and a glb references a BUFFER file that is not in the entity content', () => {
+    // Buffer misses are NOT recoverable — geometry data is non-optional, so
+    // the glb is hard-skipped with reason `missing-deps`. Distinct from the
+    // image-miss case which lands in `partial`.
+    let result: Awaited<ReturnType<typeof computePerAssetDigests>>
+
+    beforeEach(async () => {
+      const entity = {
+        content: [{ file: 'a.glb', hash: 'hA' }]
+      }
+      const fetcher = makeFetcher(new Map([['hA', buildGlb([], ['missing.bin'])]]))
+      result = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })
+    })
+
     it('should not include the broken glb in the digest map', () => {
       expect(result.digests.has('hA')).toBe(false)
     })
@@ -421,19 +458,40 @@ describe('when computing per-asset digests', () => {
       )
     })
 
-    it('should still produce a digest for the unaffected sibling glb', () => {
-      expect(result.digests.get('hB')).toMatch(/^[0-9a-f]{32}$/)
+    it('should not record the broken glb under partial', () => {
+      expect(result.partial.has('hA')).toBe(false)
     })
   })
 
-  describe('and the entity has only one glb and it is broken', () => {
+  describe('and a glb has both a missing image AND a missing buffer', () => {
+    // Buffer miss wins: a glb without geometry can't be partially converted.
     let result: Awaited<ReturnType<typeof computePerAssetDigests>>
 
     beforeEach(async () => {
       const entity = {
         content: [{ file: 'a.glb', hash: 'hA' }]
       }
-      const fetcher = makeFetcher(new Map([['hA', buildGlb(['missing.png'])]]))
+      const fetcher = makeFetcher(new Map([['hA', buildGlb(['missing.png'], ['missing.bin'])]]))
+      result = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })
+    })
+
+    it('should classify as skipped (missing-deps), not partial', () => {
+      expect(result.skipped.get('hA')?.reason).toBe('missing-deps')
+    })
+
+    it('should not record the glb under partial', () => {
+      expect(result.partial.has('hA')).toBe(false)
+    })
+  })
+
+  describe('and the entity has only one glb and its buffer is missing', () => {
+    let result: Awaited<ReturnType<typeof computePerAssetDigests>>
+
+    beforeEach(async () => {
+      const entity = {
+        content: [{ file: 'a.glb', hash: 'hA' }]
+      }
+      const fetcher = makeFetcher(new Map([['hA', buildGlb([], ['missing.bin'])]]))
       result = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })
     })
 
@@ -470,20 +528,22 @@ describe('when computing per-asset digests', () => {
     })
   })
 
-  describe('and a glb references a pathologically long URI absent from the entity content', () => {
+  describe('and a glb references a pathologically long BUFFER URI absent from the entity content', () => {
     // Defends against log poisoning: the SkippedAsset.detail field can carry
     // user-controlled URI strings (the whole point of `missing-deps` is to
     // surface them), and structured-log backends typically reject or silently
     // drop fields above ~10 KB. Truncation at construction caps blast radius
-    // even if a single entity carries a glb with a 50 KB URI inside.
+    // even if a single entity carries a glb with a 50 KB URI inside. Uses a
+    // buffer URI because image misses now classify as `partial` (no skip
+    // detail to truncate) while buffer misses remain hard-skipped.
     let result: Awaited<ReturnType<typeof computePerAssetDigests>>
-    const longUri = 'a'.repeat(50_000) + '.png'
+    const longUri = 'a'.repeat(50_000) + '.bin'
 
     beforeEach(async () => {
       const entity = {
         content: [{ file: 'a.glb', hash: 'hA' }]
       }
-      const fetcher = makeFetcher(new Map([['hA', buildGlb([longUri])]]))
+      const fetcher = makeFetcher(new Map([['hA', buildGlb([], [longUri])]]))
       result = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })
     })
 
@@ -505,18 +565,18 @@ describe('when computing per-asset digests', () => {
     })
   })
 
-  describe('and a glb URI carries embedded ASCII control characters', () => {
+  describe('and a glb BUFFER URI carries embedded ASCII control characters', () => {
     // Defense-in-depth alongside the length cap: a URI containing literal
     // \n / \r / NUL bytes would otherwise inject phantom lines into plaintext
     // log backends and crash some structured-log shippers. Truncation
     // sanitises these before storing, replacing each control char with a
     // single space.
     let result: Awaited<ReturnType<typeof computePerAssetDigests>>
-    const evilUri = 'a\nb\rc\tmissing.png\x00x'
+    const evilUri = 'a\nb\rc\tmissing.bin\x00x'
 
     beforeEach(async () => {
       const entity = { content: [{ file: 'a.glb', hash: 'hA' }] }
-      const fetcher = makeFetcher(new Map([['hA', buildGlb([evilUri])]]))
+      const fetcher = makeFetcher(new Map([['hA', buildGlb([], [evilUri])]]))
       result = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })
     })
 
@@ -527,6 +587,106 @@ describe('when computing per-asset digests', () => {
     it('should strip control characters from the stored detail', () => {
       const detail = result.skipped.get('hA')?.detail ?? ''
       expect(detail).not.toMatch(/[\x00-\x1f\x7f]/) // eslint-disable-line no-control-regex
+    })
+  })
+
+  describe('and two scenes reference the same glb with different missing image sets', () => {
+    // The partial digest folds the missing-image URI list into the canonical
+    // filename so two scenes that share a glb hash but DIFFER in which
+    // textures resolved produce DIFFERENT canonical bundles. Otherwise the
+    // partial bundle (with placeholders for some textures) would collide on
+    // S3 with the partial bundle for a different "shape" of partial.
+    let digestA: string
+    let digestB: string
+
+    beforeEach(async () => {
+      const entityA = {
+        content: [
+          { file: 'a.glb', hash: 'hA' },
+          { file: 'tex1.png', hash: 'hT1' }
+          // tex2.png is missing
+        ]
+      }
+      const entityB = {
+        content: [
+          { file: 'a.glb', hash: 'hA' },
+          { file: 'tex2.png', hash: 'hT2' }
+          // tex1.png is missing
+        ]
+      }
+      const fetcher = makeFetcher(new Map([['hA', buildGlb(['tex1.png', 'tex2.png'])]]))
+      const resultA = await computePerAssetDigests(entityA, 'https://peer.decentraland.org/content', { fetcher })
+      const resultB = await computePerAssetDigests(entityB, 'https://peer.decentraland.org/content', { fetcher })
+      digestA = resultA.digests.get('hA')!
+      digestB = resultB.digests.get('hA')!
+    })
+
+    it('should produce distinct partial digests so canonical filenames differ', () => {
+      expect(digestA).not.toBe(digestB)
+    })
+  })
+
+  describe('and two scenes reference the same glb with the SAME missing image set', () => {
+    // The other half of the determinism contract: same glb + same missing
+    // set must produce the same digest so cross-scene reuse still works for
+    // partials that genuinely degraded the same way.
+    let digestA: string
+    let digestB: string
+
+    beforeEach(async () => {
+      // Both entities lack tex2.png but have tex1.png.
+      const entityA = {
+        content: [
+          { file: 'a.glb', hash: 'hA' },
+          { file: 'tex1.png', hash: 'hT1' }
+        ]
+      }
+      const entityB = {
+        content: [
+          { file: 'a.glb', hash: 'hA' },
+          { file: 'tex1.png', hash: 'hT1' }
+        ]
+      }
+      const fetcher = makeFetcher(new Map([['hA', buildGlb(['tex1.png', 'tex2.png'])]]))
+      const resultA = await computePerAssetDigests(entityA, 'https://peer.decentraland.org/content', { fetcher })
+      const resultB = await computePerAssetDigests(entityB, 'https://peer.decentraland.org/content', { fetcher })
+      digestA = resultA.digests.get('hA')!
+      digestB = resultB.digests.get('hA')!
+    })
+
+    it('should produce identical digests so cross-scene reuse still works for matching partials', () => {
+      expect(digestA).toBe(digestB)
+    })
+  })
+
+  describe('and a glb with all images resolved would otherwise share a hash with a partial variant', () => {
+    // The all-resolved variant must NOT collide with the partial variant —
+    // their byte content differs (placeholder vs real texture) so canonical
+    // paths must too. This is the contract that protects existing storage.
+    let allResolvedDigest: string
+    let partialDigest: string
+
+    beforeEach(async () => {
+      const entityFull = {
+        content: [
+          { file: 'a.glb', hash: 'hA' },
+          { file: 'tex.png', hash: 'hTex' }
+        ]
+      }
+      const entityPartial = {
+        content: [{ file: 'a.glb', hash: 'hA' }]
+      }
+      const fetcher = makeFetcher(new Map([['hA', buildGlb(['tex.png'])]]))
+      const resultFull = await computePerAssetDigests(entityFull, 'https://peer.decentraland.org/content', { fetcher })
+      const resultPartial = await computePerAssetDigests(entityPartial, 'https://peer.decentraland.org/content', {
+        fetcher
+      })
+      allResolvedDigest = resultFull.digests.get('hA')!
+      partialDigest = resultPartial.digests.get('hA')!
+    })
+
+    it('should produce different digests so the two variants land at distinct canonical paths', () => {
+      expect(allResolvedDigest).not.toBe(partialDigest)
     })
   })
 

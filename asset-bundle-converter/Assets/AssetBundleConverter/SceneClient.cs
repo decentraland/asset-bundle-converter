@@ -87,7 +87,7 @@ namespace DCL.ABConverter
             {
                 ParseCommonSettings(commandLineArgs, settings);
 
-                log.Info($"Asset reuse state: cachedHashes={settings.cachedHashes?.Count ?? 0}, depsDigestByHash={settings.depsDigestByHash?.Count ?? 0} entries");
+                log.Info($"Asset reuse state: cachedHashes={settings.cachedHashes?.Count ?? 0}, depsDigestByHash={settings.depsDigestByHash?.Count ?? 0} entries, partialOmittedUrisByHash={settings.partialOmittedUrisByHash?.Count ?? 0} entries");
 
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_SHADER_TARGET, 1, out string[] shaderTarget))
                 {
@@ -323,6 +323,46 @@ namespace DCL.ABConverter
 
                 settings.depsDigestByHash = map;
                 log.Info($"Loaded {settings.depsDigestByHash.Count} per-asset deps digest(s) from {filePath} — GLB/GLTF bundles will be named with the matching digest.");
+            }
+
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_PARTIAL_OMITTED_URIS_FILE, 1, out string[] partialOmittedUrisFileArg)
+                && partialOmittedUrisFileArg != null
+                && !string.IsNullOrWhiteSpace(partialOmittedUrisFileArg[0]))
+            {
+                string filePath = partialOmittedUrisFileArg[0].Trim();
+                // Same fail-loud policy as -depsDigestsFile: a missing or malformed
+                // sidecar would silently revert partial glbs to the whole-glb-skip
+                // failure mode, hiding the regression behind a successful Unity exit.
+                if (!File.Exists(filePath))
+                    throw new ArgumentException($"-partialOmittedUrisFile points at '{filePath}' which does not exist");
+
+                string payload = File.ReadAllText(filePath);
+                Dictionary<string, List<string>> rawMap =
+                    JsonConvert.DeserializeObject<Dictionary<string, List<string>>>(payload);
+                if (rawMap == null)
+                    throw new ArgumentException($"-partialOmittedUrisFile '{filePath}' did not parse as a string-to-string-list map");
+
+                int totalOmittedUris = 0;
+                settings.partialOmittedUrisByHash = new Dictionary<string, HashSet<string>>(rawMap.Count);
+                foreach (var kv in rawMap)
+                {
+                    if (string.IsNullOrWhiteSpace(kv.Key) || kv.Value == null) continue;
+                    var normalized = new HashSet<string>();
+                    foreach (var rawUri in kv.Value)
+                    {
+                        if (string.IsNullOrWhiteSpace(rawUri)) continue;
+                        // Match the form GltFastFileProvider.GetDependenciesPaths produces
+                        // (`Utils.EnsureStartWithSlash(...).ToLower()`) so the runtime
+                        // contains-check is a plain string match. Normalizing once at
+                        // parse time keeps the hot path branch-free.
+                        normalized.Add(Utils.EnsureStartWithSlash(rawUri).ToLower());
+                    }
+                    if (normalized.Count == 0) continue;
+                    settings.partialOmittedUrisByHash[kv.Key] = normalized;
+                    totalOmittedUris += normalized.Count;
+                }
+
+                log.Info($"Loaded partial-omit map from {filePath}: {settings.partialOmittedUrisByHash.Count} glb hash(es), {totalOmittedUris} omitted URI(s) total — Unity will substitute a transparent placeholder for those textures during import.");
             }
 
             // Target is setup during the commandline argument -buildTarget
