@@ -690,8 +690,13 @@ export async function computePerAssetDigests(
   const aggregateTimeoutMs = options?.aggregateTimeoutMs
 
   const content = entity.content ?? []
+  // Case-insensitive lookup: glTF URIs and entity content-map paths may
+  // differ only in casing (e.g. "Floor03_Normal.png" vs "Floor03_normal.png").
+  // macOS/Windows file systems paper over this, so Unity converts fine — but a
+  // strict Map.get() would falsely mark the dep as missing. Lowercasing keys
+  // mirrors the case-insensitive resolution Unity relies on.
   const contentByFile = new Map<string, string>()
-  for (const c of content) contentByFile.set(c.file, c.hash)
+  for (const c of content) contentByFile.set(c.file.toLowerCase(), c.hash)
 
   const contentsBaseUrl = normalizeContentsBaseUrl(contentServerUrl)
 
@@ -755,7 +760,7 @@ export async function computePerAssetDigests(
             }
           }
         }
-        const hash = contentByFile.get(resolved)
+        const hash = contentByFile.get(resolved.toLowerCase())
         if (!hash) {
           return {
             kind: 'skip',
