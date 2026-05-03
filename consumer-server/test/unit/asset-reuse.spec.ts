@@ -426,6 +426,30 @@ describe('when computing per-asset digests', () => {
     })
   })
 
+  describe('and a glb references a dep whose content-map path differs only in casing', () => {
+    let result: Awaited<ReturnType<typeof computePerAssetDigests>>
+
+    beforeEach(async () => {
+      const entity = {
+        content: [
+          // Content map uses lowercase "normal", glb URI uses uppercase "Normal"
+          { file: 'models/floor.glb', hash: 'hFloor' },
+          { file: 'models/Floor03_normal.png', hash: 'hNormal' }
+        ]
+      }
+      const fetcher = makeFetcher(new Map([['hFloor', buildGlb(['Floor03_Normal.png'])]]))
+      result = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content', { fetcher })
+    })
+
+    it('should resolve the dep via case-insensitive lookup and produce a digest', () => {
+      expect(result.digests.get('hFloor')).toMatch(/^[0-9a-f]{32}$/)
+    })
+
+    it('should not mark the glb as skipped', () => {
+      expect(result.skipped.size).toBe(0)
+    })
+  })
+
   describe('and the entity has only one glb and it is broken', () => {
     let result: Awaited<ReturnType<typeof computePerAssetDigests>>
 
