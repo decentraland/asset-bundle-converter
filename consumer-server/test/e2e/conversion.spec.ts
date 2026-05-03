@@ -33,6 +33,9 @@ type SceneDef = {
 }
 
 const SCENES: SceneDef[] = [
+  // Temporary: zone 0,0 has glbs with case-mismatched dep URIs (e.g. Floor03_Normal vs Floor03_normal).
+  // Confirm the case-insensitive fix works — no "Skipping glb/gltf assets" warning should appear in logs.
+  { name: 'Zone 0,0 (case-sensitivity check)', coords: '0,0', baseUrl: CATALYST_BASE_URL, isWorld: false },
   { name: 'ABTestScene1.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true },
   { name: 'ABTestScene2.dcl.eth', coords: '0,0', baseUrl: WORLDS_BASE_URL, isWorld: true, expectedNewFiles: 8 },
   { name: 'Catalyst 19,3', coords: '19,3', baseUrl: CATALYST_BASE_URL, isWorld: false, expectedNewFiles: 0 },
