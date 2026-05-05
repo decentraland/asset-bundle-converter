@@ -44,6 +44,17 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
       }
 
       await components.taskQueue.consumeAndProcessJob(async (job, _message) => {
+        // Skip non-conversion payloads that may leak into the queue (e.g. world_undeployment).
+        if (!job?.entity?.entityId) {
+          logger.warn('Skipping job with no entity.entityId — not a conversion job', {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            type: (job as any)?.type,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            subType: (job as any)?.subType
+          })
+          return
+        }
+
         let statusCode: number
         try {
           components.metrics.increment('ab_converter_running_conversion')
