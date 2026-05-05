@@ -27,6 +27,26 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
 
   const logger = components.logs.getLogger('main-loop')
 
+  // On graceful shutdown, return any in-flight queue message to the queue immediately so another
+  // worker can pick it up. Without this, the message stays invisible for the SQS visibility
+  // timeout (~3h) and the conversion is effectively lost until then.
+  // Lifecycle's built-in handler catches SIGTERM and stops components in parallel; SIGINT is not
+  // handled by Lifecycle, so we cover it here too. process.once avoids duplicate releases if the
+  // signal somehow re-fires.
+  const releaseOnShutdown = async (signal: NodeJS.Signals) => {
+    logger.info(`Received ${signal}, releasing in-flight job before shutdown`)
+    try {
+      await Promise.race([
+        components.taskQueue.releaseInFlight(),
+        new Promise<void>((_, reject) => setTimeout(() => reject(new Error('release timed out')), 5000))
+      ])
+    } catch (err: any) {
+      logger.error(err)
+    }
+  }
+  process.once('SIGTERM', () => void releaseOnShutdown('SIGTERM'))
+  process.once('SIGINT', () => void releaseOnShutdown('SIGINT'))
+
   components.runner.runTask(async (opt) => {
     const platform = (await components.config.requireString('PLATFORM')).toLocaleLowerCase() as
       | 'windows'
