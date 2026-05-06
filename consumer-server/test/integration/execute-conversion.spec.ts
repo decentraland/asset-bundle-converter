@@ -514,6 +514,83 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     })
   })
 
+  describe('and force=true and the canonical prefix is partially populated', () => {
+    // Documents that force skips the cache probe wholesale — partial pre-existing
+    // canonical state (one asset cached, one missing) does NOT translate to
+    // partial cachedHashes for Unity. The probe never runs, cacheResult stays
+    // null, every asset is reconverted.
+    let exitCode: number
+    let cachedGlbFilename: string
+    let missingGlbFilename: string
+
+    beforeEach(async () => {
+      const content = [
+        { file: 'cached.glb', hash: 'hCachedGlb' },
+        { file: 'missing.glb', hash: 'hMissingGlb' }
+      ]
+      setupFetchMock(
+        new Map([
+          ['hCachedGlb', buildGlb([], [])],
+          ['hMissingGlb', buildGlb([], [])]
+        ])
+      )
+      const digest = computeDepsDigest([])
+      const digests = new Map([
+        ['hCachedGlb', digest],
+        ['hMissingGlb', digest]
+      ])
+      cachedGlbFilename = canonicalFilenameForAsset('hCachedGlb', '.glb', 'windows', digests)
+      missingGlbFilename = canonicalFilenameForAsset('hMissingGlb', '.glb', 'windows', digests)
+
+      // Seed canonical for ONE of the two assets. Without force, the probe
+      // would classify hCachedGlb as cached and hMissingGlb as missing; force
+      // must short-circuit that distinction.
+      await components.cdnS3
+        .putObject({ Bucket: 'test-bucket', Key: `v48/assets/${cachedGlbFilename}`, Body: 'stale-cached' })
+        .promise()
+
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-force-partial',
+        type: 'scene',
+        content,
+        metadata: {}
+      })
+
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        await fs.mkdir(options.outDirectory, { recursive: true })
+        await fs.writeFile(path.join(options.outDirectory, cachedGlbFilename), 'fresh-cached')
+        await fs.writeFile(path.join(options.outDirectory, missingGlbFilename), 'fresh-missing')
+        return 0
+      })
+
+      exitCode = await executeConversion(
+        components,
+        'bafy-force-partial',
+        'https://peer.decentraland.org/content',
+        /* force */ true,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should return exit code 0', () => {
+      expect(exitCode).toBe(0)
+    })
+
+    it('should not pass cachedHashes to Unity even though one asset would have matched', () => {
+      expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
+    })
+
+    it('should overwrite the pre-existing canonical bytes for the would-have-been-cached asset', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', `v48/assets/${cachedGlbFilename}`)).toBe('fresh-cached')
+    })
+
+    it('should upload fresh canonical bytes for the previously-missing asset', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', `v48/assets/${missingGlbFilename}`)).toBe('fresh-missing')
+    })
+  })
+
   describe('and doISS=true and the canonical prefix is fully populated', () => {
     let exitCode: number
 
