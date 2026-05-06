@@ -456,24 +456,33 @@ describe('when executing a conversion with asset-reuse enabled', () => {
 
   describe('and force=true and the canonical prefix is fully populated', () => {
     let exitCode: number
+    let composedGlbFilename: string
 
     beforeEach(async () => {
-      // Seed canonical for every hash in the scene — this is the full-cache
-      // short-circuit scenario. With force=true, that must be bypassed.
+      // force=true skips the cache probe so Unity reconverts every asset and
+      // overwrites the existing canonical bytes — the operator's intent when
+      // re-queuing a scene with bad bundles.
+      const content = [{ file: 'model.glb', hash: 'hGlb' }]
+      setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
+      const digest = computeDepsDigest([])
+      const digests = new Map([['hGlb', digest]])
+      composedGlbFilename = canonicalFilenameForAsset('hGlb', '.glb', 'windows', digests)
+
+      // Seed stale canonical bytes — force should overwrite them.
       await components.cdnS3
-        .putObject({ Bucket: 'test-bucket', Key: 'v48/assets/hGlb_windows', Body: 'cached-glb' })
+        .putObject({ Bucket: 'test-bucket', Key: `v48/assets/${composedGlbFilename}`, Body: 'stale-glb' })
         .promise()
 
       mockedGetActiveEntity.mockResolvedValue({
         id: 'bafy-force',
         type: 'scene',
-        content: [{ file: 'model.glb', hash: 'hGlb' }],
+        content,
         metadata: {}
       })
 
       mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(options.outDirectory, { recursive: true })
-        await fs.writeFile(path.join(options.outDirectory, 'hGlb_windows'), 'freshly-converted')
+        await fs.writeFile(path.join(options.outDirectory, composedGlbFilename), 'fresh-glb')
         return 0
       })
 
@@ -492,20 +501,16 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       expect(exitCode).toBe(0)
     })
 
-    it('should invoke Unity despite the cache being warm', () => {
+    it('should invoke Unity despite the cache being warm (force bypasses short-circuit)', () => {
       expect(mockedRunConversion).toHaveBeenCalledTimes(1)
     })
 
-    it('should NOT pass a cachedHashes list to Unity', () => {
+    it('should not pass cachedHashes to Unity (force skips the cache probe)', () => {
       expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
     })
 
-    it('should upload the freshly-converted bundle to the entity-scoped path (reuse path is gated off by force)', async () => {
-      expect(await read(components.cdnS3, 'test-bucket', 'v48/bafy-force/hGlb_windows')).toContain('freshly-converted')
-    })
-
-    it('should leave the pre-seeded canonical bytes untouched', async () => {
-      expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/hGlb_windows')).toBe('cached-glb')
+    it('should overwrite existing canonical bytes with the freshly converted output', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', `v48/assets/${composedGlbFilename}`)).toBe('fresh-glb')
     })
   })
 
