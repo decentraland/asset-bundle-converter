@@ -245,6 +245,17 @@ export type TriagePassOutcome =
  * Unity) and return `{ kind: 'needs-unity' }` immediately. The Unity loop's
  * subsequent `executeConversion` call still does its own catalyst fetch, so
  * we don't lose any state.
+ *
+ * **Maintenance note**: this function intentionally duplicates the probe
+ * portion of `executeConversion` (lines ~644-820) rather than sharing a
+ * helper, because the two callers have divergent return-type semantics
+ * (number exit code vs. TriagePassOutcome union) and the failure-path
+ * upload sequences (failed-manifest sentinel, asset-reuse short-circuit
+ * marker, scene source files) are subtly different. **If you change the
+ * probe / shouldIgnore / fast-path-upload logic in either function, mirror
+ * the change in the other.** A future refactor could extract a shared
+ * `probeScene()` helper returning a structured discriminator both callers
+ * consume — out of scope for this PR.
  */
 export async function executeTriagePass(
   components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry'>,
@@ -425,7 +436,14 @@ export async function executeTriagePass(
   }
 
   try {
-    await uploadSceneSourceFilesToCDN(components, entity, contentServerUrl, entityScopedUploadPath, cdnBucket)
+    // Defensive: useAssetReuse already requires entityType === 'scene', so we
+    // can't get here for a non-scene. The explicit guard mirrors the same
+    // pattern in executeConversion's fast-path upload (see line ~837 below)
+    // so a future refactor that loosens useAssetReuse can't silently start
+    // uploading scene source files for wearables / emotes.
+    if (entityType === 'scene') {
+      await uploadSceneSourceFilesToCDN(components, entity, contentServerUrl, entityScopedUploadPath, cdnBucket)
+    }
     await uploadEntityManifest(components, cdnBucket, manifestFile, manifest)
   } catch (err: any) {
     components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
@@ -584,6 +602,21 @@ export async function executeLODConversion(
   logger.debug('LOD Conversion finished', defaultLoggerMetadata)
 }
 
+/**
+ * Full conversion path: probe → fast-path-or-Unity → upload → manifest.
+ *
+ * **Maintenance note**: the probe portion of this function (entity fetch,
+ * `shouldIgnoreConversion`, per-asset digest, `checkAssetCache`, and the
+ * `fullCacheHit` short-circuit at the bottom of the probe block) has a
+ * parallel implementation in `executeTriagePass` above. The two were
+ * deliberately not unified because their return-type semantics differ
+ * (number exit code here, `TriagePassOutcome` union there) and their
+ * failure-handling diverges (this one runs Unity on most non-hit paths;
+ * triage just signals `needs-unity`). **If you touch the probe /
+ * shouldIgnore / fast-path-upload logic, mirror the change in
+ * `executeTriagePass`.** A future refactor could extract a shared
+ * `probeScene()` helper.
+ */
 export async function executeConversion(
   components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry'>,
   entityId: string,

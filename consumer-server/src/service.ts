@@ -263,6 +263,18 @@ type RepublishArgs = {
   logger: ReturnType<AppComponents['logs']['getLogger']>
 }
 
+// **Lost-work warning**: the SQS adapter's consumeAndProcessJob deletes the
+// triage message in its finally block (after this function throws or
+// resolves), so a thrown error here means we acked the triage message
+// without successfully republishing — work is permanently lost. This is a
+// known limitation of the current task-queue contract (delete-in-finally),
+// not introduced by the triage→Unity split.
+//
+// **Required ops gate before flipping FAST_PATH_TRIAGE_ENABLED=true**:
+// configure an alert on `ab_converter_unity_queue_publish_errors_total > 0`
+// with a low threshold (any non-zero rate is suspicious) so a wedged Unity
+// queue is detected before significant backlog is lost. Throwing here also
+// produces a loud error log keyed on entityId for incident triage.
 async function republishToUnityQueue(args: RepublishArgs): Promise<void> {
   const { job, isPriority, components, $BUILD_TARGET, logger } = args
   try {
@@ -272,8 +284,6 @@ async function republishToUnityQueue(args: RepublishArgs): Promise<void> {
       priority: isPriority ? 'true' : 'false'
     })
   } catch (err: any) {
-    // Lost-work signal: the triage message will be acked even though we
-    // couldn't republish. Surface loudly so ops alerting catches it.
     logger.error(`Failed to republish job to Unity queue — work will be lost: ${err?.message ?? err}`, {
       entityId: job?.entity?.entityId
     })
