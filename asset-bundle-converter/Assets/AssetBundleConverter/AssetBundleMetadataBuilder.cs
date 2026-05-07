@@ -38,16 +38,9 @@ namespace DCL.ABConverter
 
                 if (deps.Length > 0)
                 {
-                    deps = deps.Where(s => !s.Contains("_IGNORE")).ToArray();
-
-                    metadata.dependencies = deps.Select(x =>
-                                                 {
-                                                     if (bundleNameToHash.TryGetValue(x, out string expression))
-                                                         return expression;
-
-                                                     return x;
-                                                 })
-                                                .ToArray();
+                    metadata.dependencies = deps
+                        .Where(s => !s.Contains("_IGNORE") && bundleNameToHash.ContainsKey(s))
+                        .ToArray();
                 }
 
                 string json = JsonUtility.ToJson(metadata);

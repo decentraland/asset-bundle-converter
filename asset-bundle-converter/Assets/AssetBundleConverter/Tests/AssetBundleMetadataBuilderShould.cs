@@ -101,6 +101,7 @@ namespace AssetBundleConverter.Tests
             const string FILTERED_DEP = "dcl/scene_IGNORE_mac";
 
             bundleNameToHash[bundleName] = HASH;
+            bundleNameToHash[KEPT_DEP] = "bafkreitexture";
             manifest.GetAllAssetBundles().Returns(new[] { bundleName });
             manifest.GetAllDependencies(bundleName).Returns(new[] { KEPT_DEP, FILTERED_DEP });
 
@@ -119,6 +120,8 @@ namespace AssetBundleConverter.Tests
             const string DEP_B = "bafkreibuffer_mac";
 
             bundleNameToHash[bundleName] = HASH;
+            bundleNameToHash[DEP_A] = "bafkreitexture";
+            bundleNameToHash[DEP_B] = "bafkreibuffer";
             manifest.GetAllAssetBundles().Returns(new[] { bundleName });
             manifest.GetAllDependencies(bundleName).Returns(new[] { DEP_A, DEP_B });
 
@@ -131,14 +134,13 @@ namespace AssetBundleConverter.Tests
         }
 
         [Test]
-        public void ResolveDepNamesViaBundleNameToHash()
+        public void PreserveBundleNamesWithPlatformSuffixInDeps()
         {
             var bundleName = HASH + "_mac";
             const string DEP_BUNDLE = "lowercasehash_mac";
-            const string DEP_PROPER = "ProperCasedHash";
 
             bundleNameToHash[bundleName] = HASH;
-            bundleNameToHash[DEP_BUNDLE] = DEP_PROPER;
+            bundleNameToHash[DEP_BUNDLE] = "ProperCasedHash";
             manifest.GetAllAssetBundles().Returns(new[] { bundleName });
             manifest.GetAllDependencies(bundleName).Returns(new[] { DEP_BUNDLE });
 
@@ -146,7 +148,26 @@ namespace AssetBundleConverter.Tests
 
             var metadata = ParseCaptured();
             Assert.AreEqual(1, metadata.dependencies.Length);
-            Assert.AreEqual(DEP_PROPER, metadata.dependencies[0]);
+            Assert.AreEqual(DEP_BUNDLE, metadata.dependencies[0]);
+        }
+
+        [Test]
+        public void ExcludeDepsNotInBundleNameToHash()
+        {
+            var bundleName = HASH + "_mac";
+            const string KNOWN_DEP = "bafkreitexture_mac";
+            const string UNKNOWN_DEP = "unknownbundle_mac";
+
+            bundleNameToHash[bundleName] = HASH;
+            bundleNameToHash[KNOWN_DEP] = "bafkreitexture";
+            manifest.GetAllAssetBundles().Returns(new[] { bundleName });
+            manifest.GetAllDependencies(bundleName).Returns(new[] { KNOWN_DEP, UNKNOWN_DEP });
+
+            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, manifest, VERSION);
+
+            var metadata = ParseCaptured();
+            Assert.AreEqual(1, metadata.dependencies.Length);
+            Assert.AreEqual(KNOWN_DEP, metadata.dependencies[0]);
         }
 
         [Test]
