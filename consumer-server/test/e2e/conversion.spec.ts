@@ -182,7 +182,7 @@ test('when converting scenes end-to-end via queue-task', ({ components }) => {
     // Publish directly to the in-memory queue — bypasses the HTTP handler
     // (which requires SNS) but still exercises the queue consumer loop in
     // service.ts that calls executeConversion.
-    await components.taskQueue.publish({
+    await components.triageTaskQueue.publish({
       entity: {
         entityId,
         authChain: [{ type: AuthLinkType.SIGNER, payload: '0x0000000000000000000000000000000000000000', signature: '' }]

@@ -212,6 +212,258 @@ async function shouldIgnoreConversion(
   return false
 }
 
+/**
+ * Outcome of a triage pass over a conversion job.
+ *
+ * - `completed`: the triage loop fully handled the job. Either the manifest
+ *   indicated it was already converted (`exitCode: 13`), or every per-asset
+ *   hash was already canonical and the scene source files + manifest were
+ *   uploaded inline (`exitCode: 0`). In both cases the triage loop publishes
+ *   the AssetBundleConversionFinishedEvent and acks the message — no Unity
+ *   needed, no Unity-queue republish.
+ * - `needs-unity`: triage cannot complete the job. The triage loop should
+ *   republish the job to the Unity queue and ack the triage message; the
+ *   Unity loop will eventually pick it up. No finished event is published
+ *   yet — the Unity loop will publish it after the conversion completes.
+ * - `failed`: the probe itself errored (e.g., per-asset digest computation
+ *   threw). A failed-manifest sentinel has already been uploaded so clients
+ *   can see the failure. The triage loop should ack but skip republishing.
+ */
+export type TriagePassOutcome =
+  | { kind: 'completed'; exitCode: number }
+  | { kind: 'needs-unity' }
+  | { kind: 'failed'; exitCode: number }
+
+/**
+ * Probe-only path used by the triage loop. Mirrors the early-return logic of
+ * `executeConversion` (shouldIgnore short-circuit, entity fetch, per-asset
+ * digest, cache probe, full-cache-hit fast path) but never spawns Unity. On
+ * cache miss returns `{ kind: 'needs-unity' }` so the caller can republish
+ * the message to the Unity queue.
+ *
+ * Force / ISS / non-scene jobs deliberately skip the probe (they always need
+ * Unity) and return `{ kind: 'needs-unity' }` immediately. The Unity loop's
+ * subsequent `executeConversion` call still does its own catalyst fetch, so
+ * we don't lose any state.
+ */
+export async function executeTriagePass(
+  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry'>,
+  entityId: string,
+  contentServerUrl: string,
+  force: boolean | undefined,
+  doISS: boolean | undefined,
+  abVersion: string
+): Promise<TriagePassOutcome> {
+  const $BUILD_TARGET = await components.config.requireString('BUILD_TARGET')
+  const logger = components.logs.getLogger('ExecuteTriagePass')
+  const $ASSET_REUSE_ENABLED = parseBooleanFlag(await components.config.getString('ASSET_REUSE_ENABLED'), true, (raw) =>
+    logger.warn(
+      `Unrecognized value for ASSET_REUSE_ENABLED: "${raw}" — falling back to the default (true). Accepted values: true/false/1/0/yes/no/on/off.`
+    )
+  )
+
+  const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
+  if (!unityBuildTarget) {
+    logger.info('Invalid build target ' + $BUILD_TARGET)
+    return { kind: 'failed', exitCode: 5 }
+  }
+
+  if (!force && (await shouldIgnoreConversion(components, abVersion, entityId, $BUILD_TARGET))) {
+    logger.info('Ignoring conversion (already converted)', { entityId, contentServerUrl, abVersion })
+    components.metrics.increment('ab_converter_triage_outcomes_total', {
+      build_target: $BUILD_TARGET,
+      outcome: 'fast_path'
+    })
+    return { kind: 'completed', exitCode: 13 }
+  }
+
+  // Force / ISS short-circuit: these always need Unity (force is "redo this
+  // entity from scratch"; ISS is the v2004 special-case version). Don't bother
+  // with the probe — return needs-unity and let the Unity loop handle it.
+  if (force || doISS) {
+    components.metrics.increment('ab_converter_triage_outcomes_total', {
+      build_target: $BUILD_TARGET,
+      outcome: 'republished_to_unity'
+    })
+    return { kind: 'needs-unity' }
+  }
+
+  const cdnBucket = await getCdnBucket(components)
+  const manifestFile = manifestKeyForEntity(entityId, $BUILD_TARGET)
+  const failedManifestFile = `manifest/${entityId}_failed.json`
+  const entityScopedUploadPath = abVersion + '/' + entityId
+
+  // Catalyst entity fetch — same timeout discipline as executeConversion.
+  let entityType = 'undefined'
+  let entity: Awaited<ReturnType<typeof getActiveEntity>> | null = null
+  try {
+    const fetched = await getActiveEntity(entityId, contentServerUrl, CATALYST_FETCH_TIMEOUT_MS)
+    if (!fetched) throw new Error('entity no longer active on catalyst (redeployed or evicted)')
+    entity = fetched
+    entityType = entity.type
+  } catch (e: any) {
+    logger.info(`Could not fetch entity for ${entityId}: ${e?.message ?? e}. Triage cannot probe — republishing.`)
+    components.metrics.increment('ab_converter_triage_outcomes_total', {
+      build_target: $BUILD_TARGET,
+      outcome: 'republished_to_unity'
+    })
+    return { kind: 'needs-unity' }
+  }
+
+  // Asset-reuse gating mirrors executeConversion. Non-scenes always need
+  // Unity; the kill-switch and explicit force/ISS were handled above.
+  const useAssetReuse = $ASSET_REUSE_ENABLED && entityType === 'scene' && !!entity
+  if (!useAssetReuse) {
+    components.metrics.increment('ab_converter_triage_outcomes_total', {
+      build_target: $BUILD_TARGET,
+      outcome: 'republished_to_unity'
+    })
+    return { kind: 'needs-unity' }
+  }
+
+  // Per-asset digest pass — same 60s aggregate timeout. On failure we upload
+  // the failed-manifest sentinel ourselves (same shape as executeConversion)
+  // so a probe-time crash still surfaces to clients.
+  let depsDigestByHash: ReadonlyMap<string, string> | undefined
+  try {
+    const digestResult = await computePerAssetDigests(entity, contentServerUrl, { aggregateTimeoutMs: 60_000 })
+    depsDigestByHash = digestResult.digests
+    // Note: skipped assets stay in the result and are surfaced in the failed
+    // manifest by the Unity loop's executeConversion (full path). Triage just
+    // needs to know whether the cache is fully hit, which is independent of
+    // skipped-glb counts.
+  } catch (err: any) {
+    logger.error(`Triage per-asset digest computation failed: ${err?.message ?? err}`, { entityId, contentServerUrl })
+    components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
+    components.sentry.captureException(err, {
+      level: 'error',
+      tags: {
+        entityId,
+        contentServerUrl,
+        unityBuildTarget,
+        version: abVersion,
+        phase: 'triage-per-asset-digest'
+      }
+    })
+    try {
+      await components.cdnS3
+        .upload({
+          Bucket: cdnBucket,
+          Key: failedManifestFile,
+          ContentType: 'application/json',
+          Body: JSON.stringify({
+            entityId,
+            contentServerUrl,
+            version: abVersion,
+            error: err?.message ?? String(err),
+            date: new Date().toISOString()
+          }),
+          CacheControl: 'max-age=3600,s-maxage=3600',
+          ACL: 'public-read'
+        })
+        .promise()
+    } catch (uploadErr: any) {
+      logger.warn(
+        `Failed to upload failed-manifest sentinel after triage digest failure: ${uploadErr?.message ?? uploadErr}`
+      )
+    }
+    components.metrics.increment('ab_converter_triage_outcomes_total', {
+      build_target: $BUILD_TARGET,
+      outcome: 'failed'
+    })
+    return { kind: 'failed', exitCode: 5 }
+  }
+
+  // Cache probe — partial / total hit detection.
+  let cacheResult: AssetCacheResult | null = null
+  try {
+    cacheResult = await checkAssetCache(components, {
+      entity,
+      abVersion,
+      buildTarget: $BUILD_TARGET,
+      cdnBucket,
+      depsDigestByHash
+    })
+  } catch (e: any) {
+    logger.warn(`Triage cache probe failed, republishing to Unity: ${e?.message ?? e}`)
+    components.metrics.increment('ab_converter_asset_cache_probe_errors_total', {
+      build_target: $BUILD_TARGET,
+      ab_version: abVersion
+    })
+    components.metrics.increment('ab_converter_triage_outcomes_total', {
+      build_target: $BUILD_TARGET,
+      outcome: 'republished_to_unity'
+    })
+    return { kind: 'needs-unity' }
+  }
+
+  const totalProbed = cacheResult.cachedHashes.length + cacheResult.missingHashes.length
+  const fullCacheHit = totalProbed > 0 && cacheResult.missingHashes.length === 0
+
+  if (!fullCacheHit) {
+    components.metrics.increment('ab_converter_triage_outcomes_total', {
+      build_target: $BUILD_TARGET,
+      outcome: 'republished_to_unity'
+    })
+    return { kind: 'needs-unity' }
+  }
+
+  // Full short-circuit — same upload sequence as executeConversion's fast path
+  // (source files first, then manifest pointing at canonical bundle names).
+  logger.info('Triage: all assets cached — fast-path completing', {
+    entityId,
+    cached: cacheResult.cachedHashes.length
+  } as any)
+
+  const files = cacheResult.cachedHashes.map((h) => cacheResult!.canonicalNameByHash[h])
+  const manifest: Manifest = {
+    version: abVersion,
+    files,
+    exitCode: 0,
+    contentServerUrl,
+    date: new Date().toISOString()
+  }
+
+  try {
+    await uploadSceneSourceFilesToCDN(components, entity, contentServerUrl, entityScopedUploadPath, cdnBucket)
+    await uploadEntityManifest(components, cdnBucket, manifestFile, manifest)
+  } catch (err: any) {
+    components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
+    logger.error(err, { entityId, contentServerUrl, version: abVersion } as any)
+    components.sentry.captureMessage(`Error during triage fast-path upload`, {
+      level: 'error',
+      tags: {
+        entityId,
+        contentServerUrl,
+        unityBuildTarget,
+        version: abVersion,
+        phase: 'triage-fast-path-upload',
+        date: new Date().toISOString()
+      }
+    })
+    // Republish so the Unity loop can retry the upload (and possibly run Unity
+    // if the cache state has changed). Same-pod upload errors are usually
+    // transient.
+    components.metrics.increment('ab_converter_triage_outcomes_total', {
+      build_target: $BUILD_TARGET,
+      outcome: 'republished_to_unity'
+    })
+    return { kind: 'needs-unity' }
+  }
+
+  components.metrics.increment('ab_converter_asset_reuse_short_circuit_total', {
+    build_target: $BUILD_TARGET,
+    ab_version: abVersion
+  })
+  components.metrics.increment('ab_converter_exit_codes', { exit_code: '0' })
+  components.metrics.increment('ab_converter_triage_outcomes_total', {
+    build_target: $BUILD_TARGET,
+    outcome: 'fast_path'
+  })
+
+  return { kind: 'completed', exitCode: 0 }
+}
+
 export async function executeLODConversion(
   components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>,
   entityId: string,

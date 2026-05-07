@@ -24,7 +24,15 @@ export type BaseComponents = {
   logs: ILoggerComponent
   server: IHttpServerComponent<GlobalContext>
   fetch: IFetchComponent
-  taskQueue: ITaskQueue<DeploymentToSqs>
+  // Triage queue: receives messages from the SNS deployments topic. The triage
+  // loop pulls from here, runs the probe, fast-paths on full cache hit, and
+  // republishes cache-miss messages to `unityTaskQueue`.
+  triageTaskQueue: ITaskQueue<DeploymentToSqs>
+  // Unity queue: populated only by the triage loop via SendMessage. The Unity
+  // loop drains it and runs the full conversion (which re-runs the probe for
+  // safety). Always wired even when FAST_PATH_TRIAGE_ENABLED is off, so any
+  // residual messages drain naturally on revert.
+  unityTaskQueue: ITaskQueue<DeploymentToSqs>
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
   cdnS3: S3
   runner: IRunnerComponent

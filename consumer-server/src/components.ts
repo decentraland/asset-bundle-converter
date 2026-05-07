@@ -46,12 +46,24 @@ export async function initComponents(): Promise<AppComponents> {
 
   const sqsQueue = await config.getString('TASK_QUEUE')
   const priorityQueue = await config.getString('PRIORITY_TASK_QUEUE')
-  const taskQueue = sqsQueue
+  const triageTaskQueue = sqsQueue
     ? createSqsAdapter<DeploymentToSqs>(
         { logs, metrics },
         { queueUrl: sqsQueue, priorityQueueUrl: priorityQueue, queueRegion: AWS_REGION }
       )
-    : createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'ConversionTaskQueue' })
+    : createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'TriageTaskQueue' })
+
+  // Unity queue is internal — only populated by the triage loop's republish
+  // path. Falls back to a memory queue when env vars are unset (local dev,
+  // pre-rollout deploys). The Unity loop drains whatever lands here.
+  const unitySqsQueue = await config.getString('UNITY_TASK_QUEUE')
+  const unityPriorityQueue = await config.getString('UNITY_PRIORITY_TASK_QUEUE')
+  const unityTaskQueue = unitySqsQueue
+    ? createSqsAdapter<DeploymentToSqs>(
+        { logs, metrics },
+        { queueUrl: unitySqsQueue, priorityQueueUrl: unityPriorityQueue, queueRegion: AWS_REGION }
+      )
+    : createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'UnityTaskQueue' })
 
   const s3Bucket = await config.getString('CDN_BUCKET')
   const cdnS3 = s3Bucket ? new AWS.S3({}) : new MockAws.S3({})
@@ -66,7 +78,8 @@ export async function initComponents(): Promise<AppComponents> {
     statusChecks,
     fetch,
     metrics,
-    taskQueue,
+    triageTaskQueue,
+    unityTaskQueue,
     cdnS3,
     runner,
     sentry,
