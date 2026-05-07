@@ -23,7 +23,11 @@ export const metricDeclarations = {
     type: IMetricsComponent.CounterType
   },
   ab_converter_running_conversion: {
-    help: 'Gauge of running conversions',
+    help: 'Gauge of running Unity conversions (excludes triage-only fast-path work — see ab_converter_running_triage)',
+    type: IMetricsComponent.GaugeType
+  },
+  ab_converter_running_triage: {
+    help: 'Gauge of triage passes currently in flight (probe + fast-path or republish-to-Unity decision)',
     type: IMetricsComponent.GaugeType
   },
   ab_converter_free_disk_space: {
@@ -66,12 +70,12 @@ export const metricDeclarations = {
     labelNames: ['build_target', 'ab_version', 'reason']
   },
   ab_converter_triage_outcomes_total: {
-    help: 'Counter of triage-pass outcomes per scene (fast_path / republished_to_unity / failed)',
+    help: 'Counter of triage-pass outcomes per scene. outcome ∈ {already_converted, fast_path_completed, republished_to_unity, failed}.',
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target', 'outcome']
   },
   ab_converter_unity_queue_publish_total: {
-    help: 'Counter of triage republishes to the Unity queue, labelled by priority',
+    help: 'Counter of triage republishes to the Unity queue, labelled by priority lane (priority / standard)',
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target', 'priority']
   },

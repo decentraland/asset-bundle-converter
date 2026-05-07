@@ -230,6 +230,120 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       expect(unityPublishSpy).not.toHaveBeenCalled()
     })
   })
+
+  describe('and a force=true job is enqueued on the triage queue', () => {
+    let unityPublishSpy: jest.SpyInstance
+
+    beforeEach(async () => {
+      // executeTriagePass returns needs-unity for force=true (verified in
+      // execute-triage-pass.spec.ts unit tests). Here we verify the routing
+      // half of the contract: the job is republished to the Unity queue and
+      // the original force flag is preserved on the republished payload.
+      mockedExecuteTriagePass.mockResolvedValue({ kind: 'needs-unity' })
+      mockedExecuteConversion.mockResolvedValue(0)
+      unityPublishSpy = jest.spyOn(unityTaskQueue, 'publish')
+      await triageTaskQueue.publish({
+        entity: { entityId: 'bafy-force-job', authChain: [] as any },
+        contentServerUrls: ['https://peer.decentraland.org/content'],
+        force: true
+      } as any)
+      await waitFor(() => unityPublishSpy.mock.calls.length >= 1)
+    })
+
+    it('should republish the job to the Unity queue with force preserved', () => {
+      expect(unityPublishSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entity: expect.objectContaining({ entityId: 'bafy-force-job' }),
+          force: true
+        }),
+        false
+      )
+    })
+
+    it('should drive the Unity loop to call executeConversion with force=true', async () => {
+      await waitFor(() => mockedExecuteConversion.mock.calls.length >= 1)
+      expect(mockedExecuteConversion).toHaveBeenCalledWith(
+        expect.anything(),
+        'bafy-force-job',
+        'https://peer.decentraland.org/content',
+        true,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+  })
+
+  describe('and a priority job is enqueued on the triage queue', () => {
+    let unityPublishSpy: jest.SpyInstance
+
+    beforeEach(async () => {
+      // The in-memory adapter now honours `prioritize` on publish so we can
+      // verify the priority lane end-to-end. The cache-miss path triggers
+      // the republish so we can assert isPriority is forwarded correctly.
+      mockedExecuteTriagePass.mockResolvedValue({ kind: 'needs-unity' })
+      mockedExecuteConversion.mockResolvedValue(0)
+      unityPublishSpy = jest.spyOn(unityTaskQueue, 'publish')
+      await triageTaskQueue.publish(
+        {
+          entity: { entityId: 'bafy-priority-job', authChain: [] as any },
+          contentServerUrls: ['https://peer.decentraland.org/content']
+        },
+        true /* prioritize */
+      )
+      await waitFor(() => unityPublishSpy.mock.calls.length >= 1)
+    })
+
+    it('should republish to the Unity queue with prioritize=true', () => {
+      expect(unityPublishSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entity: expect.objectContaining({ entityId: 'bafy-priority-job' })
+        }),
+        true
+      )
+    })
+  })
+
+  describe('and a job with no contentServerUrls is enqueued on the triage queue', () => {
+    let unityPublishSpy: jest.SpyInstance
+
+    beforeEach(async () => {
+      // Force a fast-path completion on the trailing valid job so we know
+      // the loop advanced past the malformed one without invoking the
+      // republish path. (Without explicit mockResolvedValue here, the mock
+      // implementation can leak from prior describe blocks since
+      // jest.clearAllMocks doesn't clear mockResolvedValue — only calls.)
+      mockedExecuteTriagePass.mockResolvedValue({ kind: 'completed', exitCode: 0 })
+      unityPublishSpy = jest.spyOn(unityTaskQueue, 'publish')
+      // Malformed non-LOD job (no contentServerUrls) — should be skipped by
+      // the validation guard before any of the conversion paths fire.
+      await triageTaskQueue.publish({
+        entity: { entityId: 'bafy-malformed', authChain: [] as any }
+      } as any)
+      // Valid job behind it confirms the loop advanced past the skip.
+      await triageTaskQueue.publish({
+        entity: { entityId: 'bafy-valid-after-malformed', authChain: [] as any },
+        contentServerUrls: ['https://peer.decentraland.org/content']
+      })
+      await waitFor(() => mockedExecuteTriagePass.mock.calls.length >= 1)
+    })
+
+    it('should skip the malformed job and process the valid one only', () => {
+      expect(mockedExecuteTriagePass).toHaveBeenCalledTimes(1)
+      expect(mockedExecuteTriagePass).toHaveBeenCalledWith(
+        expect.anything(),
+        'bafy-valid-after-malformed',
+        'https://peer.decentraland.org/content',
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should not republish either job to the Unity queue (malformed skipped, valid took fast-path)', () => {
+      expect(unityPublishSpy).not.toHaveBeenCalled()
+    })
+  })
 })
 
 describe('when FAST_PATH_TRIAGE_ENABLED is unset (default off)', () => {

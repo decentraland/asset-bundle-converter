@@ -247,15 +247,17 @@ export type TriagePassOutcome =
  * we don't lose any state.
  *
  * **Maintenance note**: this function intentionally duplicates the probe
- * portion of `executeConversion` (lines ~644-820) rather than sharing a
- * helper, because the two callers have divergent return-type semantics
- * (number exit code vs. TriagePassOutcome union) and the failure-path
- * upload sequences (failed-manifest sentinel, asset-reuse short-circuit
- * marker, scene source files) are subtly different. **If you change the
- * probe / shouldIgnore / fast-path-upload logic in either function, mirror
- * the change in the other.** A future refactor could extract a shared
- * `probeScene()` helper returning a structured discriminator both callers
- * consume — out of scope for this PR.
+ * portion of `executeConversion` (the `shouldIgnoreConversion` short-circuit,
+ * `getActiveEntity` fetch, `computePerAssetDigests`, `checkAssetCache`, and
+ * the `fullCacheHit` short-circuit upload) rather than sharing a helper,
+ * because the two callers have divergent return-type semantics (number exit
+ * code vs. TriagePassOutcome union) and the failure-path upload sequences
+ * (failed-manifest sentinel, asset-reuse short-circuit marker, scene source
+ * files) are subtly different. **If you change the probe / shouldIgnore /
+ * fast-path-upload logic in either function, mirror the change in the
+ * other.** A future refactor could extract a shared `probeScene()` helper
+ * returning a structured discriminator both callers consume — out of scope
+ * for this PR.
  */
 export async function executeTriagePass(
   components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry'>,
@@ -283,7 +285,7 @@ export async function executeTriagePass(
     logger.info('Ignoring conversion (already converted)', { entityId, contentServerUrl, abVersion })
     components.metrics.increment('ab_converter_triage_outcomes_total', {
       build_target: $BUILD_TARGET,
-      outcome: 'fast_path'
+      outcome: 'already_converted'
     })
     return { kind: 'completed', exitCode: 13 }
   }
@@ -438,9 +440,9 @@ export async function executeTriagePass(
   try {
     // Defensive: useAssetReuse already requires entityType === 'scene', so we
     // can't get here for a non-scene. The explicit guard mirrors the same
-    // pattern in executeConversion's fast-path upload (see line ~837 below)
-    // so a future refactor that loosens useAssetReuse can't silently start
-    // uploading scene source files for wearables / emotes.
+    // pattern in executeConversion's fast-path upload block so a future
+    // refactor that loosens useAssetReuse can't silently start uploading
+    // scene source files for wearables / emotes.
     if (entityType === 'scene') {
       await uploadSceneSourceFilesToCDN(components, entity, contentServerUrl, entityScopedUploadPath, cdnBucket)
     }
@@ -476,7 +478,7 @@ export async function executeTriagePass(
   components.metrics.increment('ab_converter_exit_codes', { exit_code: '0' })
   components.metrics.increment('ab_converter_triage_outcomes_total', {
     build_target: $BUILD_TARGET,
-    outcome: 'fast_path'
+    outcome: 'fast_path_completed'
   })
 
   return { kind: 'completed', exitCode: 0 }

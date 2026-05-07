@@ -8,6 +8,7 @@ import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { getAbVersionEnvName } from './utils'
 
 type Platform = 'windows' | 'mac' | 'webgl'
+type Logger = ReturnType<AppComponents['logs']['getLogger']>
 
 // this function wires the business logic (adapters & controllers) with the components (ports)
 export async function main(program: Lifecycle.EntryPointParameters<AppComponents | TestComponents>) {
@@ -95,6 +96,37 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
   })
 }
 
+// Validates the shape of an incoming SQS job before either loop tries to
+// process it. Logs and returns false for anything that's not a real
+// conversion (e.g., world_undeployment events that leak into the SNS topic,
+// or malformed payloads with empty `contentServerUrls`).
+//
+// LOD jobs are special: they're identified by a `lods` array and don't carry
+// `contentServerUrls` — Unity reads the LOD GLBs directly from the LOD list,
+// not from a content server. Don't gate them on contentServerUrls presence.
+export function isValidConversionJob(job: DeploymentToSqs, logger: Logger): boolean {
+  if (!job?.entity?.entityId) {
+    logger.warn('Skipping job with no entity.entityId — not a conversion job', {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      type: (job as any)?.type,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      subType: (job as any)?.subType
+    })
+    return false
+  }
+  if (!job.lods && !job.contentServerUrls?.[0]) {
+    // Non-LOD jobs MUST carry at least one content server URL — both the
+    // probe (catalyst entity fetch) and Unity asset resolution need it.
+    // Without this guard, the `[0]!` non-null assertion downstream produces
+    // an `undefined` URL that fails opaquely deep inside fetch logic.
+    logger.warn('Skipping job with no contentServerUrls — not a conversion job', {
+      entityId: job.entity.entityId
+    })
+    return false
+  }
+  return true
+}
+
 type ProcessJobArgs = {
   job: DeploymentToSqs
   isPriority: boolean
@@ -103,23 +135,15 @@ type ProcessJobArgs = {
   $BUILD_TARGET: string
   $AB_VERSION: string
   triageEnabled: boolean
-  logger: ReturnType<AppComponents['logs']['getLogger']>
+  logger: Logger
 }
 
 // Triage loop's per-message handler. Extracted to keep the runner body
-// shallow and to share the "skip non-conversion payloads" guard between modes.
+// shallow and to share the validation guard between modes.
 async function processIncomingJob(args: ProcessJobArgs): Promise<void> {
   const { job, isPriority, components, platform, $BUILD_TARGET, $AB_VERSION, triageEnabled, logger } = args
 
-  if (!job?.entity?.entityId) {
-    logger.warn('Skipping job with no entity.entityId — not a conversion job', {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      type: (job as any)?.type,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      subType: (job as any)?.subType
-    })
-    return
-  }
+  if (!isValidConversionJob(job, logger)) return
 
   // Increment version if doISS is true (legacy v2004 path)
   const versionToUse = job.doISS ? 'v2004' : $AB_VERSION
@@ -136,32 +160,47 @@ async function processIncomingJob(args: ProcessJobArgs): Promise<void> {
 
   if (!triageEnabled) {
     // Default behavior: run today's full executeConversion path inline.
+    // running_conversion gauge is incremented inside runFullConversionAndPublish.
     await runFullConversionAndPublish({ job, components, platform, versionToUse, logger })
     return
   }
 
-  // Fast-path triage mode.
-  const outcome = await executeTriagePass(
-    components,
-    job.entity.entityId,
-    job.contentServerUrls![0],
-    job.force,
-    job.doISS,
-    versionToUse
-  )
+  // Fast-path triage mode. Track gauge so dashboards reflect "pod is busy
+  // doing triage work" — distinct from running_conversion (which only
+  // counts Unity-spawning work).
+  components.metrics.increment('ab_converter_running_triage')
+  try {
+    const outcome = await executeTriagePass(
+      components,
+      job.entity.entityId,
+      job.contentServerUrls![0],
+      job.force,
+      job.doISS,
+      versionToUse
+    )
 
-  switch (outcome.kind) {
-    case 'completed':
-      await publishFinishedEvent({ job, components, platform, versionToUse, statusCode: outcome.exitCode })
-      return
-    case 'failed':
-      // Sentinel was uploaded by executeTriagePass; emit the finished event so
-      // the publisher's downstream consumers see the failure status, then ack.
-      await publishFinishedEvent({ job, components, platform, versionToUse, statusCode: outcome.exitCode })
-      return
-    case 'needs-unity':
-      await republishToUnityQueue({ job, isPriority, components, $BUILD_TARGET, logger })
-      return
+    switch (outcome.kind) {
+      case 'completed':
+        // **Failure mode worth flagging**: if publishMessage throws (SNS
+        // wedged), the SQS adapter's finally block deletes the triage
+        // message anyway, so the finished event is silently lost. This
+        // matches today's behavior in runFullConversionAndPublish — fixing
+        // it requires task-queue contract changes to support nack
+        // semantics. Out of scope here; covered by the existing
+        // ab_converter_unity_queue_publish_errors_total alarm pattern.
+        await publishFinishedEvent({ job, components, platform, versionToUse, statusCode: outcome.exitCode })
+        return
+      case 'failed':
+        // Sentinel was uploaded by executeTriagePass; emit the finished event so
+        // the publisher's downstream consumers see the failure status, then ack.
+        await publishFinishedEvent({ job, components, platform, versionToUse, statusCode: outcome.exitCode })
+        return
+      case 'needs-unity':
+        await republishToUnityQueue({ job, isPriority, components, $BUILD_TARGET, logger })
+        return
+    }
+  } finally {
+    components.metrics.decrement('ab_converter_running_triage')
   }
 }
 
@@ -170,7 +209,7 @@ type ProcessUnityJobArgs = {
   components: AppComponents | TestComponents
   platform: Platform
   $AB_VERSION: string
-  logger: ReturnType<AppComponents['logs']['getLogger']>
+  logger: Logger
 }
 
 // Unity loop's per-message handler. Runs the full executeConversion (which
@@ -179,15 +218,7 @@ type ProcessUnityJobArgs = {
 async function processUnityJob(args: ProcessUnityJobArgs): Promise<void> {
   const { job, components, platform, $AB_VERSION, logger } = args
 
-  if (!job?.entity?.entityId) {
-    logger.warn('Skipping Unity-queue job with no entity.entityId', {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      type: (job as any)?.type,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      subType: (job as any)?.subType
-    })
-    return
-  }
+  if (!isValidConversionJob(job, logger)) return
 
   const versionToUse = job.doISS ? 'v2004' : $AB_VERSION
   await runFullConversionAndPublish({ job, components, platform, versionToUse, logger })
@@ -198,7 +229,7 @@ type RunFullArgs = {
   components: AppComponents | TestComponents
   platform: Platform
   versionToUse: string
-  logger: ReturnType<AppComponents['logs']['getLogger']>
+  logger: Logger
 }
 
 async function runFullConversionAndPublish(args: RunFullArgs): Promise<void> {
@@ -219,6 +250,9 @@ async function runFullConversionAndPublish(args: RunFullArgs): Promise<void> {
         versionToUse
       )
     }
+    // Same SNS-publish failure mode as the triage path — see comment in
+    // processIncomingJob. A throw here means the SQS message is acked
+    // without the finished event reaching downstream consumers.
     await publishFinishedEvent({ job, components, platform, versionToUse, statusCode })
   } finally {
     components.metrics.decrement('ab_converter_running_conversion')
@@ -260,7 +294,7 @@ type RepublishArgs = {
   isPriority: boolean
   components: AppComponents | TestComponents
   $BUILD_TARGET: string
-  logger: ReturnType<AppComponents['logs']['getLogger']>
+  logger: Logger
 }
 
 // **Lost-work warning**: the SQS adapter's consumeAndProcessJob deletes the
@@ -281,7 +315,7 @@ async function republishToUnityQueue(args: RepublishArgs): Promise<void> {
     await components.unityTaskQueue.publish(job, isPriority)
     components.metrics.increment('ab_converter_unity_queue_publish_total', {
       build_target: $BUILD_TARGET,
-      priority: isPriority ? 'true' : 'false'
+      priority: isPriority ? 'priority' : 'standard'
     })
   } catch (err: any) {
     logger.error(`Failed to republish job to Unity queue — work will be lost: ${err?.message ?? err}`, {

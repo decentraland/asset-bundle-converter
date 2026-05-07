@@ -53,7 +53,11 @@ export function createMemoryQueueAdapter<T>(
   components: Pick<AppComponents, 'logs' | 'metrics'>,
   options: { queueName: string }
 ): ITaskQueue<T> & IBaseComponent {
-  type InternalElement = { message: TaskQueueMessage; job: T }
+  // Honour `prioritize` on publish so tests can exercise the priority lane
+  // without standing up a real SQS adapter. Single in-memory FIFO is fine —
+  // the SQS adapter's "drain priority queue first" behaviour isn't relevant
+  // here because tests typically publish + consume in the same order.
+  type InternalElement = { message: TaskQueueMessage; job: T; isPriority: boolean }
   const q = new AsyncQueue<InternalElement>((_action) => void 0)
   let lastJobId = 0
 
@@ -63,11 +67,11 @@ export function createMemoryQueueAdapter<T>(
     async stop() {
       q.close()
     },
-    async publish(job) {
+    async publish(job, prioritize) {
       const id = 'job-' + (++lastJobId).toString()
       const message: TaskQueueMessage = { id }
-      q.enqueue({ job, message })
-      logger.info(`Publishing job`, { id })
+      q.enqueue({ job, message, isPriority: !!prioritize })
+      logger.info(`Publishing job`, { id, prioritize: prioritize ? 'true' : 'false' })
       components.metrics.increment('job_queue_enqueue_total', { queue_name: options.queueName })
       return message
     },
@@ -77,9 +81,7 @@ export function createMemoryQueueAdapter<T>(
         const { end } = components.metrics.startTimer('job_queue_duration_seconds', { queue_name: options.queueName })
         try {
           logger.info(`Processing job`, { id: it.message.id })
-          // Memory adapter has no priority concept; surfaces isPriority=false so
-          // the runner signature stays uniform across adapters.
-          const result = await taskRunner(it.job, it.message, { isPriority: false })
+          const result = await taskRunner(it.job, it.message, { isPriority: it.isPriority })
           logger.info(`Processed job`, { id: it.message.id })
           return { result, message: it.message }
         } catch (err: any) {
