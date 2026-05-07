@@ -44,24 +44,24 @@ export async function initComponents(): Promise<AppComponents> {
 
   await instrumentHttpServerWithPromClientRegistry({ metrics, server, config, registry: metrics.registry! })
 
-  const sqsQueue = await config.getString('TASK_QUEUE')
-  const priorityQueue = await config.getString('PRIORITY_TASK_QUEUE')
-  const triageTaskQueue = sqsQueue
+  const taskQueueUrl = await config.getString('TASK_QUEUE')
+  const priorityTaskQueueUrl = await config.getString('PRIORITY_TASK_QUEUE')
+  const triageTaskQueue = taskQueueUrl
     ? createSqsAdapter<DeploymentToSqs>(
         { logs, metrics },
-        { queueUrl: sqsQueue, priorityQueueUrl: priorityQueue, queueRegion: AWS_REGION }
+        { queueUrl: taskQueueUrl, priorityQueueUrl: priorityTaskQueueUrl, queueRegion: AWS_REGION }
       )
     : createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'TriageTaskQueue' })
 
   // Unity queue is internal — only populated by the triage loop's republish
   // path. Falls back to a memory queue when env vars are unset (local dev,
   // pre-rollout deploys). The Unity loop drains whatever lands here.
-  const unitySqsQueue = await config.getString('UNITY_TASK_QUEUE')
-  const unityPriorityQueue = await config.getString('UNITY_PRIORITY_TASK_QUEUE')
-  const unityTaskQueue = unitySqsQueue
+  const unityTaskQueueUrl = await config.getString('UNITY_TASK_QUEUE')
+  const unityPriorityTaskQueueUrl = await config.getString('UNITY_PRIORITY_TASK_QUEUE')
+  const unityTaskQueue = unityTaskQueueUrl
     ? createSqsAdapter<DeploymentToSqs>(
         { logs, metrics },
-        { queueUrl: unitySqsQueue, priorityQueueUrl: unityPriorityQueue, queueRegion: AWS_REGION }
+        { queueUrl: unityTaskQueueUrl, priorityQueueUrl: unityPriorityTaskQueueUrl, queueRegion: AWS_REGION }
       )
     : createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'UnityTaskQueue' })
 
