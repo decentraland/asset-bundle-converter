@@ -456,24 +456,33 @@ describe('when executing a conversion with asset-reuse enabled', () => {
 
   describe('and force=true and the canonical prefix is fully populated', () => {
     let exitCode: number
+    let composedGlbFilename: string
 
     beforeEach(async () => {
-      // Seed canonical for every hash in the scene — this is the full-cache
-      // short-circuit scenario. With force=true, that must be bypassed.
+      // force=true skips the cache probe so Unity reconverts every asset and
+      // overwrites the existing canonical bytes — the operator's intent when
+      // re-queuing a scene with bad bundles.
+      const content = [{ file: 'model.glb', hash: 'hGlb' }]
+      setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
+      const digest = computeDepsDigest([])
+      const digests = new Map([['hGlb', digest]])
+      composedGlbFilename = canonicalFilenameForAsset('hGlb', '.glb', 'windows', digests)
+
+      // Seed stale canonical bytes — force should overwrite them.
       await components.cdnS3
-        .putObject({ Bucket: 'test-bucket', Key: 'v48/assets/hGlb_windows', Body: 'cached-glb' })
+        .putObject({ Bucket: 'test-bucket', Key: `v48/assets/${composedGlbFilename}`, Body: 'stale-glb' })
         .promise()
 
       mockedGetActiveEntity.mockResolvedValue({
         id: 'bafy-force',
         type: 'scene',
-        content: [{ file: 'model.glb', hash: 'hGlb' }],
+        content,
         metadata: {}
       })
 
       mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(options.outDirectory, { recursive: true })
-        await fs.writeFile(path.join(options.outDirectory, 'hGlb_windows'), 'freshly-converted')
+        await fs.writeFile(path.join(options.outDirectory, composedGlbFilename), 'fresh-glb')
         return 0
       })
 
@@ -492,20 +501,93 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       expect(exitCode).toBe(0)
     })
 
-    it('should invoke Unity despite the cache being warm', () => {
+    it('should invoke Unity despite the cache being warm (force bypasses short-circuit)', () => {
       expect(mockedRunConversion).toHaveBeenCalledTimes(1)
     })
 
-    it('should NOT pass a cachedHashes list to Unity', () => {
+    it('should not pass cachedHashes to Unity (force skips the cache probe)', () => {
       expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
     })
 
-    it('should upload the freshly-converted bundle to the entity-scoped path (reuse path is gated off by force)', async () => {
-      expect(await read(components.cdnS3, 'test-bucket', 'v48/bafy-force/hGlb_windows')).toContain('freshly-converted')
+    it('should overwrite existing canonical bytes with the freshly converted output', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', `v48/assets/${composedGlbFilename}`)).toBe('fresh-glb')
+    })
+  })
+
+  describe('and force=true and the canonical prefix is partially populated', () => {
+    // Documents that force skips the cache probe wholesale — partial pre-existing
+    // canonical state (one asset cached, one missing) does NOT translate to
+    // partial cachedHashes for Unity. The probe never runs, cacheResult stays
+    // null, every asset is reconverted.
+    let exitCode: number
+    let cachedGlbFilename: string
+    let missingGlbFilename: string
+
+    beforeEach(async () => {
+      const content = [
+        { file: 'cached.glb', hash: 'hCachedGlb' },
+        { file: 'missing.glb', hash: 'hMissingGlb' }
+      ]
+      setupFetchMock(
+        new Map([
+          ['hCachedGlb', buildGlb([], [])],
+          ['hMissingGlb', buildGlb([], [])]
+        ])
+      )
+      const digest = computeDepsDigest([])
+      const digests = new Map([
+        ['hCachedGlb', digest],
+        ['hMissingGlb', digest]
+      ])
+      cachedGlbFilename = canonicalFilenameForAsset('hCachedGlb', '.glb', 'windows', digests)
+      missingGlbFilename = canonicalFilenameForAsset('hMissingGlb', '.glb', 'windows', digests)
+
+      // Seed canonical for ONE of the two assets. Without force, the probe
+      // would classify hCachedGlb as cached and hMissingGlb as missing; force
+      // must short-circuit that distinction.
+      await components.cdnS3
+        .putObject({ Bucket: 'test-bucket', Key: `v48/assets/${cachedGlbFilename}`, Body: 'stale-cached' })
+        .promise()
+
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-force-partial',
+        type: 'scene',
+        content,
+        metadata: {}
+      })
+
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+        await fs.mkdir(options.outDirectory, { recursive: true })
+        await fs.writeFile(path.join(options.outDirectory, cachedGlbFilename), 'fresh-cached')
+        await fs.writeFile(path.join(options.outDirectory, missingGlbFilename), 'fresh-missing')
+        return 0
+      })
+
+      exitCode = await executeConversion(
+        components,
+        'bafy-force-partial',
+        'https://peer.decentraland.org/content',
+        /* force */ true,
+        undefined,
+        undefined,
+        'v48'
+      )
     })
 
-    it('should leave the pre-seeded canonical bytes untouched', async () => {
-      expect(await read(components.cdnS3, 'test-bucket', 'v48/assets/hGlb_windows')).toBe('cached-glb')
+    it('should return exit code 0', () => {
+      expect(exitCode).toBe(0)
+    })
+
+    it('should not pass cachedHashes to Unity even though one asset would have matched', () => {
+      expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
+    })
+
+    it('should overwrite the pre-existing canonical bytes for the would-have-been-cached asset', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', `v48/assets/${cachedGlbFilename}`)).toBe('fresh-cached')
+    })
+
+    it('should upload fresh canonical bytes for the previously-missing asset', async () => {
+      expect(await read(components.cdnS3, 'test-bucket', `v48/assets/${missingGlbFilename}`)).toBe('fresh-missing')
     })
   })
 
