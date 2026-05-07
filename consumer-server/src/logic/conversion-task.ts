@@ -399,21 +399,17 @@ export async function executeConversion(
     logger.info(`Could not fetch entity for ${entityId}: ${e?.message ?? e}. Scene manifest wont be generated`)
   }
 
-  // Per-asset reuse: scenes with the kill switch on and no force/ISS short-circuit
+  // Per-asset reuse: scenes with the kill switch on and no ISS short-circuit
   // the pipeline when every asset hash is already canonicalized at
   // `{abVersion}/assets/{hash}_{target}`. Partial hits feed Unity a `-cachedHashes`
   // list so it skips re-converting those GLTFs/buffers. Rollout is staged per build
   // target via the kill switch (each worker pool runs a single target).
   //
-  // NOTE on force=true: this path uploads to the entity-scoped prefix, NOT
-  // canonical. `force` is for "re-run Unity against this entity's content,"
-  // which for content-addressed immutable storage doesn't translate to
-  // replacing the canonical bundle — the content hash is the same, so the
-  // canonical bundle is by construction the same bytes. If ops need to replace
-  // a canonical bundle (e.g. to flush a genuinely corrupt object), the escape
-  // hatch is to delete the canonical S3 object directly; the next conversion
-  // will upload a fresh copy through the normal reuse path.
-  const useAssetReuse = $ASSET_REUSE_ENABLED && !force && !doISS && entityType === 'scene' && !!entity
+  // `force` keeps `useAssetReuse` true (so canonical uploads still happen and
+  // overwrite the existing canonical bytes — the operator's intent when
+  // re-queuing a scene with bad bundles), but the cache probe below is skipped
+  // so `cachedHashes` stays empty and Unity reconverts every asset.
+  const useAssetReuse = $ASSET_REUSE_ENABLED && !doISS && entityType === 'scene' && !!entity
   const assetReuseUploadPath = abVersion + '/assets'
   const entityScopedUploadPath = abVersion + '/' + entityId
 
@@ -535,7 +531,7 @@ export async function executeConversion(
 
   let cacheResult: AssetCacheResult | null = null
   let fullCacheHit = false
-  if (useAssetReuse && entity) {
+  if (useAssetReuse && entity && !force) {
     try {
       cacheResult = await checkAssetCache(components, {
         entity,
@@ -556,9 +552,9 @@ export async function executeConversion(
     }
   }
 
-  // `fullCacheHit` is only set true inside the `if (useAssetReuse && entity)`
-  // block above, so it already implies `useAssetReuse` AND `!!entity`. The
-  // `cacheResult` and `entity` checks below are kept purely as TypeScript
+  // `fullCacheHit` is only set true inside the `if (useAssetReuse && entity && !force)`
+  // block above, so it already implies `useAssetReuse`, `!!entity`, and `!force`.
+  // The `cacheResult` and `entity` checks below are kept purely as TypeScript
   // narrowing guards for the block body.
   if (fullCacheHit && cacheResult && entity) {
     // Full short-circuit: every referenced asset hash is already canonical. Publish
