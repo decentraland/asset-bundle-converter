@@ -16,6 +16,8 @@ import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { createRunnerComponent } from './adapters/runner'
 import { createSentryComponent } from './adapters/sentry'
 import { createSnsComponent } from './adapters/sns'
+import { createFilesystemComponent } from './adapters/filesystem'
+import { createConversionOrchestratorComponent } from './logic/conversion-orchestrator'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -70,6 +72,16 @@ export async function initComponents(): Promise<AppComponents> {
 
   const runner = createRunnerComponent()
   const publisher = await createSnsComponent({ config, logs })
+  const filesystem = await createFilesystemComponent({ metrics })
+  const conversionOrchestrator = await createConversionOrchestratorComponent({
+    logs,
+    metrics,
+    config,
+    cdnS3,
+    sentry,
+    unityTaskQueue,
+    publisher
+  })
 
   return {
     config,
@@ -83,6 +95,8 @@ export async function initComponents(): Promise<AppComponents> {
     cdnS3,
     runner,
     sentry,
-    publisher
+    publisher,
+    filesystem,
+    conversionOrchestrator
   }
 }

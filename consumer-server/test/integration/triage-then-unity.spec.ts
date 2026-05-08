@@ -13,17 +13,14 @@ import { createRunnerComponent, IRunnerComponent } from '../../src/adapters/runn
 import { ITaskQueue } from '../../src/adapters/task-queue'
 import { IBaseComponent } from '@well-known-components/interfaces'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
+import { IFilesystemComponent } from '../../src/adapters/filesystem'
+import { createConversionOrchestratorComponent } from '../../src/logic/conversion-orchestrator'
 
 jest.mock('../../src/logic/conversion-task', () => ({
   executeConversion: jest.fn(),
   executeLODConversion: jest.fn(),
   executeTriagePass: jest.fn(),
   parseBooleanFlag: jest.requireActual('../../src/logic/conversion-task').parseBooleanFlag
-}))
-
-jest.mock('check-disk-space', () => ({
-  __esModule: true,
-  default: jest.fn(async () => ({ free: 100 * 1e9, size: 200 * 1e9, diskPath: '/' }))
 }))
 
 import { executeConversion, executeLODConversion, executeTriagePass } from '../../src/logic/conversion-task'
@@ -41,6 +38,13 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void
   }
   throw new Error('Timed out waiting for queue consumer to advance')
 }
+
+// Filesystem stub: never reports below-minimum so the consumer loops never
+// trigger the graceful-stop path. Tests don't need actual disk introspection.
+const stubFilesystem = (): IFilesystemComponent => ({
+  getFreeBytes: jest.fn(async () => 100 * 1e9),
+  isBelowMinimum: jest.fn(async () => false)
+})
 
 describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
   let runner: IRunnerComponent
@@ -64,6 +68,20 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
     runner = createRunnerComponent()
     triageTaskQueue = createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'triage-queue' })
     unityTaskQueue = createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'unity-queue' })
+    const filesystem = stubFilesystem()
+    // Build the real orchestrator against the mocked conversion-task module —
+    // that way the dispatch logic (validation guard, fast-path / republish
+    // routing, finished-event publication) gets exercised, while Unity and
+    // catalyst calls stay mocked.
+    const conversionOrchestrator = await createConversionOrchestratorComponent({
+      logs,
+      metrics,
+      config,
+      cdnS3: {} as any,
+      sentry: {} as any,
+      unityTaskQueue,
+      publisher: { publishMessage }
+    })
 
     const components = {
       config,
@@ -77,7 +95,9 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       cdnS3: {} as any,
       sentry: {} as any,
       fetch: {} as any,
-      statusChecks: {} as any
+      statusChecks: {} as any,
+      filesystem,
+      conversionOrchestrator
     }
 
     await main({
@@ -369,6 +389,16 @@ describe('when FAST_PATH_TRIAGE_ENABLED is unset (default off)', () => {
     runner = createRunnerComponent()
     triageTaskQueue = createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'triage-queue' })
     unityTaskQueue = createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'unity-queue' })
+    const filesystem = stubFilesystem()
+    const conversionOrchestrator = await createConversionOrchestratorComponent({
+      logs,
+      metrics,
+      config,
+      cdnS3: {} as any,
+      sentry: {} as any,
+      unityTaskQueue,
+      publisher: { publishMessage }
+    })
 
     const components = {
       config,
@@ -382,7 +412,9 @@ describe('when FAST_PATH_TRIAGE_ENABLED is unset (default off)', () => {
       cdnS3: {} as any,
       sentry: {} as any,
       fetch: {} as any,
-      statusChecks: {} as any
+      statusChecks: {} as any,
+      filesystem,
+      conversionOrchestrator
     }
 
     await main({

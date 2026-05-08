@@ -12,6 +12,8 @@ import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { S3 } from 'aws-sdk'
 import { IRunnerComponent } from './adapters/runner'
 import { SentryComponent } from './adapters/sentry'
+import { IFilesystemComponent } from './adapters/filesystem'
+import { IConversionOrchestratorComponent } from './logic/conversion-orchestrator'
 import { AssetBundleConversionFinishedEvent, AssetBundleConversionManuallyQueuedEvent } from '@dcl/schemas'
 
 export type GlobalContext = {
@@ -38,6 +40,14 @@ export type BaseComponents = {
   runner: IRunnerComponent
   sentry: SentryComponent
   publisher: PublisherComponent
+  // Wraps `check-disk-space`. The consumer loops poll `isBelowMinimum()` to
+  // gracefully stop accepting new jobs when the host disk is about to fill.
+  filesystem: IFilesystemComponent
+  // Per-message decision tree for both consumer loops (triage + Unity).
+  // Owns the validation guard, fast-path / republish routing, and the
+  // finished-event publication. Constructed at startup with config-derived
+  // settings (build target, AB version, kill switch).
+  conversionOrchestrator: IConversionOrchestratorComponent
 }
 
 // components used in runtime

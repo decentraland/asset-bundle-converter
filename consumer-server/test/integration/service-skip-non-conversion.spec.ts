@@ -12,20 +12,17 @@ import { createRunnerComponent, IRunnerComponent } from '../../src/adapters/runn
 import { ITaskQueue } from '../../src/adapters/task-queue'
 import { IBaseComponent } from '@well-known-components/interfaces'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
+import { IFilesystemComponent } from '../../src/adapters/filesystem'
+import { createConversionOrchestratorComponent } from '../../src/logic/conversion-orchestrator'
 
 jest.mock('../../src/logic/conversion-task', () => ({
   executeConversion: jest.fn(),
   executeLODConversion: jest.fn(),
   executeTriagePass: jest.fn(),
-  // Preserve the real parseBooleanFlag — service.ts reads it at startup to
-  // decide whether the triage loop calls executeTriagePass or executeConversion.
-  // Without this, FAST_PATH_TRIAGE_ENABLED parsing throws before main runs.
+  // Preserve the real parseBooleanFlag — the orchestrator reads it at startup
+  // to decide whether the triage loop calls executeTriagePass or executeConversion.
+  // Without this, FAST_PATH_TRIAGE_ENABLED parsing throws on construction.
   parseBooleanFlag: jest.requireActual('../../src/logic/conversion-task').parseBooleanFlag
-}))
-
-jest.mock('check-disk-space', () => ({
-  __esModule: true,
-  default: jest.fn(async () => ({ free: 100 * 1e9, size: 200 * 1e9, diskPath: '/' }))
 }))
 
 import { executeConversion, executeLODConversion } from '../../src/logic/conversion-task'
@@ -67,6 +64,19 @@ describe('when the conversion worker consumes a job from the queue', () => {
     runner = createRunnerComponent()
     triageTaskQueue = createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'test-triage-queue' })
     unityTaskQueue = createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'test-unity-queue' })
+    const filesystem: IFilesystemComponent = {
+      getFreeBytes: jest.fn(async () => 100 * 1e9),
+      isBelowMinimum: jest.fn(async () => false)
+    }
+    const conversionOrchestrator = await createConversionOrchestratorComponent({
+      logs,
+      metrics,
+      config,
+      cdnS3: {} as any,
+      sentry: {} as any,
+      unityTaskQueue,
+      publisher: { publishMessage }
+    })
 
     const components = {
       config,
@@ -80,7 +90,9 @@ describe('when the conversion worker consumes a job from the queue', () => {
       cdnS3: {} as any,
       sentry: {} as any,
       fetch: {} as any,
-      statusChecks: {} as any
+      statusChecks: {} as any,
+      filesystem,
+      conversionOrchestrator
     }
 
     await main({
