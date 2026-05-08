@@ -68,8 +68,13 @@ async function fetchEntitiesByPointers(
 export async function createCatalystComponent(components: Pick<AppComponents, 'fetch'>): Promise<ICatalystComponent> {
   const { fetch: fetchComponent } = components
 
-  return {
-    getActiveEntity: (id, contentServer, timeoutMs) => fetchActiveEntity(id, contentServer, timeoutMs),
-    getEntities: (pointers, sourceServer) => fetchEntitiesByPointers(fetchComponent, pointers, sourceServer)
+  async function getActiveEntity(id: string, contentServer: string, timeoutMs?: number): Promise<Entity> {
+    return fetchActiveEntity(id, contentServer, timeoutMs)
   }
+
+  async function getEntities(pointers: string[], sourceServer: string): Promise<Entity[]> {
+    return fetchEntitiesByPointers(fetchComponent, pointers, sourceServer)
+  }
+
+  return { getActiveEntity, getEntities }
 }

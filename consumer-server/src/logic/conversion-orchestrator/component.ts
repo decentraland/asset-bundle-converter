@@ -134,73 +134,73 @@ export async function createConversionOrchestratorComponent(
     }
   }
 
-  return {
-    async processIncomingJob(job, isPriority) {
-      if (!isValidConversionJob(job)) return
+  async function processIncomingJob(job: DeploymentToSqs, isPriority: boolean): Promise<void> {
+    if (!isValidConversionJob(job)) return
 
-      // Increment version if doISS is true (legacy v2004 path)
-      const versionToUse = job.doISS ? 'v2004' : abVersion
+    // Increment version if doISS is true (legacy v2004 path)
+    const versionToUse = job.doISS ? 'v2004' : abVersion
 
-      // LOD jobs always need Unity — they never fast-path.
-      if (job.lods) {
-        if (triageEnabled) {
+    // LOD jobs always need Unity — they never fast-path.
+    if (job.lods) {
+      if (triageEnabled) {
+        await republishToUnityQueue(job, isPriority)
+        return
+      }
+      await runFullConversionAndPublish(job, versionToUse)
+      return
+    }
+
+    if (!triageEnabled) {
+      // Default behavior: run today's full executeConversion path inline.
+      // running_conversion gauge is incremented inside runFullConversionAndPublish.
+      await runFullConversionAndPublish(job, versionToUse)
+      return
+    }
+
+    // Fast-path triage mode. Track gauge so dashboards reflect "pod is busy
+    // doing triage work" — distinct from running_conversion (which only
+    // counts Unity-spawning work).
+    metrics.increment('ab_converter_running_triage')
+    try {
+      const outcome = await executeTriagePass(
+        components,
+        job.entity.entityId,
+        job.contentServerUrls![0],
+        job.force,
+        job.doISS,
+        versionToUse
+      )
+
+      switch (outcome.kind) {
+        case 'completed':
+          // **Failure mode worth flagging**: if publishMessage throws (SNS
+          // wedged), the SQS adapter's finally block deletes the triage
+          // message anyway, so the finished event is silently lost. This
+          // matches today's behavior in runFullConversionAndPublish — fixing
+          // it requires task-queue contract changes to support nack
+          // semantics. Out of scope here; covered by the existing
+          // ab_converter_unity_queue_publish_errors_total alarm pattern.
+          await publishFinishedEvent(job, outcome.exitCode, versionToUse)
+          return
+        case 'failed':
+          // Sentinel was uploaded by executeTriagePass; emit the finished event so
+          // the publisher's downstream consumers see the failure status, then ack.
+          await publishFinishedEvent(job, outcome.exitCode, versionToUse)
+          return
+        case 'needs-unity':
           await republishToUnityQueue(job, isPriority)
           return
-        }
-        await runFullConversionAndPublish(job, versionToUse)
-        return
       }
-
-      if (!triageEnabled) {
-        // Default behavior: run today's full executeConversion path inline.
-        // running_conversion gauge is incremented inside runFullConversionAndPublish.
-        await runFullConversionAndPublish(job, versionToUse)
-        return
-      }
-
-      // Fast-path triage mode. Track gauge so dashboards reflect "pod is busy
-      // doing triage work" — distinct from running_conversion (which only
-      // counts Unity-spawning work).
-      metrics.increment('ab_converter_running_triage')
-      try {
-        const outcome = await executeTriagePass(
-          components,
-          job.entity.entityId,
-          job.contentServerUrls![0],
-          job.force,
-          job.doISS,
-          versionToUse
-        )
-
-        switch (outcome.kind) {
-          case 'completed':
-            // **Failure mode worth flagging**: if publishMessage throws (SNS
-            // wedged), the SQS adapter's finally block deletes the triage
-            // message anyway, so the finished event is silently lost. This
-            // matches today's behavior in runFullConversionAndPublish — fixing
-            // it requires task-queue contract changes to support nack
-            // semantics. Out of scope here; covered by the existing
-            // ab_converter_unity_queue_publish_errors_total alarm pattern.
-            await publishFinishedEvent(job, outcome.exitCode, versionToUse)
-            return
-          case 'failed':
-            // Sentinel was uploaded by executeTriagePass; emit the finished event so
-            // the publisher's downstream consumers see the failure status, then ack.
-            await publishFinishedEvent(job, outcome.exitCode, versionToUse)
-            return
-          case 'needs-unity':
-            await republishToUnityQueue(job, isPriority)
-            return
-        }
-      } finally {
-        metrics.decrement('ab_converter_running_triage')
-      }
-    },
-
-    async processUnityJob(job) {
-      if (!isValidConversionJob(job)) return
-      const versionToUse = job.doISS ? 'v2004' : abVersion
-      await runFullConversionAndPublish(job, versionToUse)
+    } finally {
+      metrics.decrement('ab_converter_running_triage')
     }
   }
+
+  async function processUnityJob(job: DeploymentToSqs): Promise<void> {
+    if (!isValidConversionJob(job)) return
+    const versionToUse = job.doISS ? 'v2004' : abVersion
+    await runFullConversionAndPublish(job, versionToUse)
+  }
+
+  return { processIncomingJob, processUnityJob }
 }

@@ -145,120 +145,77 @@ export async function createUnityRunnerComponent(
     return exitPromise
   }
 
-  return {
-    async runConversion(options: RunConversionOptions): Promise<number> {
-      await setupStartDirectories(options)
+  async function runConversion(options: RunConversionOptions): Promise<number> {
+    await setupStartDirectories(options)
 
-      // Run manifest builder before conversion if needed
-      if (options.entityType === 'scene' && options.unityBuildTarget !== 'WebGL' && options.doISS) {
-        try {
-          const catalystDomain = new URL(options.contentServerUrl).origin
-          await startManifestBuilder(options.entityId, options.projectPath + '/Assets/_SceneManifest', catalystDomain)
-        } catch (e) {
-          logger.error('Failed to generate scene manifest, building without ISS')
-        }
-      }
-
-      const contentServerUrl = normalizeContentsBaseUrl(options.contentServerUrl)
-
-      const childArg0 = `${options.unityPath}/Editor/Unity`
-
-      const childArguments: string[] = [
-        '-projectPath',
-        options.projectPath,
-        '-batchmode',
-        '-executeMethod',
-        'DCL.ABConverter.SceneClient.ExportSceneToAssetBundles',
-        '-sceneCid',
-        options.entityId,
-        '-logFile',
-        options.logFile,
-        '-baseUrl',
-        contentServerUrl,
-        '-output',
-        options.outDirectory,
-        '-buildTarget',
-        options.unityBuildTarget,
-        '-animation',
-        options.animation || 'legacy'
-      ]
-
-      if (options.cachedHashes && options.cachedHashes.length > 0) {
-        childArguments.push('-cachedHashes', joinValidatedHashes(options.cachedHashes, 'cachedHashes'))
-      }
-
-      if (options.skippedHashes && options.skippedHashes.length > 0) {
-        childArguments.push('-skippedHashes', joinValidatedHashes(options.skippedHashes, 'skippedHashes'))
-      }
-
-      // Per-asset deps digests go out via a temp JSON file rather than an inline
-      // CLI arg: a scene with dozens of glbs × 96 chars per entry would push the
-      // arg string close to argv limits and fight shell-escaping on Windows.
-      // Unity reads the file in `ParseCommonSettings`.
-      //
-      // The file is written ADJACENT to outDirectory (not inside it) so that even
-      // if our best-effort unlink in the finally below fails, the orphan can't be
-      // picked up by `readdir(outDirectory)` in conversion-task.ts (it'd land in
-      // the entity manifest) or by `uploadDir`'s `**/*` match (it'd land at
-      // `{AB_VERSION}/assets/deps-digests.json` on S3).
-      //
-      // `path.resolve` normalizes any trailing slashes — otherwise
-      // `"/tmp/entity_X/" + ".deps-digests.json"` would land *inside* the
-      // directory and silently reintroduce the leak class this guards against.
-      const depsDigestsFile =
-        options.depsDigestByHash && options.depsDigestByHash.size > 0
-          ? `${resolve(options.outDirectory)}.deps-digests.json`
-          : undefined
-
+    // Run manifest builder before conversion if needed
+    if (options.entityType === 'scene' && options.unityBuildTarget !== 'WebGL' && options.doISS) {
       try {
-        if (depsDigestsFile && options.depsDigestByHash) {
-          const payload: Record<string, string> = {}
-          for (const [hash, digest] of options.depsDigestByHash) payload[hash] = digest
-          await fs.writeFile(depsDigestsFile, JSON.stringify(payload), 'utf8')
-          childArguments.push('-depsDigestsFile', depsDigestsFile)
-        }
-
-        return await executeProgram({
-          childArg0,
-          childArguments,
-          projectPath: options.projectPath,
-          timeout: options.timeout
-        })
-      } finally {
-        if (depsDigestsFile) {
-          // Best-effort — the outer teardown will also rimraf `outDirectory`, so
-          // failing here is harmless. Runs even when writeFile crashed mid-write
-          // so a half-written sidecar can't leak past the process.
-          try {
-            await fs.unlink(depsDigestsFile)
-          } catch {}
-        }
+        const catalystDomain = new URL(options.contentServerUrl).origin
+        await startManifestBuilder(options.entityId, options.projectPath + '/Assets/_SceneManifest', catalystDomain)
+      } catch (e) {
+        logger.error('Failed to generate scene manifest, building without ISS')
       }
-    },
+    }
 
-    async runLodsConversion(options: RunLodsConversionOptions): Promise<number> {
-      await setupStartDirectories(options)
+    const contentServerUrl = normalizeContentsBaseUrl(options.contentServerUrl)
 
-      const childArg0 = `${options.unityPath}/Editor/Unity`
+    const childArg0 = `${options.unityPath}/Editor/Unity`
 
-      const childArguments: string[] = [
-        '-projectPath',
-        options.projectPath,
-        '-batchmode',
-        '-executeMethod',
-        'DCL.ABConverter.LODClient.ExportURLLODsToAssetBundles',
-        '-sceneCid',
-        options.entityId,
-        '-logFile',
-        options.logFile,
-        '-lods',
-        options.lods.join(';'),
-        '-output',
-        options.outDirectory,
-        '-buildTarget',
-        options.unityBuildTarget,
-        '-deleteDownloadPathAfterFinished'
-      ]
+    const childArguments: string[] = [
+      '-projectPath',
+      options.projectPath,
+      '-batchmode',
+      '-executeMethod',
+      'DCL.ABConverter.SceneClient.ExportSceneToAssetBundles',
+      '-sceneCid',
+      options.entityId,
+      '-logFile',
+      options.logFile,
+      '-baseUrl',
+      contentServerUrl,
+      '-output',
+      options.outDirectory,
+      '-buildTarget',
+      options.unityBuildTarget,
+      '-animation',
+      options.animation || 'legacy'
+    ]
+
+    if (options.cachedHashes && options.cachedHashes.length > 0) {
+      childArguments.push('-cachedHashes', joinValidatedHashes(options.cachedHashes, 'cachedHashes'))
+    }
+
+    if (options.skippedHashes && options.skippedHashes.length > 0) {
+      childArguments.push('-skippedHashes', joinValidatedHashes(options.skippedHashes, 'skippedHashes'))
+    }
+
+    // Per-asset deps digests go out via a temp JSON file rather than an inline
+    // CLI arg: a scene with dozens of glbs × 96 chars per entry would push the
+    // arg string close to argv limits and fight shell-escaping on Windows.
+    // Unity reads the file in `ParseCommonSettings`.
+    //
+    // The file is written ADJACENT to outDirectory (not inside it) so that even
+    // if our best-effort unlink in the finally below fails, the orphan can't be
+    // picked up by `readdir(outDirectory)` in conversion-task.ts (it'd land in
+    // the entity manifest) or by `uploadDir`'s `**/*` match (it'd land at
+    // `{AB_VERSION}/assets/deps-digests.json` on S3).
+    //
+    // `path.resolve` normalizes any trailing slashes — otherwise
+    // `"/tmp/entity_X/" + ".deps-digests.json"` would land *inside* the
+    // directory and silently reintroduce the leak class this guards against.
+    const depsDigestsFile =
+      options.depsDigestByHash && options.depsDigestByHash.size > 0
+        ? `${resolve(options.outDirectory)}.deps-digests.json`
+        : undefined
+
+    try {
+      if (depsDigestsFile && options.depsDigestByHash) {
+        const payload: Record<string, string> = {}
+        for (const [hash, digest] of options.depsDigestByHash) payload[hash] = digest
+        await fs.writeFile(depsDigestsFile, JSON.stringify(payload), 'utf8')
+        childArguments.push('-depsDigestsFile', depsDigestsFile)
+      }
 
       return await executeProgram({
         childArg0,
@@ -266,6 +223,49 @@ export async function createUnityRunnerComponent(
         projectPath: options.projectPath,
         timeout: options.timeout
       })
+    } finally {
+      if (depsDigestsFile) {
+        // Best-effort — the outer teardown will also rimraf `outDirectory`, so
+        // failing here is harmless. Runs even when writeFile crashed mid-write
+        // so a half-written sidecar can't leak past the process.
+        try {
+          await fs.unlink(depsDigestsFile)
+        } catch {}
+      }
     }
   }
+
+  async function runLodsConversion(options: RunLodsConversionOptions): Promise<number> {
+    await setupStartDirectories(options)
+
+    const childArg0 = `${options.unityPath}/Editor/Unity`
+
+    const childArguments: string[] = [
+      '-projectPath',
+      options.projectPath,
+      '-batchmode',
+      '-executeMethod',
+      'DCL.ABConverter.LODClient.ExportURLLODsToAssetBundles',
+      '-sceneCid',
+      options.entityId,
+      '-logFile',
+      options.logFile,
+      '-lods',
+      options.lods.join(';'),
+      '-output',
+      options.outDirectory,
+      '-buildTarget',
+      options.unityBuildTarget,
+      '-deleteDownloadPathAfterFinished'
+    ]
+
+    return await executeProgram({
+      childArg0,
+      childArguments,
+      projectPath: options.projectPath,
+      timeout: options.timeout
+    })
+  }
+
+  return { runConversion, runLodsConversion }
 }

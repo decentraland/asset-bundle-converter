@@ -18,10 +18,9 @@ export async function createFilesystemComponent(
     return usage.free
   }
 
-  return {
-    getFreeBytes,
-    async isBelowMinimum() {
-      return (await getFreeBytes()) < minimumFreeBytes
-    }
+  async function isBelowMinimum(): Promise<boolean> {
+    return (await getFreeBytes()) < minimumFreeBytes
   }
+
+  return { getFreeBytes, isBelowMinimum }
 }
