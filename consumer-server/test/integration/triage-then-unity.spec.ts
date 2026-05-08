@@ -80,7 +80,13 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       cdnS3: {} as any,
       sentry: {} as any,
       unityTaskQueue,
-      publisher: { publishMessage }
+      publisher: { publishMessage },
+      // Stubs — these tests jest.mock executeConversion / executeLODConversion
+      // / executeTriagePass at module scope, so the orchestrator never actually
+      // dispatches into the catalyst or unity-runner methods. Empty fakes
+      // satisfy the type contract.
+      catalyst: { getActiveEntity: jest.fn(), getEntities: jest.fn() },
+      unityRunner: { runConversion: jest.fn(), runLodsConversion: jest.fn() }
     })
 
     const components = {
@@ -397,7 +403,13 @@ describe('when FAST_PATH_TRIAGE_ENABLED is unset (default off)', () => {
       cdnS3: {} as any,
       sentry: {} as any,
       unityTaskQueue,
-      publisher: { publishMessage }
+      publisher: { publishMessage },
+      // Stubs — these tests jest.mock executeConversion / executeLODConversion
+      // / executeTriagePass at module scope, so the orchestrator never actually
+      // dispatches into the catalyst or unity-runner methods. Empty fakes
+      // satisfy the type contract.
+      catalyst: { getActiveEntity: jest.fn(), getEntities: jest.fn() },
+      unityRunner: { runConversion: jest.fn(), runLodsConversion: jest.fn() }
     })
 
     const components = {

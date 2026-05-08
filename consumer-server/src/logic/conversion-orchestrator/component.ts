@@ -8,7 +8,7 @@ import type { IConversionOrchestratorComponent, Platform } from './types'
 
 type Components = Pick<
   AppComponents | TestComponents,
-  'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry' | 'unityTaskQueue' | 'publisher'
+  'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry' | 'unityTaskQueue' | 'publisher' | 'catalyst' | 'unityRunner'
 >
 
 export async function createConversionOrchestratorComponent(

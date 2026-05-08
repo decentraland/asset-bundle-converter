@@ -17,6 +17,8 @@ import { createRunnerComponent } from './adapters/runner'
 import { createSentryComponent } from './adapters/sentry'
 import { createSnsComponent } from './adapters/sns'
 import { createFilesystemComponent } from './adapters/filesystem'
+import { createCatalystComponent } from './adapters/catalyst'
+import { createUnityRunnerComponent } from './adapters/unity-runner'
 import { createConversionOrchestratorComponent } from './logic/conversion-orchestrator'
 
 // Initialize all the components of the app
@@ -73,6 +75,8 @@ export async function initComponents(): Promise<AppComponents> {
   const runner = createRunnerComponent()
   const publisher = await createSnsComponent({ config, logs })
   const filesystem = await createFilesystemComponent({ metrics })
+  const catalyst = await createCatalystComponent({ fetch })
+  const unityRunner = await createUnityRunnerComponent({ logs, metrics })
   const conversionOrchestrator = await createConversionOrchestratorComponent({
     logs,
     metrics,
@@ -80,7 +84,9 @@ export async function initComponents(): Promise<AppComponents> {
     cdnS3,
     sentry,
     unityTaskQueue,
-    publisher
+    publisher,
+    catalyst,
+    unityRunner
   })
 
   return {
@@ -97,6 +103,8 @@ export async function initComponents(): Promise<AppComponents> {
     sentry,
     publisher,
     filesystem,
+    catalyst,
+    unityRunner,
     conversionOrchestrator
   }
 }

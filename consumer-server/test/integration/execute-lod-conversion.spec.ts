@@ -12,17 +12,12 @@ import { createLogComponent } from '@well-known-components/logger'
 import { createMetricsComponent } from '@well-known-components/metrics'
 import { metricDeclarations } from '../../src/metrics'
 
-jest.mock('../../src/logic/run-conversion', () => ({
-  runConversion: jest.fn(),
-  runLodsConversion: jest.fn()
-}))
-
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const MockAws = require('mock-aws-s3')
-import { runLodsConversion } from '../../src/logic/run-conversion'
 import { executeLODConversion } from '../../src/logic/conversion-task'
 
-const mockedRunLodsConversion = runLodsConversion as jest.Mock
+const mockedRunLodsConversion = jest.fn()
+const mockedRunConversion = jest.fn()
 
 type Params = {
   buildTarget?: string
@@ -40,7 +35,18 @@ function buildComponents(bucketBasePath: string, params: Params = {}) {
 
   MockAws.config.basePath = bucketBasePath
   const cdnS3 = new MockAws.S3({ params: { Bucket: 'test-bucket' } })
-  return { config, cdnS3 }
+  // executeLODConversion only needs unityRunner from these new fields, but
+  // include catalyst as well so the components shape stays interchangeable
+  // across the integration test files.
+  const catalyst = {
+    getActiveEntity: jest.fn(),
+    getEntities: jest.fn()
+  }
+  const unityRunner = {
+    runConversion: mockedRunConversion,
+    runLodsConversion: mockedRunLodsConversion
+  }
+  return { config, cdnS3, catalyst, unityRunner }
 }
 
 async function read(s3: any, Bucket: string, Key: string): Promise<string | null> {
@@ -82,7 +88,7 @@ describe('when executing a LOD conversion', () => {
         return realUpload(params)
       })
 
-      mockedRunLodsConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+      mockedRunLodsConversion.mockImplementation(async (options: any) => {
         await fs.mkdir(path.dirname(options.logFile), { recursive: true })
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(options.logFile, 'lod-unity-log')
@@ -110,7 +116,7 @@ describe('when executing a LOD conversion', () => {
     })
 
     it('should pass the LOD URL list to the Unity runner', () => {
-      const passed = mockedRunLodsConversion.mock.calls[0][2]
+      const passed = mockedRunLodsConversion.mock.calls[0][0]
       expect(passed.lods).toEqual(['https://cdn.example.com/lod1', 'https://cdn.example.com/lod2'])
     })
   })
@@ -138,7 +144,7 @@ describe('when executing a LOD conversion', () => {
     let exitCode: number
 
     beforeEach(async () => {
-      mockedRunLodsConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+      mockedRunLodsConversion.mockImplementation(async (options: any) => {
         await fs.mkdir(path.dirname(options.logFile), { recursive: true })
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(options.logFile, 'empty log')
@@ -164,7 +170,7 @@ describe('when executing a LOD conversion', () => {
         throw new Error(`process.exit(${code}) called`)
       }) as any)
 
-      mockedRunLodsConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+      mockedRunLodsConversion.mockImplementation(async (options: any) => {
         await fs.mkdir(path.dirname(options.logFile), { recursive: true })
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(options.logFile, 'crashed')
@@ -204,7 +210,7 @@ describe('when executing a LOD conversion', () => {
         return realUpload(params)
       })
 
-      mockedRunLodsConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
+      mockedRunLodsConversion.mockImplementation(async (options: any) => {
         await fs.mkdir(path.dirname(options.logFile), { recursive: true })
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(options.logFile, 'lod unity log contents')

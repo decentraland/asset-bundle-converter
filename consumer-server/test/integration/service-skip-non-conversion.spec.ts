@@ -75,7 +75,11 @@ describe('when the conversion worker consumes a job from the queue', () => {
       cdnS3: {} as any,
       sentry: {} as any,
       unityTaskQueue,
-      publisher: { publishMessage }
+      publisher: { publishMessage },
+      // Stubs — executeConversion / executeLODConversion are jest.mocked at
+      // module scope so the orchestrator never dispatches into these.
+      catalyst: { getActiveEntity: jest.fn(), getEntities: jest.fn() },
+      unityRunner: { runConversion: jest.fn(), runLodsConversion: jest.fn() }
     })
 
     const components = {

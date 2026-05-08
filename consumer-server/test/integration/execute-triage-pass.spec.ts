@@ -14,22 +14,14 @@ import { metricDeclarations } from '../../src/metrics'
 import { canonicalFilenameForAsset, computeDepsDigest, probeHitCache } from '../../src/logic/asset-reuse'
 import { buildGlb } from '../helpers/glb-fixtures'
 
-jest.mock('../../src/logic/run-conversion', () => ({
-  runConversion: jest.fn(),
-  runLodsConversion: jest.fn()
-}))
-jest.mock('../../src/logic/fetch-entity-by-pointer', () => ({
-  getActiveEntity: jest.fn(),
-  getEntities: jest.fn()
-}))
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const MockAws = require('mock-aws-s3')
-import { runConversion } from '../../src/logic/run-conversion'
-import { getActiveEntity } from '../../src/logic/fetch-entity-by-pointer'
 import { executeTriagePass } from '../../src/logic/conversion-task'
 
-const mockedRunConversion = runConversion as jest.Mock
-const mockedGetActiveEntity = getActiveEntity as jest.Mock
+const mockedRunConversion = jest.fn()
+const mockedRunLodsConversion = jest.fn()
+const mockedGetActiveEntity = jest.fn()
+const mockedGetEntities = jest.fn()
 const originalNativeFetch = globalThis.fetch
 let mockedFetch: jest.Mock
 
@@ -54,7 +46,20 @@ function buildComponents(bucketBasePath: string) {
     captureException: jest.fn()
   } as any
 
-  return { config, cdnS3, sentry }
+  // Inject component-style mocks for catalyst (entity fetches) and
+  // unityRunner (Unity spawns). executeTriagePass never spawns Unity but
+  // its sibling executeConversion would, so the runner mock is included
+  // for consistency.
+  const catalyst = {
+    getActiveEntity: mockedGetActiveEntity,
+    getEntities: mockedGetEntities
+  }
+  const unityRunner = {
+    runConversion: mockedRunConversion,
+    runLodsConversion: mockedRunLodsConversion
+  }
+
+  return { config, cdnS3, sentry, catalyst, unityRunner }
 }
 
 function responseFor(buf: Buffer): any {

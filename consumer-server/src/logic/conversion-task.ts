@@ -2,13 +2,12 @@ import { uploadDir } from '@dcl/cdn-uploader'
 import { FileVariant } from '@dcl/cdn-uploader/dist/types'
 import * as promises from 'fs/promises'
 import { rimraf } from 'rimraf'
+import { Entity } from '@dcl/schemas'
 import { AppComponents } from '../types'
-import { runConversion, runLodsConversion } from './run-conversion'
 import * as fs from 'fs'
 import * as path from 'path'
 import { hasContentChange } from './has-content-changed-task'
 import { getUnityBuildTarget, normalizeContentsBaseUrl } from '../utils'
-import { getActiveEntity } from './fetch-entity-by-pointer'
 import {
   checkAssetCache,
   computePerAssetDigests,
@@ -120,7 +119,7 @@ function manifestKeyForEntity(entityId: string, target: string | undefined) {
  */
 async function uploadSceneSourceFilesToCDN(
   components: Pick<AppComponents, 'logs' | 'cdnS3'>,
-  entity: Awaited<ReturnType<typeof getActiveEntity>>,
+  entity: Entity,
   contentServerUrl: string,
   uploadPath: string,
   cdnBucket: string
@@ -260,7 +259,7 @@ export type TriagePassOutcome =
  * for this PR.
  */
 export async function executeTriagePass(
-  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry'>,
+  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry' | 'catalyst'>,
   entityId: string,
   contentServerUrl: string,
   force: boolean | undefined,
@@ -308,9 +307,9 @@ export async function executeTriagePass(
 
   // Catalyst entity fetch — same timeout discipline as executeConversion.
   let entityType = 'undefined'
-  let entity: Awaited<ReturnType<typeof getActiveEntity>> | null = null
+  let entity: Entity | null = null
   try {
-    const fetched = await getActiveEntity(entityId, contentServerUrl, CATALYST_FETCH_TIMEOUT_MS)
+    const fetched = await components.catalyst.getActiveEntity(entityId, contentServerUrl, CATALYST_FETCH_TIMEOUT_MS)
     if (!fetched) throw new Error('entity no longer active on catalyst (redeployed or evicted)')
     entity = fetched
     entityType = entity.type
@@ -485,7 +484,7 @@ export async function executeTriagePass(
 }
 
 export async function executeLODConversion(
-  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>,
+  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'unityRunner'>,
   entityId: string,
   lods: string[],
   abVersion: string
@@ -513,7 +512,7 @@ export async function executeLODConversion(
   }
 
   try {
-    const exitCode = await runLodsConversion(logger, components, {
+    const exitCode = await components.unityRunner.runLodsConversion({
       entityId,
       logFile,
       outDirectory,
@@ -620,7 +619,7 @@ export async function executeLODConversion(
  * `probeScene()` helper.
  */
 export async function executeConversion(
-  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry'>,
+  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry' | 'catalyst' | 'unityRunner'>,
   entityId: string,
   contentServerUrl: string,
   force: boolean | undefined,
@@ -668,17 +667,17 @@ export async function executeConversion(
 
   // Fetch the entity up-front — needed both for the per-asset cache probe (when
   // enabled) and for uploading scene source files regardless of whether Unity runs.
-  // `getActiveEntity` throws on non-200 responses. The `!fetched` guard below
-  // is defense-in-depth in case the response parses to null/empty.
+  // `catalyst.getActiveEntity` throws on non-200 responses. The `!fetched`
+  // guard below is defense-in-depth in case the response parses to null/empty.
   //
   // Timeout: passing CATALYST_FETCH_TIMEOUT_MS prevents a wedged catalyst from
   // holding the worker slot indefinitely. On abort the catch below degrades us
   // to "no entity, no asset-reuse, no source-file upload" — conversion still
   // runs against raw hashes.
   let entityType = 'undefined'
-  let entity: Awaited<ReturnType<typeof getActiveEntity>> | null = null
+  let entity: Entity | null = null
   try {
-    const fetched = await getActiveEntity(entityId, contentServerUrl, CATALYST_FETCH_TIMEOUT_MS)
+    const fetched = await components.catalyst.getActiveEntity(entityId, contentServerUrl, CATALYST_FETCH_TIMEOUT_MS)
     if (!fetched) throw new Error('entity no longer active on catalyst (redeployed or evicted)')
     entity = fetched
     entityType = entity.type
@@ -908,6 +907,7 @@ export async function executeConversion(
   if ($BUILD_TARGET !== 'webgl' && !force && !doISS && !useAssetReuse && entityType === 'scene') {
     try {
       hasContentChanged = await hasContentChange(
+        components.catalyst,
         entityId,
         contentServerUrl,
         $BUILD_TARGET,
@@ -924,7 +924,7 @@ export async function executeConversion(
   let exitCode
   try {
     if (hasContentChanged) {
-      exitCode = await runConversion(logger, components, {
+      exitCode = await components.unityRunner.runConversion({
         contentServerUrl,
         entityId,
         entityType,

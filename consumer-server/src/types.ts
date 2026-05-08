@@ -13,6 +13,8 @@ import { S3 } from 'aws-sdk'
 import { IRunnerComponent } from './adapters/runner'
 import { SentryComponent } from './adapters/sentry'
 import { IFilesystemComponent } from './adapters/filesystem'
+import { ICatalystComponent } from './adapters/catalyst'
+import { IUnityRunnerComponent } from './adapters/unity-runner'
 import { IConversionOrchestratorComponent } from './logic/conversion-orchestrator'
 import { AssetBundleConversionFinishedEvent, AssetBundleConversionManuallyQueuedEvent } from '@dcl/schemas'
 
@@ -43,6 +45,12 @@ export type BaseComponents = {
   // Wraps `check-disk-space`. The consumer loops poll `isBelowMinimum()` to
   // gracefully stop accepting new jobs when the host disk is about to fill.
   filesystem: IFilesystemComponent
+  // HTTP client for catalysts and worlds-content-server. All conversion I/O
+  // against the catalyst funnels through this so tests can inject a fake.
+  catalyst: ICatalystComponent
+  // Spawns the Unity child process for scene / wearable / LOD conversions.
+  // Owns the spawn, timeout, log streaming, and CLI-arg validation logic.
+  unityRunner: IUnityRunnerComponent
   // Per-message decision tree for both consumer loops (triage + Unity).
   // Owns the validation guard, fast-path / republish routing, and the
   // finished-event publication. Constructed at startup with config-derived
