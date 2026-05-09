@@ -57,17 +57,22 @@ export async function initComponents(): Promise<AppComponents> {
       )
     : createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'TriageTaskQueue' })
 
-  // Unity queue is internal — only populated by the triage loop's republish
-  // path. Falls back to a memory queue when env vars are unset (local dev,
-  // pre-rollout deploys). The Unity loop drains whatever lands here.
-  const unityTaskQueueUrl = await config.getString('UNITY_TASK_QUEUE')
-  const unityPriorityTaskQueueUrl = await config.getString('UNITY_PRIORITY_TASK_QUEUE')
-  const unityTaskQueue = unityTaskQueueUrl
+  // Conversion queue is internal — only populated by the triage loop's
+  // republish path. Falls back to a memory queue when env vars are unset
+  // (local dev, pre-rollout deploys). The conversion loop drains whatever
+  // lands here.
+  const conversionTaskQueueUrl = await config.getString('CONVERSION_TASK_QUEUE')
+  const conversionPriorityTaskQueueUrl = await config.getString('CONVERSION_PRIORITY_TASK_QUEUE')
+  const conversionTaskQueue = conversionTaskQueueUrl
     ? createSqsAdapter<DeploymentToSqs>(
         { logs, metrics },
-        { queueUrl: unityTaskQueueUrl, priorityQueueUrl: unityPriorityTaskQueueUrl, queueRegion: AWS_REGION }
+        {
+          queueUrl: conversionTaskQueueUrl,
+          priorityQueueUrl: conversionPriorityTaskQueueUrl,
+          queueRegion: AWS_REGION
+        }
       )
-    : createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'UnityTaskQueue' })
+    : createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'ConversionTaskQueue' })
 
   const s3Bucket = await config.getString('CDN_BUCKET')
   const cdnS3 = s3Bucket ? new AWS.S3({}) : new MockAws.S3({})
@@ -83,7 +88,7 @@ export async function initComponents(): Promise<AppComponents> {
     config,
     cdnS3,
     sentry,
-    unityTaskQueue,
+    conversionTaskQueue,
     publisher,
     catalyst,
     unityRunner
@@ -97,7 +102,7 @@ export async function initComponents(): Promise<AppComponents> {
     fetch,
     metrics,
     triageTaskQueue,
-    unityTaskQueue,
+    conversionTaskQueue,
     cdnS3,
     runner,
     sentry,

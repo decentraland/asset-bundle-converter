@@ -22,12 +22,12 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
   await startComponents()
 
   const triageLogger = components.logs.getLogger('triage-loop')
-  const unityLogger = components.logs.getLogger('unity-loop')
+  const conversionLogger = components.logs.getLogger('conversion-loop')
 
   // Triage loop. When `FAST_PATH_TRIAGE_ENABLED` is off (default), the
   // orchestrator's processIncomingJob runs full executeConversion inline
   // (today's behavior). When on, it runs executeTriagePass and either
-  // fast-paths or republishes to the Unity queue. See
+  // fast-paths or republishes to the Conversion queue. See
   // `logic/conversion-orchestrator/component.ts` for the full decision tree.
   components.runner.runTask(async (opt) => {
     while (opt.isRunning) {
@@ -43,19 +43,19 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
     }
   })
 
-  // Unity loop. Always runs; drains the Unity queue regardless of the kill
-  // switch. When the switch is off, no new messages land here, so this loop
-  // sits idle. On revert, any residual messages drain naturally.
+  // Conversion loop. Always runs; drains the Conversion queue regardless of
+  // the kill switch. When the switch is off, no new messages land here, so
+  // this loop sits idle. On revert, any residual messages drain naturally.
   components.runner.runTask(async (opt) => {
     while (opt.isRunning) {
       if (await components.filesystem.isBelowMinimum()) {
-        unityLogger.warn('Stopping program due to lack of disk space (unity loop)')
+        conversionLogger.warn('Stopping program due to lack of disk space (conversion loop)')
         void program.stop()
         return
       }
 
-      await components.unityTaskQueue.consumeAndProcessJob(async (job, _message, _opts) => {
-        await components.conversionOrchestrator.processUnityJob(job)
+      await components.conversionTaskQueue.consumeAndProcessJob(async (job, _message, _opts) => {
+        await components.conversionOrchestrator.processConversionJob(job)
       })
     }
   })

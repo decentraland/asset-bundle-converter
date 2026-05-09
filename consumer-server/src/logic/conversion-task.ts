@@ -219,11 +219,12 @@ async function shouldIgnoreConversion(
  *   hash was already canonical and the scene source files + manifest were
  *   uploaded inline (`exitCode: 0`). In both cases the triage loop publishes
  *   the AssetBundleConversionFinishedEvent and acks the message — no Unity
- *   needed, no Unity-queue republish.
+ *   needed, no Conversion-queue republish.
  * - `needs-unity`: triage cannot complete the job. The triage loop should
- *   republish the job to the Unity queue and ack the triage message; the
- *   Unity loop will eventually pick it up. No finished event is published
- *   yet — the Unity loop will publish it after the conversion completes.
+ *   republish the job to the Conversion queue and ack the triage message;
+ *   the conversion loop will eventually pick it up. No finished event is
+ *   published yet — the conversion loop will publish it after the
+ *   conversion completes.
  * - `failed`: the probe itself errored (e.g., per-asset digest computation
  *   threw). A failed-manifest sentinel has already been uploaded so clients
  *   can see the failure. The triage loop should ack but skip republishing.
@@ -238,12 +239,12 @@ export type TriagePassOutcome =
  * `executeConversion` (shouldIgnore short-circuit, entity fetch, per-asset
  * digest, cache probe, full-cache-hit fast path) but never spawns Unity. On
  * cache miss returns `{ kind: 'needs-unity' }` so the caller can republish
- * the message to the Unity queue.
+ * the message to the Conversion queue.
  *
  * Force / ISS / non-scene jobs deliberately skip the probe (they always need
- * Unity) and return `{ kind: 'needs-unity' }` immediately. The Unity loop's
- * subsequent `executeConversion` call still does its own catalyst fetch, so
- * we don't lose any state.
+ * Unity) and return `{ kind: 'needs-unity' }` immediately. The conversion
+ * loop's subsequent `executeConversion` call still does its own catalyst
+ * fetch, so we don't lose any state.
  *
  * **Maintenance note**: this function intentionally duplicates the probe
  * portion of `executeConversion` (the `shouldIgnoreConversion` short-circuit,
@@ -291,11 +292,11 @@ export async function executeTriagePass(
 
   // Force / ISS short-circuit: these always need Unity (force is "redo this
   // entity from scratch"; ISS is the v2004 special-case version). Don't bother
-  // with the probe — return needs-unity and let the Unity loop handle it.
+  // with the probe — return needs-unity and let the conversion loop handle it.
   if (force || doISS) {
     components.metrics.increment('ab_converter_triage_outcomes_total', {
       build_target: $BUILD_TARGET,
-      outcome: 'republished_to_unity'
+      outcome: 'republished_to_conversion'
     })
     return { kind: 'needs-unity' }
   }
@@ -317,7 +318,7 @@ export async function executeTriagePass(
     logger.info(`Could not fetch entity for ${entityId}: ${e?.message ?? e}. Triage cannot probe — republishing.`)
     components.metrics.increment('ab_converter_triage_outcomes_total', {
       build_target: $BUILD_TARGET,
-      outcome: 'republished_to_unity'
+      outcome: 'republished_to_conversion'
     })
     return { kind: 'needs-unity' }
   }
@@ -328,7 +329,7 @@ export async function executeTriagePass(
   if (!useAssetReuse) {
     components.metrics.increment('ab_converter_triage_outcomes_total', {
       build_target: $BUILD_TARGET,
-      outcome: 'republished_to_unity'
+      outcome: 'republished_to_conversion'
     })
     return { kind: 'needs-unity' }
   }
@@ -341,7 +342,7 @@ export async function executeTriagePass(
     const digestResult = await computePerAssetDigests(entity, contentServerUrl, { aggregateTimeoutMs: 60_000 })
     depsDigestByHash = digestResult.digests
     // Note: skipped assets stay in the result and are surfaced in the failed
-    // manifest by the Unity loop's executeConversion (full path). Triage just
+    // manifest by the conversion loop's executeConversion (full path). Triage just
     // needs to know whether the cache is fully hit, which is independent of
     // skipped-glb counts.
   } catch (err: any) {
@@ -404,7 +405,7 @@ export async function executeTriagePass(
     })
     components.metrics.increment('ab_converter_triage_outcomes_total', {
       build_target: $BUILD_TARGET,
-      outcome: 'republished_to_unity'
+      outcome: 'republished_to_conversion'
     })
     return { kind: 'needs-unity' }
   }
@@ -415,7 +416,7 @@ export async function executeTriagePass(
   if (!fullCacheHit) {
     components.metrics.increment('ab_converter_triage_outcomes_total', {
       build_target: $BUILD_TARGET,
-      outcome: 'republished_to_unity'
+      outcome: 'republished_to_conversion'
     })
     return { kind: 'needs-unity' }
   }
@@ -460,12 +461,12 @@ export async function executeTriagePass(
         date: new Date().toISOString()
       }
     })
-    // Republish so the Unity loop can retry the upload (and possibly run Unity
+    // Republish so the conversion loop can retry the upload (and possibly run Unity
     // if the cache state has changed). Same-pod upload errors are usually
     // transient.
     components.metrics.increment('ab_converter_triage_outcomes_total', {
       build_target: $BUILD_TARGET,
-      outcome: 'republished_to_unity'
+      outcome: 'republished_to_conversion'
     })
     return { kind: 'needs-unity' }
   }

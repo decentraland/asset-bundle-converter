@@ -215,7 +215,7 @@ describe('when running executeTriagePass against a scene', () => {
       expect(outcome).toEqual({ kind: 'needs-unity' })
     })
 
-    it('should not upload an entity manifest (Unity loop will do that)', async () => {
+    it('should not upload an entity manifest (conversion loop will do that)', async () => {
       expect(await read(components.cdnS3, 'test-bucket', 'manifest/bafy-cache-miss_windows.json')).toBeNull()
     })
   })
@@ -313,7 +313,7 @@ describe('when running executeTriagePass against a scene', () => {
       )
     })
 
-    it('should return kind: needs-unity so the Unity loop retries against the catalyst', () => {
+    it('should return kind: needs-unity so the conversion loop retries against the catalyst', () => {
       expect(outcome).toEqual({ kind: 'needs-unity' })
     })
   })

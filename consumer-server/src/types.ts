@@ -29,7 +29,7 @@ export type BaseComponents = {
   server: IHttpServerComponent<GlobalContext>
   fetch: IFetchComponent
   triageTaskQueue: ITaskQueue<DeploymentToSqs>
-  unityTaskQueue: ITaskQueue<DeploymentToSqs>
+  conversionTaskQueue: ITaskQueue<DeploymentToSqs>
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
   cdnS3: S3
   runner: IRunnerComponent

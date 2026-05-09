@@ -3,12 +3,12 @@ import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { AppComponents, TestComponents } from '../../types'
 import { getAbVersionEnvName } from '../../utils'
 import { executeConversion, executeLODConversion, executeTriagePass, parseBooleanFlag } from '../conversion-task'
-import { UnityQueueRepublishFailedError } from './errors'
+import { ConversionQueueRepublishFailedError } from './errors'
 import type { IConversionOrchestratorComponent, Platform } from './types'
 
 type Components = Pick<
   AppComponents | TestComponents,
-  'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry' | 'unityTaskQueue' | 'publisher' | 'catalyst' | 'unityRunner'
+  'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry' | 'conversionTaskQueue' | 'publisher' | 'catalyst' | 'unityRunner'
 >
 
 /**
@@ -21,12 +21,12 @@ type Components = Pick<
  *   `executeConversion` / `executeLODConversion` / `executeTriagePass`,
  *   so any field they need (`catalyst`, `unityRunner`, `cdnS3`, etc.)
  *   must be present even though the orchestrator's own dispatch logic
- *   only reads `unityTaskQueue`, `publisher`, `metrics`, and `logs`.
+ *   only reads `conversionTaskQueue`, `publisher`, `metrics`, and `logs`.
  */
 export async function createConversionOrchestratorComponent(
   components: Components
 ): Promise<IConversionOrchestratorComponent> {
-  const { logs, metrics, config, unityTaskQueue, publisher } = components
+  const { logs, metrics, config, conversionTaskQueue, publisher } = components
   const logger = logs.getLogger('conversion-orchestrator')
 
   const platform = (await config.requireString('PLATFORM')).toLocaleLowerCase() as Platform
@@ -103,9 +103,9 @@ export async function createConversionOrchestratorComponent(
   }
 
   /**
-   * Forwards a job from the triage queue to the Unity queue, preserving
-   * the priority lane. Increments `ab_converter_unity_queue_publish_total`
-   * on success.
+   * Forwards a job from the triage queue to the Conversion queue,
+   * preserving the priority lane. Increments
+   * `ab_converter_conversion_queue_publish_total` on success.
    *
    * **Lost-work warning**: the SQS adapter's `consumeAndProcessJob`
    * deletes the triage message in its finally block (after this function
@@ -113,34 +113,34 @@ export async function createConversionOrchestratorComponent(
    * triage message without successfully republishing — work is
    * permanently lost. This is a known limitation of the current
    * task-queue contract (delete-in-finally), not introduced by the
-   * triage→Unity split.
+   * triage→Conversion split.
    *
    * **Required ops gate before flipping FAST_PATH_TRIAGE_ENABLED=true**:
    * configure an alert on
-   * `ab_converter_unity_queue_publish_errors_total > 0` with a low
-   * threshold (any non-zero rate is suspicious) so a wedged Unity queue
-   * is detected before significant backlog is lost. Throwing here also
-   * produces a loud error log keyed on entityId for incident triage.
+   * `ab_converter_conversion_queue_publish_errors_total > 0` with a low
+   * threshold (any non-zero rate is suspicious) so a wedged Conversion
+   * queue is detected before significant backlog is lost. Throwing here
+   * also produces a loud error log keyed on entityId for incident triage.
    *
-   * @throws {@link UnityQueueRepublishFailedError} when
-   *   `unityTaskQueue.publish` fails. Carries `entityId` and
+   * @throws {@link ConversionQueueRepublishFailedError} when
+   *   `conversionTaskQueue.publish` fails. Carries `entityId` and
    *   `buildTarget` so Sentry / log filtering can isolate the loss.
    */
-  async function republishToUnityQueue(job: DeploymentToSqs, isPriority: boolean): Promise<void> {
+  async function republishToConversionQueue(job: DeploymentToSqs, isPriority: boolean): Promise<void> {
     try {
-      await unityTaskQueue.publish(job, isPriority)
-      metrics.increment('ab_converter_unity_queue_publish_total', {
+      await conversionTaskQueue.publish(job, isPriority)
+      metrics.increment('ab_converter_conversion_queue_publish_total', {
         build_target: buildTarget,
         priority: isPriority ? 'priority' : 'standard'
       })
     } catch (err: any) {
-      logger.error(`Failed to republish job to Unity queue — work will be lost: ${err?.message ?? err}`, {
+      logger.error(`Failed to republish job to Conversion queue — work will be lost: ${err?.message ?? err}`, {
         entityId: job?.entity?.entityId
       })
-      metrics.increment('ab_converter_unity_queue_publish_errors_total', {
+      metrics.increment('ab_converter_conversion_queue_publish_errors_total', {
         build_target: buildTarget
       })
-      throw new UnityQueueRepublishFailedError(job.entity.entityId, buildTarget, err)
+      throw new ConversionQueueRepublishFailedError(job.entity.entityId, buildTarget, err)
     }
   }
 
@@ -149,7 +149,7 @@ export async function createConversionOrchestratorComponent(
    * publish the finished event. Wraps the conversion call with the
    * `ab_converter_running_conversion` gauge so dashboards reflect
    * Unity-spawning work in flight. Called by both the triage loop's
-   * default-mode branch (kill switch off) and the Unity loop.
+   * default-mode branch (kill switch off) and the conversion loop.
    */
   async function runFullConversionAndPublish(job: DeploymentToSqs, versionToUse: string): Promise<void> {
     let statusCode: number
@@ -182,16 +182,16 @@ export async function createConversionOrchestratorComponent(
    * based on `FAST_PATH_TRIAGE_ENABLED` and the job shape:
    *
    * - LOD jobs always need Unity — when triage is on they're republished
-   *   to the Unity queue, otherwise they run inline.
+   *   to the Conversion queue, otherwise they run inline.
    * - When triage is off, scenes run today's full `executeConversion`
    *   path inline.
    * - When triage is on, scenes run `executeTriagePass` and either
    *   fast-path (cache hit / already-converted), publish a failure event
-   *   (probe error), or republish to the Unity queue (cache miss).
+   *   (probe error), or republish to the Conversion queue (cache miss).
    *
    * @param isPriority - True when the message arrived from the priority
-   *   triage queue. Preserved end-to-end on Unity-queue republish so the
-   *   priority lane stays separated.
+   *   triage queue. Preserved end-to-end on Conversion-queue republish so
+   *   the priority lane stays separated.
    */
   async function processIncomingJob(job: DeploymentToSqs, isPriority: boolean): Promise<void> {
     if (!isValidConversionJob(job)) return
@@ -202,7 +202,7 @@ export async function createConversionOrchestratorComponent(
     // LOD jobs always need Unity — they never fast-path.
     if (job.lods) {
       if (triageEnabled) {
-        await republishToUnityQueue(job, isPriority)
+        await republishToConversionQueue(job, isPriority)
         return
       }
       await runFullConversionAndPublish(job, versionToUse)
@@ -238,7 +238,7 @@ export async function createConversionOrchestratorComponent(
           // matches today's behavior in runFullConversionAndPublish — fixing
           // it requires task-queue contract changes to support nack
           // semantics. Out of scope here; covered by the existing
-          // ab_converter_unity_queue_publish_errors_total alarm pattern.
+          // ab_converter_conversion_queue_publish_errors_total alarm pattern.
           await publishFinishedEvent(job, outcome.exitCode, versionToUse)
           return
         case 'failed':
@@ -247,7 +247,7 @@ export async function createConversionOrchestratorComponent(
           await publishFinishedEvent(job, outcome.exitCode, versionToUse)
           return
         case 'needs-unity':
-          await republishToUnityQueue(job, isPriority)
+          await republishToConversionQueue(job, isPriority)
           return
       }
     } finally {
@@ -256,17 +256,18 @@ export async function createConversionOrchestratorComponent(
   }
 
   /**
-   * Unity loop's per-message handler. Always runs the full conversion
-   * (no kill-switch branching) so any job that lands on the Unity queue
-   * gets processed regardless of `FAST_PATH_TRIAGE_ENABLED`. Re-runs the
-   * probe inside `executeConversion`, so peer-pod canonicalisations
-   * since the original triage pass produce a free fast-path short-circuit.
+   * Conversion loop's per-message handler. Always runs the full
+   * conversion (no kill-switch branching) so any job that lands on the
+   * Conversion queue gets processed regardless of
+   * `FAST_PATH_TRIAGE_ENABLED`. Re-runs the probe inside
+   * `executeConversion`, so peer-pod canonicalisations since the original
+   * triage pass produce a free fast-path short-circuit.
    */
-  async function processUnityJob(job: DeploymentToSqs): Promise<void> {
+  async function processConversionJob(job: DeploymentToSqs): Promise<void> {
     if (!isValidConversionJob(job)) return
     const versionToUse = job.doISS ? 'v2004' : abVersion
     await runFullConversionAndPublish(job, versionToUse)
   }
 
-  return { processIncomingJob, processUnityJob }
+  return { processIncomingJob, processConversionJob }
 }

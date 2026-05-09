@@ -70,17 +70,17 @@ export const metricDeclarations = {
     labelNames: ['build_target', 'ab_version', 'reason']
   },
   ab_converter_triage_outcomes_total: {
-    help: 'Counter of triage-pass outcomes per scene. outcome ∈ {already_converted, fast_path_completed, republished_to_unity, failed}.',
+    help: 'Counter of triage-pass outcomes per scene. outcome ∈ {already_converted, fast_path_completed, republished_to_conversion, failed}.',
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target', 'outcome']
   },
-  ab_converter_unity_queue_publish_total: {
-    help: 'Counter of triage republishes to the Unity queue, labelled by priority lane (priority / standard)',
+  ab_converter_conversion_queue_publish_total: {
+    help: 'Counter of triage republishes to the Conversion queue, labelled by priority lane (priority / standard)',
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target', 'priority']
   },
-  ab_converter_unity_queue_publish_errors_total: {
-    help: 'Counter of failed Unity-queue publishes from the triage loop. Non-zero means lost work — alert on this.',
+  ab_converter_conversion_queue_publish_errors_total: {
+    help: 'Counter of failed Conversion-queue publishes from the triage loop. Non-zero means lost work — alert on this.',
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target']
   }

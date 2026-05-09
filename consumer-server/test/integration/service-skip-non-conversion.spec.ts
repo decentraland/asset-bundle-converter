@@ -43,7 +43,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void
 describe('when the conversion worker consumes a job from the queue', () => {
   let runner: IRunnerComponent
   let triageTaskQueue: ITaskQueue<DeploymentToSqs> & IBaseComponent
-  let unityTaskQueue: ITaskQueue<DeploymentToSqs> & IBaseComponent
+  let conversionTaskQueue: ITaskQueue<DeploymentToSqs> & IBaseComponent
   let publishMessage: jest.Mock
 
   beforeEach(async () => {
@@ -63,7 +63,7 @@ describe('when the conversion worker consumes a job from the queue', () => {
     publishMessage = jest.fn(async () => undefined)
     runner = createRunnerComponent()
     triageTaskQueue = createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'test-triage-queue' })
-    unityTaskQueue = createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'test-unity-queue' })
+    conversionTaskQueue = createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'test-unity-queue' })
     const filesystem: IFilesystemComponent = {
       getFreeBytes: jest.fn(async () => 100 * 1e9),
       isBelowMinimum: jest.fn(async () => false)
@@ -74,7 +74,7 @@ describe('when the conversion worker consumes a job from the queue', () => {
       config,
       cdnS3: {} as any,
       sentry: {} as any,
-      unityTaskQueue,
+      conversionTaskQueue,
       publisher: { publishMessage },
       // Stubs — executeConversion / executeLODConversion are jest.mocked at
       // module scope so the orchestrator never dispatches into these.
@@ -87,7 +87,7 @@ describe('when the conversion worker consumes a job from the queue', () => {
       logs,
       server: { use: jest.fn(), setContext: jest.fn() } as any,
       triageTaskQueue,
-      unityTaskQueue,
+      conversionTaskQueue,
       runner,
       metrics,
       publisher: { publishMessage },
@@ -113,7 +113,7 @@ describe('when the conversion worker consumes a job from the queue', () => {
     // can exit.
     const stopRunner = runner.stop()
     await triageTaskQueue.stop!()
-    await unityTaskQueue.stop!()
+    await conversionTaskQueue.stop!()
     await stopRunner
     jest.clearAllMocks()
   })

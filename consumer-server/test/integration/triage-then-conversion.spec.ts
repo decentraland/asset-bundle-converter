@@ -1,8 +1,8 @@
-// Coverage for the triage → Unity queue split introduced for fast-path
+// Coverage for the triage → Conversion queue split introduced for fast-path
 // concurrency. With FAST_PATH_TRIAGE_ENABLED=true the triage loop calls
 // executeTriagePass instead of executeConversion. Cache-hit jobs ack from
-// the triage queue and never appear on the Unity queue. Cache-miss jobs are
-// republished to the Unity queue, which a separate Unity loop drains.
+// the triage queue and never appear on the Conversion queue. Cache-miss jobs are
+// republished to the Conversion queue, which a separate conversion loop drains.
 
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { createLogComponent } from '@well-known-components/logger'
@@ -49,7 +49,7 @@ const stubFilesystem = (): IFilesystemComponent => ({
 describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
   let runner: IRunnerComponent
   let triageTaskQueue: ITaskQueue<DeploymentToSqs> & IBaseComponent
-  let unityTaskQueue: ITaskQueue<DeploymentToSqs> & IBaseComponent
+  let conversionTaskQueue: ITaskQueue<DeploymentToSqs> & IBaseComponent
   let publishMessage: jest.Mock
 
   beforeEach(async () => {
@@ -67,7 +67,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
     publishMessage = jest.fn(async () => undefined)
     runner = createRunnerComponent()
     triageTaskQueue = createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'triage-queue' })
-    unityTaskQueue = createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'unity-queue' })
+    conversionTaskQueue = createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'conversion-queue' })
     const filesystem = stubFilesystem()
     // Build the real orchestrator against the mocked conversion-task module —
     // that way the dispatch logic (validation guard, fast-path / republish
@@ -79,7 +79,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       config,
       cdnS3: {} as any,
       sentry: {} as any,
-      unityTaskQueue,
+      conversionTaskQueue,
       publisher: { publishMessage },
       // Stubs — these tests jest.mock executeConversion / executeLODConversion
       // / executeTriagePass at module scope, so the orchestrator never actually
@@ -94,7 +94,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       logs,
       server: { use: jest.fn(), setContext: jest.fn() } as any,
       triageTaskQueue,
-      unityTaskQueue,
+      conversionTaskQueue,
       runner,
       metrics,
       publisher: { publishMessage },
@@ -117,17 +117,17 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
   afterEach(async () => {
     const stopRunner = runner.stop()
     await triageTaskQueue.stop!()
-    await unityTaskQueue.stop!()
+    await conversionTaskQueue.stop!()
     await stopRunner
     jest.clearAllMocks()
   })
 
   describe('and a job whose triage outcome is fast-path-completed is enqueued on the triage queue', () => {
-    let unityPublishSpy: jest.SpyInstance
+    let conversionPublishSpy: jest.SpyInstance
 
     beforeEach(async () => {
       mockedExecuteTriagePass.mockResolvedValue({ kind: 'completed', exitCode: 0 })
-      unityPublishSpy = jest.spyOn(unityTaskQueue, 'publish')
+      conversionPublishSpy = jest.spyOn(conversionTaskQueue, 'publish')
       await triageTaskQueue.publish({
         entity: { entityId: 'bafy-fast-hit', authChain: [] as any },
         contentServerUrls: ['https://peer.decentraland.org/content']
@@ -146,8 +146,8 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       )
     })
 
-    it('should not republish the job to the Unity queue', () => {
-      expect(unityPublishSpy).not.toHaveBeenCalled()
+    it('should not republish the job to the Conversion queue', () => {
+      expect(conversionPublishSpy).not.toHaveBeenCalled()
     })
 
     it('should not invoke executeConversion (no Unity work)', () => {
@@ -165,21 +165,21 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
   })
 
   describe('and a job whose triage outcome is needs-unity is enqueued on the triage queue', () => {
-    let unityPublishSpy: jest.SpyInstance
+    let conversionPublishSpy: jest.SpyInstance
 
     beforeEach(async () => {
       mockedExecuteTriagePass.mockResolvedValue({ kind: 'needs-unity' })
       mockedExecuteConversion.mockResolvedValue(0)
-      unityPublishSpy = jest.spyOn(unityTaskQueue, 'publish')
+      conversionPublishSpy = jest.spyOn(conversionTaskQueue, 'publish')
       await triageTaskQueue.publish({
         entity: { entityId: 'bafy-cache-miss', authChain: [] as any },
         contentServerUrls: ['https://peer.decentraland.org/content']
       })
-      await waitFor(() => unityPublishSpy.mock.calls.length >= 1)
+      await waitFor(() => conversionPublishSpy.mock.calls.length >= 1)
     })
 
-    it('should republish the job to the Unity queue', () => {
-      expect(unityPublishSpy).toHaveBeenCalledWith(
+    it('should republish the job to the Conversion queue', () => {
+      expect(conversionPublishSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           entity: expect.objectContaining({ entityId: 'bafy-cache-miss' })
         }),
@@ -187,7 +187,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       )
     })
 
-    it('should drive the Unity loop to call executeConversion', async () => {
+    it('should drive the conversion loop to call executeConversion', async () => {
       await waitFor(() => mockedExecuteConversion.mock.calls.length >= 1)
       expect(mockedExecuteConversion).toHaveBeenCalledWith(
         expect.anything(),
@@ -202,25 +202,25 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
   })
 
   describe('and a LOD job is enqueued on the triage queue', () => {
-    let unityPublishSpy: jest.SpyInstance
+    let conversionPublishSpy: jest.SpyInstance
 
     beforeEach(async () => {
       mockedExecuteLODConversion.mockResolvedValue(0)
-      unityPublishSpy = jest.spyOn(unityTaskQueue, 'publish')
+      conversionPublishSpy = jest.spyOn(conversionTaskQueue, 'publish')
       await triageTaskQueue.publish({
         entity: { entityId: 'bafy-lod-job', authChain: [] as any },
         contentServerUrls: ['https://peer.decentraland.org/content'],
         lods: ['lod1.glb']
       } as any)
-      await waitFor(() => unityPublishSpy.mock.calls.length >= 1)
+      await waitFor(() => conversionPublishSpy.mock.calls.length >= 1)
     })
 
-    it('should republish the LOD job to the Unity queue without probing', () => {
+    it('should republish the LOD job to the Conversion queue without probing', () => {
       expect(mockedExecuteTriagePass).not.toHaveBeenCalled()
-      expect(unityPublishSpy).toHaveBeenCalledTimes(1)
+      expect(conversionPublishSpy).toHaveBeenCalledTimes(1)
     })
 
-    it('should drive the Unity loop to call executeLODConversion', async () => {
+    it('should drive the conversion loop to call executeLODConversion', async () => {
       await waitFor(() => mockedExecuteLODConversion.mock.calls.length >= 1)
       expect(mockedExecuteLODConversion).toHaveBeenCalledWith(
         expect.anything(),
@@ -232,11 +232,11 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
   })
 
   describe('and a triage-failed outcome is returned', () => {
-    let unityPublishSpy: jest.SpyInstance
+    let conversionPublishSpy: jest.SpyInstance
 
     beforeEach(async () => {
       mockedExecuteTriagePass.mockResolvedValue({ kind: 'failed', exitCode: 5 })
-      unityPublishSpy = jest.spyOn(unityTaskQueue, 'publish')
+      conversionPublishSpy = jest.spyOn(conversionTaskQueue, 'publish')
       await triageTaskQueue.publish({
         entity: { entityId: 'bafy-failed-probe', authChain: [] as any },
         contentServerUrls: ['https://peer.decentraland.org/content']
@@ -252,32 +252,32 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       )
     })
 
-    it('should not republish to the Unity queue', () => {
-      expect(unityPublishSpy).not.toHaveBeenCalled()
+    it('should not republish to the Conversion queue', () => {
+      expect(conversionPublishSpy).not.toHaveBeenCalled()
     })
   })
 
   describe('and a force=true job is enqueued on the triage queue', () => {
-    let unityPublishSpy: jest.SpyInstance
+    let conversionPublishSpy: jest.SpyInstance
 
     beforeEach(async () => {
       // executeTriagePass returns needs-unity for force=true (verified in
       // execute-triage-pass.spec.ts unit tests). Here we verify the routing
-      // half of the contract: the job is republished to the Unity queue and
+      // half of the contract: the job is republished to the Conversion queue and
       // the original force flag is preserved on the republished payload.
       mockedExecuteTriagePass.mockResolvedValue({ kind: 'needs-unity' })
       mockedExecuteConversion.mockResolvedValue(0)
-      unityPublishSpy = jest.spyOn(unityTaskQueue, 'publish')
+      conversionPublishSpy = jest.spyOn(conversionTaskQueue, 'publish')
       await triageTaskQueue.publish({
         entity: { entityId: 'bafy-force-job', authChain: [] as any },
         contentServerUrls: ['https://peer.decentraland.org/content'],
         force: true
       } as any)
-      await waitFor(() => unityPublishSpy.mock.calls.length >= 1)
+      await waitFor(() => conversionPublishSpy.mock.calls.length >= 1)
     })
 
-    it('should republish the job to the Unity queue with force preserved', () => {
-      expect(unityPublishSpy).toHaveBeenCalledWith(
+    it('should republish the job to the Conversion queue with force preserved', () => {
+      expect(conversionPublishSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           entity: expect.objectContaining({ entityId: 'bafy-force-job' }),
           force: true
@@ -286,7 +286,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       )
     })
 
-    it('should drive the Unity loop to call executeConversion with force=true', async () => {
+    it('should drive the conversion loop to call executeConversion with force=true', async () => {
       await waitFor(() => mockedExecuteConversion.mock.calls.length >= 1)
       expect(mockedExecuteConversion).toHaveBeenCalledWith(
         expect.anything(),
@@ -301,7 +301,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
   })
 
   describe('and a priority job is enqueued on the triage queue', () => {
-    let unityPublishSpy: jest.SpyInstance
+    let conversionPublishSpy: jest.SpyInstance
 
     beforeEach(async () => {
       // The in-memory adapter now honours `prioritize` on publish so we can
@@ -309,7 +309,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       // the republish so we can assert isPriority is forwarded correctly.
       mockedExecuteTriagePass.mockResolvedValue({ kind: 'needs-unity' })
       mockedExecuteConversion.mockResolvedValue(0)
-      unityPublishSpy = jest.spyOn(unityTaskQueue, 'publish')
+      conversionPublishSpy = jest.spyOn(conversionTaskQueue, 'publish')
       await triageTaskQueue.publish(
         {
           entity: { entityId: 'bafy-priority-job', authChain: [] as any },
@@ -317,11 +317,11 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
         },
         true /* prioritize */
       )
-      await waitFor(() => unityPublishSpy.mock.calls.length >= 1)
+      await waitFor(() => conversionPublishSpy.mock.calls.length >= 1)
     })
 
-    it('should republish to the Unity queue with prioritize=true', () => {
-      expect(unityPublishSpy).toHaveBeenCalledWith(
+    it('should republish to the Conversion queue with prioritize=true', () => {
+      expect(conversionPublishSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           entity: expect.objectContaining({ entityId: 'bafy-priority-job' })
         }),
@@ -331,7 +331,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
   })
 
   describe('and a job with no contentServerUrls is enqueued on the triage queue', () => {
-    let unityPublishSpy: jest.SpyInstance
+    let conversionPublishSpy: jest.SpyInstance
 
     beforeEach(async () => {
       // Force a fast-path completion on the trailing valid job so we know
@@ -340,7 +340,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       // implementation can leak from prior describe blocks since
       // jest.clearAllMocks doesn't clear mockResolvedValue — only calls.)
       mockedExecuteTriagePass.mockResolvedValue({ kind: 'completed', exitCode: 0 })
-      unityPublishSpy = jest.spyOn(unityTaskQueue, 'publish')
+      conversionPublishSpy = jest.spyOn(conversionTaskQueue, 'publish')
       // Malformed non-LOD job (no contentServerUrls) — should be skipped by
       // the validation guard before any of the conversion paths fire.
       await triageTaskQueue.publish({
@@ -366,8 +366,8 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       )
     })
 
-    it('should not republish either job to the Unity queue (malformed skipped, valid took fast-path)', () => {
-      expect(unityPublishSpy).not.toHaveBeenCalled()
+    it('should not republish either job to the Conversion queue (malformed skipped, valid took fast-path)', () => {
+      expect(conversionPublishSpy).not.toHaveBeenCalled()
     })
   })
 })
@@ -375,7 +375,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
 describe('when FAST_PATH_TRIAGE_ENABLED is unset (default off)', () => {
   let runner: IRunnerComponent
   let triageTaskQueue: ITaskQueue<DeploymentToSqs> & IBaseComponent
-  let unityTaskQueue: ITaskQueue<DeploymentToSqs> & IBaseComponent
+  let conversionTaskQueue: ITaskQueue<DeploymentToSqs> & IBaseComponent
   let publishMessage: jest.Mock
 
   beforeEach(async () => {
@@ -394,7 +394,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is unset (default off)', () => {
     publishMessage = jest.fn(async () => undefined)
     runner = createRunnerComponent()
     triageTaskQueue = createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'triage-queue' })
-    unityTaskQueue = createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'unity-queue' })
+    conversionTaskQueue = createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'conversion-queue' })
     const filesystem = stubFilesystem()
     const conversionOrchestrator = await createConversionOrchestratorComponent({
       logs,
@@ -402,7 +402,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is unset (default off)', () => {
       config,
       cdnS3: {} as any,
       sentry: {} as any,
-      unityTaskQueue,
+      conversionTaskQueue,
       publisher: { publishMessage },
       // Stubs — these tests jest.mock executeConversion / executeLODConversion
       // / executeTriagePass at module scope, so the orchestrator never actually
@@ -417,7 +417,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is unset (default off)', () => {
       logs,
       server: { use: jest.fn(), setContext: jest.fn() } as any,
       triageTaskQueue,
-      unityTaskQueue,
+      conversionTaskQueue,
       runner,
       metrics,
       publisher: { publishMessage },
@@ -440,16 +440,16 @@ describe('when FAST_PATH_TRIAGE_ENABLED is unset (default off)', () => {
   afterEach(async () => {
     const stopRunner = runner.stop()
     await triageTaskQueue.stop!()
-    await unityTaskQueue.stop!()
+    await conversionTaskQueue.stop!()
     await stopRunner
     jest.clearAllMocks()
   })
 
   describe('and a job is enqueued on the triage queue', () => {
-    let unityPublishSpy: jest.SpyInstance
+    let conversionPublishSpy: jest.SpyInstance
 
     beforeEach(async () => {
-      unityPublishSpy = jest.spyOn(unityTaskQueue, 'publish')
+      conversionPublishSpy = jest.spyOn(conversionTaskQueue, 'publish')
       await triageTaskQueue.publish({
         entity: { entityId: 'bafy-default-mode', authChain: [] as any },
         contentServerUrls: ['https://peer.decentraland.org/content']
@@ -473,8 +473,8 @@ describe('when FAST_PATH_TRIAGE_ENABLED is unset (default off)', () => {
       expect(mockedExecuteTriagePass).not.toHaveBeenCalled()
     })
 
-    it('should not republish to the Unity queue', () => {
-      expect(unityPublishSpy).not.toHaveBeenCalled()
+    it('should not republish to the Conversion queue', () => {
+      expect(conversionPublishSpy).not.toHaveBeenCalled()
     })
   })
 })
