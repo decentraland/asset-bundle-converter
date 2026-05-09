@@ -8,12 +8,21 @@ import type { AppComponents } from '../../types'
 import { normalizeContentsBaseUrl } from '../../utils'
 import type { IUnityRunnerComponent, RunConversionOptions, RunLodsConversionOptions } from './types'
 
-// Strict CID shape — content hashes flowing into Unity CLI flags are
-// alphanumeric (Decentraland uses base32-lower CIDv1 and base58 CIDv0,
-// both subsets of `[a-zA-Z0-9]`). Reject anything else before joining
-// with `;` so a hypothetical compromised catalyst can't inject extra
-// separators (or shell metacharacters) into the argv we hand to Unity.
 const HASH_SHAPE_RE = /^[a-zA-Z0-9]+$/
+
+/**
+ * Joins content hashes with `;` after validating each one matches the
+ * strict CID shape. Decentraland CIDs are base32-lower CIDv1 or base58
+ * CIDv0 — both subsets of `[a-zA-Z0-9]`. Rejecting anything else closes
+ * the door on a hypothetical compromised catalyst injecting extra
+ * separators (or shell metacharacters) into the argv we hand to Unity.
+ *
+ * @param hashes - Content hashes to join.
+ * @param flagName - Name of the CLI flag these hashes back. Surfaces in
+ *   the error message so a thrown validation failure points at the
+ *   offending field (`cachedHashes` vs `skippedHashes`).
+ * @throws when any hash contains characters outside `[a-zA-Z0-9]`.
+ */
 function joinValidatedHashes(hashes: ReadonlyArray<string>, flagName: string): string {
   for (const h of hashes) {
     if (!HASH_SHAPE_RE.test(h)) {
@@ -23,14 +32,27 @@ function joinValidatedHashes(hashes: ReadonlyArray<string>, flagName: string): s
   return hashes.join(';')
 }
 
+/**
+ * Ensures the log file's parent directory and the output directory exist,
+ * and truncates the log file (touch). Called by both `runConversion` and
+ * `runLodsConversion` before the Unity child process is spawned so the
+ * `-logFile` flag points at a writable, fresh path.
+ */
 async function setupStartDirectories(options: { logFile: string; outDirectory: string; projectPath: string }) {
   await fs.mkdir(dirname(options.logFile), { recursive: true })
   await fs.mkdir(options.outDirectory, { recursive: true })
   closeSync(openSync(options.logFile, 'w'))
 }
 
-// Spawn a child process and stream stdout/stderr into the logger. Returns a
-// future that resolves with the exit code (or rejects on signal/spawn error).
+/**
+ * Spawn a child process and stream stdout/stderr into the logger.
+ *
+ * @returns A future that resolves with the exit code (defaulting to -1 if
+ *   the child exited without one) and the spawned `ChildProcess` so the
+ *   caller can attach a timeout that calls `child.kill('SIGKILL')`.
+ *   Rejects when the child terminates via SIGTERM/SIGKILL or fails to
+ *   spawn.
+ */
 function execCommand(
   logger: ILoggerComponent.ILogger,
   command: string,
@@ -65,10 +87,19 @@ function execCommand(
   return { exitPromise: exitFuture, child }
 }
 
-// Invoked only by `runConversion` for ISS scenes (doISS=true, non-WebGL
-// targets). Spawns the LOD entities manifest builder via npm before the
-// main Unity build kicks off. Failures are non-fatal: we proceed with
-// the conversion sans manifest.
+/**
+ * Spawns the scene-LOD-entities-manifest-builder npm script before the
+ * main Unity build kicks off. Invoked only by `runConversion` for ISS
+ * scenes (doISS=true on a non-WebGL target). Failures are non-fatal —
+ * the caller catches and proceeds with the conversion sans manifest.
+ *
+ * @param sceneId - Scene CID forwarded as `--sceneid`.
+ * @param outputPath - Where the manifest should land; passed as
+ *   `--output`.
+ * @param catalyst - Catalyst origin (e.g., `https://peer.decentraland.org`)
+ *   passed as `--catalyst`.
+ * @throws when the child exits with a non-zero status code.
+ */
 function startManifestBuilder(sceneId: string, outputPath: string, catalyst: string): Promise<void> {
   const cmd = process.platform === 'win32' ? 'npm.cmd' : 'npm'
   const child = spawn(
@@ -100,12 +131,25 @@ function startManifestBuilder(sceneId: string, outputPath: string, catalyst: str
   })
 }
 
+/**
+ * Builds the `IUnityRunnerComponent`. Owns the `unity-runner` logger so
+ * spawn-related log lines are uniformly attributable, and the
+ * `ab_converter_timeout` metric so dashboards count Unity stalls
+ * regardless of which method (`runConversion` / `runLodsConversion`)
+ * triggered them.
+ */
 export async function createUnityRunnerComponent(
   components: Pick<AppComponents, 'logs' | 'metrics'>
 ): Promise<IUnityRunnerComponent> {
   const { logs, metrics } = components
   const logger = logs.getLogger('unity-runner')
 
+  /**
+   * Spawns a Unity child via `execCommand` and arms a watchdog that
+   * SIGKILLs the process if the conversion exceeds `timeout` ms.
+   * Increments `ab_converter_timeout` on the kill path so a slow Unity
+   * run is visible to operators.
+   */
   async function executeProgram(opts: {
     childArg0: string
     childArguments: string[]
@@ -145,6 +189,16 @@ export async function createUnityRunnerComponent(
     return exitPromise
   }
 
+  /**
+   * Spawns Unity for a scene / wearable / emote conversion. Touches the
+   * log file and output directory first; for ISS scenes on non-WebGL
+   * targets, runs the LOD entities manifest builder before the main
+   * Unity invocation (failure non-fatal, conversion proceeds).
+   *
+   * Per-asset deps digests are passed via a sidecar JSON file rather
+   * than inline argv — see the comment near `depsDigestsFile` for the
+   * rationale (argv length limits + Windows shell-escaping).
+   */
   async function runConversion(options: RunConversionOptions): Promise<number> {
     await setupStartDirectories(options)
 
@@ -235,6 +289,13 @@ export async function createUnityRunnerComponent(
     }
   }
 
+  /**
+   * Spawns Unity for a LOD conversion. Distinct from `runConversion`:
+   * uses the `ExportURLLODsToAssetBundles` execute method, takes a
+   * `lods` URL list (semicolon-joined) instead of a `contentServerUrl`,
+   * and always passes `-deleteDownloadPathAfterFinished` (LODs don't
+   * benefit from cache retention between runs).
+   */
   async function runLodsConversion(options: RunLodsConversionOptions): Promise<number> {
     await setupStartDirectories(options)
 

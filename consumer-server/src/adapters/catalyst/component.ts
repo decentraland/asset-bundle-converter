@@ -44,6 +44,13 @@ export async function fetchActiveEntity(id: string, contentServer: string, timeo
   }
 }
 
+/**
+ * POST `/entities/active` with the requested pointer list. Used by the
+ * legacy `has-content-changed` flow to discover entities by pointer.
+ *
+ * @throws when the catalyst returns a non-2xx response — error message
+ *   carries the response body for incident triage.
+ */
 async function fetchEntitiesByPointers(
   fetcher: IFetchComponent,
   pointers: string[],
@@ -65,6 +72,16 @@ async function fetchEntitiesByPointers(
   return JSON.parse(response)
 }
 
+/**
+ * Builds the `ICatalystComponent`. Both methods delegate to the
+ * standalone helpers (`fetchActiveEntity` / `fetchEntitiesByPointers`)
+ * so the same logic can be invoked from CLI scripts that don't carry a
+ * components container.
+ *
+ * @param components - Needs only `fetch` (the IFetchComponent wrapper).
+ *   The `getActiveEntity` path uses native `globalThis.fetch` directly
+ *   because the wrapper doesn't expose AbortSignal.
+ */
 export async function createCatalystComponent(components: Pick<AppComponents, 'fetch'>): Promise<ICatalystComponent> {
   const { fetch: fetchComponent } = components
 
