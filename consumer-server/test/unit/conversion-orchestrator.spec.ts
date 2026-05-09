@@ -65,22 +65,30 @@ async function buildHarness(opts: { triageEnabled: boolean }): Promise<Harness> 
   return { orchestrator, publishMessage, unityPublish }
 }
 
-const validSceneJob: DeploymentToSqs = {
-  entity: { entityId: 'bafy-scene', authChain: [] as any },
-  contentServerUrls: ['https://peer.decentraland.org/content']
-} as any
+function buildValidSceneJob(): DeploymentToSqs {
+  return {
+    entity: { entityId: 'bafy-scene', authChain: [] as any },
+    contentServerUrls: ['https://peer.decentraland.org/content']
+  } as any
+}
 
-const validLodJob: DeploymentToSqs = {
-  entity: { entityId: 'bafy-lod', authChain: [] as any },
-  contentServerUrls: ['https://peer.decentraland.org/content'],
-  lods: ['lod-1.glb', 'lod-2.glb']
-} as any
+function buildValidLodJob(): DeploymentToSqs {
+  return {
+    entity: { entityId: 'bafy-lod', authChain: [] as any },
+    contentServerUrls: ['https://peer.decentraland.org/content'],
+    lods: ['lod-1.glb', 'lod-2.glb']
+  } as any
+}
 
 describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is false', () => {
   let harness: Harness
+  let validSceneJob: DeploymentToSqs
+  let validLodJob: DeploymentToSqs
 
   beforeEach(async () => {
     harness = await buildHarness({ triageEnabled: false })
+    validSceneJob = buildValidSceneJob()
+    validLodJob = buildValidLodJob()
   })
 
   afterEach(() => {
@@ -182,9 +190,13 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is fals
 
 describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true', () => {
   let harness: Harness
+  let validSceneJob: DeploymentToSqs
+  let validLodJob: DeploymentToSqs
 
   beforeEach(async () => {
     harness = await buildHarness({ triageEnabled: true })
+    validSceneJob = buildValidSceneJob()
+    validLodJob = buildValidLodJob()
   })
 
   afterEach(() => {
@@ -310,12 +322,16 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
 
 describe('when processUnityJob is called', () => {
   let harness: Harness
+  let validSceneJob: DeploymentToSqs
+  let validLodJob: DeploymentToSqs
 
   beforeEach(async () => {
     // The Unity loop ignores FAST_PATH_TRIAGE_ENABLED entirely — it always
     // drains the Unity queue. Build with the flag off to confirm the
     // independence and to keep a single harness configuration here.
     harness = await buildHarness({ triageEnabled: false })
+    validSceneJob = buildValidSceneJob()
+    validLodJob = buildValidLodJob()
   })
 
   afterEach(() => {
