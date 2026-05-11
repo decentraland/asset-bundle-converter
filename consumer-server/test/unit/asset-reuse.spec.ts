@@ -732,6 +732,39 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
     })
   })
 
+  describe('and a retry is triggered by a transient failure', () => {
+    let urls: string[]
+
+    beforeEach(async () => {
+      const glb = buildGlb(['texture.png'])
+      // Two short reads followed by a full glb on the third attempt — exercises
+      // attempts 0, 1, and 2 so we can assert the URL transform on each one.
+      mockedFetch
+        .mockResolvedValueOnce(responseForChunks([glb.subarray(0, 10)]))
+        .mockResolvedValueOnce(responseForChunks([glb.subarray(0, 10)]))
+        .mockResolvedValueOnce(responseForChunks([glb]))
+
+      await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+      urls = mockedFetch.mock.calls.map((c) => String(c[0]))
+    })
+
+    it('should use the unmodified URL on the first attempt so a healthy CDN cache is leveraged', () => {
+      expect(urls[0]).toBe('https://peer.decentraland.org/content/contents/hGlb')
+    })
+
+    it('should append _retry=1 on the second attempt to bypass a poisoned CDN cache entry', () => {
+      const u = new URL(urls[1])
+      expect(u.origin + u.pathname).toBe('https://peer.decentraland.org/content/contents/hGlb')
+      expect(u.searchParams.get('_retry')).toBe('1')
+    })
+
+    it('should append _retry=2 on the third attempt', () => {
+      const u = new URL(urls[2])
+      expect(u.origin + u.pathname).toBe('https://peer.decentraland.org/content/contents/hGlb')
+      expect(u.searchParams.get('_retry')).toBe('2')
+    })
+  })
+
   describe('and a stream errors before the GLB JSON chunk is complete but a retry succeeds', () => {
     let digests: ReadonlyMap<string, string>
     let cancel: jest.Mock

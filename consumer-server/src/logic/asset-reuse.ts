@@ -583,12 +583,16 @@ async function readGlbJsonPrefix(url: string, res: FetchResponse): Promise<Buffe
  * carries a parsed `Retry-After` hint (populated by `assertOkResponse` on
  * 408/429/503 responses), the hint wins over our exponential-backoff formula
  * — a cooperating catalyst knows better than we do how long to back off.
+ *
+ * The callback receives the zero-based `attempt` number so it can vary its
+ * request between tries — `defaultGltfFetcher` uses this to add a cachebust
+ * query param on retries that bypasses CDN caches.
  */
-async function withFetchRetries<T>(fn: () => Promise<T>): Promise<T> {
+async function withFetchRetries<T>(fn: (attempt: number) => Promise<T>): Promise<T> {
   let lastError: unknown
   for (let attempt = 0; attempt < GLTF_FETCH_ATTEMPTS; attempt++) {
     try {
-      return await fn()
+      return await fn(attempt)
     } catch (err: unknown) {
       lastError = err
       if (attempt === GLTF_FETCH_ATTEMPTS - 1 || !isRetryableFetchError(err)) throw err
@@ -600,6 +604,20 @@ async function withFetchRetries<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * Append a `_retry={attempt}` query parameter to a fetch URL so it bypasses
+ * any intermediate CDN cache (Cloudflare, CloudFront) by changing the cache
+ * key. Catalyst content endpoints are keyed only by the CID in the path and
+ * ignore unknown query parameters, so this is a transparent transform on the
+ * server side; from the CDN's point of view it's a fresh URL that triggers a
+ * MISS and a pull from origin.
+ */
+function withRetryQueryParam(url: string, attempt: number): string {
+  const u = new URL(url)
+  u.searchParams.set('_retry', String(attempt))
+  return u.toString()
+}
+
+/**
  * Default fetcher — wraps native fetch with a non-ok status check, retries,
  * a Content-Length guard, and streaming reads. Binary GLBs are only streamed
  * through the embedded JSON chunk; text GLTFs are fully streamed because the
@@ -607,11 +625,26 @@ async function withFetchRetries<T>(fn: () => Promise<T>): Promise<T> {
  *
  * Uses `arrayBuffer()` only as a guarded fallback for mocked / non-standard
  * responses that do not expose a stream body.
+ *
+ * Retries past attempt 0 add `?_retry={attempt}` to force a CDN MISS. A
+ * one-off transient short-read on attempt 0 is recoverable by hitting the
+ * same cache entry again, but a *deterministic* short-read is most often a
+ * poisoned CDN cache fill that will replay the broken body to every request
+ * landing on the same edge POP. Without the cachebust the retry just re-reads
+ * the same corrupted cached bytes and gives up after exhausting attempts;
+ * with it, the second attempt forces a fresh origin pull, the cache refills
+ * with a clean body, and subsequent workers benefit too (broken object
+ * effectively gets evicted).
  */
 async function defaultGltfFetcher(url: string, ext: '.glb' | '.gltf'): Promise<Buffer> {
-  return withFetchRetries(async () => {
+  return withFetchRetries(async (attempt) => {
+    const fetchUrl = attempt === 0 ? url : withRetryQueryParam(url, attempt)
     const init = ext === '.glb' ? { headers: { 'Accept-Encoding': 'identity' } } : undefined
-    const res = (await fetch(url, init)) as FetchResponse
+    const res = (await fetch(fetchUrl, init)) as FetchResponse
+    // Error messages from the readers carry the URL — pass the original
+    // (without `?_retry=N`) so production logs and sentry triage stay
+    // grep-able by content hash and aren't fragmented by retry-attempt
+    // variants of the same logical URL.
     return ext === '.glb' ? readGlbJsonPrefix(url, res) : fetchFullWithContentLengthGuard(url, res)
   })
 }
