@@ -709,6 +709,29 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
     })
   })
 
+  describe('and every attempt returns a truncated GLB stream', () => {
+    let thrown: unknown
+
+    beforeEach(async () => {
+      const glb = buildGlb(['texture.png'])
+      mockedFetch.mockResolvedValue(responseForChunks([glb.subarray(0, 10)]))
+      try {
+        await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+      } catch (err: unknown) {
+        thrown = err
+      }
+    })
+
+    it('should attempt the request GLTF_FETCH_ATTEMPTS times before giving up', () => {
+      expect(mockedFetch).toHaveBeenCalledTimes(3)
+    })
+
+    it('should propagate the truncation error to the caller', () => {
+      expect(thrown).toBeInstanceOf(Error)
+      expect((thrown as Error).message).toMatch(/ended before the 20-byte GLB JSON header/)
+    })
+  })
+
   describe('and a stream errors before the GLB JSON chunk is complete but a retry succeeds', () => {
     let digests: ReadonlyMap<string, string>
     let cancel: jest.Mock
@@ -937,6 +960,101 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
 
     it('should stream the full JSON document and compute the digest', () => {
       expect(digests.get('hGltf')).toMatch(/^[0-9a-f]{32}$/)
+    })
+  })
+
+  describe('and a text gltf stream ends before the declared Content-Length but a retry returns the full body', () => {
+    let digests: ReadonlyMap<string, string>
+
+    beforeEach(async () => {
+      const gltf = Buffer.from(JSON.stringify({ images: [{ uri: 'texture.png' }] }), 'utf8')
+      const entity = {
+        content: [
+          { file: 'model.gltf', hash: 'hGltf' },
+          { file: 'texture.png', hash: 'hTexture' }
+        ]
+      }
+      // First response: streams only half the body but declares the full
+      // Content-Length — the catalyst said "100 bytes", the wire delivered 50.
+      mockedFetch
+        .mockResolvedValueOnce(
+          responseForChunks([gltf.subarray(0, Math.floor(gltf.length / 2))], { contentLength: gltf.length })
+        )
+        .mockResolvedValueOnce(responseForChunks([gltf]))
+
+      digests = (await computePerAssetDigests(entity, 'https://peer.decentraland.org/content')).digests
+    })
+
+    it('should retry the request', () => {
+      expect(mockedFetch).toHaveBeenCalledTimes(2)
+    })
+
+    it('should compute the digest from the retried response', () => {
+      expect(digests.get('hGltf')).toMatch(/^[0-9a-f]{32}$/)
+    })
+  })
+
+  describe('and every attempt returns a truncated text gltf stream', () => {
+    let thrown: unknown
+
+    beforeEach(async () => {
+      const gltf = Buffer.from(JSON.stringify({ images: [{ uri: 'texture.png' }] }), 'utf8')
+      const entity = {
+        content: [
+          { file: 'model.gltf', hash: 'hGltf' },
+          { file: 'texture.png', hash: 'hTexture' }
+        ]
+      }
+      mockedFetch.mockResolvedValue(
+        responseForChunks([gltf.subarray(0, Math.floor(gltf.length / 2))], { contentLength: gltf.length })
+      )
+      try {
+        await computePerAssetDigests(entity, 'https://peer.decentraland.org/content')
+      } catch (err: unknown) {
+        thrown = err
+      }
+    })
+
+    it('should attempt the request GLTF_FETCH_ATTEMPTS times before giving up', () => {
+      expect(mockedFetch).toHaveBeenCalledTimes(3)
+    })
+
+    it('should propagate the truncation error to the caller', () => {
+      expect(thrown).toBeInstanceOf(Error)
+      expect((thrown as Error).message).toMatch(/before declared Content-Length/)
+    })
+  })
+
+  describe('and a text gltf is delivered chunked without a Content-Length header', () => {
+    // Chunked transfer encoding has no declared total — we can't tell short-
+    // read from valid-end at the fetcher layer. We accept whatever drained;
+    // any structural defect in the partial bytes surfaces as `unparseable`
+    // from the downstream parser rather than as a retry.
+    let result: Awaited<ReturnType<typeof computePerAssetDigests>>
+
+    beforeEach(async () => {
+      const gltf = Buffer.from(JSON.stringify({ images: [{ uri: 'texture.png' }] }), 'utf8')
+      const entity = {
+        content: [
+          { file: 'model.gltf', hash: 'hGltf' },
+          { file: 'texture.png', hash: 'hTexture' }
+        ]
+      }
+      // Send the full body but with no Content-Length signal — the fetcher
+      // accepts and returns it; the downstream parser sees a valid JSON.
+      mockedFetch.mockResolvedValue(
+        responseForChunks([gltf], { contentLength: Number.NaN as unknown as number })
+      )
+
+      result = await computePerAssetDigests(entity, 'https://peer.decentraland.org/content')
+    })
+
+    it('should not retry when no Content-Length is declared', () => {
+      expect(mockedFetch).toHaveBeenCalledTimes(1)
+    })
+
+    it('should compute the digest from whatever the stream delivered', () => {
+      expect(result.digests.get('hGltf')).toMatch(/^[0-9a-f]{32}$/)
     })
   })
 })
