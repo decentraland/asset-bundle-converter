@@ -457,9 +457,25 @@ async function fetchFullWithContentLengthGuard(url: string, res: FetchResponse):
 
 /**
  * Stream a full response body into memory with a hard upper bound.
+ *
+ * When the response declares a `Content-Length`, we treat a stream that ends
+ * with fewer bytes than declared as a transport-level truncation and throw
+ * `RetryableFetchError` so `withFetchRetries` re-issues the request. Symmetric
+ * with the truncation check in `readGlbJsonPrefix` for `.glb` — a catalyst/CDN
+ * connection drop mid-body isn't a content defect, the bytes at this hash are
+ * unchanged. Chunked responses without a declared length can't be checked
+ * this way (we have no expected total to compare against), so we accept
+ * whatever drained; the burden then falls on the downstream parser to detect
+ * structural defects from the partial bytes.
+ *
+ * `assertDeclaredLengthWithinGuard` has already enforced the upper bound on
+ * the declared length, so any value reaching this check is in `[0, MAX]`.
  */
 async function readWholeStream(url: string, res: FetchResponse): Promise<Buffer> {
   if (!res.body) throw new RetryableFetchError(`glb/gltf at ${url} returned no response body stream`)
+
+  const declaredLength = contentLength(res)
+  const expectedTotal = Number.isFinite(declaredLength) && declaredLength >= 0 ? declaredLength : undefined
 
   const reader = res.body.getReader()
   const chunks: Buffer[] = []
@@ -485,6 +501,12 @@ async function readWholeStream(url: string, res: FetchResponse): Promise<Buffer>
     throw err
   } finally {
     reader.releaseLock()
+  }
+
+  if (expectedTotal !== undefined && total < expectedTotal) {
+    throw new RetryableFetchError(
+      `glb/gltf at ${url} ended after ${total} bytes, before declared Content-Length ${expectedTotal}`
+    )
   }
 
   return Buffer.concat(chunks, total)
@@ -543,7 +565,13 @@ async function readGlbJsonPrefix(url: string, res: FetchResponse): Promise<Buffe
     reader.releaseLock()
   }
 
-  throw new NonRetryableFetchError(
+  // A stream that ends before the JSON chunk is complete is a transport-level
+  // truncation (catalyst/CDN dropped the connection mid-body), not a content
+  // defect: the underlying glb at this hash is unchanged. Throwing
+  // `RetryableFetchError` lets `withFetchRetries` re-issue the request — a
+  // single CDN burp no longer collapses the digest pass and pins the entity
+  // under a permanent `_failed.json` sentinel in `executeConversion`.
+  throw new RetryableFetchError(
     targetBytes === undefined
       ? `glb/gltf at ${url} ended before the 20-byte GLB JSON header was available`
       : `glb/gltf at ${url} ended after ${total} bytes, before JSON chunk end ${targetBytes}`
