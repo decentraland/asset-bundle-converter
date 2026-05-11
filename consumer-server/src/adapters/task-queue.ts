@@ -17,6 +17,9 @@ export interface ITaskQueue<T> {
   consumeAndProcessJob<R>(
     taskRunner: (job: T, message: TaskQueueMessage) => Promise<R>
   ): Promise<{ result: R | undefined }>
+  // Returns the in-flight message (if any) to the queue immediately, so another worker can pick
+  // it up without waiting for the visibility timeout to expire. Intended for graceful shutdown.
+  releaseInFlight(): Promise<void>
 }
 
 export const queueMetrics = validateMetricsDeclaration({
@@ -34,6 +37,11 @@ export const queueMetrics = validateMetricsDeclaration({
   job_queue_failures_total: {
     type: IMetricsComponent.CounterType,
     help: 'Total amount of failed tasks',
+    labelNames: ['queue_name']
+  },
+  job_queue_releases_total: {
+    type: IMetricsComponent.CounterType,
+    help: 'Total amount of in-flight messages released back to the queue (e.g. on SIGTERM)',
     labelNames: ['queue_name']
   }
 })
@@ -64,6 +72,9 @@ export function createMemoryQueueAdapter<T>(
       components.metrics.increment('job_queue_enqueue_total', { queue_name: options.queueName })
       return message
     },
+    async releaseInFlight() {
+      // in-memory queue has no separate "in-flight" state to release
+    },
     async consumeAndProcessJob(taskRunner) {
       const it: InternalElement = (await q.next()).value
       if (it) {
@@ -93,6 +104,12 @@ export function createSqsAdapter<T>(
   const logger = components.logs.getLogger(options.queueUrl)
 
   const sqs = new SQS({ apiVersion: 'latest', region: options.queueRegion })
+
+  // Tracks the message currently being processed. Set right after a message is claimed
+  // and cleared right before we delete or release it, so releaseInFlight() knows what
+  // to NACK on shutdown without racing the success path.
+  let inFlight: { receiptHandle: string; queueUrl: string; messageId: string } | undefined
+  let released = false
 
   async function receiveMessage(
     quantityOfMessages: number
@@ -157,6 +174,25 @@ export function createSqsAdapter<T>(
       components.metrics.increment('job_queue_enqueue_total', { queue_name: options.queueUrl })
       return m
     },
+    async releaseInFlight() {
+      const current = inFlight
+      if (!current || released) return
+      released = true
+      inFlight = undefined
+      logger.info(`Releasing in-flight message back to queue`, { id: current.messageId })
+      try {
+        await sqs
+          .changeMessageVisibility({
+            QueueUrl: current.queueUrl,
+            ReceiptHandle: current.receiptHandle,
+            VisibilityTimeout: 0
+          })
+          .promise()
+        components.metrics.increment('job_queue_releases_total', { queue_name: current.queueUrl })
+      } catch (err: any) {
+        logger.error(err)
+      }
+    },
     async consumeAndProcessJob(taskRunner) {
       while (true) {
         try {
@@ -165,6 +201,8 @@ export function createSqsAdapter<T>(
           if (!!response && response.Messages && response.Messages.length > 0) {
             for (const it of response.Messages) {
               const message: TaskQueueMessage = { id: it.MessageId! }
+              inFlight = { receiptHandle: it.ReceiptHandle!, queueUrl: queueUsed, messageId: message.id }
+              released = false
               const { end } = components.metrics.startTimer('job_queue_duration_seconds', {
                 queue_name: options.queueUrl
               })
@@ -181,7 +219,13 @@ export function createSqsAdapter<T>(
 
                 return { result: undefined, message }
               } finally {
-                await sqs.deleteMessage({ QueueUrl: queueUsed, ReceiptHandle: it.ReceiptHandle! }).promise()
+                // If releaseInFlight() already returned this message to the queue, skip the delete
+                // so we don't ack a job we've just NACKed.
+                const stillOurs = inFlight?.receiptHandle === it.ReceiptHandle
+                inFlight = undefined
+                if (stillOurs) {
+                  await sqs.deleteMessage({ QueueUrl: queueUsed, ReceiptHandle: it.ReceiptHandle! }).promise()
+                }
                 end()
               }
             }
