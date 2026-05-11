@@ -48,6 +48,12 @@ process.env.PLATFORM = $BUILD_TARGET
 process.env.ASSET_REUSE_ENABLED = 'true'
 // AWS_SNS_ARN is required by the publisher component at init time
 process.env.AWS_SNS_ARN = process.env.AWS_SNS_ARN || 'arn:aws:sns:us-east-1:000000000000:e2e-test'
+// AWS_REGION is required by the SNS v3 client to sign the publish call. Without
+// it, every post-conversion publish fails with "Region is missing" before any
+// network attempt — noisy in CI logs and obscures a real SNS regression. The
+// fake ARN above means the request never reaches a real SNS endpoint anyway,
+// so any region that lets the SDK construct the signed request will do.
+process.env.AWS_REGION = process.env.AWS_REGION || 'us-east-1'
 
 const MOCK_S3_BASE = '/tmp/e2e-mock-s3'
 const BUCKET_NAME = 'CDN_BUCKET' // default when CDN_BUCKET env is unset
