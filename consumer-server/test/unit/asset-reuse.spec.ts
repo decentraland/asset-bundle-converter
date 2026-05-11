@@ -667,43 +667,45 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
     })
   })
 
-  describe('and a stream ends before the GLB JSON header is complete', () => {
-    let thrown: unknown
+  describe('and a stream ends before the GLB JSON header is complete but a retry returns the full glb', () => {
+    let digests: ReadonlyMap<string, string>
 
     beforeEach(async () => {
       const glb = buildGlb(['texture.png'])
-      mockedFetch.mockResolvedValue(responseForChunks([glb.subarray(0, 10)]))
-      try {
-        await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
-      } catch (err: unknown) {
-        thrown = err
-      }
+      mockedFetch
+        .mockResolvedValueOnce(responseForChunks([glb.subarray(0, 10)]))
+        .mockResolvedValueOnce(responseForChunks([glb]))
+
+      digests = (await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')).digests
     })
 
-    it('should reject without retrying', () => {
-      expect(thrown).toBeInstanceOf(Error)
-      expect((thrown as Error).message).toMatch(/ended before the 20-byte GLB JSON header/)
-      expect(mockedFetch).toHaveBeenCalledTimes(1)
+    it('should retry the request', () => {
+      expect(mockedFetch).toHaveBeenCalledTimes(2)
+    })
+
+    it('should compute the digest from the retried response', () => {
+      expect(digests.get('hGlb')).toMatch(/^[0-9a-f]{32}$/)
     })
   })
 
-  describe('and a stream ends before the declared GLB JSON chunk is complete', () => {
-    let thrown: unknown
+  describe('and a stream ends before the declared GLB JSON chunk is complete but a retry returns the full glb', () => {
+    let digests: ReadonlyMap<string, string>
 
     beforeEach(async () => {
       const glb = buildGlb(['texture.png'])
-      mockedFetch.mockResolvedValue(responseForChunks([glb.subarray(0, 24)]))
-      try {
-        await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
-      } catch (err: unknown) {
-        thrown = err
-      }
+      mockedFetch
+        .mockResolvedValueOnce(responseForChunks([glb.subarray(0, 24)]))
+        .mockResolvedValueOnce(responseForChunks([glb]))
+
+      digests = (await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')).digests
     })
 
-    it('should reject without retrying', () => {
-      expect(thrown).toBeInstanceOf(Error)
-      expect((thrown as Error).message).toMatch(/before JSON chunk end/)
-      expect(mockedFetch).toHaveBeenCalledTimes(1)
+    it('should retry the request', () => {
+      expect(mockedFetch).toHaveBeenCalledTimes(2)
+    })
+
+    it('should compute the digest from the retried response', () => {
+      expect(digests.get('hGlb')).toMatch(/^[0-9a-f]{32}$/)
     })
   })
 

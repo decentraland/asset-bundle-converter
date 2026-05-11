@@ -543,7 +543,13 @@ async function readGlbJsonPrefix(url: string, res: FetchResponse): Promise<Buffe
     reader.releaseLock()
   }
 
-  throw new NonRetryableFetchError(
+  // A stream that ends before the JSON chunk is complete is a transport-level
+  // truncation (catalyst/CDN dropped the connection mid-body), not a content
+  // defect: the underlying glb at this hash is unchanged. Throwing
+  // `RetryableFetchError` lets `withFetchRetries` re-issue the request — a
+  // single CDN burp no longer collapses the digest pass and pins the entity
+  // under a permanent `_failed.json` sentinel in `executeConversion`.
+  throw new RetryableFetchError(
     targetBytes === undefined
       ? `glb/gltf at ${url} ended before the 20-byte GLB JSON header was available`
       : `glb/gltf at ${url} ended after ${total} bytes, before JSON chunk end ${targetBytes}`
