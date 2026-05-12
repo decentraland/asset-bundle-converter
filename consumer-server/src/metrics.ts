@@ -30,6 +30,11 @@ export const metricDeclarations = {
     help: 'Free bytes in disk',
     type: IMetricsComponent.GaugeType
   },
+  ab_converter_has_content_change_failures: {
+    help: 'Counter of hasContentChange calls that failed and forced a reconversion',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['reason']
+  },
   ab_converter_asset_cache_hits_total: {
     help: 'Counter of per-asset cache hits (asset hash already canonicalized)',
     type: IMetricsComponent.CounterType,
