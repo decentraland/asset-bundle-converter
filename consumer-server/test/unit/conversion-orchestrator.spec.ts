@@ -21,8 +21,7 @@ jest.mock('../../src/logic/conversion-task', () => ({
 import { executeConversion, executeLODConversion, executeTriagePass } from '../../src/logic/conversion-task'
 import {
   createConversionOrchestratorComponent,
-  IConversionOrchestratorComponent,
-  ConversionQueueRepublishFailedError
+  IConversionOrchestratorComponent
 } from '../../src/logic/conversion-orchestrator'
 
 const mockedExecuteConversion = executeConversion as jest.Mock
@@ -294,6 +293,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
     beforeEach(async () => {
       mockedExecuteTriagePass.mockResolvedValueOnce({ kind: 'needs-unity' })
       harness.conversionPublish.mockRejectedValueOnce(new Error('SQS access denied'))
+      mockedExecuteConversion.mockResolvedValueOnce(0)
       try {
         await harness.orchestrator.processIncomingJob(validSceneJob, false)
       } catch (err) {
@@ -301,9 +301,53 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
       }
     })
 
-    it('should throw a ConversionQueueRepublishFailedError carrying the entityId for incident triage', () => {
-      expect(thrown).toBeInstanceOf(ConversionQueueRepublishFailedError)
-      expect((thrown as ConversionQueueRepublishFailedError).entityId).toBe('bafy-scene')
+    it('should not throw — the republish failure is caught and handled inline', () => {
+      expect(thrown).toBeUndefined()
+    })
+
+    it('should fall back to running the full conversion inline so no work is lost', () => {
+      expect(mockedExecuteConversion).toHaveBeenCalledWith(
+        expect.anything(),
+        'bafy-scene',
+        'https://peer.decentraland.org/content',
+        undefined,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should publish a finished event carrying the inline-conversion exit code', () => {
+      expect(harness.publishMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ entityId: 'bafy-scene', statusCode: 0 })
+        })
+      )
+    })
+  })
+
+  describe('and a LOD republish to the Conversion queue fails', () => {
+    beforeEach(async () => {
+      harness.conversionPublish.mockRejectedValueOnce(new Error('SQS access denied'))
+      mockedExecuteLODConversion.mockResolvedValueOnce(0)
+      await harness.orchestrator.processIncomingJob(validLodJob, false)
+    })
+
+    it('should fall back to running the LOD conversion inline', () => {
+      expect(mockedExecuteLODConversion).toHaveBeenCalledWith(
+        expect.anything(),
+        'bafy-lod',
+        ['lod-1.glb', 'lod-2.glb'],
+        'v48'
+      )
+    })
+
+    it('should publish a finished event for the inline LOD conversion', () => {
+      expect(harness.publishMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ entityId: 'bafy-lod', isLods: true, statusCode: 0 })
+        })
+      )
     })
   })
 

@@ -20,6 +20,7 @@ import { createFilesystemComponent } from './adapters/filesystem'
 import { createCatalystComponent } from './adapters/catalyst'
 import { createUnityRunnerComponent } from './adapters/unity-runner'
 import { createConversionOrchestratorComponent } from './logic/conversion-orchestrator'
+import { parseBooleanFlag } from './logic/conversion-task'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -63,6 +64,30 @@ export async function initComponents(): Promise<AppComponents> {
   // lands here.
   const conversionTaskQueueUrl = await config.getString('CONVERSION_TASK_QUEUE')
   const conversionPriorityTaskQueueUrl = await config.getString('CONVERSION_PRIORITY_TASK_QUEUE')
+
+  // Misconfiguration guards. The kill-switch is read again in the orchestrator
+  // factory, so behaviour stays consistent; reading here lets us fail fast at
+  // startup instead of silently dropping work into an in-memory queue.
+  const startupLogger = logs.getLogger('startup-guard')
+  const fastPathTriageEnabled = parseBooleanFlag(await config.getString('FAST_PATH_TRIAGE_ENABLED'), false, (raw) =>
+    startupLogger.warn(
+      `Unrecognized value for FAST_PATH_TRIAGE_ENABLED: "${raw}" — falling back to the default (false).`
+    )
+  )
+  if (fastPathTriageEnabled && !conversionTaskQueueUrl) {
+    throw new Error(
+      'FAST_PATH_TRIAGE_ENABLED=true but CONVERSION_TASK_QUEUE is unset. Refusing to start: triage republishes would land in an in-memory queue, breaking cross-pod load balancing and losing work on restart. Configure CONVERSION_TASK_QUEUE (and CONVERSION_PRIORITY_TASK_QUEUE) before enabling fast-path triage.'
+    )
+  }
+  if (conversionTaskQueueUrl && !conversionPriorityTaskQueueUrl) {
+    // Not fatal — the SQS adapter silently drops priority republishes onto the
+    // standard queue, which degrades priority lane separation but keeps work
+    // moving. Warn so the misconfiguration surfaces in logs.
+    startupLogger.warn(
+      'CONVERSION_TASK_QUEUE is set but CONVERSION_PRIORITY_TASK_QUEUE is not. Priority-lane jobs republished from triage will land on the standard Conversion queue.'
+    )
+  }
+
   const conversionTaskQueue = conversionTaskQueueUrl
     ? createSqsAdapter<DeploymentToSqs>(
         { logs, metrics },

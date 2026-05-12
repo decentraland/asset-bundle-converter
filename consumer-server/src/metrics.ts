@@ -70,7 +70,7 @@ export const metricDeclarations = {
     labelNames: ['build_target', 'ab_version', 'reason']
   },
   ab_converter_triage_outcomes_total: {
-    help: 'Counter of triage-pass outcomes per scene. outcome ∈ {already_converted, fast_path_completed, republished_to_conversion, failed}.',
+    help: 'Counter of triage-pass outcomes per scene. outcome ∈ {already_converted, fast_path, republished, failed}.',
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target', 'outcome']
   },
@@ -80,7 +80,12 @@ export const metricDeclarations = {
     labelNames: ['build_target', 'priority']
   },
   ab_converter_conversion_queue_publish_errors_total: {
-    help: 'Counter of failed Conversion-queue publishes from the triage loop. Non-zero means lost work — alert on this.',
+    help: 'Counter of failed Conversion-queue publishes from the triage loop. Non-zero triggers the inline-fallback path (see ab_converter_republish_fallback_inline_total) so work is not lost, but indicates a wedged downstream queue — alert on this.',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['build_target']
+  },
+  ab_converter_republish_fallback_inline_total: {
+    help: 'Counter of triage jobs that ran Unity inline on the triage pod because Conversion-queue publish failed. Pair with conversion_queue_publish_errors_total to confirm fallback coverage.',
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target']
   }

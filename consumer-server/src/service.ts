@@ -21,7 +21,6 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
   // start ports: db, listeners, synchronizations, etc
   await startComponents()
 
-  const triageLogger = components.logs.getLogger('triage-loop')
   const conversionLogger = components.logs.getLogger('conversion-loop')
 
   // Triage loop. When `FAST_PATH_TRIAGE_ENABLED` is off (default), the
@@ -29,14 +28,15 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
   // (today's behavior). When on, it runs executeTriagePass and either
   // fast-paths or republishes to the Conversion queue. See
   // `logic/conversion-orchestrator/component.ts` for the full decision tree.
+  //
+  // No disk-pressure gate here: in fast-path mode the triage loop only does
+  // probe-and-republish work (no Unity spawn, no scene materialisation), so
+  // it stays useful when disk is tight. The conversion loop owns the
+  // disk-pressure shutdown — that's where the actual writes happen, and the
+  // inline-fallback path runs `executeConversion` via the orchestrator, so
+  // disk-pressure-triggered shutdown still fires on this pod when needed.
   components.runner.runTask(async (opt) => {
     while (opt.isRunning) {
-      if (await components.filesystem.isBelowMinimum()) {
-        triageLogger.warn('Stopping program due to lack of disk space')
-        void program.stop()
-        return
-      }
-
       await components.triageTaskQueue.consumeAndProcessJob(async (job, _message, opts) => {
         await components.conversionOrchestrator.processIncomingJob(job, opts.isPriority)
       })

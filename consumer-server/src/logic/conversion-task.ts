@@ -296,7 +296,7 @@ export async function executeTriagePass(
   if (force || doISS) {
     components.metrics.increment('ab_converter_triage_outcomes_total', {
       build_target: $BUILD_TARGET,
-      outcome: 'republished_to_conversion'
+      outcome: 'republished'
     })
     return { kind: 'needs-unity' }
   }
@@ -318,7 +318,7 @@ export async function executeTriagePass(
     logger.info(`Could not fetch entity for ${entityId}: ${e?.message ?? e}. Triage cannot probe — republishing.`)
     components.metrics.increment('ab_converter_triage_outcomes_total', {
       build_target: $BUILD_TARGET,
-      outcome: 'republished_to_conversion'
+      outcome: 'republished'
     })
     return { kind: 'needs-unity' }
   }
@@ -329,7 +329,7 @@ export async function executeTriagePass(
   if (!useAssetReuse) {
     components.metrics.increment('ab_converter_triage_outcomes_total', {
       build_target: $BUILD_TARGET,
-      outcome: 'republished_to_conversion'
+      outcome: 'republished'
     })
     return { kind: 'needs-unity' }
   }
@@ -405,7 +405,7 @@ export async function executeTriagePass(
     })
     components.metrics.increment('ab_converter_triage_outcomes_total', {
       build_target: $BUILD_TARGET,
-      outcome: 'republished_to_conversion'
+      outcome: 'republished'
     })
     return { kind: 'needs-unity' }
   }
@@ -416,7 +416,7 @@ export async function executeTriagePass(
   if (!fullCacheHit) {
     components.metrics.increment('ab_converter_triage_outcomes_total', {
       build_target: $BUILD_TARGET,
-      outcome: 'republished_to_conversion'
+      outcome: 'republished'
     })
     return { kind: 'needs-unity' }
   }
@@ -466,7 +466,7 @@ export async function executeTriagePass(
     // transient.
     components.metrics.increment('ab_converter_triage_outcomes_total', {
       build_target: $BUILD_TARGET,
-      outcome: 'republished_to_conversion'
+      outcome: 'republished'
     })
     return { kind: 'needs-unity' }
   }
@@ -478,7 +478,7 @@ export async function executeTriagePass(
   components.metrics.increment('ab_converter_exit_codes', { exit_code: '0' })
   components.metrics.increment('ab_converter_triage_outcomes_total', {
     build_target: $BUILD_TARGET,
-    outcome: 'fast_path_completed'
+    outcome: 'fast_path'
   })
 
   return { kind: 'completed', exitCode: 0 }

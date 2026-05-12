@@ -87,7 +87,6 @@ export function createMemoryQueueAdapter<T>(
         } catch (err: any) {
           components.metrics.increment('job_queue_failures_total', { queue_name: options.queueName })
           logger.error(err, { id: it.message.id })
-          // q.enqueue(it)
         } finally {
           end()
         }

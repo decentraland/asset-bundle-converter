@@ -51,11 +51,14 @@ export async function createConversionOrchestratorComponent(
    */
   function isValidConversionJob(job: DeploymentToSqs): boolean {
     if (!job?.entity?.entityId) {
+      // Cast to loose record so the leaked `type` / `subType` discriminators
+      // from non-conversion SNS events (e.g., `world_undeployment`) can be
+      // surfaced in logs without forcing them onto DeploymentToSqs's typed
+      // surface.
+      const leaked = job as unknown as Record<string, string | undefined>
       logger.warn('Skipping job with no entity.entityId — not a conversion job', {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        type: (job as any)?.type,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        subType: (job as any)?.subType
+        type: leaked?.type ?? '',
+        subType: leaked?.subType ?? ''
       })
       return false
     }
@@ -107,24 +110,20 @@ export async function createConversionOrchestratorComponent(
    * preserving the priority lane. Increments
    * `ab_converter_conversion_queue_publish_total` on success.
    *
-   * **Lost-work warning**: the SQS adapter's `consumeAndProcessJob`
-   * deletes the triage message in its finally block (after this function
-   * throws or resolves), so a thrown error here means we acked the
-   * triage message without successfully republishing — work is
-   * permanently lost. This is a known limitation of the current
-   * task-queue contract (delete-in-finally), not introduced by the
-   * triage→Conversion split.
+   * On publish failure throws {@link ConversionQueueRepublishFailedError}
+   * so the caller can fall back to running the conversion inline (see
+   * `processIncomingJob`). Callers MUST handle the throw — letting it
+   * propagate out of the triage loop's `consumeAndProcessJob` would let
+   * the SQS adapter's delete-in-finally drop the triage message, losing
+   * work permanently.
    *
    * **Required ops gate before flipping FAST_PATH_TRIAGE_ENABLED=true**:
    * configure an alert on
    * `ab_converter_conversion_queue_publish_errors_total > 0` with a low
-   * threshold (any non-zero rate is suspicious) so a wedged Conversion
-   * queue is detected before significant backlog is lost. Throwing here
-   * also produces a loud error log keyed on entityId for incident triage.
-   *
-   * @throws {@link ConversionQueueRepublishFailedError} when
-   *   `conversionTaskQueue.publish` fails. Carries `entityId` and
-   *   `buildTarget` so Sentry / log filtering can isolate the loss.
+   * threshold (any non-zero rate is suspicious). The inline-fallback
+   * keeps work flowing but converts the failure mode from "lost work"
+   * into "this pod ran a long Unity conversion instead of just a
+   * triage probe", which is worth investigating.
    */
   async function republishToConversionQueue(job: DeploymentToSqs, isPriority: boolean): Promise<void> {
     try {
@@ -134,13 +133,37 @@ export async function createConversionOrchestratorComponent(
         priority: isPriority ? 'priority' : 'standard'
       })
     } catch (err: any) {
-      logger.error(`Failed to republish job to Conversion queue — work will be lost: ${err?.message ?? err}`, {
+      logger.error(`Failed to republish job to Conversion queue: ${err?.message ?? err}`, {
         entityId: job?.entity?.entityId
       })
       metrics.increment('ab_converter_conversion_queue_publish_errors_total', {
         build_target: buildTarget
       })
       throw new ConversionQueueRepublishFailedError(job.entity.entityId, buildTarget, err)
+    }
+  }
+
+  /**
+   * Republishes to the Conversion queue and, on publish failure, falls
+   * back to running the full conversion inline so no work is lost.
+   * Increments `ab_converter_republish_fallback_inline_total` when the
+   * fallback fires — pair with the publish-errors counter to confirm
+   * fallback coverage.
+   */
+  async function republishOrFallbackInline(
+    job: DeploymentToSqs,
+    isPriority: boolean,
+    versionToUse: string
+  ): Promise<void> {
+    try {
+      await republishToConversionQueue(job, isPriority)
+    } catch (err) {
+      if (!(err instanceof ConversionQueueRepublishFailedError)) throw err
+      metrics.increment('ab_converter_republish_fallback_inline_total', { build_target: buildTarget })
+      logger.warn(
+        `Conversion-queue publish failed — running conversion inline on this pod to avoid losing work. entityId=${job.entity.entityId}`
+      )
+      await runFullConversionAndPublish(job, versionToUse)
     }
   }
 
@@ -202,7 +225,7 @@ export async function createConversionOrchestratorComponent(
     // LOD jobs always need Unity — they never fast-path.
     if (job.lods) {
       if (triageEnabled) {
-        await republishToConversionQueue(job, isPriority)
+        await republishOrFallbackInline(job, isPriority, versionToUse)
         return
       }
       await runFullConversionAndPublish(job, versionToUse)
@@ -247,7 +270,7 @@ export async function createConversionOrchestratorComponent(
           await publishFinishedEvent(job, outcome.exitCode, versionToUse)
           return
         case 'needs-unity':
-          await republishToConversionQueue(job, isPriority)
+          await republishOrFallbackInline(job, isPriority, versionToUse)
           return
       }
     } finally {
@@ -262,6 +285,11 @@ export async function createConversionOrchestratorComponent(
    * `FAST_PATH_TRIAGE_ENABLED`. Re-runs the probe inside
    * `executeConversion`, so peer-pod canonicalisations since the original
    * triage pass produce a free fast-path short-circuit.
+   *
+   * The validation guard is defensive: messages reach this queue only via
+   * `processIncomingJob`, which already validates. The guard catches
+   * manually-injected SQS messages (operator using the AWS console for
+   * incident response) and won't false-positive on the normal flow.
    */
   async function processConversionJob(job: DeploymentToSqs): Promise<void> {
     if (!isValidConversionJob(job)) return
