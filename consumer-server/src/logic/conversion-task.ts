@@ -1,5 +1,6 @@
 import { uploadDir } from '@dcl/cdn-uploader'
 import { FileVariant } from '@dcl/cdn-uploader/dist/types'
+import { ILoggerComponent } from '@well-known-components/interfaces'
 import * as promises from 'fs/promises'
 import { rimraf } from 'rimraf'
 import { Entity } from '@dcl/schemas'
@@ -7,68 +8,17 @@ import { AppComponents } from '../types'
 import * as fs from 'fs'
 import * as path from 'path'
 import { hasContentChange } from './has-content-changed-task'
-import { getUnityBuildTarget, normalizeContentsBaseUrl } from '../utils'
+import { getUnityBuildTarget } from '../utils'
+import { AssetCacheResult, SkippedAsset, purgeCachedBundlesFromOutput } from './asset-reuse'
 import {
-  checkAssetCache,
-  computePerAssetDigests,
-  purgeCachedBundlesFromOutput,
-  AssetCacheResult,
-  SkippedAsset
-} from './asset-reuse'
-
-type Manifest = {
-  version: string
-  files: string[]
-  exitCode: number | null
-  contentServerUrl?: string
-  date: string
-}
-
-// Upper bound on a single `/entities/active` catalyst call before we fall back
-// to "couldn't fetch entity, upload to entity-scoped path without source files".
-// Historically unset, which meant a wedged catalyst would pin the worker slot
-// until SQS visibility (1-2 min) retried the whole job — by which point the
-// replacement worker would hit the same wedge. Bounding at 30s lets us degrade
-// gracefully within a single visibility window: the probe path can't run, but
-// the conversion still proceeds against raw hashes, and Unity still produces
-// usable bundles. Matches the default the migration script uses.
-const CATALYST_FETCH_TIMEOUT_MS = 30_000
-
-async function getCdnBucket(components: Pick<AppComponents, 'config'>) {
-  return (await components.config.getString('CDN_BUCKET')) || 'CDN_BUCKET'
-}
-
-/**
- * Publish the top-level entity manifest (`manifest/{entityId}[_{target}].json`).
- *
- * Centralized because the `Cache-Control: private, max-age=0, no-cache` header
- * is safety-critical: if it's ever accidentally rewritten to immutable / long
- * max-age, clients will never pick up newly-converted scene hashes. Touching
- * this in exactly one place prevents drift between the short-circuit path and
- * the main path.
- *
- * @param components - Only needs `cdnS3`.
- * @param cdnBucket - Target bucket.
- * @param key - Manifest key, typically produced by `manifestKeyForEntity`.
- * @param manifest - The manifest value to JSON-encode as the body.
- */
-async function uploadEntityManifest(
-  components: Pick<AppComponents, 'cdnS3'>,
-  cdnBucket: string,
-  key: string,
-  manifest: Manifest
-): Promise<void> {
-  await components.cdnS3
-    .upload({
-      Bucket: cdnBucket,
-      Key: key,
-      ContentType: 'application/json',
-      Body: JSON.stringify(manifest),
-      CacheControl: 'private, max-age=0, no-cache',
-      ACL: 'public-read'
-    })
-    .promise()
-}
+  Manifest,
+  getCdnBucket,
+  manifestKeyForEntity,
+  probeScene,
+  uploadEntityManifest,
+  uploadFastPathResult,
+  uploadSceneSourceFilesToCDN
+} from './probe-scene'
 
 /**
  * Case-insensitive boolean env var parser.
@@ -102,113 +52,62 @@ export function parseBooleanFlag(
   return defaultValue
 }
 
-function manifestKeyForEntity(entityId: string, target: string | undefined) {
-  if (target && target !== 'webgl') {
-    return `manifest/${entityId}_${target}.json`
-  } else {
-    return `manifest/${entityId}.json`
-  }
-}
-
 /**
- * Downloads index.js (main scene script) and main.crdt from the catalyst and uploads them to the CDN bucket.
- * This allows the Explorer desktop client to fetch these critical scene files from S3 instead of the catalyst,
- * avoiding a class of failures where files are missing from the catalyst.
+ * Per-glb skip visibility: aggregate count + reason-labelled counter so ops
+ * can alert on skip-rate spikes without scraping logs. Samples up to five
+ * entries into the warn line so a misbehaving scene is diagnosable from the
+ * log without a separate per-asset entry; the cap keeps a pathological entity
+ * (50+ broken glbs) from blowing the line size.
  *
- * Only runs for non-webgl targets (Mac/Windows desktop builds) since those clients use this CDN path.
+ * Deliberate Sentry omission: per-glb defects are content-deterministic skips,
+ * not exceptions — flooding Sentry with thousands of "broken-by-design" entries
+ * doesn't help triage. The signal moves to `ab_converter_glb_skipped_total`.
+ *
+ * Conversion-loop only — `executeTriagePass` deliberately doesn't log skipped
+ * assets (they get republished and surfaced by the conversion-loop call).
  */
-async function uploadSceneSourceFilesToCDN(
-  components: Pick<AppComponents, 'logs' | 'cdnS3'>,
-  entity: Entity,
-  contentServerUrl: string,
-  uploadPath: string,
-  cdnBucket: string
-): Promise<void> {
-  const logger = components.logs.getLogger('UploadSceneSourceFiles')
-
-  // Collect the filenames to upload: main.crdt, scene.json, and the main scene script (usually index.js)
-  const filesToUpload: string[] = ['main.crdt', 'scene.json']
-  const mainScript = typeof entity?.metadata?.main === 'string' ? entity.metadata.main : undefined
-  if (mainScript) {
-    filesToUpload.push(mainScript)
+function logSkippedAssetsSample(
+  components: Pick<AppComponents, 'metrics'>,
+  logger: ILoggerComponent.ILogger,
+  args: {
+    defaultLoggerMetadata: Record<string, unknown>
+    skippedAssets: ReadonlyMap<string, SkippedAsset>
+    buildTarget: string
+    abVersion: string
   }
+): void {
+  const { defaultLoggerMetadata, skippedAssets, buildTarget, abVersion } = args
+  if (skippedAssets.size === 0) return
 
-  const contentsBaseUrl = normalizeContentsBaseUrl(contentServerUrl)
-
-  // Fetch+upload all source files in parallel. Independent files, each a catalyst
-  // round-trip + S3 PUT; serializing them was tens-of-ms × N files of tail latency.
-  // Unbounded Promise.all is safe here because `filesToUpload` is capped at 3
-  // (main.crdt + scene.json + optional `entity.metadata.main`).
-  await Promise.all(
-    filesToUpload.map(async (fileName) => {
-      const contentDef = entity?.content?.find((c) => c.file === fileName)
-      if (!contentDef) {
-        logger.info(`${fileName} not found in entity content, skipping CDN upload`)
-        return
-      }
-
-      const s3Key = `${uploadPath}/${fileName}`
-
-      try {
-        const fileUrl = `${contentsBaseUrl}${contentDef.hash}`
-        const response = await globalThis.fetch(fileUrl)
-
-        if (!response.ok) {
-          logger.error(
-            `Failed to download ${fileName} from catalyst (${fileUrl}): ${response.status} ${response.statusText}`
-          )
-          return
-        }
-
-        const content = Buffer.from(await response.arrayBuffer())
-        const contentType = fileName.endsWith('.js')
-          ? 'application/javascript'
-          : fileName.endsWith('.json')
-            ? 'application/json'
-            : 'application/octet-stream'
-
-        await components.cdnS3
-          .upload({
-            Bucket: cdnBucket,
-            Key: s3Key,
-            Body: content,
-            ContentType: contentType,
-            ACL: 'public-read',
-            CacheControl: 'public, max-age=31536000, immutable'
-          })
-          .promise()
-
-        logger.info(`Uploaded ${fileName} to CDN at ${s3Key} (${content.length} bytes)`)
-      } catch (err: any) {
-        logger.error(`Failed to upload ${fileName} to CDN: ${err.message}`)
-      }
+  // Early-exit collect rather than `[...values()].slice(0, 5)` so a pathological
+  // scene (thousands of broken glbs in one entity) doesn't materialize the whole
+  // skipped Map into a temporary array just to discard all but the first 5.
+  const SAMPLE_LIMIT = 5
+  const samples: SkippedAsset[] = []
+  for (const skip of skippedAssets.values()) {
+    if (samples.length >= SAMPLE_LIMIT) break
+    samples.push(skip)
+  }
+  // Cast: the logger's typed `extra` is `Record<string, string | number>`, but
+  // observability historically writes nested structured data here. Matches the
+  // pre-refactor `as any` at the original call site.
+  logger.warn('Skipping glb/gltf assets with missing or unparseable dependencies', {
+    ...defaultLoggerMetadata,
+    count: skippedAssets.size,
+    samples: samples.map((s) => ({
+      hash: s.hash,
+      file: s.file,
+      reason: s.reason,
+      detail: s.detail
+    }))
+  } as any)
+  for (const skip of skippedAssets.values()) {
+    components.metrics.increment('ab_converter_glb_skipped_total', {
+      build_target: buildTarget,
+      ab_version: abVersion,
+      reason: skip.reason
     })
-  )
-}
-
-// returns true if the asset was converted and uploaded with the same version of the converter
-async function shouldIgnoreConversion(
-  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3'>,
-  $AB_VERSION: string,
-  entityId: string,
-  target: string | undefined
-): Promise<boolean> {
-  const cdnBucket = await getCdnBucket(components)
-  const manifestFile = manifestKeyForEntity(entityId, target)
-
-  try {
-    const obj = await components.cdnS3.getObject({ Bucket: cdnBucket, Key: manifestFile }).promise()
-    if (!obj.Body) return false
-    const json: Manifest = JSON.parse(obj.Body?.toString())
-
-    // not ignored when previous run had exit code
-    if (json.exitCode) return false
-
-    // ignored only when previous version is the same as current version
-    if (json.version === $AB_VERSION) return true
-  } catch {}
-
-  return false
+  }
 }
 
 /**
@@ -235,29 +134,22 @@ export type TriagePassOutcome =
   | { kind: 'failed'; exitCode: number }
 
 /**
- * Probe-only path used by the triage loop. Mirrors the early-return logic of
- * `executeConversion` (shouldIgnore short-circuit, entity fetch, per-asset
- * digest, cache probe, full-cache-hit fast path) but never spawns Unity. On
- * cache miss returns `{ kind: 'needs-unity' }` so the caller can republish
- * the message to the Conversion queue.
+ * Probe-only path used by the triage loop. Delegates to {@link probeScene}
+ * for the shared probe pipeline (build-target validation, shouldIgnore
+ * short-circuit, catalyst fetch, per-asset digest, cache probe, full-hit
+ * detection) and maps the {@link ProbeOutcome} variants to the
+ * {@link TriagePassOutcome} shape the triage loop expects.
  *
- * Force / ISS / non-scene jobs deliberately skip the probe (they always need
- * Unity) and return `{ kind: 'needs-unity' }` immediately. The conversion
- * loop's subsequent `executeConversion` call still does its own catalyst
- * fetch, so we don't lose any state.
+ * Force / ISS short-circuit *before* the probe runs: these always need
+ * Unity, so paying for the catalyst fetch and digest pass would be wasted
+ * work. The conversion loop's subsequent `executeConversion` call does its
+ * own probe (and its own catalyst fetch), so no state is lost.
  *
- * **Maintenance note**: this function intentionally duplicates the probe
- * portion of `executeConversion` (the `shouldIgnoreConversion` short-circuit,
- * `getActiveEntity` fetch, `computePerAssetDigests`, `checkAssetCache`, and
- * the `fullCacheHit` short-circuit upload) rather than sharing a helper,
- * because the two callers have divergent return-type semantics (number exit
- * code vs. TriagePassOutcome union) and the failure-path upload sequences
- * (failed-manifest sentinel, asset-reuse short-circuit marker, scene source
- * files) are subtly different. **If you change the probe / shouldIgnore /
- * fast-path-upload logic in either function, mirror the change in the
- * other.** A future refactor could extract a shared `probeScene()` helper
- * returning a structured discriminator both callers consume — out of scope
- * for this PR.
+ * Triage-specific responsibilities that stay here (don't push into the
+ * shared probe):
+ * - Emitting `ab_converter_triage_outcomes_total` per branch.
+ * - The fast-path upload's soft-failure recovery (return needs-unity so the
+ *   conversion loop can retry); `executeConversion` rethrows instead.
  */
 export async function executeTriagePass(
   components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry' | 'catalyst'>,
@@ -275,24 +167,10 @@ export async function executeTriagePass(
     )
   )
 
-  const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
-  if (!unityBuildTarget) {
-    logger.info('Invalid build target ' + $BUILD_TARGET)
-    return { kind: 'failed', exitCode: 5 }
-  }
-
-  if (!force && (await shouldIgnoreConversion(components, abVersion, entityId, $BUILD_TARGET))) {
-    logger.info('Ignoring conversion (already converted)', { entityId, contentServerUrl, abVersion })
-    components.metrics.increment('ab_converter_triage_outcomes_total', {
-      build_target: $BUILD_TARGET,
-      outcome: 'already_converted'
-    })
-    return { kind: 'completed', exitCode: 13 }
-  }
-
   // Force / ISS short-circuit: these always need Unity (force is "redo this
-  // entity from scratch"; ISS is the v2004 special-case version). Don't bother
-  // with the probe — return needs-unity and let the conversion loop handle it.
+  // entity from scratch"; ISS is the v2004 special-case version). Skip the
+  // probe entirely — pay zero catalyst / S3 / digest cost when we know the
+  // outcome upfront.
   if (force || doISS) {
     components.metrics.increment('ab_converter_triage_outcomes_total', {
       build_target: $BUILD_TARGET,
@@ -301,187 +179,121 @@ export async function executeTriagePass(
     return { kind: 'needs-unity' }
   }
 
-  const cdnBucket = await getCdnBucket(components)
-  const manifestFile = manifestKeyForEntity(entityId, $BUILD_TARGET)
-  const failedManifestFile = `manifest/${entityId}_failed.json`
-  const entityScopedUploadPath = abVersion + '/' + entityId
+  const outcome = await probeScene(components, {
+    entityId,
+    contentServerUrl,
+    abVersion,
+    buildTarget: $BUILD_TARGET,
+    force: false,
+    useAssetReuseGate: $ASSET_REUSE_ENABLED,
+    sentryPhase: 'triage-per-asset-digest'
+  })
 
-  // Catalyst entity fetch — same timeout discipline as executeConversion.
-  let entityType = 'undefined'
-  let entity: Entity | null = null
-  try {
-    const fetched = await components.catalyst.getActiveEntity(entityId, contentServerUrl, CATALYST_FETCH_TIMEOUT_MS)
-    if (!fetched) throw new Error('entity no longer active on catalyst (redeployed or evicted)')
-    entity = fetched
-    entityType = entity.type
-  } catch (e: any) {
-    logger.info(`Could not fetch entity for ${entityId}: ${e?.message ?? e}. Triage cannot probe — republishing.`)
-    components.metrics.increment('ab_converter_triage_outcomes_total', {
-      build_target: $BUILD_TARGET,
-      outcome: 'republished'
-    })
-    return { kind: 'needs-unity' }
-  }
+  switch (outcome.kind) {
+    case 'invalid-build-target':
+      return { kind: 'failed', exitCode: 5 }
 
-  // Asset-reuse gating mirrors executeConversion. Non-scenes always need
-  // Unity; the kill-switch and explicit force/ISS were handled above.
-  const useAssetReuse = $ASSET_REUSE_ENABLED && entityType === 'scene' && !!entity
-  if (!useAssetReuse) {
-    components.metrics.increment('ab_converter_triage_outcomes_total', {
-      build_target: $BUILD_TARGET,
-      outcome: 'republished'
-    })
-    return { kind: 'needs-unity' }
-  }
+    case 'already-converted':
+      components.metrics.increment('ab_converter_triage_outcomes_total', {
+        build_target: $BUILD_TARGET,
+        outcome: 'already_converted'
+      })
+      return { kind: 'completed', exitCode: 13 }
 
-  // Per-asset digest pass — same 60s aggregate timeout. On failure we upload
-  // the failed-manifest sentinel ourselves (same shape as executeConversion)
-  // so a probe-time crash still surfaces to clients.
-  let depsDigestByHash: ReadonlyMap<string, string> | undefined
-  try {
-    const digestResult = await computePerAssetDigests(entity, contentServerUrl, { aggregateTimeoutMs: 60_000 })
-    depsDigestByHash = digestResult.digests
-    // Note: skipped assets stay in the result and are surfaced in the failed
-    // manifest by the conversion loop's executeConversion (full path). Triage just
-    // needs to know whether the cache is fully hit, which is independent of
-    // skipped-glb counts.
-  } catch (err: any) {
-    logger.error(`Triage per-asset digest computation failed: ${err?.message ?? err}`, { entityId, contentServerUrl })
-    components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
-    components.sentry.captureException(err, {
-      level: 'error',
-      tags: {
+    case 'catalyst-unreachable':
+    case 'no-asset-reuse':
+    case 'partial-hit':
+      components.metrics.increment('ab_converter_triage_outcomes_total', {
+        build_target: $BUILD_TARGET,
+        outcome: 'republished'
+      })
+      return { kind: 'needs-unity' }
+
+    case 'cache-probe-failed':
+      components.metrics.increment('ab_converter_asset_cache_probe_errors_total', {
+        build_target: $BUILD_TARGET,
+        ab_version: abVersion
+      })
+      components.metrics.increment('ab_converter_triage_outcomes_total', {
+        build_target: $BUILD_TARGET,
+        outcome: 'republished'
+      })
+      return { kind: 'needs-unity' }
+
+    case 'digest-failed':
+      // probeScene already uploaded the failed-manifest sentinel and notified Sentry.
+      components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
+      components.metrics.increment('ab_converter_triage_outcomes_total', {
+        build_target: $BUILD_TARGET,
+        outcome: 'failed'
+      })
+      return { kind: 'failed', exitCode: 5 }
+
+    case 'cache-probe-skipped':
+      // Cannot occur — triage short-circuits force upstream so probeScene is
+      // never invoked with force=true. The branch is here for exhaustiveness;
+      // treat it conservatively as "needs Unity" if a future refactor changes
+      // the upstream gate.
+      components.metrics.increment('ab_converter_triage_outcomes_total', {
+        build_target: $BUILD_TARGET,
+        outcome: 'republished'
+      })
+      return { kind: 'needs-unity' }
+
+    case 'full-hit': {
+      logger.info('Triage: all assets cached — fast-path completing', {
         entityId,
-        contentServerUrl,
-        unityBuildTarget,
-        version: abVersion,
-        phase: 'triage-per-asset-digest'
-      }
-    })
-    try {
-      await components.cdnS3
-        .upload({
-          Bucket: cdnBucket,
-          Key: failedManifestFile,
-          ContentType: 'application/json',
-          Body: JSON.stringify({
+        cached: outcome.cacheResult.cachedHashes.length
+      } as any)
+      const cdnBucket = await getCdnBucket(components)
+      try {
+        await uploadFastPathResult(components, {
+          entity: outcome.entity,
+          entityType: outcome.entityType,
+          contentServerUrl,
+          cdnBucket,
+          manifestFile: manifestKeyForEntity(entityId, $BUILD_TARGET),
+          entityScopedUploadPath: `${abVersion}/${entityId}`,
+          abVersion,
+          cacheResult: outcome.cacheResult
+        })
+      } catch (err: any) {
+        // Same-pod upload errors are usually transient. Republish so the
+        // conversion loop can retry the upload (and possibly run Unity if the
+        // cache state has changed). executeConversion rethrows in this case;
+        // triage soft-recovers because lost work is the worse failure mode
+        // when the conversion queue can simply retry.
+        components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
+        logger.error(err, { entityId, contentServerUrl, version: abVersion } as any)
+        components.sentry.captureMessage(`Error during triage fast-path upload`, {
+          level: 'error',
+          tags: {
             entityId,
             contentServerUrl,
+            unityBuildTarget: getUnityBuildTarget($BUILD_TARGET) ?? '',
             version: abVersion,
-            error: err?.message ?? String(err),
+            phase: 'triage-fast-path-upload',
             date: new Date().toISOString()
-          }),
-          CacheControl: 'max-age=3600,s-maxage=3600',
-          ACL: 'public-read'
+          }
         })
-        .promise()
-    } catch (uploadErr: any) {
-      logger.warn(
-        `Failed to upload failed-manifest sentinel after triage digest failure: ${uploadErr?.message ?? uploadErr}`
-      )
-    }
-    components.metrics.increment('ab_converter_triage_outcomes_total', {
-      build_target: $BUILD_TARGET,
-      outcome: 'failed'
-    })
-    return { kind: 'failed', exitCode: 5 }
-  }
-
-  // Cache probe — partial / total hit detection.
-  let cacheResult: AssetCacheResult | null = null
-  try {
-    cacheResult = await checkAssetCache(components, {
-      entity,
-      abVersion,
-      buildTarget: $BUILD_TARGET,
-      cdnBucket,
-      depsDigestByHash
-    })
-  } catch (e: any) {
-    logger.warn(`Triage cache probe failed, republishing to Unity: ${e?.message ?? e}`)
-    components.metrics.increment('ab_converter_asset_cache_probe_errors_total', {
-      build_target: $BUILD_TARGET,
-      ab_version: abVersion
-    })
-    components.metrics.increment('ab_converter_triage_outcomes_total', {
-      build_target: $BUILD_TARGET,
-      outcome: 'republished'
-    })
-    return { kind: 'needs-unity' }
-  }
-
-  const totalProbed = cacheResult.cachedHashes.length + cacheResult.missingHashes.length
-  const fullCacheHit = totalProbed > 0 && cacheResult.missingHashes.length === 0
-
-  if (!fullCacheHit) {
-    components.metrics.increment('ab_converter_triage_outcomes_total', {
-      build_target: $BUILD_TARGET,
-      outcome: 'republished'
-    })
-    return { kind: 'needs-unity' }
-  }
-
-  // Full short-circuit — same upload sequence as executeConversion's fast path
-  // (source files first, then manifest pointing at canonical bundle names).
-  logger.info('Triage: all assets cached — fast-path completing', {
-    entityId,
-    cached: cacheResult.cachedHashes.length
-  } as any)
-
-  const files = cacheResult.cachedHashes.map((h) => cacheResult!.canonicalNameByHash[h])
-  const manifest: Manifest = {
-    version: abVersion,
-    files,
-    exitCode: 0,
-    contentServerUrl,
-    date: new Date().toISOString()
-  }
-
-  try {
-    // Defensive: useAssetReuse already requires entityType === 'scene', so we
-    // can't get here for a non-scene. The explicit guard mirrors the same
-    // pattern in executeConversion's fast-path upload block so a future
-    // refactor that loosens useAssetReuse can't silently start uploading
-    // scene source files for wearables / emotes.
-    if (entityType === 'scene') {
-      await uploadSceneSourceFilesToCDN(components, entity, contentServerUrl, entityScopedUploadPath, cdnBucket)
-    }
-    await uploadEntityManifest(components, cdnBucket, manifestFile, manifest)
-  } catch (err: any) {
-    components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
-    logger.error(err, { entityId, contentServerUrl, version: abVersion } as any)
-    components.sentry.captureMessage(`Error during triage fast-path upload`, {
-      level: 'error',
-      tags: {
-        entityId,
-        contentServerUrl,
-        unityBuildTarget,
-        version: abVersion,
-        phase: 'triage-fast-path-upload',
-        date: new Date().toISOString()
+        components.metrics.increment('ab_converter_triage_outcomes_total', {
+          build_target: $BUILD_TARGET,
+          outcome: 'republished'
+        })
+        return { kind: 'needs-unity' }
       }
-    })
-    // Republish so the conversion loop can retry the upload (and possibly run Unity
-    // if the cache state has changed). Same-pod upload errors are usually
-    // transient.
-    components.metrics.increment('ab_converter_triage_outcomes_total', {
-      build_target: $BUILD_TARGET,
-      outcome: 'republished'
-    })
-    return { kind: 'needs-unity' }
+      components.metrics.increment('ab_converter_asset_reuse_short_circuit_total', {
+        build_target: $BUILD_TARGET,
+        ab_version: abVersion
+      })
+      components.metrics.increment('ab_converter_exit_codes', { exit_code: '0' })
+      components.metrics.increment('ab_converter_triage_outcomes_total', {
+        build_target: $BUILD_TARGET,
+        outcome: 'fast_path'
+      })
+      return { kind: 'completed', exitCode: 0 }
+    }
   }
-
-  components.metrics.increment('ab_converter_asset_reuse_short_circuit_total', {
-    build_target: $BUILD_TARGET,
-    ab_version: abVersion
-  })
-  components.metrics.increment('ab_converter_exit_codes', { exit_code: '0' })
-  components.metrics.increment('ab_converter_triage_outcomes_total', {
-    build_target: $BUILD_TARGET,
-    outcome: 'fast_path'
-  })
-
-  return { kind: 'completed', exitCode: 0 }
 }
 
 export async function executeLODConversion(
@@ -607,17 +419,12 @@ export async function executeLODConversion(
 /**
  * Full conversion path: probe → fast-path-or-Unity → upload → manifest.
  *
- * **Maintenance note**: the probe portion of this function (entity fetch,
- * `shouldIgnoreConversion`, per-asset digest, `checkAssetCache`, and the
- * `fullCacheHit` short-circuit at the bottom of the probe block) has a
- * parallel implementation in `executeTriagePass` above. The two were
- * deliberately not unified because their return-type semantics differ
- * (number exit code here, `TriagePassOutcome` union there) and their
- * failure-handling diverges (this one runs Unity on most non-hit paths;
- * triage just signals `needs-unity`). **If you touch the probe /
- * shouldIgnore / fast-path-upload logic, mirror the change in
- * `executeTriagePass`.** A future refactor could extract a shared
- * `probeScene()` helper.
+ * Delegates the probe portion (build-target validation, shouldIgnore
+ * short-circuit, catalyst fetch, per-asset digest, cache probe, full-hit
+ * detection) to {@link probeScene}; the same helper backs `executeTriagePass`,
+ * so the two paths can't drift apart. This function owns the Unity spawn,
+ * post-Unity uploads, and conversion-loop-specific error handling that the
+ * probe outcome doesn't cover.
  */
 export async function executeConversion(
   components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry' | 'catalyst' | 'unityRunner'>,
@@ -639,18 +446,15 @@ export async function executeConversion(
     )
   )
 
-  const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
-  if (!unityBuildTarget) {
-    logger.info('Invalid build target ' + $BUILD_TARGET)
-    return 5 // UNEXPECTED_ERROR exit code
-  }
+  // unityBuildTarget is also computed inside probeScene's validation step, but
+  // we need it here for the Sentry tags on the Unity-path error handler below.
+  // We narrow to non-undefined ourselves because probeScene returns the
+  // 'invalid-build-target' variant on the same condition and we'll short-circuit
+  // on that variant below; non-null assertion after the switch would also work,
+  // but a typed assertion here lets the Sentry tag literals stay clean.
+  const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET) ?? ''
 
-  if (!force) {
-    if (await shouldIgnoreConversion(components, abVersion, entityId, $BUILD_TARGET)) {
-      logger.info('Ignoring conversion', { entityId, contentServerUrl, abVersion })
-      return 13 // ALREADY_CONVERTED exit code
-    }
-  } else {
+  if (force) {
     logger.info('Forcing conversion', { entityId, contentServerUrl, abVersion })
   }
 
@@ -666,237 +470,147 @@ export async function executeConversion(
 
   logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
 
-  // Fetch the entity up-front — needed both for the per-asset cache probe (when
-  // enabled) and for uploading scene source files regardless of whether Unity runs.
-  // `catalyst.getActiveEntity` throws on non-200 responses. The `!fetched`
-  // guard below is defense-in-depth in case the response parses to null/empty.
-  //
-  // Timeout: passing CATALYST_FETCH_TIMEOUT_MS prevents a wedged catalyst from
-  // holding the worker slot indefinitely. On abort the catch below degrades us
-  // to "no entity, no asset-reuse, no source-file upload" — conversion still
-  // runs against raw hashes.
-  let entityType = 'undefined'
+  const outcome = await probeScene(components, {
+    entityId,
+    contentServerUrl,
+    abVersion,
+    buildTarget: $BUILD_TARGET,
+    force: !!force,
+    useAssetReuseGate: $ASSET_REUSE_ENABLED && !doISS
+  })
+
+  // Unity-path state populated from the probe outcome. `useAssetReuse` is
+  // inferred from the outcome variant rather than re-derived from inputs:
+  // probeScene ANDs in `entity.type === 'scene' && !!entity` for us.
   let entity: Entity | null = null
-  try {
-    const fetched = await components.catalyst.getActiveEntity(entityId, contentServerUrl, CATALYST_FETCH_TIMEOUT_MS)
-    if (!fetched) throw new Error('entity no longer active on catalyst (redeployed or evicted)')
-    entity = fetched
-    entityType = entity.type
-  } catch (e: any) {
-    logger.info(`Could not fetch entity for ${entityId}: ${e?.message ?? e}. Scene manifest wont be generated`)
-  }
-
-  // Per-asset reuse: scenes with the kill switch on and no ISS short-circuit
-  // the pipeline when every asset hash is already canonicalized at
-  // `{abVersion}/assets/{hash}_{target}`. Partial hits feed Unity a `-cachedHashes`
-  // list so it skips re-converting those GLTFs/buffers. Rollout is staged per build
-  // target via the kill switch (each worker pool runs a single target).
-  //
-  // `force` keeps `useAssetReuse` true (so canonical uploads still happen and
-  // overwrite the existing canonical bytes — the operator's intent when
-  // re-queuing a scene with bad bundles), but the cache probe below is skipped
-  // so `cachedHashes` stays empty and Unity reconverts every asset.
-  const useAssetReuse = $ASSET_REUSE_ENABLED && !doISS && entityType === 'scene' && !!entity
-  const assetReuseUploadPath = abVersion + '/assets'
-  const entityScopedUploadPath = abVersion + '/' + entityId
-
-  // Computed eagerly (not from cacheResult) so the glb/gltf composite key stays
-  // well-defined even when the probe throws and cacheResult ends up null —
-  // otherwise a probe failure would silently reintroduce the hash-only collision
-  // bug by asking Unity to emit bare `{hash}_{target}` names. Malformed glTF /
-  // network failures fail this step; rather than letting the error propagate
-  // past service.ts (where it would be swallowed with no failed-manifest
-  // upload and SQS would retry forever against the same broken scene), we
-  // treat it as a scene conversion failure: emit the same observability the
-  // main catch does, publish the failed-manifest sentinel, and return
-  // UNEXPECTED_ERROR.
+  let entityType = 'undefined'
   let depsDigestByHash: ReadonlyMap<string, string> | undefined
   let skippedAssets: ReadonlyMap<string, SkippedAsset> = new Map()
-  if (useAssetReuse && entity) {
-    try {
-      // 60 s aggregate cap on the digest pass. Each catalyst fetch is already
-      // bounded (3 retry attempts × ≤30 s Retry-After clamp), but a scene
-      // with dozens of glbs each backing off to the cap could compound past
-      // SQS's visibility window. Past this point we throw, fall into the
-      // catch below, publish the failed-manifest sentinel, and let SQS
-      // retry — preferable to silently holding the worker for minutes.
-      const digestResult = await computePerAssetDigests(entity, contentServerUrl, {
-        aggregateTimeoutMs: 60_000
-      })
-      depsDigestByHash = digestResult.digests
-      skippedAssets = digestResult.skipped
-    } catch (err: any) {
-      logger.error(`Per-asset digest computation failed: ${err?.message ?? err}`, defaultLoggerMetadata as any)
-      components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
-      // captureException (vs captureMessage) so Sentry gets the full error
-      // object including stack — the failed-manifest body carries the same
-      // message for clients, but Sentry triage needs the stack to find where
-      // the throw originated (glb parse? URI escape? catalyst 404?).
-      components.sentry.captureException(err, {
-        level: 'error',
-        tags: {
-          entityId,
-          contentServerUrl,
-          unityBuildTarget,
-          version: abVersion,
-          phase: 'per-asset-digest'
-        }
-      })
-      try {
-        await components.cdnS3
-          .upload({
-            Bucket: cdnBucket,
-            Key: failedManifestFile,
-            ContentType: 'application/json',
-            Body: JSON.stringify({
-              entityId,
-              contentServerUrl,
-              version: abVersion,
-              error: err?.message ?? String(err),
-              date: new Date().toISOString()
-            }),
-            CacheControl: 'max-age=3600,s-maxage=3600',
-            ACL: 'public-read'
-          })
-          .promise()
-      } catch (uploadErr: any) {
-        // If the sentinel upload ALSO fails, we lose the one signal clients
-        // have that this scene won't convert. Surface at warn level so ops
-        // sees a cascading failure instead of silence.
-        logger.warn(
-          `Failed to upload failed-manifest sentinel after digest failure: ${uploadErr?.message ?? uploadErr}`,
-          defaultLoggerMetadata as any
-        )
-      }
-      return 5 // UNEXPECTED_ERROR exit code
-    }
-  }
-
-  // Visibility for the skip path: aggregate count + reason-labelled counter so
-  // ops can alert on skip-rate spikes without scraping logs. Sample up to five
-  // entries into the warn line so a misbehaving scene is diagnosable from the
-  // log without a separate per-asset entry; the cap keeps a pathological
-  // entity (50+ broken glbs) from blowing the line size.
-  //
-  // Deliberate Sentry omission: pre-change every broken glb fired
-  // `sentry.captureException(... phase: 'per-asset-digest')` from the digest
-  // catch above. Per-glb defects are now content-deterministic skips, not
-  // exceptions — they no longer warrant a Sentry event per occurrence
-  // (would flood triage with thousands of "broken-by-design" entries). The
-  // signal moves to `ab_converter_glb_skipped_total{reason}` for alerting;
-  // Sentry stays for genuine fetch/infra failures in the digest catch.
-  if (skippedAssets.size > 0) {
-    // Early-exit collect rather than `[...values()].slice(0, 5)` so a
-    // pathological scene (thousands of broken glbs in one entity) doesn't
-    // materialize the whole skipped Map into a temporary array just to
-    // discard all but the first 5. Cheap defence — Unity's working set is
-    // already the dominant memory consumer on these workers.
-    const SAMPLE_LIMIT = 5
-    const samples: SkippedAsset[] = []
-    for (const skip of skippedAssets.values()) {
-      if (samples.length >= SAMPLE_LIMIT) break
-      samples.push(skip)
-    }
-    logger.warn('Skipping glb/gltf assets with missing or unparseable dependencies', {
-      ...defaultLoggerMetadata,
-      count: skippedAssets.size,
-      samples: samples.map((s) => ({
-        hash: s.hash,
-        file: s.file,
-        reason: s.reason,
-        detail: s.detail
-      }))
-    } as any)
-    for (const skip of skippedAssets.values()) {
-      components.metrics.increment('ab_converter_glb_skipped_total', {
-        build_target: $BUILD_TARGET,
-        ab_version: abVersion,
-        reason: skip.reason
-      })
-    }
-  }
-
   let cacheResult: AssetCacheResult | null = null
-  let fullCacheHit = false
-  if (useAssetReuse && entity && !force) {
-    try {
-      cacheResult = await checkAssetCache(components, {
-        entity,
-        abVersion,
-        buildTarget: $BUILD_TARGET,
-        cdnBucket,
-        depsDigestByHash
-      })
-      const totalProbed = cacheResult.cachedHashes.length + cacheResult.missingHashes.length
-      fullCacheHit = totalProbed > 0 && cacheResult.missingHashes.length === 0
-    } catch (e: any) {
-      logger.warn(`Asset cache probe failed, falling back to full conversion: ${e.message}`)
+  let useAssetReuse = false
+
+  switch (outcome.kind) {
+    case 'invalid-build-target':
+      return 5 // UNEXPECTED_ERROR exit code
+
+    case 'already-converted':
+      return 13 // ALREADY_CONVERTED exit code
+
+    case 'digest-failed':
+      // probeScene already uploaded the failed-manifest sentinel and notified
+      // Sentry. Emit the same FAIL exit_code counter the pre-refactor path did
+      // before returning so dashboards see the failure.
+      components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
+      return 5 // UNEXPECTED_ERROR exit code
+
+    case 'catalyst-unreachable':
+      // Same graceful degradation as the pre-refactor catch: keep going against
+      // raw hashes. entity stays null, useAssetReuse stays false, no source
+      // files post-success.
+      logger.info(`Could not fetch entity for ${entityId}: ${outcome.error.message}. Scene manifest wont be generated`)
+      break
+
+    case 'no-asset-reuse':
+      entity = outcome.entity
+      entityType = outcome.entityType
+      break
+
+    case 'cache-probe-skipped':
+      // force=true honoured: digests were computed for canonical paths, but
+      // the cache probe was skipped so cachedHashes stays empty and Unity
+      // re-converts everything.
+      entity = outcome.entity
+      entityType = outcome.entityType
+      depsDigestByHash = outcome.depsDigestByHash
+      skippedAssets = outcome.skippedAssets
+      useAssetReuse = true
+      break
+
+    case 'cache-probe-failed':
       components.metrics.increment('ab_converter_asset_cache_probe_errors_total', {
         build_target: $BUILD_TARGET,
         ab_version: abVersion
       })
-      cacheResult = null
-    }
-  }
+      entity = outcome.entity
+      entityType = outcome.entityType
+      depsDigestByHash = outcome.depsDigestByHash
+      skippedAssets = outcome.skippedAssets
+      useAssetReuse = true
+      break
 
-  // `fullCacheHit` is only set true inside the `if (useAssetReuse && entity && !force)`
-  // block above, so it already implies `useAssetReuse`, `!!entity`, and `!force`.
-  // The `cacheResult` and `entity` checks below are kept purely as TypeScript
-  // narrowing guards for the block body.
-  if (fullCacheHit && cacheResult && entity) {
-    // Full short-circuit: every referenced asset hash is already canonical. Publish
-    // the entity manifest pointing at the canonical paths and upload scene source
-    // files. No Unity run, no output directory.
-    logger.info('All assets cached — skipping Unity', {
-      entityId,
-      cached: cacheResult.cachedHashes.length
-    } as any)
+    case 'partial-hit':
+      entity = outcome.entity
+      entityType = outcome.entityType
+      cacheResult = outcome.cacheResult
+      depsDigestByHash = outcome.depsDigestByHash
+      skippedAssets = outcome.skippedAssets
+      useAssetReuse = true
+      break
 
-    const files = cacheResult.cachedHashes.map((h) => cacheResult!.canonicalNameByHash[h])
-    const manifest: Manifest = {
-      version: abVersion,
-      files,
-      exitCode: 0,
-      contentServerUrl,
-      date: new Date().toISOString()
-    }
-
-    try {
-      // Scene source files first, then manifest — matches the main path's ordering
-      // so a client that sees a freshly-published manifest never races against a
-      // missing main.crdt / scene.json / index.js.
-      if (entityType === 'scene') {
-        await uploadSceneSourceFilesToCDN(components, entity, contentServerUrl, entityScopedUploadPath, cdnBucket)
-      }
-
-      await uploadEntityManifest(components, cdnBucket, manifestFile, manifest)
-    } catch (err: any) {
-      // Short-circuit failed post-probe. SQS will retry; we capture for visibility
-      // because the main-path error handler below never runs.
-      components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
-      logger.error(err, defaultLoggerMetadata as any)
-      components.sentry.captureMessage(`Error during ab short-circuit`, {
-        level: 'error',
-        tags: {
-          entityId,
-          contentServerUrl,
-          unityBuildTarget,
-          version: abVersion,
-          shortCircuit: 'true',
-          date: new Date().toISOString()
-        }
+    case 'full-hit': {
+      // Surface skipped-asset visibility before the early return so a
+      // pathological scene that happens to fully cache-hit still emits the
+      // skip metrics for ops alerting. Matches pre-refactor behaviour.
+      logSkippedAssetsSample(components, logger, {
+        defaultLoggerMetadata,
+        skippedAssets: outcome.skippedAssets,
+        buildTarget: $BUILD_TARGET,
+        abVersion
       })
-      throw err
+      logger.info('All assets cached — skipping Unity', {
+        entityId,
+        cached: outcome.cacheResult.cachedHashes.length
+      } as any)
+      try {
+        await uploadFastPathResult(components, {
+          entity: outcome.entity,
+          entityType: outcome.entityType,
+          contentServerUrl,
+          cdnBucket,
+          manifestFile,
+          entityScopedUploadPath: `${abVersion}/${entityId}`,
+          abVersion,
+          cacheResult: outcome.cacheResult
+        })
+      } catch (err: any) {
+        // Short-circuit failed post-probe. SQS will retry; capture for
+        // visibility because the main-path error handler below never runs.
+        components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
+        logger.error(err, defaultLoggerMetadata as any)
+        components.sentry.captureMessage(`Error during ab short-circuit`, {
+          level: 'error',
+          tags: {
+            entityId,
+            contentServerUrl,
+            unityBuildTarget,
+            version: abVersion,
+            shortCircuit: 'true',
+            date: new Date().toISOString()
+          }
+        })
+        throw err
+      }
+      components.metrics.increment('ab_converter_asset_reuse_short_circuit_total', {
+        build_target: $BUILD_TARGET,
+        ab_version: abVersion
+      })
+      components.metrics.increment('ab_converter_exit_codes', { exit_code: '0' })
+      return 0
     }
-
-    components.metrics.increment('ab_converter_asset_reuse_short_circuit_total', {
-      build_target: $BUILD_TARGET,
-      ab_version: abVersion
-    })
-    components.metrics.increment('ab_converter_exit_codes', { exit_code: '0' })
-
-    return 0
   }
+
+  // Unity-path entry. The probe didn't short-circuit, so we'll run a real
+  // conversion. Surface skipped-asset visibility now (the full-hit branch
+  // handled it inline above).
+  logSkippedAssetsSample(components, logger, {
+    defaultLoggerMetadata,
+    skippedAssets,
+    buildTarget: $BUILD_TARGET,
+    abVersion
+  })
+
+  const assetReuseUploadPath = abVersion + '/assets'
+  const entityScopedUploadPath = abVersion + '/' + entityId
 
   // Secondary legacy fast-path (scene-level content-match check). Only runs when the
   // new per-asset reuse didn't short-circuit. Gated on `entityType === 'scene'`
