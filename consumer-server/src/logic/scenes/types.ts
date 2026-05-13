@@ -1,5 +1,4 @@
 import { Entity } from '@dcl/schemas'
-import { ILoggerComponent } from '@well-known-components/interfaces'
 import { AssetCacheResult, PerAssetDigestResult, SkippedAsset } from '../asset-reuse'
 
 export type Manifest = {
@@ -48,14 +47,12 @@ export type ProbeOutcome =
   | {
       kind: 'cache-probe-skipped'
       entity: Entity
-      entityType: string
       depsDigestByHash: ReadonlyMap<string, string>
       skippedAssets: ReadonlyMap<string, SkippedAsset>
     }
   | {
       kind: 'cache-probe-failed'
       entity: Entity
-      entityType: string
       depsDigestByHash: ReadonlyMap<string, string>
       skippedAssets: ReadonlyMap<string, SkippedAsset>
       error: Error
@@ -63,7 +60,6 @@ export type ProbeOutcome =
   | {
       kind: 'partial-hit'
       entity: Entity
-      entityType: string
       cacheResult: AssetCacheResult
       depsDigestByHash: ReadonlyMap<string, string>
       skippedAssets: ReadonlyMap<string, SkippedAsset>
@@ -71,7 +67,6 @@ export type ProbeOutcome =
   | {
       kind: 'full-hit'
       entity: Entity
-      entityType: string
       cacheResult: AssetCacheResult
       depsDigestByHash: ReadonlyMap<string, string>
       skippedAssets: ReadonlyMap<string, SkippedAsset>
@@ -83,15 +78,16 @@ export type ProbeArgs = {
   abVersion: string
   buildTarget: string
   force: boolean
-  /** Caller's `ASSET_REUSE_ENABLED && !doISS` decision. The component ANDs in `entity.type === 'scene'`. */
-  useAssetReuseGate: boolean
+  /** The caller's `ASSET_REUSE_ENABLED` kill switch. */
+  assetReuseEnabled: boolean
+  /** Whether the job is a legacy v2004 (ISS) job. Such jobs always need Unity, so the probe short-circuits to `no-asset-reuse`. */
+  doISS: boolean
   /** Tag applied to the Sentry event on digest failure. Defaults to `per-asset-digest`. */
   sentryPhase?: string
 }
 
 export type UploadFastPathArgs = {
   entity: Entity
-  entityType: string
   contentServerUrl: string
   cdnBucket: string
   manifestFile: string
@@ -134,12 +130,7 @@ export interface IScenesComponent {
     contentServerUrl: string,
     options?: ComputePerAssetDigestsOptions
   ): Promise<PerAssetDigestResult>
-  purgeCachedBundlesFromOutput(
-    outDirectory: string,
-    cachedHashes: string[],
-    logger: ILoggerComponent.ILogger
-  ): Promise<number>
-  shouldIgnoreConversion(abVersion: string, entityId: string, target: string | undefined): Promise<boolean>
+  purgeCachedBundlesFromOutput(outDirectory: string, cachedHashes: string[]): Promise<number>
   getCdnBucket(): Promise<string>
   manifestKeyForEntity(entityId: string, target: string | undefined): string
   uploadEntityManifest(cdnBucket: string, key: string, manifest: Manifest): Promise<void>

@@ -81,6 +81,21 @@ function buildComponents(bucketBasePath: string, params: Params = {}) {
   return { config, cdnS3, sentry, catalyst, unityRunner }
 }
 
+async function buildScenes(
+  base: ReturnType<typeof buildComponents>,
+  logs: import('@well-known-components/interfaces').ILoggerComponent,
+  metrics: import('@well-known-components/interfaces').IMetricsComponent<any>
+) {
+  return createScenesComponent({
+    logs,
+    config: base.config,
+    metrics,
+    cdnS3: base.cdnS3,
+    sentry: base.sentry,
+    catalyst: base.catalyst as any
+  })
+}
+
 // Wire up native fetch so glb/gltf digest reads return declared fixtures and
 // scene source files return a tiny body.
 //
@@ -146,14 +161,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     const base = buildComponents(workDir)
     const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
     const logs = await createLogComponent({ metrics })
-    const scenes = await createScenesComponent({
-      logs,
-      config: base.config,
-      metrics,
-      cdnS3: base.cdnS3,
-      sentry: base.sentry,
-      catalyst: base.catalyst as any
-    })
+    const scenes = await buildScenes(base, logs, metrics)
     components = { ...base, metrics, logs, scenes }
 
     // Scene source files: respond with a tiny body so uploadSceneSourceFilesToCDN
@@ -430,14 +438,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       const off = buildComponents(workDir, { assetReuseEnabled: 'false' })
       const metrics = await createMetricsComponent(metricDeclarations, { config: off.config })
       const logs = await createLogComponent({ metrics })
-      const scenes = await createScenesComponent({
-        logs,
-        config: off.config,
-        metrics,
-        cdnS3: off.cdnS3,
-        sentry: off.sentry,
-        catalyst: off.catalyst as any
-      })
+      const scenes = await buildScenes(off, logs, metrics)
       components = { ...off, metrics, logs, scenes }
 
       // Seed canonical for every hash in the scene — full-cache short-circuit
@@ -1296,14 +1297,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       const base = buildComponents(workDir, { buildTarget: 'nintendo-switch' })
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      const scenes = await createScenesComponent({
-        logs,
-        config: base.config,
-        metrics,
-        cdnS3: base.cdnS3,
-        sentry: base.sentry,
-        catalyst: base.catalyst as any
-      })
+      const scenes = await buildScenes(base, logs, metrics)
       customComponents = { ...base, metrics, logs, scenes }
 
       exitCode = await executeConversion(
@@ -1336,14 +1330,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       const base = buildComponents(workDir, { assetReuseEnabled: 'flase' /* typo */ })
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      const scenes = await createScenesComponent({
-        logs,
-        config: base.config,
-        metrics,
-        cdnS3: base.cdnS3,
-        sentry: base.sentry,
-        catalyst: base.catalyst as any
-      })
+      const scenes = await buildScenes(base, logs, metrics)
       customComponents = { ...base, metrics, logs, scenes }
 
       setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
@@ -1626,14 +1613,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       const base = buildComponents(workDir, { buildTarget: 'webgl' })
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      const scenes = await createScenesComponent({
-        logs,
-        config: base.config,
-        metrics,
-        cdnS3: base.cdnS3,
-        sentry: base.sentry,
-        catalyst: base.catalyst as any
-      })
+      const scenes = await buildScenes(base, logs, metrics)
       customComponents = { ...base, metrics, logs, scenes }
 
       setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
@@ -1700,14 +1680,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       const base = buildComponents(workDir, { assetReuseEnabled: 'false' })
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      const scenes = await createScenesComponent({
-        logs,
-        config: base.config,
-        metrics,
-        cdnS3: base.cdnS3,
-        sentry: base.sentry,
-        catalyst: base.catalyst as any
-      })
+      const scenes = await buildScenes(base, logs, metrics)
       customComponents = { ...base, metrics, logs, scenes }
 
       setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
@@ -1765,14 +1738,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
 
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      const scenes = await createScenesComponent({
-        logs,
-        config: base.config,
-        metrics,
-        cdnS3: base.cdnS3,
-        sentry: base.sentry,
-        catalyst: base.catalyst as any
-      })
+      const scenes = await buildScenes(base, logs, metrics)
       customComponents = { ...base, metrics, logs, scenes }
 
       // mock-aws-s3 happily accepts any bucket name; captures via uploaded key.

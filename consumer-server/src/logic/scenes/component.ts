@@ -1,5 +1,4 @@
 import { Entity } from '@dcl/schemas'
-import { ILoggerComponent } from '@well-known-components/interfaces'
 import { AppComponents } from '../../types'
 import { getUnityBuildTarget, normalizeContentsBaseUrl } from '../../utils'
 import {
@@ -30,6 +29,13 @@ import {
 // usable bundles. Matches the default the migration script uses.
 const CATALYST_FETCH_TIMEOUT_MS = 30_000
 
+// Aggregate cap on `computePerAssetDigests` for one probe. Each catalyst fetch
+// inside is already bounded (3 retry attempts × ≤30s Retry-After clamp), but a
+// scene with dozens of glbs each backing off to the cap could compound past
+// SQS's visibility window. Past this point we treat the digest pass as a scene
+// conversion failure: upload the failed-manifest sentinel and let SQS retry.
+const PROBE_DIGEST_TIMEOUT_MS = 60_000
+
 /**
  * Build the centralised scene-pipeline component. Captures dependencies once
  * and exposes the full pre-Unity surface (probe, asset-cache lookup, per-glb
@@ -44,6 +50,10 @@ const CATALYST_FETCH_TIMEOUT_MS = 30_000
 export async function createScenesComponent(
   components: Pick<AppComponents, 'logs' | 'config' | 'metrics' | 'cdnS3' | 'sentry' | 'catalyst'>
 ): Promise<IScenesComponent> {
+  // `metrics` isn't destructured here because this component's own methods
+  // don't emit metrics directly — but it's required in the Pick<> because the
+  // delegated impls (`checkAssetCacheImpl` and friends) read it from the
+  // captured `components` reference passed through below.
   const { logs, config, cdnS3, sentry, catalyst } = components
 
   async function getCdnBucket(): Promise<string> {
@@ -193,12 +203,8 @@ export async function createScenesComponent(
     return computePerAssetDigestsImpl(entity, contentServerUrl, options)
   }
 
-  async function purgeCachedBundlesFromOutput(
-    outDirectory: string,
-    cachedHashes: string[],
-    logger: ILoggerComponent.ILogger
-  ): Promise<number> {
-    return purgeCachedBundlesFromOutputImpl(outDirectory, cachedHashes, logger)
+  async function purgeCachedBundlesFromOutput(outDirectory: string, cachedHashes: string[]): Promise<number> {
+    return purgeCachedBundlesFromOutputImpl(outDirectory, cachedHashes, logs.getLogger('purge-bundles'))
   }
 
   /**
@@ -211,16 +217,16 @@ export async function createScenesComponent(
    *
    * `force=true` keeps the digest pass (canonical-path uploads need it) but
    * skips the cache probe so the caller's "redo this scene from scratch"
-   * intent isn't silently ignored by a hit. `useAssetReuseGate` mirrors the
-   * caller's `ASSET_REUSE_ENABLED && !doISS` decision — the probe additionally
-   * requires `entity.type === 'scene'` and a successfully-fetched entity.
+   * intent isn't silently ignored by a hit. The asset-reuse gate is computed
+   * from `assetReuseEnabled && !doISS && entity.type === 'scene'` so callers
+   * can't forget the doISS exclusion.
    *
    * The probe owns the failed-manifest sentinel upload on digest failure so
    * both callers surface the same client-visible signal without duplicating
    * the upload block.
    */
   async function probe(args: ProbeArgs): Promise<ProbeOutcome> {
-    const { entityId, contentServerUrl, abVersion, buildTarget, force, useAssetReuseGate } = args
+    const { entityId, contentServerUrl, abVersion, buildTarget, force, assetReuseEnabled, doISS } = args
     const logger = logs.getLogger('probe-scene')
     const sentryPhase = args.sentryPhase ?? 'per-asset-digest'
 
@@ -250,20 +256,17 @@ export async function createScenesComponent(
       return { kind: 'catalyst-unreachable', error: e instanceof Error ? e : new Error(String(e)) }
     }
 
-    if (!useAssetReuseGate || entityType !== 'scene') {
+    const useAssetReuse = assetReuseEnabled && !doISS && entityType === 'scene'
+    if (!useAssetReuse) {
       return { kind: 'no-asset-reuse', entity, entityType }
     }
 
     let depsDigestByHash: ReadonlyMap<string, string>
     let skippedAssets: ReadonlyMap<string, SkippedAsset>
     try {
-      // 60s aggregate cap on the digest pass. Each catalyst fetch is already
-      // bounded (3 retry attempts × ≤30s Retry-After clamp), but a scene with
-      // dozens of glbs each backing off to the cap could compound past SQS's
-      // visibility window. Past this point we treat the digest pass as a scene
-      // conversion failure: upload the failed-manifest sentinel and let SQS
-      // retry.
-      const digestResult = await computePerAssetDigests(entity, contentServerUrl, { aggregateTimeoutMs: 60_000 })
+      const digestResult = await computePerAssetDigests(entity, contentServerUrl, {
+        aggregateTimeoutMs: PROBE_DIGEST_TIMEOUT_MS
+      })
       depsDigestByHash = digestResult.digests
       skippedAssets = digestResult.skipped
     } catch (err: any) {
@@ -314,7 +317,7 @@ export async function createScenesComponent(
       // Honour the operator's "redo this entity from scratch" intent: digests
       // are still needed for canonical upload paths, but the cache probe is
       // skipped so cached short-circuits can't mask the force.
-      return { kind: 'cache-probe-skipped', entity, entityType, depsDigestByHash, skippedAssets }
+      return { kind: 'cache-probe-skipped', entity, depsDigestByHash, skippedAssets }
     }
 
     let cacheResult: AssetCacheResult
@@ -331,7 +334,6 @@ export async function createScenesComponent(
       return {
         kind: 'cache-probe-failed',
         entity,
-        entityType,
         depsDigestByHash,
         skippedAssets,
         error: e instanceof Error ? e : new Error(String(e))
@@ -341,9 +343,9 @@ export async function createScenesComponent(
     const totalProbed = cacheResult.cachedHashes.length + cacheResult.missingHashes.length
     const fullCacheHit = totalProbed > 0 && cacheResult.missingHashes.length === 0
     if (fullCacheHit) {
-      return { kind: 'full-hit', entity, entityType, cacheResult, depsDigestByHash, skippedAssets }
+      return { kind: 'full-hit', entity, cacheResult, depsDigestByHash, skippedAssets }
     }
-    return { kind: 'partial-hit', entity, entityType, cacheResult, depsDigestByHash, skippedAssets }
+    return { kind: 'partial-hit', entity, cacheResult, depsDigestByHash, skippedAssets }
   }
 
   /**
@@ -358,16 +360,7 @@ export async function createScenesComponent(
    * can fire.
    */
   async function uploadFastPathResult(args: UploadFastPathArgs): Promise<void> {
-    const {
-      entity,
-      entityType,
-      contentServerUrl,
-      cdnBucket,
-      manifestFile,
-      entityScopedUploadPath,
-      abVersion,
-      cacheResult
-    } = args
+    const { entity, contentServerUrl, cdnBucket, manifestFile, entityScopedUploadPath, abVersion, cacheResult } = args
     const files = cacheResult.cachedHashes.map((h) => cacheResult.canonicalNameByHash[h])
     const manifest: Manifest = {
       version: abVersion,
@@ -378,11 +371,10 @@ export async function createScenesComponent(
     }
     // Scene source files first, then manifest — so a client that sees a freshly
     // published manifest never races against a missing main.crdt / scene.json /
-    // index.js. `entityType === 'scene'` guard mirrors the existing behaviour:
-    // wearables/emotes don't carry these source files.
-    if (entityType === 'scene') {
-      await uploadSceneSourceFilesToCDN(entity, contentServerUrl, entityScopedUploadPath, cdnBucket)
-    }
+    // index.js. This entry point is only reached on a `full-hit` outcome, which
+    // the probe gates on `entity.type === 'scene'`, so unconditional source-file
+    // upload is correct here (wearables/emotes can't reach this path).
+    await uploadSceneSourceFilesToCDN(entity, contentServerUrl, entityScopedUploadPath, cdnBucket)
     await uploadEntityManifest(cdnBucket, manifestFile, manifest)
   }
 
@@ -392,7 +384,6 @@ export async function createScenesComponent(
     checkAssetCache,
     computePerAssetDigests,
     purgeCachedBundlesFromOutput,
-    shouldIgnoreConversion,
     getCdnBucket,
     manifestKeyForEntity,
     uploadEntityManifest,

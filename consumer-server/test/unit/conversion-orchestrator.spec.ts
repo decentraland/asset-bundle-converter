@@ -59,7 +59,19 @@ async function buildHarness(opts: { triageEnabled: boolean }): Promise<Harness> 
     publisher: { publishMessage } as any,
     catalyst: { getActiveEntity: jest.fn(), getEntities: jest.fn() } as any,
     unityRunner: { runConversion: jest.fn(), runLodsConversion: jest.fn() } as any,
-    scenes: {} as any
+    // The harness jest.mocks executeConversion/Triage/LOD at module scope, so
+    // dispatch never reaches into `scenes.*`. The Proxy makes any accidental
+    // access (e.g. if a future test path bypasses the mock) throw loudly with
+    // the offending method name instead of an opaque "undefined is not a
+    // function".
+    scenes: new Proxy(
+      {},
+      {
+        get: (_, prop) => () => {
+          throw new Error(`scenes.${String(prop)}() reached from a mocked-conversion-task harness`)
+        }
+      }
+    ) as any
   })
 
   return { orchestrator, publishMessage, conversionPublish }

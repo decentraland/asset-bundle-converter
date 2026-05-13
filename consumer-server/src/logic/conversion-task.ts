@@ -177,7 +177,9 @@ export async function executeTriagePass(
     abVersion,
     buildTarget: $BUILD_TARGET,
     force: false,
-    useAssetReuseGate: $ASSET_REUSE_ENABLED,
+    assetReuseEnabled: $ASSET_REUSE_ENABLED,
+    // doISS already short-circuited above; this is reachable only with doISS=false.
+    doISS: false,
     sentryPhase: 'triage-per-asset-digest'
   })
 
@@ -241,7 +243,6 @@ export async function executeTriagePass(
       try {
         await components.scenes.uploadFastPathResult({
           entity: outcome.entity,
-          entityType: outcome.entityType,
           contentServerUrl,
           cdnBucket,
           manifestFile: components.scenes.manifestKeyForEntity(entityId, $BUILD_TARGET),
@@ -471,7 +472,8 @@ export async function executeConversion(
     abVersion,
     buildTarget: $BUILD_TARGET,
     force: !!force,
-    useAssetReuseGate: $ASSET_REUSE_ENABLED && !doISS
+    assetReuseEnabled: $ASSET_REUSE_ENABLED,
+    doISS: !!doISS
   })
 
   // Unity-path state populated from the probe outcome. `useAssetReuse` is
@@ -510,12 +512,17 @@ export async function executeConversion(
       entityType = outcome.entityType
       break
 
+    // The next three variants — cache-probe-skipped, cache-probe-failed,
+    // partial-hit — only arise when the probe got past its
+    // `entity.type === 'scene'` gate, so the local entityType is always
+    // 'scene' here. We assign it explicitly rather than re-reading from the
+    // outcome (which would carry redundant per-variant typing).
     case 'cache-probe-skipped':
       // force=true honoured: digests were computed for canonical paths, but
       // the cache probe was skipped so cachedHashes stays empty and Unity
       // re-converts everything.
       entity = outcome.entity
-      entityType = outcome.entityType
+      entityType = 'scene'
       depsDigestByHash = outcome.depsDigestByHash
       skippedAssets = outcome.skippedAssets
       useAssetReuse = true
@@ -527,7 +534,7 @@ export async function executeConversion(
         ab_version: abVersion
       })
       entity = outcome.entity
-      entityType = outcome.entityType
+      entityType = 'scene'
       depsDigestByHash = outcome.depsDigestByHash
       skippedAssets = outcome.skippedAssets
       useAssetReuse = true
@@ -535,7 +542,7 @@ export async function executeConversion(
 
     case 'partial-hit':
       entity = outcome.entity
-      entityType = outcome.entityType
+      entityType = 'scene'
       cacheResult = outcome.cacheResult
       depsDigestByHash = outcome.depsDigestByHash
       skippedAssets = outcome.skippedAssets
@@ -559,7 +566,6 @@ export async function executeConversion(
       try {
         await components.scenes.uploadFastPathResult({
           entity: outcome.entity,
-          entityType: outcome.entityType,
           contentServerUrl,
           cdnBucket,
           manifestFile,
@@ -661,11 +667,7 @@ export async function executeConversion(
     // the list bypass didn't cover every artifact). The canonical object already
     // exists, so re-uploading would just be wasted work.
     if (useAssetReuse && cacheResult && cacheResult.cachedHashes.length > 0) {
-      const purged = await components.scenes.purgeCachedBundlesFromOutput(
-        outDirectory,
-        cacheResult.cachedHashes,
-        logger
-      )
+      const purged = await components.scenes.purgeCachedBundlesFromOutput(outDirectory, cacheResult.cachedHashes)
       if (purged > 0) {
         logger.info(`Purged ${purged} already-canonical bundle file(s) from output directory`)
       }

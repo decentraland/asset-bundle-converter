@@ -83,12 +83,19 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       publisher: { publishMessage },
       // Stubs — these tests jest.mock executeConversion / executeLODConversion
       // / executeTriagePass at module scope, so the orchestrator never actually
-      // dispatches into the catalyst or unity-runner methods. Empty fakes
-      // satisfy the type contract. The scenes component is similarly unused on
-      // these paths; pass an empty object cast to satisfy the Pick.
+      // dispatches into the catalyst, unity-runner, or scenes methods. The
+      // scenes Proxy throws loudly if a future test path accidentally bypasses
+      // the mock.
       catalyst: { getActiveEntity: jest.fn(), getEntities: jest.fn() },
       unityRunner: { runConversion: jest.fn(), runLodsConversion: jest.fn() },
-      scenes: {} as any
+      scenes: new Proxy(
+        {},
+        {
+          get: (_, prop) => () => {
+            throw new Error(`scenes.${String(prop)}() reached from a mocked-conversion-task harness`)
+          }
+        }
+      ) as any
     })
 
     const components = {
@@ -408,12 +415,19 @@ describe('when FAST_PATH_TRIAGE_ENABLED is unset (default off)', () => {
       publisher: { publishMessage },
       // Stubs — these tests jest.mock executeConversion / executeLODConversion
       // / executeTriagePass at module scope, so the orchestrator never actually
-      // dispatches into the catalyst or unity-runner methods. Empty fakes
-      // satisfy the type contract. The scenes component is similarly unused on
-      // these paths; pass an empty object cast to satisfy the Pick.
+      // dispatches into the catalyst, unity-runner, or scenes methods. The
+      // scenes Proxy throws loudly if a future test path accidentally bypasses
+      // the mock.
       catalyst: { getActiveEntity: jest.fn(), getEntities: jest.fn() },
       unityRunner: { runConversion: jest.fn(), runLodsConversion: jest.fn() },
-      scenes: {} as any
+      scenes: new Proxy(
+        {},
+        {
+          get: (_, prop) => () => {
+            throw new Error(`scenes.${String(prop)}() reached from a mocked-conversion-task harness`)
+          }
+        }
+      ) as any
     })
 
     const components = {

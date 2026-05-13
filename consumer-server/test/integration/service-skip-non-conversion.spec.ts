@@ -80,7 +80,17 @@ describe('when the conversion worker consumes a job from the queue', () => {
       // module scope so the orchestrator never dispatches into these.
       catalyst: { getActiveEntity: jest.fn(), getEntities: jest.fn() },
       unityRunner: { runConversion: jest.fn(), runLodsConversion: jest.fn() },
-      scenes: {} as any
+      // executeConversion / executeLODConversion are jest.mocked at module
+      // scope; scenes is reachable only through them, so this Proxy throws
+      // loudly if a future test path accidentally bypasses the mock.
+      scenes: new Proxy(
+        {},
+        {
+          get: (_, prop) => () => {
+            throw new Error(`scenes.${String(prop)}() reached from a mocked-conversion-task harness`)
+          }
+        }
+      ) as any
     })
 
     const components = {
