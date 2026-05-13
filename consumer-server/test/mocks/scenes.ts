@@ -24,5 +24,5 @@ export function createScenesMock(): MockedScenesComponent {
     manifestKeyForEntity: jest.fn(),
     uploadEntityManifest: jest.fn(),
     uploadSceneSourceFilesToCDN: jest.fn()
-  } as unknown as MockedScenesComponent
+  }
 }

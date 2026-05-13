@@ -15,5 +15,5 @@ export function createUnityRunnerMock(): MockedUnityRunnerComponent {
   return {
     runConversion: jest.fn(),
     runLodsConversion: jest.fn()
-  } as unknown as MockedUnityRunnerComponent
+  }
 }

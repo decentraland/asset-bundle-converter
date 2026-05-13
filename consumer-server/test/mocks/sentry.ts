@@ -12,5 +12,5 @@ export function createSentryMock(): MockedSentryComponent {
   return {
     captureException: jest.fn(),
     captureMessage: jest.fn()
-  } as unknown as MockedSentryComponent
+  }
 }

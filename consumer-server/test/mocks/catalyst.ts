@@ -24,5 +24,5 @@ export function createCatalystMock(): MockedCatalystComponent {
   return {
     getActiveEntity: jest.fn(),
     getEntities: jest.fn()
-  } as unknown as MockedCatalystComponent
+  }
 }

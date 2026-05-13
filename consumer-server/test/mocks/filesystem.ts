@@ -17,8 +17,17 @@ export type MockedFilesystemComponent = jest.Mocked<IFilesystemComponent>
  * call site.
  */
 export function createFilesystemMock(): MockedFilesystemComponent {
-  return {
-    getFreeBytes: jest.fn(async () => 100 * 1e9),
-    isBelowMinimum: jest.fn(async () => false)
-  } as unknown as MockedFilesystemComponent
+  // Build with bare `jest.fn()`s — these are `Mock<unknown, unknown>` and
+  // assignable to any function shape, so the interface contract is satisfied
+  // without an `unknown` cast. Apply the "healthy disk" defaults via
+  // `mockResolvedValue` so tests that don't override get 100 GB free / not
+  // below minimum, but the methods retain their proper `jest.MockedFunction`
+  // typing from the interface.
+  const mock: MockedFilesystemComponent = {
+    getFreeBytes: jest.fn(),
+    isBelowMinimum: jest.fn()
+  }
+  mock.getFreeBytes.mockResolvedValue(100 * 1e9)
+  mock.isBelowMinimum.mockResolvedValue(false)
+  return mock
 }
