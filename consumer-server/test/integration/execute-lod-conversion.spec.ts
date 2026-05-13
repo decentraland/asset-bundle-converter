@@ -16,9 +16,11 @@ import { metricDeclarations } from '../../src/metrics'
 const MockAws = require('mock-aws-s3')
 import { executeLODConversion } from '../../src/logic/conversion-task'
 import { createScenesComponent } from '../../src/logic/scenes'
+import { createCatalystMock, createSentryMock, createUnityRunnerMock } from '../mocks'
 
-const mockedRunLodsConversion = jest.fn()
-const mockedRunConversion = jest.fn()
+const unityRunnerMock = createUnityRunnerMock()
+const mockedRunConversion = unityRunnerMock.runConversion as unknown as jest.Mock
+const mockedRunLodsConversion = unityRunnerMock.runLodsConversion as unknown as jest.Mock
 
 type Params = {
   buildTarget?: string
@@ -36,19 +38,13 @@ function buildComponents(bucketBasePath: string, params: Params = {}) {
 
   MockAws.config.basePath = bucketBasePath
   const cdnS3 = new MockAws.S3({ params: { Bucket: 'test-bucket' } })
-  // executeLODConversion only needs unityRunner from these new fields, but
-  // include catalyst as well so the components shape stays interchangeable
-  // across the integration test files.
-  const catalyst = {
-    getActiveEntity: jest.fn(),
-    getEntities: jest.fn()
+  return {
+    config,
+    cdnS3,
+    catalyst: createCatalystMock(),
+    unityRunner: unityRunnerMock,
+    sentry: createSentryMock()
   }
-  const unityRunner = {
-    runConversion: mockedRunConversion,
-    runLodsConversion: mockedRunLodsConversion
-  }
-  const sentry = { captureMessage: jest.fn(), captureException: jest.fn() } as any
-  return { config, cdnS3, catalyst, unityRunner, sentry }
 }
 
 async function buildScenes(

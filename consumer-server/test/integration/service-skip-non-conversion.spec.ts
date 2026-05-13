@@ -13,6 +13,7 @@ import { ITaskQueue } from '../../src/adapters/task-queue'
 import { IBaseComponent } from '@well-known-components/interfaces'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { IFilesystemComponent } from '../../src/adapters/filesystem'
+import { createCatalystMock, createScenesMock, createUnityRunnerMock } from '../mocks'
 import { createConversionOrchestratorComponent } from '../../src/logic/conversion-orchestrator'
 
 jest.mock('../../src/logic/conversion-task', () => ({
@@ -78,19 +79,12 @@ describe('when the conversion worker consumes a job from the queue', () => {
       publisher: { publishMessage },
       // Stubs — executeConversion / executeLODConversion are jest.mocked at
       // module scope so the orchestrator never dispatches into these.
-      catalyst: { getActiveEntity: jest.fn(), getEntities: jest.fn() },
-      unityRunner: { runConversion: jest.fn(), runLodsConversion: jest.fn() },
+      catalyst: createCatalystMock(),
+      unityRunner: createUnityRunnerMock(),
       // executeConversion / executeLODConversion are jest.mocked at module
-      // scope; scenes is reachable only through them, so this Proxy throws
-      // loudly if a future test path accidentally bypasses the mock.
-      scenes: new Proxy(
-        {},
-        {
-          get: (_, prop) => () => {
-            throw new Error(`scenes.${String(prop)}() reached from a mocked-conversion-task harness`)
-          }
-        }
-      ) as any
+      // scope; scenes is reachable only through them. The factory mock is
+      // here for type-shape satisfaction.
+      scenes: createScenesMock()
     })
 
     const components = {

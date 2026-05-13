@@ -10,6 +10,14 @@ import { createLogComponent } from '@well-known-components/logger'
 import { createMetricsComponent } from '@well-known-components/metrics'
 import { metricDeclarations } from '../../src/metrics'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
+import {
+  createCatalystMock,
+  createPublisherMock,
+  createScenesMock,
+  createUnityRunnerMock,
+  MockedPublisherComponent,
+  MockedScenesComponent
+} from '../mocks'
 
 jest.mock('../../src/logic/conversion-task', () => ({
   executeConversion: jest.fn(),
@@ -30,7 +38,8 @@ const mockedExecuteTriagePass = executeTriagePass as jest.Mock
 
 type Harness = {
   orchestrator: IConversionOrchestratorComponent
-  publishMessage: jest.Mock
+  publisher: MockedPublisherComponent
+  scenes: MockedScenesComponent
   conversionPublish: jest.Mock
 }
 
@@ -45,9 +54,13 @@ async function buildHarness(opts: { triageEnabled: boolean }): Promise<Harness> 
   })
   const metrics = await createMetricsComponent(metricDeclarations, { config })
   const logs = await createLogComponent({ metrics })
-  const publishMessage: jest.Mock = jest.fn(async () => undefined)
   const conversionPublish: jest.Mock = jest.fn(async () => ({ id: 'unity-msg-1' }))
   const conversionTaskQueue = { publish: conversionPublish, consumeAndProcessJob: jest.fn() } as any
+  const publisher = createPublisherMock()
+  // This harness jest.mocks executeConversion/Triage/LOD at module scope, so
+  // dispatch never reaches scenes.*; the mock is constructed for type-shape
+  // satisfaction. Individual tests assert non-invocation where it matters.
+  const scenes = createScenesMock()
 
   const orchestrator = await createConversionOrchestratorComponent({
     logs,
@@ -56,25 +69,13 @@ async function buildHarness(opts: { triageEnabled: boolean }): Promise<Harness> 
     cdnS3: {} as any,
     sentry: {} as any,
     conversionTaskQueue,
-    publisher: { publishMessage } as any,
-    catalyst: { getActiveEntity: jest.fn(), getEntities: jest.fn() } as any,
-    unityRunner: { runConversion: jest.fn(), runLodsConversion: jest.fn() } as any,
-    // The harness jest.mocks executeConversion/Triage/LOD at module scope, so
-    // dispatch never reaches into `scenes.*`. The Proxy makes any accidental
-    // access (e.g. if a future test path bypasses the mock) throw loudly with
-    // the offending method name instead of an opaque "undefined is not a
-    // function".
-    scenes: new Proxy(
-      {},
-      {
-        get: (_, prop) => () => {
-          throw new Error(`scenes.${String(prop)}() reached from a mocked-conversion-task harness`)
-        }
-      }
-    ) as any
+    publisher,
+    catalyst: createCatalystMock(),
+    unityRunner: createUnityRunnerMock(),
+    scenes
   })
 
-  return { orchestrator, publishMessage, conversionPublish }
+  return { orchestrator, publisher, scenes, conversionPublish }
 }
 
 function buildValidSceneJob(): DeploymentToSqs {
@@ -117,7 +118,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is fals
     })
 
     it('should not publish a finished event', () => {
-      expect(harness.publishMessage).not.toHaveBeenCalled()
+      expect(harness.publisher.publishMessage).not.toHaveBeenCalled()
     })
   })
 
@@ -131,7 +132,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is fals
 
     it('should skip the job (validation guard rejects empty contentServerUrls)', () => {
       expect(mockedExecuteConversion).not.toHaveBeenCalled()
-      expect(harness.publishMessage).not.toHaveBeenCalled()
+      expect(harness.publisher.publishMessage).not.toHaveBeenCalled()
     })
   })
 
@@ -154,7 +155,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is fals
     })
 
     it('should publish a finished event with the conversion exit code', () => {
-      expect(harness.publishMessage).toHaveBeenCalledWith(
+      expect(harness.publisher.publishMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           metadata: expect.objectContaining({ entityId: 'bafy-scene', statusCode: 0 })
         })
@@ -179,7 +180,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is fals
     })
 
     it('should publish a finished event with isLods=true', () => {
-      expect(harness.publishMessage).toHaveBeenCalledWith(
+      expect(harness.publisher.publishMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           metadata: expect.objectContaining({ isLods: true, entityId: 'bafy-lod' })
         })
@@ -229,7 +230,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
     })
 
     it('should not publish a finished event yet (conversion loop will, after the conversion)', () => {
-      expect(harness.publishMessage).not.toHaveBeenCalled()
+      expect(harness.publisher.publishMessage).not.toHaveBeenCalled()
     })
   })
 
@@ -240,7 +241,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
     })
 
     it('should publish a finished event carrying the triage exit code', () => {
-      expect(harness.publishMessage).toHaveBeenCalledWith(
+      expect(harness.publisher.publishMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           metadata: expect.objectContaining({ entityId: 'bafy-scene', statusCode: 0 })
         })
@@ -259,7 +260,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
     })
 
     it('should publish a finished event carrying the failure exit code so downstream consumers see the failure', () => {
-      expect(harness.publishMessage).toHaveBeenCalledWith(
+      expect(harness.publisher.publishMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           metadata: expect.objectContaining({ entityId: 'bafy-scene', statusCode: 5 })
         })
@@ -285,7 +286,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
     })
 
     it('should not publish a finished event (conversion loop publishes after conversion completes)', () => {
-      expect(harness.publishMessage).not.toHaveBeenCalled()
+      expect(harness.publisher.publishMessage).not.toHaveBeenCalled()
     })
   })
 
@@ -331,7 +332,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
     })
 
     it('should publish a finished event carrying the inline-conversion exit code', () => {
-      expect(harness.publishMessage).toHaveBeenCalledWith(
+      expect(harness.publisher.publishMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           metadata: expect.objectContaining({ entityId: 'bafy-scene', statusCode: 0 })
         })
@@ -356,7 +357,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
     })
 
     it('should publish a finished event for the inline LOD conversion', () => {
-      expect(harness.publishMessage).toHaveBeenCalledWith(
+      expect(harness.publisher.publishMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           metadata: expect.objectContaining({ entityId: 'bafy-lod', isLods: true, statusCode: 0 })
         })
@@ -372,7 +373,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
     it('should skip the job before any dispatch (validation guard fires first)', () => {
       expect(mockedExecuteTriagePass).not.toHaveBeenCalled()
       expect(harness.conversionPublish).not.toHaveBeenCalled()
-      expect(harness.publishMessage).not.toHaveBeenCalled()
+      expect(harness.publisher.publishMessage).not.toHaveBeenCalled()
     })
   })
 })
@@ -402,7 +403,7 @@ describe('when processConversionJob is called', () => {
 
     it('should skip the job and not call executeConversion', () => {
       expect(mockedExecuteConversion).not.toHaveBeenCalled()
-      expect(harness.publishMessage).not.toHaveBeenCalled()
+      expect(harness.publisher.publishMessage).not.toHaveBeenCalled()
     })
   })
 
@@ -425,7 +426,7 @@ describe('when processConversionJob is called', () => {
     })
 
     it('should publish a finished event with the conversion exit code', () => {
-      expect(harness.publishMessage).toHaveBeenCalledWith(
+      expect(harness.publisher.publishMessage).toHaveBeenCalledWith(
         expect.objectContaining({
           metadata: expect.objectContaining({ entityId: 'bafy-scene', statusCode: 0 })
         })

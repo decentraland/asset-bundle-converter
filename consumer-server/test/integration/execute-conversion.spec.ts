@@ -20,6 +20,7 @@ import {
   probeHitCache
 } from '../../src/logic/asset-reuse'
 import { createScenesComponent } from '../../src/logic/scenes'
+import { createCatalystMock, createSentryMock, createUnityRunnerMock } from '../mocks'
 import { buildGlb } from '../helpers/glb-fixtures'
 
 jest.mock('../../src/logic/has-content-changed-task', () => {
@@ -30,10 +31,19 @@ jest.mock('../../src/logic/has-content-changed-task', () => {
 const MockAws = require('mock-aws-s3')
 import { executeConversion } from '../../src/logic/conversion-task'
 
-const mockedRunConversion = jest.fn()
-const mockedRunLodsConversion = jest.fn()
-const mockedGetActiveEntity = jest.fn()
-const mockedGetEntities = jest.fn()
+// Module-level catalyst + unity-runner mocks. The factories provide the
+// component-shaped object; we alias the inner jest.fns at module scope so the
+// existing test bodies can keep doing `mockedRunConversion.mockImplementation`
+// without threading `components.unityRunner.runConversion` through every spec.
+const unityRunnerMock = createUnityRunnerMock()
+const catalystMock = createCatalystMock()
+// Re-cast as plain `jest.Mock` to discard the strict component-interface
+// parameter typing — these tests pass partial Entity fixtures and the relaxed
+// signature matches how they worked pre-refactor.
+const mockedRunConversion = unityRunnerMock.runConversion as unknown as jest.Mock
+const mockedRunLodsConversion = unityRunnerMock.runLodsConversion as unknown as jest.Mock
+const mockedGetActiveEntity = catalystMock.getActiveEntity as unknown as jest.Mock
+const mockedGetEntities = catalystMock.getEntities as unknown as jest.Mock
 const originalNativeFetch = globalThis.fetch
 let mockedFetch: jest.Mock
 
@@ -59,26 +69,11 @@ function buildComponents(bucketBasePath: string, params: Params = {}) {
   MockAws.config.basePath = bucketBasePath
   const cdnS3 = new MockAws.S3({ params: { Bucket: 'test-bucket' } })
 
-  const sentry = {
-    captureMessage: jest.fn(),
-    captureException: jest.fn()
-  } as any
-
-  // Component-style mocks: replace the previous jest.mock('../../src/logic/...')
-  // pattern with explicit injection through the components object. Tests then
-  // exercise executeConversion against the same mock surface (mockedRunConversion,
-  // mockedGetActiveEntity, mockedGetEntities) but routed via dependency
-  // injection — which is what the orchestrator does in production too.
-  const catalyst = {
-    getActiveEntity: mockedGetActiveEntity,
-    getEntities: mockedGetEntities
-  }
-  const unityRunner = {
-    runConversion: mockedRunConversion,
-    runLodsConversion: mockedRunLodsConversion
-  }
-
-  return { config, cdnS3, sentry, catalyst, unityRunner }
+  // Sentry is per-buildComponents so each test variant gets its own
+  // captureException / captureMessage call log. The catalyst and unity-runner
+  // mocks are module-scoped (shared across every test) because the test
+  // bodies drive them via module-level aliases.
+  return { config, cdnS3, sentry: createSentryMock(), catalyst: catalystMock, unityRunner: unityRunnerMock }
 }
 
 async function buildScenes(

@@ -15,6 +15,7 @@ import { IBaseComponent } from '@well-known-components/interfaces'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { IFilesystemComponent } from '../../src/adapters/filesystem'
 import { createConversionOrchestratorComponent } from '../../src/logic/conversion-orchestrator'
+import { createCatalystMock, createScenesMock, createUnityRunnerMock } from '../mocks'
 
 jest.mock('../../src/logic/conversion-task', () => ({
   executeConversion: jest.fn(),
@@ -81,21 +82,13 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       sentry: {} as any,
       conversionTaskQueue,
       publisher: { publishMessage },
-      // Stubs — these tests jest.mock executeConversion / executeLODConversion
-      // / executeTriagePass at module scope, so the orchestrator never actually
-      // dispatches into the catalyst, unity-runner, or scenes methods. The
-      // scenes Proxy throws loudly if a future test path accidentally bypasses
-      // the mock.
-      catalyst: { getActiveEntity: jest.fn(), getEntities: jest.fn() },
-      unityRunner: { runConversion: jest.fn(), runLodsConversion: jest.fn() },
-      scenes: new Proxy(
-        {},
-        {
-          get: (_, prop) => () => {
-            throw new Error(`scenes.${String(prop)}() reached from a mocked-conversion-task harness`)
-          }
-        }
-      ) as any
+      // executeConversion / executeLODConversion / executeTriagePass are
+      // jest.mocked at module scope, so the orchestrator never dispatches into
+      // catalyst, unity-runner, or scenes. Factory mocks satisfy the type
+      // contract.
+      catalyst: createCatalystMock(),
+      unityRunner: createUnityRunnerMock(),
+      scenes: createScenesMock()
     })
 
     const components = {
@@ -413,21 +406,13 @@ describe('when FAST_PATH_TRIAGE_ENABLED is unset (default off)', () => {
       sentry: {} as any,
       conversionTaskQueue,
       publisher: { publishMessage },
-      // Stubs — these tests jest.mock executeConversion / executeLODConversion
-      // / executeTriagePass at module scope, so the orchestrator never actually
-      // dispatches into the catalyst, unity-runner, or scenes methods. The
-      // scenes Proxy throws loudly if a future test path accidentally bypasses
-      // the mock.
-      catalyst: { getActiveEntity: jest.fn(), getEntities: jest.fn() },
-      unityRunner: { runConversion: jest.fn(), runLodsConversion: jest.fn() },
-      scenes: new Proxy(
-        {},
-        {
-          get: (_, prop) => () => {
-            throw new Error(`scenes.${String(prop)}() reached from a mocked-conversion-task harness`)
-          }
-        }
-      ) as any
+      // executeConversion / executeLODConversion / executeTriagePass are
+      // jest.mocked at module scope, so the orchestrator never dispatches into
+      // catalyst, unity-runner, or scenes. Factory mocks satisfy the type
+      // contract.
+      catalyst: createCatalystMock(),
+      unityRunner: createUnityRunnerMock(),
+      scenes: createScenesMock()
     })
 
     const components = {

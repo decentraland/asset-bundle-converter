@@ -29,6 +29,14 @@ import {
   purgeCachedBundlesFromOutput
 } from '../../src/logic/asset-reuse'
 import { createScenesComponent, IScenesComponent, Manifest, ProbeArgs } from '../../src/logic/scenes'
+import {
+  createCatalystMock,
+  createCdnS3Mock,
+  createSentryMock,
+  MockedCatalystComponent,
+  MockedCdnS3,
+  MockedSentryComponent
+} from '../mocks'
 
 const mockedCheckAssetCache = checkAssetCache as jest.Mock
 const mockedComputePerAssetDigests = computePerAssetDigests as jest.Mock
@@ -36,9 +44,9 @@ const mockedPurgeCachedBundlesFromOutput = purgeCachedBundlesFromOutput as jest.
 
 type Harness = {
   scenes: IScenesComponent
-  cdnS3: { upload: jest.Mock; getObject: jest.Mock }
-  sentry: { captureException: jest.Mock; captureMessage: jest.Mock }
-  catalyst: { getActiveEntity: jest.Mock; getEntities: jest.Mock }
+  cdnS3: MockedCdnS3
+  sentry: MockedSentryComponent
+  catalyst: MockedCatalystComponent
   originalFetch: typeof globalThis.fetch
   fetch: jest.Mock
 }
@@ -55,20 +63,9 @@ async function buildHarness(overrides?: { cdnBucket?: string }): Promise<Harness
   const metrics = await createMetricsComponent(metricDeclarations, { config })
   const logs = await createLogComponent({ metrics })
 
-  // Upload returns a promise-wrapped stub via `.promise()`; same for getObject.
-  // jest.fn defaults to ({}, {}) → undefined; we override per test as needed.
-  const cdnS3 = {
-    upload: jest.fn(() => ({ promise: jest.fn(async () => ({})) })),
-    getObject: jest.fn(() => ({ promise: jest.fn(async () => ({ Body: undefined })) }))
-  }
-  const sentry = {
-    captureException: jest.fn(),
-    captureMessage: jest.fn()
-  }
-  const catalyst = {
-    getActiveEntity: jest.fn(),
-    getEntities: jest.fn()
-  }
+  const cdnS3 = createCdnS3Mock()
+  const sentry = createSentryMock()
+  const catalyst = createCatalystMock()
 
   // The scenes component reads CDN_BUCKET once at construction, so
   // `overrides.cdnBucket` is locked in here for the lifetime of the harness.
@@ -77,8 +74,8 @@ async function buildHarness(overrides?: { cdnBucket?: string }): Promise<Harness
     config,
     metrics,
     cdnS3: cdnS3 as any,
-    sentry: sentry as any,
-    catalyst: catalyst as any
+    sentry,
+    catalyst
   })
 
   const originalFetch = globalThis.fetch

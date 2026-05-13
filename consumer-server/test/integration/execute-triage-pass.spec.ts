@@ -13,16 +13,25 @@ import { createMetricsComponent } from '@well-known-components/metrics'
 import { metricDeclarations } from '../../src/metrics'
 import { canonicalFilenameForAsset, computeDepsDigest, probeHitCache } from '../../src/logic/asset-reuse'
 import { createScenesComponent } from '../../src/logic/scenes'
+import { createCatalystMock, createSentryMock, createUnityRunnerMock } from '../mocks'
 import { buildGlb } from '../helpers/glb-fixtures'
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const MockAws = require('mock-aws-s3')
 import { executeTriagePass } from '../../src/logic/conversion-task'
 
-const mockedRunConversion = jest.fn()
-const mockedRunLodsConversion = jest.fn()
-const mockedGetActiveEntity = jest.fn()
-const mockedGetEntities = jest.fn()
+// Shared component mocks; alias the inner jest.fns at module scope so the
+// existing test bodies can keep their .mockImplementation / mockResolvedValue
+// patterns without threading components through every assertion.
+const unityRunnerMock = createUnityRunnerMock()
+const catalystMock = createCatalystMock()
+// Re-cast as plain `jest.Mock` to discard the strict component-interface
+// parameter typing — these tests pass partial Entity fixtures and the relaxed
+// signature is how they worked pre-refactor.
+const mockedRunConversion = unityRunnerMock.runConversion as unknown as jest.Mock
+const mockedRunLodsConversion = unityRunnerMock.runLodsConversion as unknown as jest.Mock
+const mockedGetActiveEntity = catalystMock.getActiveEntity as unknown as jest.Mock
+const mockedGetEntities = catalystMock.getEntities as unknown as jest.Mock
 const originalNativeFetch = globalThis.fetch
 let mockedFetch: jest.Mock
 
@@ -42,25 +51,13 @@ function buildComponents(bucketBasePath: string) {
   MockAws.config.basePath = bucketBasePath
   const cdnS3 = new MockAws.S3({ params: { Bucket: 'test-bucket' } })
 
-  const sentry = {
-    captureMessage: jest.fn(),
-    captureException: jest.fn()
-  } as any
-
-  // Inject component-style mocks for catalyst (entity fetches) and
-  // unityRunner (Unity spawns). executeTriagePass never spawns Unity but
-  // its sibling executeConversion would, so the runner mock is included
-  // for consistency.
-  const catalyst = {
-    getActiveEntity: mockedGetActiveEntity,
-    getEntities: mockedGetEntities
+  return {
+    config,
+    cdnS3,
+    sentry: createSentryMock(),
+    catalyst: catalystMock,
+    unityRunner: unityRunnerMock
   }
-  const unityRunner = {
-    runConversion: mockedRunConversion,
-    runLodsConversion: mockedRunLodsConversion
-  }
-
-  return { config, cdnS3, sentry, catalyst, unityRunner }
 }
 
 function responseFor(buf: Buffer): any {
