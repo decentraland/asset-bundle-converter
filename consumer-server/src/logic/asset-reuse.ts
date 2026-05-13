@@ -457,9 +457,25 @@ async function fetchFullWithContentLengthGuard(url: string, res: FetchResponse):
 
 /**
  * Stream a full response body into memory with a hard upper bound.
+ *
+ * When the response declares a `Content-Length`, we treat a stream that ends
+ * with fewer bytes than declared as a transport-level truncation and throw
+ * `RetryableFetchError` so `withFetchRetries` re-issues the request. Symmetric
+ * with the truncation check in `readGlbJsonPrefix` for `.glb` — a catalyst/CDN
+ * connection drop mid-body isn't a content defect, the bytes at this hash are
+ * unchanged. Chunked responses without a declared length can't be checked
+ * this way (we have no expected total to compare against), so we accept
+ * whatever drained; the burden then falls on the downstream parser to detect
+ * structural defects from the partial bytes.
+ *
+ * `assertDeclaredLengthWithinGuard` has already enforced the upper bound on
+ * the declared length, so any value reaching this check is in `[0, MAX]`.
  */
 async function readWholeStream(url: string, res: FetchResponse): Promise<Buffer> {
   if (!res.body) throw new RetryableFetchError(`glb/gltf at ${url} returned no response body stream`)
+
+  const declaredLength = contentLength(res)
+  const expectedTotal = Number.isFinite(declaredLength) && declaredLength >= 0 ? declaredLength : undefined
 
   const reader = res.body.getReader()
   const chunks: Buffer[] = []
@@ -485,6 +501,12 @@ async function readWholeStream(url: string, res: FetchResponse): Promise<Buffer>
     throw err
   } finally {
     reader.releaseLock()
+  }
+
+  if (expectedTotal !== undefined && total < expectedTotal) {
+    throw new RetryableFetchError(
+      `glb/gltf at ${url} ended after ${total} bytes, before declared Content-Length ${expectedTotal}`
+    )
   }
 
   return Buffer.concat(chunks, total)
@@ -543,7 +565,13 @@ async function readGlbJsonPrefix(url: string, res: FetchResponse): Promise<Buffe
     reader.releaseLock()
   }
 
-  throw new NonRetryableFetchError(
+  // A stream that ends before the JSON chunk is complete is a transport-level
+  // truncation (catalyst/CDN dropped the connection mid-body), not a content
+  // defect: the underlying glb at this hash is unchanged. Throwing
+  // `RetryableFetchError` lets `withFetchRetries` re-issue the request — a
+  // single CDN burp no longer collapses the digest pass and pins the entity
+  // under a permanent `_failed.json` sentinel in `executeConversion`.
+  throw new RetryableFetchError(
     targetBytes === undefined
       ? `glb/gltf at ${url} ended before the 20-byte GLB JSON header was available`
       : `glb/gltf at ${url} ended after ${total} bytes, before JSON chunk end ${targetBytes}`
@@ -555,12 +583,16 @@ async function readGlbJsonPrefix(url: string, res: FetchResponse): Promise<Buffe
  * carries a parsed `Retry-After` hint (populated by `assertOkResponse` on
  * 408/429/503 responses), the hint wins over our exponential-backoff formula
  * — a cooperating catalyst knows better than we do how long to back off.
+ *
+ * The callback receives the zero-based `attempt` number so it can vary its
+ * request between tries — `defaultGltfFetcher` uses this to add a cachebust
+ * query param on retries that bypasses CDN caches.
  */
-async function withFetchRetries<T>(fn: () => Promise<T>): Promise<T> {
+async function withFetchRetries<T>(fn: (attempt: number) => Promise<T>): Promise<T> {
   let lastError: unknown
   for (let attempt = 0; attempt < GLTF_FETCH_ATTEMPTS; attempt++) {
     try {
-      return await fn()
+      return await fn(attempt)
     } catch (err: unknown) {
       lastError = err
       if (attempt === GLTF_FETCH_ATTEMPTS - 1 || !isRetryableFetchError(err)) throw err
@@ -572,6 +604,20 @@ async function withFetchRetries<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * Append a `_retry={attempt}` query parameter to a fetch URL so it bypasses
+ * any intermediate CDN cache (Cloudflare, CloudFront) by changing the cache
+ * key. Catalyst content endpoints are keyed only by the CID in the path and
+ * ignore unknown query parameters, so this is a transparent transform on the
+ * server side; from the CDN's point of view it's a fresh URL that triggers a
+ * MISS and a pull from origin.
+ */
+function withRetryQueryParam(url: string, attempt: number): string {
+  const u = new URL(url)
+  u.searchParams.set('_retry', String(attempt))
+  return u.toString()
+}
+
+/**
  * Default fetcher — wraps native fetch with a non-ok status check, retries,
  * a Content-Length guard, and streaming reads. Binary GLBs are only streamed
  * through the embedded JSON chunk; text GLTFs are fully streamed because the
@@ -579,11 +625,26 @@ async function withFetchRetries<T>(fn: () => Promise<T>): Promise<T> {
  *
  * Uses `arrayBuffer()` only as a guarded fallback for mocked / non-standard
  * responses that do not expose a stream body.
+ *
+ * Retries past attempt 0 add `?_retry={attempt}` to force a CDN MISS. A
+ * one-off transient short-read on attempt 0 is recoverable by hitting the
+ * same cache entry again, but a *deterministic* short-read is most often a
+ * poisoned CDN cache fill that will replay the broken body to every request
+ * landing on the same edge POP. Without the cachebust the retry just re-reads
+ * the same corrupted cached bytes and gives up after exhausting attempts;
+ * with it, the second attempt forces a fresh origin pull, the cache refills
+ * with a clean body, and subsequent workers benefit too (broken object
+ * effectively gets evicted).
  */
 async function defaultGltfFetcher(url: string, ext: '.glb' | '.gltf'): Promise<Buffer> {
-  return withFetchRetries(async () => {
+  return withFetchRetries(async (attempt) => {
+    const fetchUrl = attempt === 0 ? url : withRetryQueryParam(url, attempt)
     const init = ext === '.glb' ? { headers: { 'Accept-Encoding': 'identity' } } : undefined
-    const res = (await fetch(url, init)) as FetchResponse
+    const res = (await fetch(fetchUrl, init)) as FetchResponse
+    // Error messages from the readers carry the URL — pass the original
+    // (without `?_retry=N`) so production logs and sentry triage stay
+    // grep-able by content hash and aren't fragmented by retry-attempt
+    // variants of the same logical URL.
     return ext === '.glb' ? readGlbJsonPrefix(url, res) : fetchFullWithContentLengthGuard(url, res)
   })
 }

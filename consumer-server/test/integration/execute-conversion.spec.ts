@@ -82,11 +82,28 @@ function buildComponents(bucketBasePath: string, params: Params = {}) {
 
 // Wire up native fetch so glb/gltf digest reads return declared fixtures and
 // scene source files return a tiny body.
+//
+// URL matching is path-based, not suffix-based, so retries that carry a
+// cachebust query param (`?_retry=N`, added by `defaultGltfFetcher` on retry
+// to bypass poisoned CDN caches) still match their content hash. Naïve
+// `asString.endsWith(hash)` matching would let retry URLs fall through and
+// quietly succeed against the source-file fallback, masking failures the
+// test is trying to verify.
+function urlPathLastSegment(url: string): string | undefined {
+  try {
+    return new URL(url).pathname.split('/').pop()
+  } catch {
+    return undefined
+  }
+}
+
 function setupFetchMock(glbsByHash: Map<string, Buffer>): void {
   const implementation = async (url: any) => {
     const asString = typeof url === 'string' ? url : url?.toString() ?? ''
-    for (const [hash, buf] of glbsByHash) {
-      if (asString.endsWith(hash)) return responseFor(buf)
+    const lastSegment = urlPathLastSegment(asString)
+    if (lastSegment) {
+      const buf = glbsByHash.get(lastSegment)
+      if (buf) return responseFor(buf)
     }
     return responseFor(Buffer.from('fake-source-file'))
   }
@@ -862,7 +879,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       // entity still flows through to Unity-produced output.
       const implementation = async (url: any) => {
         const asString = typeof url === 'string' ? url : url?.toString() ?? ''
-        if (asString.endsWith('hBadGlb')) {
+        if (urlPathLastSegment(asString) === 'hBadGlb') {
           return responseFor(Buffer.from('not-a-glb-at-all'))
         }
         return responseFor(Buffer.from('fake-source-file'))
@@ -952,7 +969,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       // Sentry visibility because it might indicate catalyst trouble.
       const implementation = async (url: any) => {
         const asString = typeof url === 'string' ? url : url?.toString() ?? ''
-        if (asString.endsWith('hBrokenFetch')) {
+        if (urlPathLastSegment(asString) === 'hBrokenFetch') {
           return {
             ok: false,
             status: 500,
@@ -1432,7 +1449,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       // to 404 so uploadSceneSourceFilesToCDN hits the error branch.
       mockedFetch.mockImplementation(async (url: any) => {
         const asString = typeof url === 'string' ? url : url?.toString() ?? ''
-        if (asString.endsWith('hGlb')) {
+        if (urlPathLastSegment(asString) === 'hGlb') {
           return responseFor(buildGlb([], []))
         }
         // Source file fetches → 404
