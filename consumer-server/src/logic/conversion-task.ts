@@ -9,16 +9,8 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { hasContentChange } from './has-content-changed-task'
 import { getUnityBuildTarget } from '../utils'
-import { AssetCacheResult, SkippedAsset, purgeCachedBundlesFromOutput } from './asset-reuse'
-import {
-  Manifest,
-  getCdnBucket,
-  manifestKeyForEntity,
-  probeScene,
-  uploadEntityManifest,
-  uploadFastPathResult,
-  uploadSceneSourceFilesToCDN
-} from './probe-scene'
+import { AssetCacheResult, SkippedAsset } from './asset-reuse'
+import { Manifest } from './scenes'
 
 /**
  * Case-insensitive boolean env var parser.
@@ -152,7 +144,7 @@ export type TriagePassOutcome =
  *   conversion loop can retry); `executeConversion` rethrows instead.
  */
 export async function executeTriagePass(
-  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry' | 'catalyst'>,
+  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry' | 'catalyst' | 'scenes'>,
   entityId: string,
   contentServerUrl: string,
   force: boolean | undefined,
@@ -179,7 +171,7 @@ export async function executeTriagePass(
     return { kind: 'needs-unity' }
   }
 
-  const outcome = await probeScene(components, {
+  const outcome = await components.scenes.probe({
     entityId,
     contentServerUrl,
     abVersion,
@@ -245,14 +237,14 @@ export async function executeTriagePass(
         entityId,
         cached: outcome.cacheResult.cachedHashes.length
       } as any)
-      const cdnBucket = await getCdnBucket(components)
+      const cdnBucket = await components.scenes.getCdnBucket()
       try {
-        await uploadFastPathResult(components, {
+        await components.scenes.uploadFastPathResult({
           entity: outcome.entity,
           entityType: outcome.entityType,
           contentServerUrl,
           cdnBucket,
-          manifestFile: manifestKeyForEntity(entityId, $BUILD_TARGET),
+          manifestFile: components.scenes.manifestKeyForEntity(entityId, $BUILD_TARGET),
           entityScopedUploadPath: `${abVersion}/${entityId}`,
           abVersion,
           cacheResult: outcome.cacheResult
@@ -297,7 +289,7 @@ export async function executeTriagePass(
 }
 
 export async function executeLODConversion(
-  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'unityRunner'>,
+  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'unityRunner' | 'scenes'>,
   entityId: string,
   lods: string[],
   abVersion: string
@@ -311,7 +303,7 @@ export async function executeLODConversion(
 
   const logger = components.logs.getLogger(`ExecuteConversion`)
 
-  const cdnBucket = await getCdnBucket(components)
+  const cdnBucket = await components.scenes.getCdnBucket()
   const logFile = `/tmp/lods_logs/export_log_${entityId}_${Date.now()}.txt`
   const s3LogKey = `logs/lods/${abVersion}/${entityId}/${new Date().toISOString()}.txt`
   const outDirectory = `/tmp/lods_contents/entity_${entityId}`
@@ -427,7 +419,10 @@ export async function executeLODConversion(
  * probe outcome doesn't cover.
  */
 export async function executeConversion(
-  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry' | 'catalyst' | 'unityRunner'>,
+  components: Pick<
+    AppComponents,
+    'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry' | 'catalyst' | 'unityRunner' | 'scenes'
+  >,
   entityId: string,
   contentServerUrl: string,
   force: boolean | undefined,
@@ -458,8 +453,8 @@ export async function executeConversion(
     logger.info('Forcing conversion', { entityId, contentServerUrl, abVersion })
   }
 
-  const cdnBucket = await getCdnBucket(components)
-  const manifestFile = manifestKeyForEntity(entityId, $BUILD_TARGET)
+  const cdnBucket = await components.scenes.getCdnBucket()
+  const manifestFile = components.scenes.manifestKeyForEntity(entityId, $BUILD_TARGET)
   const failedManifestFile = `manifest/${entityId}_failed.json`
 
   const logFile = `/tmp/asset_bundles_logs/export_log_${entityId}_${Date.now()}.txt`
@@ -470,7 +465,7 @@ export async function executeConversion(
 
   logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
 
-  const outcome = await probeScene(components, {
+  const outcome = await components.scenes.probe({
     entityId,
     contentServerUrl,
     abVersion,
@@ -562,7 +557,7 @@ export async function executeConversion(
         cached: outcome.cacheResult.cachedHashes.length
       } as any)
       try {
-        await uploadFastPathResult(components, {
+        await components.scenes.uploadFastPathResult({
           entity: outcome.entity,
           entityType: outcome.entityType,
           contentServerUrl,
@@ -666,7 +661,11 @@ export async function executeConversion(
     // the list bypass didn't cover every artifact). The canonical object already
     // exists, so re-uploading would just be wasted work.
     if (useAssetReuse && cacheResult && cacheResult.cachedHashes.length > 0) {
-      const purged = await purgeCachedBundlesFromOutput(outDirectory, cacheResult.cachedHashes, logger)
+      const purged = await components.scenes.purgeCachedBundlesFromOutput(
+        outDirectory,
+        cacheResult.cachedHashes,
+        logger
+      )
       if (purged > 0) {
         logger.info(`Purged ${purged} already-canonical bundle file(s) from output directory`)
       }
@@ -729,11 +728,11 @@ export async function executeConversion(
     // can fetch them from S3 instead of the catalyst (see issue #7625).
     // Scene source files stay entity-scoped regardless of reuse mode.
     if (entity && exitCode === 0 && entityType === 'scene') {
-      await uploadSceneSourceFilesToCDN(components, entity, contentServerUrl, entityScopedUploadPath, cdnBucket)
+      await components.scenes.uploadSceneSourceFilesToCDN(entity, contentServerUrl, entityScopedUploadPath, cdnBucket)
     }
 
     // and then replace the manifest
-    await uploadEntityManifest(components, cdnBucket, manifestFile, manifest)
+    await components.scenes.uploadEntityManifest(cdnBucket, manifestFile, manifest)
 
     if (exitCode !== 0 || manifest.files.length === 0) {
       const log = await promises.readFile(logFile, 'utf8')

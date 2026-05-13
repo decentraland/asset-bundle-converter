@@ -20,6 +20,7 @@ import { createFilesystemComponent } from './adapters/filesystem'
 import { createCatalystComponent } from './adapters/catalyst'
 import { createUnityRunnerComponent } from './adapters/unity-runner'
 import { createConversionOrchestratorComponent } from './logic/conversion-orchestrator'
+import { createScenesComponent } from './logic/scenes'
 import { parseBooleanFlag } from './logic/conversion-task'
 
 // Initialize all the components of the app
@@ -107,6 +108,7 @@ export async function initComponents(): Promise<AppComponents> {
   const filesystem = await createFilesystemComponent({ metrics })
   const catalyst = await createCatalystComponent({ fetch })
   const unityRunner = await createUnityRunnerComponent({ logs, metrics })
+  const scenes = await createScenesComponent({ logs, config, metrics, cdnS3, sentry, catalyst })
   const conversionOrchestrator = await createConversionOrchestratorComponent({
     logs,
     metrics,
@@ -116,7 +118,8 @@ export async function initComponents(): Promise<AppComponents> {
     conversionTaskQueue,
     publisher,
     catalyst,
-    unityRunner
+    unityRunner,
+    scenes
   })
 
   return {
@@ -135,6 +138,7 @@ export async function initComponents(): Promise<AppComponents> {
     filesystem,
     catalyst,
     unityRunner,
+    scenes,
     conversionOrchestrator
   }
 }

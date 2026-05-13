@@ -58,7 +58,8 @@ async function buildHarness(opts: { triageEnabled: boolean }): Promise<Harness> 
     conversionTaskQueue,
     publisher: { publishMessage } as any,
     catalyst: { getActiveEntity: jest.fn(), getEntities: jest.fn() } as any,
-    unityRunner: { runConversion: jest.fn(), runLodsConversion: jest.fn() } as any
+    unityRunner: { runConversion: jest.fn(), runLodsConversion: jest.fn() } as any,
+    scenes: {} as any
   })
 
   return { orchestrator, publishMessage, conversionPublish }

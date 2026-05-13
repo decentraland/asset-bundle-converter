@@ -19,6 +19,7 @@ import {
   computeDepsDigest,
   probeHitCache
 } from '../../src/logic/asset-reuse'
+import { createScenesComponent } from '../../src/logic/scenes'
 import { buildGlb } from '../helpers/glb-fixtures'
 
 jest.mock('../../src/logic/has-content-changed-task', () => {
@@ -145,7 +146,15 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     const base = buildComponents(workDir)
     const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
     const logs = await createLogComponent({ metrics })
-    components = { ...base, metrics, logs }
+    const scenes = await createScenesComponent({
+      logs,
+      config: base.config,
+      metrics,
+      cdnS3: base.cdnS3,
+      sentry: base.sentry,
+      catalyst: base.catalyst as any
+    })
+    components = { ...base, metrics, logs, scenes }
 
     // Scene source files: respond with a tiny body so uploadSceneSourceFilesToCDN
     // can fetch + S3-PUT without talking to a real catalyst.
@@ -421,7 +430,15 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       const off = buildComponents(workDir, { assetReuseEnabled: 'false' })
       const metrics = await createMetricsComponent(metricDeclarations, { config: off.config })
       const logs = await createLogComponent({ metrics })
-      components = { ...off, metrics, logs }
+      const scenes = await createScenesComponent({
+        logs,
+        config: off.config,
+        metrics,
+        cdnS3: off.cdnS3,
+        sentry: off.sentry,
+        catalyst: off.catalyst as any
+      })
+      components = { ...off, metrics, logs, scenes }
 
       // Seed canonical for every hash in the scene — full-cache short-circuit
       // scenario. The kill switch must bypass it symmetrically to force/doISS,
@@ -1279,7 +1296,15 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       const base = buildComponents(workDir, { buildTarget: 'nintendo-switch' })
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      customComponents = { ...base, metrics, logs }
+      const scenes = await createScenesComponent({
+        logs,
+        config: base.config,
+        metrics,
+        cdnS3: base.cdnS3,
+        sentry: base.sentry,
+        catalyst: base.catalyst as any
+      })
+      customComponents = { ...base, metrics, logs, scenes }
 
       exitCode = await executeConversion(
         customComponents,
@@ -1311,7 +1336,15 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       const base = buildComponents(workDir, { assetReuseEnabled: 'flase' /* typo */ })
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      customComponents = { ...base, metrics, logs }
+      const scenes = await createScenesComponent({
+        logs,
+        config: base.config,
+        metrics,
+        cdnS3: base.cdnS3,
+        sentry: base.sentry,
+        catalyst: base.catalyst as any
+      })
+      customComponents = { ...base, metrics, logs, scenes }
 
       setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
       mockedGetActiveEntity.mockResolvedValue({
@@ -1593,7 +1626,15 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       const base = buildComponents(workDir, { buildTarget: 'webgl' })
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      customComponents = { ...base, metrics, logs }
+      const scenes = await createScenesComponent({
+        logs,
+        config: base.config,
+        metrics,
+        cdnS3: base.cdnS3,
+        sentry: base.sentry,
+        catalyst: base.catalyst as any
+      })
+      customComponents = { ...base, metrics, logs, scenes }
 
       setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
       mockedGetActiveEntity.mockResolvedValue({
@@ -1659,7 +1700,15 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       const base = buildComponents(workDir, { assetReuseEnabled: 'false' })
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      customComponents = { ...base, metrics, logs }
+      const scenes = await createScenesComponent({
+        logs,
+        config: base.config,
+        metrics,
+        cdnS3: base.cdnS3,
+        sentry: base.sentry,
+        catalyst: base.catalyst as any
+      })
+      customComponents = { ...base, metrics, logs, scenes }
 
       setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
       mockedGetActiveEntity.mockResolvedValue({
@@ -1716,7 +1765,15 @@ describe('when executing a conversion with asset-reuse enabled', () => {
 
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      customComponents = { ...base, metrics, logs }
+      const scenes = await createScenesComponent({
+        logs,
+        config: base.config,
+        metrics,
+        cdnS3: base.cdnS3,
+        sentry: base.sentry,
+        catalyst: base.catalyst as any
+      })
+      customComponents = { ...base, metrics, logs, scenes }
 
       // mock-aws-s3 happily accepts any bucket name; captures via uploaded key.
       const realUpload = customComponents.cdnS3.upload.bind(customComponents.cdnS3)

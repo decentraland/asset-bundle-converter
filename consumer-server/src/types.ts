@@ -16,6 +16,7 @@ import { IFilesystemComponent } from './adapters/filesystem'
 import { ICatalystComponent } from './adapters/catalyst'
 import { IUnityRunnerComponent } from './adapters/unity-runner'
 import { IConversionOrchestratorComponent } from './logic/conversion-orchestrator'
+import { IScenesComponent } from './logic/scenes'
 import { AssetBundleConversionFinishedEvent, AssetBundleConversionManuallyQueuedEvent } from '@dcl/schemas'
 
 export type GlobalContext = {
@@ -38,6 +39,7 @@ export type BaseComponents = {
   filesystem: IFilesystemComponent
   catalyst: ICatalystComponent
   unityRunner: IUnityRunnerComponent
+  scenes: IScenesComponent
   conversionOrchestrator: IConversionOrchestratorComponent
 }
 

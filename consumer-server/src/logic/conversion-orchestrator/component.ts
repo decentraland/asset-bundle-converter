@@ -8,7 +8,16 @@ import type { IConversionOrchestratorComponent, Platform } from './types'
 
 type Components = Pick<
   AppComponents | TestComponents,
-  'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry' | 'conversionTaskQueue' | 'publisher' | 'catalyst' | 'unityRunner'
+  | 'logs'
+  | 'metrics'
+  | 'config'
+  | 'cdnS3'
+  | 'sentry'
+  | 'conversionTaskQueue'
+  | 'publisher'
+  | 'catalyst'
+  | 'unityRunner'
+  | 'scenes'
 >
 
 /**

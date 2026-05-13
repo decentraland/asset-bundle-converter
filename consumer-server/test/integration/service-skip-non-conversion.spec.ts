@@ -79,7 +79,8 @@ describe('when the conversion worker consumes a job from the queue', () => {
       // Stubs — executeConversion / executeLODConversion are jest.mocked at
       // module scope so the orchestrator never dispatches into these.
       catalyst: { getActiveEntity: jest.fn(), getEntities: jest.fn() },
-      unityRunner: { runConversion: jest.fn(), runLodsConversion: jest.fn() }
+      unityRunner: { runConversion: jest.fn(), runLodsConversion: jest.fn() },
+      scenes: {} as any
     })
 
     const components = {

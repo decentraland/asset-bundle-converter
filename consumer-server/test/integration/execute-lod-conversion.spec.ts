@@ -15,6 +15,7 @@ import { metricDeclarations } from '../../src/metrics'
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const MockAws = require('mock-aws-s3')
 import { executeLODConversion } from '../../src/logic/conversion-task'
+import { createScenesComponent } from '../../src/logic/scenes'
 
 const mockedRunLodsConversion = jest.fn()
 const mockedRunConversion = jest.fn()
@@ -46,7 +47,23 @@ function buildComponents(bucketBasePath: string, params: Params = {}) {
     runConversion: mockedRunConversion,
     runLodsConversion: mockedRunLodsConversion
   }
-  return { config, cdnS3, catalyst, unityRunner }
+  const sentry = { captureMessage: jest.fn(), captureException: jest.fn() } as any
+  return { config, cdnS3, catalyst, unityRunner, sentry }
+}
+
+async function buildScenes(
+  base: ReturnType<typeof buildComponents>,
+  logs: import('@well-known-components/interfaces').ILoggerComponent,
+  metrics: import('@well-known-components/interfaces').IMetricsComponent<any>
+) {
+  return createScenesComponent({
+    logs,
+    config: base.config,
+    metrics,
+    cdnS3: base.cdnS3,
+    sentry: base.sentry,
+    catalyst: base.catalyst as any
+  })
 }
 
 async function read(s3: any, Bucket: string, Key: string): Promise<string | null> {
@@ -68,7 +85,8 @@ describe('when executing a LOD conversion', () => {
     const base = buildComponents(workDir)
     const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
     const logs = await createLogComponent({ metrics })
-    components = { ...base, metrics, logs }
+    const scenes = await buildScenes(base, logs, metrics)
+    components = { ...base, metrics, logs, scenes }
     jest.clearAllMocks()
   })
 
@@ -129,7 +147,8 @@ describe('when executing a LOD conversion', () => {
       const base = buildComponents(workDir, { buildTarget: 'game-cube' })
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      customComponents = { ...base, metrics, logs }
+      const scenes = await buildScenes(base, logs, metrics)
+      customComponents = { ...base, metrics, logs, scenes }
 
       exitCode = await executeLODConversion(customComponents, 'bafy-bad-target', ['http://x/lod1'], 'v48')
     })
@@ -202,7 +221,8 @@ describe('when executing a LOD conversion', () => {
       const base = buildComponents(workDir, { logsBucket: 'lod-logs-bucket' })
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      customComponents = { ...base, metrics, logs }
+      const scenes = await buildScenes(base, logs, metrics)
+      customComponents = { ...base, metrics, logs, scenes }
 
       const realUpload = customComponents.cdnS3.upload.bind(customComponents.cdnS3)
       jest.spyOn(customComponents.cdnS3, 'upload').mockImplementation((params: any) => {

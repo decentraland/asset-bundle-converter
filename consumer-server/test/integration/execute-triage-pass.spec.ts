@@ -12,6 +12,7 @@ import { createLogComponent } from '@well-known-components/logger'
 import { createMetricsComponent } from '@well-known-components/metrics'
 import { metricDeclarations } from '../../src/metrics'
 import { canonicalFilenameForAsset, computeDepsDigest, probeHitCache } from '../../src/logic/asset-reuse'
+import { createScenesComponent } from '../../src/logic/scenes'
 import { buildGlb } from '../helpers/glb-fixtures'
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -106,7 +107,15 @@ describe('when running executeTriagePass against a scene', () => {
     const base = buildComponents(workDir)
     const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
     const logs = await createLogComponent({ metrics })
-    components = { ...base, metrics, logs }
+    const scenes = await createScenesComponent({
+      logs,
+      config: base.config,
+      metrics,
+      cdnS3: base.cdnS3,
+      sentry: base.sentry,
+      catalyst: base.catalyst as any
+    })
+    components = { ...base, metrics, logs, scenes }
 
     mockedFetch = jest.fn()
     globalThis.fetch = mockedFetch as any
