@@ -42,7 +42,11 @@ export type ProbeOutcome =
   | { kind: 'invalid-build-target' }
   | { kind: 'already-converted' }
   | { kind: 'catalyst-unreachable'; error: Error }
-  | { kind: 'no-asset-reuse'; entity: Entity | null; entityType: string }
+  // `entity` is non-null here because the probe returns `catalyst-unreachable`
+  // before reaching this branch when the fetch fails. `entityType` is the
+  // fetched entity's `type` and may be anything that isn't 'scene' (or 'scene'
+  // when the kill switch is off or doISS is true).
+  | { kind: 'no-asset-reuse'; entity: Entity; entityType: string }
   | { kind: 'digest-failed'; error: Error }
   | {
       kind: 'cache-probe-skipped'

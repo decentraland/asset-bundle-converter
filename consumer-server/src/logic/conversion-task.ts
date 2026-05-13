@@ -183,6 +183,14 @@ export async function executeTriagePass(
     sentryPhase: 'triage-per-asset-digest'
   })
 
+  // Note: the conversion loop's `executeConversion` has a parallel switch on
+  // `ProbeOutcome` with different return-shape semantics (numeric exit code vs
+  // TriagePassOutcome) and different metric taxonomy (`ab_converter_exit_codes`
+  // / `asset_cache_probe_errors_total` vs `triage_outcomes_total`). When
+  // changing how a ProbeOutcome variant is handled, mirror the change in
+  // `executeConversion` (this file, ~line 489) so the two consumers stay in
+  // step on shared behaviour like force/doISS short-circuiting and digest
+  // failure handling.
   switch (outcome.kind) {
     case 'invalid-build-target':
       return { kind: 'failed', exitCode: 5 }
@@ -486,6 +494,12 @@ export async function executeConversion(
   let cacheResult: AssetCacheResult | null = null
   let useAssetReuse = false
 
+  // Note: the triage loop's `executeTriagePass` (this file, ~line 194) has a
+  // parallel switch on `ProbeOutcome` with different return-shape semantics
+  // (TriagePassOutcome union vs numeric exit code) and different metric
+  // taxonomy. When changing how a ProbeOutcome variant is handled, mirror the
+  // change there so the two consumers stay in step on shared behaviour like
+  // force/doISS short-circuiting and digest failure handling.
   switch (outcome.kind) {
     case 'invalid-build-target':
       return 5 // UNEXPECTED_ERROR exit code

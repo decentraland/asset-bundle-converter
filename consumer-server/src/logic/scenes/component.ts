@@ -81,6 +81,10 @@ export async function createScenesComponent(
   // that don't set CDN_BUCKET still get a deterministic string.
   const cachedCdnBucket = (await config.getString('CDN_BUCKET')) || 'CDN_BUCKET'
 
+  // The async signature is preserved for interface flexibility (callers `await`
+  // this without caring whether the impl is sync or async, and a future variant
+  // that re-reads from a mutable config source would slot in here transparently).
+  // Today the call resolves to a captured string with no I/O.
   async function getCdnBucket(): Promise<string> {
     return cachedCdnBucket
   }
@@ -397,10 +401,16 @@ export async function createScenesComponent(
     }
     // Scene source files first, then manifest — so a client that sees a freshly
     // published manifest never races against a missing main.crdt / scene.json /
-    // index.js. This entry point is only reached on a `full-hit` outcome, which
-    // the probe gates on `entity.type === 'scene'`, so unconditional source-file
-    // upload is correct here (wearables/emotes can't reach this path).
-    await uploadSceneSourceFilesToCDN(entity, contentServerUrl, entityScopedUploadPath, cdnBucket)
+    // index.js. Symmetric with executeConversion's Unity-path: the
+    // `entity.type === 'scene'` guard is defense-in-depth, since the only
+    // caller today (the full-hit branch in conversion-task.ts) reaches us via
+    // the probe's scene-only gate. Skipping source files for a non-scene
+    // wouldn't corrupt anything (the catalyst content map wouldn't carry the
+    // scene files anyway), but the guard makes the contract explicit if a
+    // future caller invokes uploadFastPathResult outside the full-hit path.
+    if (entity.type === 'scene') {
+      await uploadSceneSourceFilesToCDN(entity, contentServerUrl, entityScopedUploadPath, cdnBucket)
+    }
     await uploadEntityManifest(cdnBucket, manifestFile, manifest)
   }
 
