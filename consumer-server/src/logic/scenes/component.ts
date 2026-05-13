@@ -9,15 +9,23 @@ import {
   computePerAssetDigests as computePerAssetDigestsImpl,
   purgeCachedBundlesFromOutput as purgeCachedBundlesFromOutputImpl
 } from '../asset-reuse'
-import {
-  CheckAssetCacheArgs,
-  ComputePerAssetDigestsOptions,
-  IScenesComponent,
-  Manifest,
-  ProbeArgs,
-  ProbeOutcome,
-  UploadFastPathArgs
-} from './types'
+import { IScenesComponent, Manifest, ProbeArgs, ProbeOutcome, UploadFastPathArgs } from './types'
+
+// Internal-only arg/option shapes for the two closures the component uses but
+// doesn't expose publicly (probe() consumes both). Kept here rather than in
+// `types.ts` because they're not part of the IScenesComponent surface.
+type CheckAssetCacheArgs = {
+  entity: Entity
+  abVersion: string
+  buildTarget: string
+  cdnBucket: string
+  depsDigestByHash?: ReadonlyMap<string, string>
+}
+
+type ComputePerAssetDigestsOptions = {
+  aggregateTimeoutMs?: number
+  fetcher?: (url: string, ext: '.glb' | '.gltf') => Promise<Buffer>
+}
 
 // Upper bound on a single `/entities/active` catalyst call before we fall back
 // to "couldn't fetch entity, upload to entity-scoped path without source files".
@@ -35,6 +43,16 @@ const CATALYST_FETCH_TIMEOUT_MS = 30_000
 // SQS's visibility window. Past this point we treat the digest pass as a scene
 // conversion failure: upload the failed-manifest sentinel and let SQS retry.
 const PROBE_DIGEST_TIMEOUT_MS = 60_000
+
+/**
+ * Normalise a thrown value (which TypeScript types as `unknown`) into an
+ * `Error` instance, so callers can rely on `.message` / `.stack` without
+ * defensively branching at every site. The fallback `new Error(String(e))`
+ * covers `throw 'string'` / `throw { …non-Error… }` and similar.
+ */
+function toError(e: unknown): Error {
+  return e instanceof Error ? e : new Error(String(e))
+}
 
 /**
  * Build the centralised scene-pipeline component. Captures dependencies once
@@ -56,8 +74,15 @@ export async function createScenesComponent(
   // captured `components` reference passed through below.
   const { logs, config, cdnS3, sentry, catalyst } = components
 
+  // CDN_BUCKET is a process-lifetime env var — resolve it once at construction
+  // so `probe()` and downstream callers don't pay a config lookup per call.
+  // Same `|| 'CDN_BUCKET'` placeholder semantics as the pre-refactor free
+  // function: a missing env var falls back to the literal so local dev / tests
+  // that don't set CDN_BUCKET still get a deterministic string.
+  const cachedCdnBucket = (await config.getString('CDN_BUCKET')) || 'CDN_BUCKET'
+
   async function getCdnBucket(): Promise<string> {
-    return (await config.getString('CDN_BUCKET')) || 'CDN_BUCKET'
+    return cachedCdnBucket
   }
 
   function manifestKeyForEntity(entityId: string, target: string | undefined): string {
@@ -91,13 +116,14 @@ export async function createScenesComponent(
   }
 
   /**
-   * Downloads index.js (main scene script) and main.crdt from the catalyst and
-   * uploads them to the CDN bucket. This allows the Explorer desktop client to
-   * fetch these critical scene files from S3 instead of the catalyst, avoiding
-   * a class of failures where files are missing from the catalyst.
+   * Downloads `main.crdt`, `scene.json`, and the entity's declared main script
+   * from the catalyst and uploads them to the CDN bucket so the Explorer
+   * desktop client can fetch them from S3 instead of the catalyst (which
+   * occasionally drops files).
    *
-   * Only runs for non-webgl targets (Mac/Windows desktop builds) since those
-   * clients use this CDN path.
+   * Runs for any target on a successful conversion or fast-path hit; the
+   * webgl client doesn't read these files but the upload is cheap enough that
+   * we don't gate on build target.
    */
   async function uploadSceneSourceFilesToCDN(
     entity: Entity,
@@ -105,7 +131,7 @@ export async function createScenesComponent(
     uploadPath: string,
     cdnBucket: string
   ): Promise<void> {
-    const logger = logs.getLogger('UploadSceneSourceFiles')
+    const logger = logs.getLogger('upload-scene-source-files')
 
     const filesToUpload: string[] = ['main.crdt', 'scene.json']
     const mainScript = typeof entity?.metadata?.main === 'string' ? entity.metadata.main : undefined
@@ -253,7 +279,7 @@ export async function createScenesComponent(
       entityType = entity.type
     } catch (e: any) {
       logger.info(`Could not fetch entity for ${entityId}: ${e?.message ?? e}`)
-      return { kind: 'catalyst-unreachable', error: e instanceof Error ? e : new Error(String(e)) }
+      return { kind: 'catalyst-unreachable', error: toError(e) }
     }
 
     const useAssetReuse = assetReuseEnabled && !doISS && entityType === 'scene'
@@ -310,7 +336,7 @@ export async function createScenesComponent(
           `Failed to upload failed-manifest sentinel after digest failure: ${uploadErr?.message ?? uploadErr}`
         )
       }
-      return { kind: 'digest-failed', error: err instanceof Error ? err : new Error(String(err)) }
+      return { kind: 'digest-failed', error: toError(err) }
     }
 
     if (force) {
@@ -336,7 +362,7 @@ export async function createScenesComponent(
         entity,
         depsDigestByHash,
         skippedAssets,
-        error: e instanceof Error ? e : new Error(String(e))
+        error: toError(e)
       }
     }
 
@@ -381,8 +407,6 @@ export async function createScenesComponent(
   return {
     probe,
     uploadFastPathResult,
-    checkAssetCache,
-    computePerAssetDigests,
     purgeCachedBundlesFromOutput,
     getCdnBucket,
     manifestKeyForEntity,

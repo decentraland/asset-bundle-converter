@@ -1,5 +1,5 @@
 import { Entity } from '@dcl/schemas'
-import { AssetCacheResult, PerAssetDigestResult, SkippedAsset } from '../asset-reuse'
+import { AssetCacheResult, SkippedAsset } from '../asset-reuse'
 
 export type Manifest = {
   version: string
@@ -96,24 +96,17 @@ export type UploadFastPathArgs = {
   cacheResult: AssetCacheResult
 }
 
-export type CheckAssetCacheArgs = {
-  entity: Entity
-  abVersion: string
-  buildTarget: string
-  cdnBucket: string
-  depsDigestByHash?: ReadonlyMap<string, string>
-}
-
-export type ComputePerAssetDigestsOptions = {
-  aggregateTimeoutMs?: number
-  fetcher?: (url: string, ext: '.glb' | '.gltf') => Promise<Buffer>
-}
-
 /**
  * Single component for the scene pre-Unity pipeline. Consolidates what was
  * previously split across `logic/probe-scene.ts` and the function exports of
  * `logic/asset-reuse.ts` into one public surface, so callers depend on one
  * thing instead of importing six free functions across two modules.
+ *
+ * Interface exposes only methods that have external callers. `checkAssetCache`
+ * and `computePerAssetDigests` are reachable as free functions from
+ * `asset-reuse.ts` for tests and the migration script; inside this component
+ * they're internal helpers used by `probe()` and aren't part of the public
+ * surface.
  *
  * Implementation note: methods delegate to the existing free-function bodies
  * in `asset-reuse.ts` (kept in place so its 1500-line unit test suite stays
@@ -124,12 +117,6 @@ export type ComputePerAssetDigestsOptions = {
 export interface IScenesComponent {
   probe(args: ProbeArgs): Promise<ProbeOutcome>
   uploadFastPathResult(args: UploadFastPathArgs): Promise<void>
-  checkAssetCache(args: CheckAssetCacheArgs): Promise<AssetCacheResult>
-  computePerAssetDigests(
-    entity: Entity,
-    contentServerUrl: string,
-    options?: ComputePerAssetDigestsOptions
-  ): Promise<PerAssetDigestResult>
   purgeCachedBundlesFromOutput(outDirectory: string, cachedHashes: string[]): Promise<number>
   getCdnBucket(): Promise<string>
   manifestKeyForEntity(entityId: string, target: string | undefined): string
