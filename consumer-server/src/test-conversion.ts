@@ -5,10 +5,10 @@
 import arg from 'arg'
 import { createFetchComponent } from './adapters/fetch'
 
-import { getActiveEntity, getEntities } from './logic/fetch-entity-by-pointer'
+import { createCatalystComponent } from './adapters/catalyst'
+import { createUnityRunnerComponent } from './adapters/unity-runner'
 import { createLogComponent } from '@well-known-components/logger'
 import { IPFSv1, IPFSv2 } from '@dcl/schemas'
-import { runConversion } from './logic/run-conversion'
 import { spawn } from 'child_process'
 import { closeSync, openSync } from 'fs'
 import * as promises from 'fs/promises'
@@ -52,6 +52,8 @@ async function main() {
   const logs = await createLogComponent({})
   const config = createConfigComponent({})
   const metrics = await createMetricsComponent(metricDeclarations, { config })
+  const catalyst = await createCatalystComponent({ fetch: fetcher })
+  const unityRunner = await createUnityRunnerComponent({ logs, metrics })
   const animation = 'legacy'
 
   let entityId = ''
@@ -59,7 +61,7 @@ async function main() {
   if (IPFSv2.validate(POINTER) || IPFSv1.validate(POINTER)) {
     entityId = POINTER
   } else {
-    const entities = await getEntities(fetcher, [POINTER], BASE_URL)
+    const entities = await catalyst.getEntities([POINTER], BASE_URL)
     if (!entities.length) throw new Error(`Cannot find pointer ${POINTER} in server ${BASE_URL}`)
     entityId = entities[0].id
   }
@@ -79,27 +81,23 @@ async function main() {
   }
 
   // Fetch the entity to get its type
-  const entity = await getActiveEntity(entityId, BASE_URL)
+  const entity = await catalyst.getActiveEntity(entityId, BASE_URL)
   const entityType = entity.type
 
   try {
-    const exitCode = await runConversion(
-      logger,
-      { metrics },
-      {
-        logFile: LOG_FILE,
-        contentServerUrl: BASE_URL,
-        entityId,
-        entityType,
-        outDirectory: OUT_DIRECTORY,
-        unityPath: $UNITY_PATH,
-        projectPath: $PROJECT_PATH,
-        timeout: 30 * 60 * 1000, // 30min
-        unityBuildTarget: unityBuildTarget,
-        animation: animation,
-        doISS: DO_ISS
-      }
-    )
+    const exitCode = await unityRunner.runConversion({
+      logFile: LOG_FILE,
+      contentServerUrl: BASE_URL,
+      entityId,
+      entityType,
+      outDirectory: OUT_DIRECTORY,
+      unityPath: $UNITY_PATH,
+      projectPath: $PROJECT_PATH,
+      timeout: 30 * 60 * 1000, // 30min
+      unityBuildTarget: unityBuildTarget,
+      animation: animation,
+      doISS: DO_ISS
+    })
 
     if (exitCode) throw new Error('ExitCode=' + exitCode)
   } finally {
