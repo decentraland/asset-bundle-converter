@@ -12,18 +12,15 @@ import { createRunnerComponent, IRunnerComponent } from '../../src/adapters/runn
 import { ITaskQueue } from '../../src/adapters/task-queue'
 import { IBaseComponent } from '@well-known-components/interfaces'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
-import { IFilesystemComponent } from '../../src/adapters/filesystem'
-import { createCatalystMock, createScenesMock, createUnityRunnerMock } from '../mocks'
-import { createConversionOrchestratorComponent } from '../../src/logic/conversion-orchestrator'
 
 jest.mock('../../src/logic/conversion-task', () => ({
   executeConversion: jest.fn(),
-  executeLODConversion: jest.fn(),
-  executeTriagePass: jest.fn(),
-  // Preserve the real parseBooleanFlag — the orchestrator reads it at startup
-  // to decide whether the triage loop calls executeTriagePass or executeConversion.
-  // Without this, FAST_PATH_TRIAGE_ENABLED parsing throws on construction.
-  parseBooleanFlag: jest.requireActual('../../src/logic/conversion-task').parseBooleanFlag
+  executeLODConversion: jest.fn()
+}))
+
+jest.mock('check-disk-space', () => ({
+  __esModule: true,
+  default: jest.fn(async () => ({ free: 100 * 1e9, size: 200 * 1e9, diskPath: '/' }))
 }))
 
 import { executeConversion, executeLODConversion } from '../../src/logic/conversion-task'
@@ -43,8 +40,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void
 
 describe('when the conversion worker consumes a job from the queue', () => {
   let runner: IRunnerComponent
-  let triageTaskQueue: ITaskQueue<DeploymentToSqs> & IBaseComponent
-  let conversionTaskQueue: ITaskQueue<DeploymentToSqs> & IBaseComponent
+  let taskQueue: ITaskQueue<DeploymentToSqs> & IBaseComponent
   let publishMessage: jest.Mock
 
   beforeEach(async () => {
@@ -63,45 +59,20 @@ describe('when the conversion worker consumes a job from the queue', () => {
 
     publishMessage = jest.fn(async () => undefined)
     runner = createRunnerComponent()
-    triageTaskQueue = createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'test-triage-queue' })
-    conversionTaskQueue = createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'test-unity-queue' })
-    const filesystem: IFilesystemComponent = {
-      getFreeBytes: jest.fn(async () => 100 * 1e9),
-      isBelowMinimum: jest.fn(async () => false)
-    }
-    const conversionOrchestrator = await createConversionOrchestratorComponent({
-      logs,
-      metrics,
-      config,
-      cdnS3: {} as any,
-      sentry: {} as any,
-      conversionTaskQueue,
-      publisher: { publishMessage },
-      // Stubs — executeConversion / executeLODConversion are jest.mocked at
-      // module scope so the orchestrator never dispatches into these.
-      catalyst: createCatalystMock(),
-      unityRunner: createUnityRunnerMock(),
-      // executeConversion / executeLODConversion are jest.mocked at module
-      // scope; scenes is reachable only through them. The factory mock is
-      // here for type-shape satisfaction.
-      scenes: createScenesMock()
-    })
+    taskQueue = createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'test-queue' })
 
     const components = {
       config,
       logs,
       server: { use: jest.fn(), setContext: jest.fn() } as any,
-      triageTaskQueue,
-      conversionTaskQueue,
+      taskQueue,
       runner,
       metrics,
       publisher: { publishMessage },
       cdnS3: {} as any,
       sentry: {} as any,
       fetch: {} as any,
-      statusChecks: {} as any,
-      filesystem,
-      conversionOrchestrator
+      statusChecks: {} as any
     }
 
     await main({
@@ -113,12 +84,10 @@ describe('when the conversion worker consumes a job from the queue', () => {
   })
 
   afterEach(async () => {
-    // Stop runner first to flip isRunning=false; then close both queues so the
-    // pending consumeAndProcessJob calls (one per loop) resolve and the loops
-    // can exit.
+    // Stop runner first to flip isRunning=false; then close the queue so the
+    // pending consumeAndProcessJob resolves and the loop can exit.
     const stopRunner = runner.stop()
-    await triageTaskQueue.stop!()
-    await conversionTaskQueue.stop!()
+    await taskQueue.stop!()
     await stopRunner
     jest.clearAllMocks()
   })
@@ -129,8 +98,8 @@ describe('when the conversion worker consumes a job from the queue', () => {
       // job has been processed we know the malformed one has been dequeued too
       // (the in-memory queue is FIFO and serial), so we can assert what the
       // worker did — and didn't — do for each.
-      await triageTaskQueue.publish({ type: 'world_undeployment' } as any)
-      await triageTaskQueue.publish({
+      await taskQueue.publish({ type: 'world_undeployment' } as any)
+      await taskQueue.publish({
         entity: { entityId: 'bafy-valid-after-skip', authChain: [] as any },
         contentServerUrls: ['https://peer.decentraland.org/content']
       })
@@ -169,8 +138,8 @@ describe('when the conversion worker consumes a job from the queue', () => {
 
   describe('and the job has an entity but the entityId is an empty string', () => {
     beforeEach(async () => {
-      await triageTaskQueue.publish({ entity: { entityId: '', authChain: [] as any } } as any)
-      await triageTaskQueue.publish({
+      await taskQueue.publish({ entity: { entityId: '', authChain: [] as any } } as any)
+      await taskQueue.publish({
         entity: { entityId: 'bafy-valid-after-empty', authChain: [] as any },
         contentServerUrls: ['https://peer.decentraland.org/content']
       })

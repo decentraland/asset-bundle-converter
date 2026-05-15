@@ -32,7 +32,7 @@ import {
   GltfFetcher,
   mapBounded
 } from './logic/asset-reuse'
-import { fetchActiveEntity } from './adapters/catalyst'
+import { getActiveEntity } from './logic/fetch-entity-by-pointer'
 import { isS3NotFound } from './logic/s3-helpers'
 
 type Manifest = {
@@ -173,7 +173,7 @@ export type RunMigrationOptions = {
   /** How often to call `onProgress`, measured in manifests scanned.
    * Default 100. */
   progressInterval?: number
-  /** Catalyst fetcher — normally `fetchActiveEntity`; tests pass a stub so they
+  /** Catalyst fetcher — normally `getActiveEntity`; tests pass a stub so they
    * don't depend on network fetches. Must return the entity's `.content` array. */
   fetchEntity?: (entityId: string, contentServerUrl: string) => Promise<{ content: { file: string; hash: string }[] }>
   /** GLB/GLTF byte fetcher used by `computePerAssetDigests`. Forwarded to the
@@ -224,10 +224,10 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
       `[catalyst-timeout] requested ${rawTimeout}ms is below the ${MIN_CATALYST_TIMEOUT_MS}ms floor; using ${catalystTimeoutMs}ms to avoid racing against fetch startup`
     )
   }
-  // Default fetcher wraps `fetchActiveEntity` with a hard timeout so a hung
+  // Default fetcher wraps `getActiveEntity` with a hard timeout so a hung
   // catalyst can't stall the migration. Custom stubs (tests) keep their own
   // timing.
-  const fetchEntity = opts.fetchEntity ?? ((id: string, url: string) => fetchActiveEntity(id, url, catalystTimeoutMs))
+  const fetchEntity = opts.fetchEntity ?? ((id: string, url: string) => getActiveEntity(id, url, catalystTimeoutMs))
   const bundlePattern = buildBundlePattern(target)
   const canonicalPrefix = `${abVersion}/assets`
   const stats = emptyStats()
@@ -282,7 +282,7 @@ export async function runMigration(opts: RunMigrationOptions): Promise<Migration
     let extByHash: Map<string, string>
     let entityContent: { file: string; hash: string }[]
     try {
-      // `fetchActiveEntity` throws on non-200 responses. The `!entity` guard
+      // `getActiveEntity` throws on non-200 responses. The `!entity` guard
       // below is defense-in-depth in case the response parses to null/empty.
       const entity = await fetchEntity(parsed.entityId, catalystUrl)
       if (!entity || !Array.isArray(entity.content)) {

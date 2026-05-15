@@ -16,12 +16,6 @@ import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { createRunnerComponent } from './adapters/runner'
 import { createSentryComponent } from './adapters/sentry'
 import { createSnsComponent } from './adapters/sns'
-import { createFilesystemComponent } from './adapters/filesystem'
-import { createCatalystComponent } from './adapters/catalyst'
-import { createUnityRunnerComponent } from './adapters/unity-runner'
-import { createConversionOrchestratorComponent } from './logic/conversion-orchestrator'
-import { createScenesComponent } from './logic/scenes'
-import { parseBooleanFlag } from './logic/conversion-task'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -50,53 +44,12 @@ export async function initComponents(): Promise<AppComponents> {
 
   await instrumentHttpServerWithPromClientRegistry({ metrics, server, config, registry: metrics.registry! })
 
-  const taskQueueUrl = await config.getString('TASK_QUEUE')
-  const priorityTaskQueueUrl = await config.getString('PRIORITY_TASK_QUEUE')
-  const triageTaskQueue = taskQueueUrl
+  const sqsQueue = await config.getString('TASK_QUEUE')
+  const priorityQueue = await config.getString('PRIORITY_TASK_QUEUE')
+  const taskQueue = sqsQueue
     ? createSqsAdapter<DeploymentToSqs>(
         { logs, metrics },
-        { queueUrl: taskQueueUrl, priorityQueueUrl: priorityTaskQueueUrl, queueRegion: AWS_REGION }
-      )
-    : createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'TriageTaskQueue' })
-
-  // Conversion queue is internal — only populated by the triage loop's
-  // republish path. Falls back to a memory queue when env vars are unset
-  // (local dev, pre-rollout deploys). The conversion loop drains whatever
-  // lands here.
-  const conversionTaskQueueUrl = await config.getString('CONVERSION_TASK_QUEUE')
-  const conversionPriorityTaskQueueUrl = await config.getString('CONVERSION_PRIORITY_TASK_QUEUE')
-
-  // Misconfiguration guards. The kill-switch is read again in the orchestrator
-  // factory, so behaviour stays consistent; reading here lets us fail fast at
-  // startup instead of silently dropping work into an in-memory queue.
-  const startupLogger = logs.getLogger('startup-guard')
-  const fastPathTriageEnabled = parseBooleanFlag(await config.getString('FAST_PATH_TRIAGE_ENABLED'), false, (raw) =>
-    startupLogger.warn(
-      `Unrecognized value for FAST_PATH_TRIAGE_ENABLED: "${raw}" — falling back to the default (false).`
-    )
-  )
-  if (fastPathTriageEnabled && !conversionTaskQueueUrl) {
-    throw new Error(
-      'FAST_PATH_TRIAGE_ENABLED=true but CONVERSION_TASK_QUEUE is unset. Refusing to start: triage republishes would land in an in-memory queue, breaking cross-pod load balancing and losing work on restart. Configure CONVERSION_TASK_QUEUE (and CONVERSION_PRIORITY_TASK_QUEUE) before enabling fast-path triage.'
-    )
-  }
-  if (conversionTaskQueueUrl && !conversionPriorityTaskQueueUrl) {
-    // Not fatal — the SQS adapter silently drops priority republishes onto the
-    // standard queue, which degrades priority lane separation but keeps work
-    // moving. Warn so the misconfiguration surfaces in logs.
-    startupLogger.warn(
-      'CONVERSION_TASK_QUEUE is set but CONVERSION_PRIORITY_TASK_QUEUE is not. Priority-lane jobs republished from triage will land on the standard Conversion queue.'
-    )
-  }
-
-  const conversionTaskQueue = conversionTaskQueueUrl
-    ? createSqsAdapter<DeploymentToSqs>(
-        { logs, metrics },
-        {
-          queueUrl: conversionTaskQueueUrl,
-          priorityQueueUrl: conversionPriorityTaskQueueUrl,
-          queueRegion: AWS_REGION
-        }
+        { queueUrl: sqsQueue, priorityQueueUrl: priorityQueue, queueRegion: AWS_REGION }
       )
     : createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'ConversionTaskQueue' })
 
@@ -105,22 +58,6 @@ export async function initComponents(): Promise<AppComponents> {
 
   const runner = createRunnerComponent()
   const publisher = await createSnsComponent({ config, logs })
-  const filesystem = await createFilesystemComponent({ metrics })
-  const catalyst = await createCatalystComponent({ fetch })
-  const unityRunner = await createUnityRunnerComponent({ logs, metrics })
-  const scenes = await createScenesComponent({ logs, config, metrics, cdnS3, sentry, catalyst })
-  const conversionOrchestrator = await createConversionOrchestratorComponent({
-    logs,
-    metrics,
-    config,
-    cdnS3,
-    sentry,
-    conversionTaskQueue,
-    publisher,
-    catalyst,
-    unityRunner,
-    scenes
-  })
 
   return {
     config,
@@ -129,16 +66,10 @@ export async function initComponents(): Promise<AppComponents> {
     statusChecks,
     fetch,
     metrics,
-    triageTaskQueue,
-    conversionTaskQueue,
+    taskQueue,
     cdnS3,
     runner,
     sentry,
-    publisher,
-    filesystem,
-    catalyst,
-    unityRunner,
-    scenes,
-    conversionOrchestrator
+    publisher
   }
 }

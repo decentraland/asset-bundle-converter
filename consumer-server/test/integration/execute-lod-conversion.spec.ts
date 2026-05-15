@@ -12,15 +12,17 @@ import { createLogComponent } from '@well-known-components/logger'
 import { createMetricsComponent } from '@well-known-components/metrics'
 import { metricDeclarations } from '../../src/metrics'
 
+jest.mock('../../src/logic/run-conversion', () => ({
+  runConversion: jest.fn(),
+  runLodsConversion: jest.fn()
+}))
+
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const MockAws = require('mock-aws-s3')
+import { runLodsConversion } from '../../src/logic/run-conversion'
 import { executeLODConversion } from '../../src/logic/conversion-task'
-import { createScenesComponent } from '../../src/logic/scenes'
-import { createCatalystMock, createSentryMock, createUnityRunnerMock } from '../mocks'
 
-const unityRunnerMock = createUnityRunnerMock()
-const mockedRunConversion = unityRunnerMock.runConversion as unknown as jest.Mock
-const mockedRunLodsConversion = unityRunnerMock.runLodsConversion as unknown as jest.Mock
+const mockedRunLodsConversion = runLodsConversion as jest.Mock
 
 type Params = {
   buildTarget?: string
@@ -38,28 +40,7 @@ function buildComponents(bucketBasePath: string, params: Params = {}) {
 
   MockAws.config.basePath = bucketBasePath
   const cdnS3 = new MockAws.S3({ params: { Bucket: 'test-bucket' } })
-  return {
-    config,
-    cdnS3,
-    catalyst: createCatalystMock(),
-    unityRunner: unityRunnerMock,
-    sentry: createSentryMock()
-  }
-}
-
-async function buildScenes(
-  base: ReturnType<typeof buildComponents>,
-  logs: import('@well-known-components/interfaces').ILoggerComponent,
-  metrics: import('@well-known-components/interfaces').IMetricsComponent<any>
-) {
-  return createScenesComponent({
-    logs,
-    config: base.config,
-    metrics,
-    cdnS3: base.cdnS3,
-    sentry: base.sentry,
-    catalyst: base.catalyst as any
-  })
+  return { config, cdnS3 }
 }
 
 async function read(s3: any, Bucket: string, Key: string): Promise<string | null> {
@@ -81,8 +62,7 @@ describe('when executing a LOD conversion', () => {
     const base = buildComponents(workDir)
     const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
     const logs = await createLogComponent({ metrics })
-    const scenes = await buildScenes(base, logs, metrics)
-    components = { ...base, metrics, logs, scenes }
+    components = { ...base, metrics, logs }
     jest.clearAllMocks()
   })
 
@@ -102,7 +82,7 @@ describe('when executing a LOD conversion', () => {
         return realUpload(params)
       })
 
-      mockedRunLodsConversion.mockImplementation(async (options: any) => {
+      mockedRunLodsConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(path.dirname(options.logFile), { recursive: true })
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(options.logFile, 'lod-unity-log')
@@ -130,7 +110,7 @@ describe('when executing a LOD conversion', () => {
     })
 
     it('should pass the LOD URL list to the Unity runner', () => {
-      const passed = mockedRunLodsConversion.mock.calls[0][0]
+      const passed = mockedRunLodsConversion.mock.calls[0][2]
       expect(passed.lods).toEqual(['https://cdn.example.com/lod1', 'https://cdn.example.com/lod2'])
     })
   })
@@ -143,8 +123,7 @@ describe('when executing a LOD conversion', () => {
       const base = buildComponents(workDir, { buildTarget: 'game-cube' })
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      const scenes = await buildScenes(base, logs, metrics)
-      customComponents = { ...base, metrics, logs, scenes }
+      customComponents = { ...base, metrics, logs }
 
       exitCode = await executeLODConversion(customComponents, 'bafy-bad-target', ['http://x/lod1'], 'v48')
     })
@@ -159,7 +138,7 @@ describe('when executing a LOD conversion', () => {
     let exitCode: number
 
     beforeEach(async () => {
-      mockedRunLodsConversion.mockImplementation(async (options: any) => {
+      mockedRunLodsConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(path.dirname(options.logFile), { recursive: true })
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(options.logFile, 'empty log')
@@ -185,7 +164,7 @@ describe('when executing a LOD conversion', () => {
         throw new Error(`process.exit(${code}) called`)
       }) as any)
 
-      mockedRunLodsConversion.mockImplementation(async (options: any) => {
+      mockedRunLodsConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(path.dirname(options.logFile), { recursive: true })
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(options.logFile, 'crashed')
@@ -217,8 +196,7 @@ describe('when executing a LOD conversion', () => {
       const base = buildComponents(workDir, { logsBucket: 'lod-logs-bucket' })
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      const scenes = await buildScenes(base, logs, metrics)
-      customComponents = { ...base, metrics, logs, scenes }
+      customComponents = { ...base, metrics, logs }
 
       const realUpload = customComponents.cdnS3.upload.bind(customComponents.cdnS3)
       jest.spyOn(customComponents.cdnS3, 'upload').mockImplementation((params: any) => {
@@ -226,7 +204,7 @@ describe('when executing a LOD conversion', () => {
         return realUpload(params)
       })
 
-      mockedRunLodsConversion.mockImplementation(async (options: any) => {
+      mockedRunLodsConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(path.dirname(options.logFile), { recursive: true })
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(options.logFile, 'lod unity log contents')

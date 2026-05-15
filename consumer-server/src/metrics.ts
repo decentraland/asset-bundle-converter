@@ -23,11 +23,7 @@ export const metricDeclarations = {
     type: IMetricsComponent.CounterType
   },
   ab_converter_running_conversion: {
-    help: 'Gauge of running Unity conversions (excludes triage-only fast-path work — see ab_converter_running_triage)',
-    type: IMetricsComponent.GaugeType
-  },
-  ab_converter_running_triage: {
-    help: 'Gauge of triage passes currently in flight (probe + fast-path or republish-to-Unity decision)',
+    help: 'Gauge of running conversions',
     type: IMetricsComponent.GaugeType
   },
   ab_converter_free_disk_space: {
@@ -68,26 +64,6 @@ export const metricDeclarations = {
     help: 'Counter of glb/gltf assets silently skipped (missing dependencies or unparseable bytes)',
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target', 'ab_version', 'reason']
-  },
-  ab_converter_triage_outcomes_total: {
-    help: 'Counter of triage-pass outcomes per scene. outcome ∈ {already_converted, fast_path, republished, failed}.',
-    type: IMetricsComponent.CounterType,
-    labelNames: ['build_target', 'outcome']
-  },
-  ab_converter_conversion_queue_publish_total: {
-    help: 'Counter of triage republishes to the Conversion queue, labelled by priority lane (priority / standard)',
-    type: IMetricsComponent.CounterType,
-    labelNames: ['build_target', 'priority']
-  },
-  ab_converter_conversion_queue_publish_errors_total: {
-    help: 'Counter of failed Conversion-queue publishes from the triage loop. Non-zero triggers the inline-fallback path (see ab_converter_republish_fallback_inline_total) so work is not lost, but indicates a wedged downstream queue — alert on this.',
-    type: IMetricsComponent.CounterType,
-    labelNames: ['build_target']
-  },
-  ab_converter_republish_fallback_inline_total: {
-    help: 'Counter of triage jobs that ran Unity inline on the triage pod because Conversion-queue publish failed. Pair with conversion_queue_publish_errors_total to confirm fallback coverage.',
-    type: IMetricsComponent.CounterType,
-    labelNames: ['build_target']
   }
 }
 

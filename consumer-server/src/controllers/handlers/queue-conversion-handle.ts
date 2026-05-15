@@ -5,10 +5,10 @@ import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { getAbVersionEnvName } from '../../utils'
 
 export async function queueTaskHandler(
-  context: HandlerContextWithPath<'triageTaskQueue' | 'config' | 'publisher', '/queue-task'>
+  context: HandlerContextWithPath<'taskQueue' | 'config' | 'publisher', '/queue-task'>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { triageTaskQueue, config, publisher },
+    components: { taskQueue, config, publisher },
     request
   } = context
 
@@ -30,7 +30,7 @@ export async function queueTaskHandler(
   if (!DeploymentToSqs.validate(body)) return { status: 403, body: { errors: DeploymentToSqs.validate.errors } }
 
   const shouldPrioritize = !!(body as any)?.prioritize
-  const message = await triageTaskQueue.publish(body as DeploymentToSqs, shouldPrioritize)
+  const message = await taskQueue.publish(body as DeploymentToSqs, shouldPrioritize)
 
   await publisher.publishMessage({
     type: Events.Type.ASSET_BUNDLE,

@@ -1,12 +1,12 @@
-// Targeted coverage of the unity-runner adapter's CLI-argument construction
-// and the deps-digests.json sidecar file lifecycle. Integration tests
-// (`execute-conversion.spec.ts`) inject a mock unity-runner via components,
-// so nothing there exercises these lines — a silent bug (wrong path, missing
-// argv entry, unlink-before-spawn ordering) would ship undetected.
+// Targeted coverage of `runConversion`'s CLI-argument construction and the
+// deps-digests.json sidecar file lifecycle. Integration tests (`execute-
+// conversion.spec.ts`) jest.mock the entire run-conversion module, so nothing
+// there exercises these lines — a silent bug (wrong path, missing argv entry,
+// unlink-before-spawn ordering) would ship undetected.
 //
 // Strategy: mock `child_process.spawn` so `spawn()` returns a stub that emits
-// `exit` with code 0 immediately. That lets `runConversion` execute its full
-// body (touchpaths → write temp file → push argv → await spawn → unlink)
+// `close` with exit code 0 immediately. That lets `runConversion` execute its
+// full body (touchpaths → write temp file → push argv → await spawn → unlink)
 // without launching Unity. We snapshot the argv the child was called with and
 // verify the temp file's lifecycle via spying on `fs/promises`.
 
@@ -14,7 +14,6 @@ import { EventEmitter } from 'events'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
-import type { ILoggerComponent } from '@well-known-components/interfaces'
 
 jest.mock('child_process', () => {
   const actual = jest.requireActual('child_process')
@@ -25,7 +24,7 @@ jest.mock('child_process', () => {
 })
 
 import { spawn } from 'child_process'
-import { createUnityRunnerComponent, IUnityRunnerComponent } from '../../src/adapters/unity-runner'
+import { runConversion, runLodsConversion, startManifestBuilder } from '../../src/logic/run-conversion'
 
 const mockedSpawn = spawn as unknown as jest.Mock
 
@@ -44,7 +43,7 @@ function makeChildStub(exitCode = 0) {
   return child
 }
 
-function makeMockLogger(): ILoggerComponent.ILogger {
+function makeMockLogger(): any {
   return {
     info: jest.fn(),
     debug: jest.fn(),
@@ -54,31 +53,20 @@ function makeMockLogger(): ILoggerComponent.ILogger {
   }
 }
 
-type Mocks = {
-  logger: ILoggerComponent.ILogger
-  metrics: any
-}
-
-async function buildUnityRunner(): Promise<{ unityRunner: IUnityRunnerComponent; mocks: Mocks }> {
-  const logger = makeMockLogger()
-  // Stub the logs component so the unity-runner's `logs.getLogger(...)` call
-  // returns our mock — keeps coverage of logger.warn/error/etc. spies
-  // identical to the pre-refactor module-level tests.
-  const logs: ILoggerComponent = { getLogger: () => logger }
-  const metrics = {
-    increment: jest.fn(),
-    decrement: jest.fn(),
-    observe: jest.fn(),
-    startTimer: jest.fn(() => ({ end: jest.fn() }))
+function makeMockComponents(): any {
+  return {
+    metrics: {
+      increment: jest.fn(),
+      decrement: jest.fn(),
+      observe: jest.fn(),
+      startTimer: jest.fn(() => ({ end: jest.fn() }))
+    }
   }
-  const unityRunner = await createUnityRunnerComponent({ logs, metrics } as any)
-  return { unityRunner, mocks: { logger, metrics } }
 }
 
 describe('when runConversion is invoked with per-asset deps digests', () => {
   let outDirectory: string
   let expectedDigestsFile: string
-  let unityRunner: IUnityRunnerComponent
 
   beforeEach(async () => {
     outDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'run-conv-digests-'))
@@ -88,7 +76,6 @@ describe('when runConversion is invoked with per-asset deps digests', () => {
     // is called by runConversion — otherwise the `setImmediate` inside the
     // stub fires at beforeEach time, before any `.on('exit')` listener exists.
     mockedSpawn.mockImplementation(() => makeChildStub(0))
-    unityRunner = (await buildUnityRunner()).unityRunner
   })
 
   afterEach(async () => {
@@ -104,7 +91,7 @@ describe('when runConversion is invoked with per-asset deps digests', () => {
     let argvSnapshot: string[]
 
     beforeEach(async () => {
-      await unityRunner.runConversion({
+      await runConversion(makeMockLogger(), makeMockComponents(), {
         logFile: path.join(outDirectory, 'log.txt'),
         outDirectory,
         entityId: 'bafy-unit',
@@ -147,7 +134,7 @@ describe('when runConversion is invoked with per-asset deps digests', () => {
     let argvSnapshot: string[]
 
     beforeEach(async () => {
-      await unityRunner.runConversion({
+      await runConversion(makeMockLogger(), makeMockComponents(), {
         logFile: path.join(outDirectory, 'log.txt'),
         outDirectory,
         entityId: 'bafy-unit',
@@ -182,7 +169,7 @@ describe('when runConversion is invoked with per-asset deps digests', () => {
     let argv: string[]
 
     beforeEach(async () => {
-      await unityRunner.runConversion({
+      await runConversion(makeMockLogger(), makeMockComponents(), {
         logFile: path.join(outDirectory, 'log.txt'),
         outDirectory: outDirectory + '/', // trailing slash
         entityId: 'bafy',
@@ -215,7 +202,7 @@ describe('when runConversion is invoked with per-asset deps digests', () => {
     let argvSnapshot: string[]
 
     beforeEach(async () => {
-      await unityRunner.runConversion({
+      await runConversion(makeMockLogger(), makeMockComponents(), {
         logFile: path.join(outDirectory, 'log.txt'),
         outDirectory,
         entityId: 'bafy-unit',
@@ -243,7 +230,7 @@ describe('when runConversion is invoked with per-asset deps digests', () => {
     })
 
     it('should still unlink the sidecar file (finally always runs)', async () => {
-      await unityRunner.runConversion({
+      await runConversion(makeMockLogger(), makeMockComponents(), {
         logFile: path.join(outDirectory, 'log.txt'),
         outDirectory,
         entityId: 'bafy-unit',
@@ -265,13 +252,11 @@ describe('when runConversion is invoked with per-asset deps digests', () => {
 
 describe('when runConversion normalises the content server URL for the -baseUrl flag', () => {
   let outDirectory: string
-  let unityRunner: IUnityRunnerComponent
 
   beforeEach(async () => {
     outDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'run-conv-baseurl-'))
     mockedSpawn.mockReset()
     mockedSpawn.mockImplementation(() => makeChildStub(0))
-    unityRunner = (await buildUnityRunner()).unityRunner
   })
 
   afterEach(async () => {
@@ -279,7 +264,7 @@ describe('when runConversion normalises the content server URL for the -baseUrl 
   })
 
   async function baseUrlArg(contentServerUrl: string): Promise<string> {
-    await unityRunner.runConversion({
+    await runConversion(makeMockLogger(), makeMockComponents(), {
       logFile: path.join(outDirectory, 'log.txt'),
       outDirectory,
       entityId: 'bafy',
@@ -323,13 +308,11 @@ describe('when runConversion normalises the content server URL for the -baseUrl 
 
 describe('when runConversion pushes the legacy -cachedHashes flag', () => {
   let outDirectory: string
-  let unityRunner: IUnityRunnerComponent
 
   beforeEach(async () => {
     outDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'run-conv-cached-'))
     mockedSpawn.mockReset()
     mockedSpawn.mockImplementation(() => makeChildStub(0))
-    unityRunner = (await buildUnityRunner()).unityRunner
   })
 
   afterEach(async () => {
@@ -340,7 +323,7 @@ describe('when runConversion pushes the legacy -cachedHashes flag', () => {
     let argv: string[]
 
     beforeEach(async () => {
-      await unityRunner.runConversion({
+      await runConversion(makeMockLogger(), makeMockComponents(), {
         logFile: path.join(outDirectory, 'log.txt'),
         outDirectory,
         entityId: 'bafy',
@@ -368,7 +351,7 @@ describe('when runConversion pushes the legacy -cachedHashes flag', () => {
     let argv: string[]
 
     beforeEach(async () => {
-      await unityRunner.runConversion({
+      await runConversion(makeMockLogger(), makeMockComponents(), {
         logFile: path.join(outDirectory, 'log.txt'),
         outDirectory,
         entityId: 'bafy',
@@ -393,13 +376,11 @@ describe('when runConversion pushes the legacy -cachedHashes flag', () => {
 
 describe('when runConversion forwards the -skippedHashes flag', () => {
   let outDirectory: string
-  let unityRunner: IUnityRunnerComponent
 
   beforeEach(async () => {
     outDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'run-conv-skipped-'))
     mockedSpawn.mockReset()
     mockedSpawn.mockImplementation(() => makeChildStub(0))
-    unityRunner = (await buildUnityRunner()).unityRunner
   })
 
   afterEach(async () => {
@@ -410,7 +391,7 @@ describe('when runConversion forwards the -skippedHashes flag', () => {
     let argv: string[]
 
     beforeEach(async () => {
-      await unityRunner.runConversion({
+      await runConversion(makeMockLogger(), makeMockComponents(), {
         logFile: path.join(outDirectory, 'log.txt'),
         outDirectory,
         entityId: 'bafy',
@@ -438,7 +419,7 @@ describe('when runConversion forwards the -skippedHashes flag', () => {
     let argv: string[]
 
     beforeEach(async () => {
-      await unityRunner.runConversion({
+      await runConversion(makeMockLogger(), makeMockComponents(), {
         logFile: path.join(outDirectory, 'log.txt'),
         outDirectory,
         entityId: 'bafy',
@@ -463,7 +444,7 @@ describe('when runConversion forwards the -skippedHashes flag', () => {
     let argv: string[]
 
     beforeEach(async () => {
-      await unityRunner.runConversion({
+      await runConversion(makeMockLogger(), makeMockComponents(), {
         logFile: path.join(outDirectory, 'log.txt'),
         outDirectory,
         entityId: 'bafy',
@@ -488,13 +469,11 @@ describe('when runConversion forwards the -skippedHashes flag', () => {
 
 describe('when runConversion selects the animation method', () => {
   let outDirectory: string
-  let unityRunner: IUnityRunnerComponent
 
   beforeEach(async () => {
     outDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'run-conv-anim-'))
     mockedSpawn.mockReset()
     mockedSpawn.mockImplementation(() => makeChildStub(0))
-    unityRunner = (await buildUnityRunner()).unityRunner
   })
 
   afterEach(async () => {
@@ -502,7 +481,7 @@ describe('when runConversion selects the animation method', () => {
   })
 
   async function animArg(animation: string | undefined): Promise<string> {
-    await unityRunner.runConversion({
+    await runConversion(makeMockLogger(), makeMockComponents(), {
       logFile: path.join(outDirectory, 'log.txt'),
       outDirectory,
       entityId: 'bafy',
@@ -535,15 +514,13 @@ describe('when runConversion selects the animation method', () => {
 describe('when runLodsConversion constructs its Unity command line', () => {
   let outDirectory: string
   let argv: string[]
-  let unityRunner: IUnityRunnerComponent
 
   beforeEach(async () => {
     outDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'run-lods-'))
     mockedSpawn.mockReset()
     mockedSpawn.mockImplementation(() => makeChildStub(0))
-    unityRunner = (await buildUnityRunner()).unityRunner
 
-    await unityRunner.runLodsConversion({
+    await runLodsConversion(makeMockLogger(), makeMockComponents(), {
       logFile: path.join(outDirectory, 'log.txt'),
       outDirectory,
       entityId: 'bafy-lods',
@@ -584,7 +561,7 @@ describe('when executeProgram kills a child that exceeds its timeout', () => {
   let outDirectory: string
   let hangingChild: any
   let metrics: any
-  let unityRunner: IUnityRunnerComponent
+  let logger: any
 
   beforeEach(async () => {
     outDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'run-conv-timeout-'))
@@ -595,15 +572,19 @@ describe('when executeProgram kills a child that exceeds its timeout', () => {
     hangingChild.stderr = new EventEmitter()
     hangingChild.pid = 99999
     hangingChild.killed = false
+    // kill() on a real process would SIGKILL and the OS would emit 'exit'.
+    // The stub just records the call — we don't want to ALSO emit 'exit' here
+    // because executeProgram has already called `exitPromise.reject(...)` by
+    // the time it invokes kill, and a subsequent resolve on a settled future
+    // would be a no-op anyway but muddies the event ordering.
     hangingChild.kill = jest.fn(() => {
       hangingChild.killed = true
       return true
     })
     mockedSpawn.mockImplementation(() => hangingChild)
 
-    const built = await buildUnityRunner()
-    unityRunner = built.unityRunner
-    metrics = built.mocks.metrics
+    logger = makeMockLogger()
+    metrics = makeMockComponents().metrics
   })
 
   afterEach(async () => {
@@ -611,19 +592,25 @@ describe('when executeProgram kills a child that exceeds its timeout', () => {
   })
 
   it('should SIGKILL the child and bump the ab_converter_timeout metric when the deadline elapses', async () => {
-    const runPromise = unityRunner.runConversion({
-      logFile: path.join(outDirectory, 'log.txt'),
-      outDirectory,
-      entityId: 'bafy-timeout',
-      entityType: 'scene',
-      contentServerUrl: 'https://peer.decentraland.org/content',
-      unityPath: '/fake/unity',
-      projectPath: '/fake/project',
-      timeout: 50,
-      unityBuildTarget: 'StandaloneWindows64',
-      animation: 'legacy',
-      doISS: false
-    })
+    // Real short timeout — fake timers interfere with fs async I/O used in
+    // setupStartDirectories, causing the whole promise to hang.
+    const runPromise = runConversion(
+      logger,
+      { metrics } as any,
+      {
+        logFile: path.join(outDirectory, 'log.txt'),
+        outDirectory,
+        entityId: 'bafy-timeout',
+        entityType: 'scene',
+        contentServerUrl: 'https://peer.decentraland.org/content',
+        unityPath: '/fake/unity',
+        projectPath: '/fake/project',
+        timeout: 50,
+        unityBuildTarget: 'StandaloneWindows64',
+        animation: 'legacy',
+        doISS: false
+      }
+    )
 
     await expect(runPromise).rejects.toThrow(/did not finish/)
     expect(hangingChild.kill).toHaveBeenCalledWith('SIGKILL')
@@ -631,14 +618,49 @@ describe('when executeProgram kills a child that exceeds its timeout', () => {
   })
 })
 
+describe('when startManifestBuilder spawns the scene-manifest npm script', () => {
+  // Standalone helper for the ISS-scene-manifest flow. Worth covering directly
+  // because the only way to reach it via runConversion is
+  // `entityType === 'scene' && unityBuildTarget !== 'WebGL' && doISS` — which
+  // `runConversion` catches-and-logs on failure, so a regression in the spawn
+  // plumbing here would be invisible in integration tests.
+  beforeEach(() => {
+    mockedSpawn.mockReset()
+  })
+
+  describe('and the child exits with code 0', () => {
+    it('should resolve', async () => {
+      mockedSpawn.mockImplementation(() => {
+        const child: any = new EventEmitter()
+        setImmediate(() => child.emit('close', 0))
+        return child
+      })
+      await expect(startManifestBuilder('scene-cid', '/tmp/manifest', 'https://peer.decentraland.org')).resolves.toBeUndefined()
+    })
+  })
+
+  describe('and the child exits with a non-zero code', () => {
+    it('should reject with the exit code in the error message', async () => {
+      mockedSpawn.mockImplementation(() => {
+        const child: any = new EventEmitter()
+        setImmediate(() => child.emit('close', 7))
+        return child
+      })
+      await expect(
+        startManifestBuilder('scene-cid', '/tmp/manifest', 'https://peer.decentraland.org')
+      ).rejects.toThrow(/code 7/)
+    })
+  })
+})
+
 describe('when runConversion is asked to run with doISS enabled on a desktop target', () => {
   let outDirectory: string
-  let unityRunner: IUnityRunnerComponent
+  let logger: any
 
   beforeEach(async () => {
     outDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'run-conv-iss-'))
     mockedSpawn.mockReset()
-    unityRunner = (await buildUnityRunner()).unityRunner
+    logger = makeMockLogger()
   })
 
   afterEach(async () => {
@@ -672,7 +694,7 @@ describe('when runConversion is asked to run with doISS enabled on a desktop tar
         return child
       })
 
-      await unityRunner.runConversion({
+      await runConversion(logger, makeMockComponents(), {
         logFile: path.join(outDirectory, 'log.txt'),
         outDirectory,
         entityId: 'bafy-iss',
@@ -687,7 +709,13 @@ describe('when runConversion is asked to run with doISS enabled on a desktop tar
       })
     })
 
-    it('should still invoke Unity afterwards (catch + log + continue)', () => {
+    it('should log the manifest-builder failure via logger.error', () => {
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to generate scene manifest')
+      )
+    })
+
+    it('should still invoke Unity afterwards', () => {
       expect(firstInvocationSpawned).toBeDefined()
       expect(secondInvocationSpawned).toBeDefined()
     })
@@ -696,7 +724,7 @@ describe('when runConversion is asked to run with doISS enabled on a desktop tar
   describe('and the build target is WebGL', () => {
     it('should skip the manifest builder entirely regardless of doISS', async () => {
       mockedSpawn.mockImplementation(() => makeChildStub(0))
-      await unityRunner.runConversion({
+      await runConversion(logger, makeMockComponents(), {
         logFile: path.join(outDirectory, 'log.txt'),
         outDirectory,
         entityId: 'bafy-iss-webgl',
@@ -721,7 +749,7 @@ describe('when runConversion is asked to run with doISS enabled on a desktop tar
   describe('and the entity is not a scene', () => {
     it('should skip the manifest builder even when doISS is set', async () => {
       mockedSpawn.mockImplementation(() => makeChildStub(0))
-      await unityRunner.runConversion({
+      await runConversion(logger, makeMockComponents(), {
         logFile: path.join(outDirectory, 'log.txt'),
         outDirectory,
         entityId: 'bafy-iss-wearable',
