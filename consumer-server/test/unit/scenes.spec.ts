@@ -122,6 +122,7 @@ function buildAssetCacheResult(overrides?: Partial<AssetCacheResult>): AssetCach
     unitySkippableHashes: [],
     canonicalNameByHash: {},
     depsDigestByHash: new Map(),
+    metadataOnlyHashes: new Set<string>(),
     ...overrides
   }
 }

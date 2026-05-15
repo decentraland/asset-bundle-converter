@@ -9,7 +9,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { hasContentChange } from './has-content-changed-task'
 import { getUnityBuildTarget } from '../utils'
-import { AssetCacheResult, SkippedAsset } from './asset-reuse'
+import { AssetCacheResult, findMetadataOnlyHashes, SkippedAsset } from './asset-reuse'
 import { Manifest } from './scenes'
 
 /**
@@ -624,6 +624,31 @@ export async function executeConversion(
     abVersion
   })
 
+  // Hashes that Unity should drop from texturePaths / gltfPaths / bufferPaths
+  // before any download: union of (a) broken glbs flagged by the digester and
+  // (b) metadata-only files (SDK thumbnails, navmap thumbnail) whose bundles
+  // the runtime never imports. Same `-skippedHashes` CLI flag carries both
+  // categories — the Unity-side filter is identical (RemoveAll), so we don't
+  // need parallel flags. See `findMetadataOnlyHashes` JSDoc for the
+  // classification rules and the false-negative trade-off.
+  //
+  // Prefer the set already computed by `checkAssetCache` (returned on
+  // `cacheResult.metadataOnlyHashes`) to avoid recomputing regex + metadata
+  // walks. Falls back to deriving from `entity` when there's no probe — the
+  // legacy path with `ASSET_REUSE_ENABLED=false` and any future caller that
+  // wants the filter without running the probe.
+  const metadataOnlyHashes: ReadonlySet<string> =
+    cacheResult?.metadataOnlyHashes ??
+    (entity ? findMetadataOnlyHashes(entity.content, entity.metadata) : new Set<string>())
+  const unityDropHashes = new Set<string>([...skippedAssets.keys(), ...metadataOnlyHashes])
+  if (metadataOnlyHashes.size > 0) {
+    logger.info('Dropping metadata-only files from Unity input', {
+      ...defaultLoggerMetadata,
+      count: metadataOnlyHashes.size,
+      hashes: [...metadataOnlyHashes]
+    } as any)
+  }
+
   const assetReuseUploadPath = abVersion + '/assets'
   const entityScopedUploadPath = abVersion + '/' + entityId
 
@@ -667,7 +692,7 @@ export async function executeConversion(
         animation: animation,
         doISS: doISS,
         cachedHashes: useAssetReuse && cacheResult ? cacheResult.unitySkippableHashes : undefined,
-        skippedHashes: skippedAssets.size > 0 ? [...skippedAssets.keys()] : undefined,
+        skippedHashes: unityDropHashes.size > 0 ? [...unityDropHashes] : undefined,
         depsDigestByHash
       })
     } else {
