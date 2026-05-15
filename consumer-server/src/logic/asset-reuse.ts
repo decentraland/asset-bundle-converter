@@ -139,6 +139,12 @@ export type AssetCacheResult = {
   // Non-glb entries (textures, buffers) don't appear in this map; their canonical
   // filename is hash-only.
   depsDigestByHash: ReadonlyMap<string, string>
+  // Hashes the probe classified as metadata-only (raw-bytes display assets like
+  // SDK creator-hub thumbnails or scene.json's navmap thumbnail). Returned so
+  // `executeConversion` can union them into the `-skippedHashes` flag passed to
+  // Unity without re-deriving from the entity. See `findMetadataOnlyHashes` for
+  // the classification rules.
+  metadataOnlyHashes: ReadonlySet<string>
 }
 
 /**
@@ -954,7 +960,13 @@ export async function computePerAssetDigests(
 }
 
 type CheckAssetCacheParams = {
-  entity: Pick<Entity, 'content'>
+  // Both `content` AND `metadata` are required: the metadata walker in
+  // `findMetadataOnlyHashes` reads dot-paths from `entity.metadata` (e.g.
+  // `display.navmapThumbnail`) to classify content entries as raw-bytes-only.
+  // Narrowing this to `Pick<Entity, 'content'>` would let `findMetadataOnlyHashes`
+  // compile but silently degrade to the hardcoded-pattern arm only, because
+  // `entity.metadata` would be missing at runtime.
+  entity: Pick<Entity, 'content' | 'metadata'>
   abVersion: string
   buildTarget: string
   cdnBucket: string
@@ -1012,9 +1024,10 @@ export async function checkAssetCache(
   }
 
   // Computed once per probe call so the loop below can `Set.has` rather than
-  // re-walking regex patterns + metadata fields for every content entry.
-  // Same set is also returned in the caller's path so `executeConversion` can
-  // hand it to Unity via `-skippedHashes` without re-deriving.
+  // re-walking regex patterns + metadata fields for every content entry, and
+  // returned on `AssetCacheResult.metadataOnlyHashes` so `executeConversion`
+  // can union it into the `-skippedHashes` flag passed to Unity without
+  // re-deriving from the entity.
   const metadataOnlyHashes = findMetadataOnlyHashes(entity)
 
   type Probe = { hash: string; skippable: boolean; filename: string; key: string }
@@ -1059,7 +1072,8 @@ export async function checkAssetCache(
       missingHashes: [],
       unitySkippableHashes: [],
       canonicalNameByHash: {},
-      depsDigestByHash
+      depsDigestByHash,
+      metadataOnlyHashes
     }
   }
 
@@ -1134,7 +1148,14 @@ export async function checkAssetCache(
     gltfAssetsDigested: depsDigestByHash.size
   } as any)
 
-  return { cachedHashes, missingHashes, unitySkippableHashes, canonicalNameByHash, depsDigestByHash }
+  return {
+    cachedHashes,
+    missingHashes,
+    unitySkippableHashes,
+    canonicalNameByHash,
+    depsDigestByHash,
+    metadataOnlyHashes
+  }
 }
 
 /**
