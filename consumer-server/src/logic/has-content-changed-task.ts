@@ -1,7 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { ILoggerComponent } from '@well-known-components/interfaces'
-import { getActiveEntity } from './fetch-entity-by-pointer'
+import type { ICatalystComponent } from '../adapters/catalyst'
 
 async function getManifestFiles(
   entityID: string,
@@ -132,6 +132,7 @@ async function DeleteFilesInOutputFolder(outputFolder: string, logger: ILoggerCo
 //it will just download it from the old one
 //Note: ALL OF THE CONTENT NEEDS TO BE PRESENT. Just one change forces a reconversion
 export async function hasContentChange(
+  catalyst: ICatalystComponent,
   entityId: string,
   contentServerUrl: string,
   buildTarget: string,
@@ -139,7 +140,7 @@ export async function hasContentChange(
   abVersion: string,
   logger: ILoggerComponent.ILogger
 ): Promise<boolean> {
-  const entity = await getActiveEntity(entityId, contentServerUrl)
+  const entity = await catalyst.getActiveEntity(entityId, contentServerUrl)
   if (entity.type === 'scene') {
     logger.info(`HasContentChanged: Entity ${entityId} is a scene`)
     const environemnt = contentServerUrl.includes('org') ? 'org' : 'zone'

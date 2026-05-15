@@ -12,6 +12,11 @@ import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { S3 } from 'aws-sdk'
 import { IRunnerComponent } from './adapters/runner'
 import { SentryComponent } from './adapters/sentry'
+import { IFilesystemComponent } from './adapters/filesystem'
+import { ICatalystComponent } from './adapters/catalyst'
+import { IUnityRunnerComponent } from './adapters/unity-runner'
+import { IConversionOrchestratorComponent } from './logic/conversion-orchestrator'
+import { IScenesComponent } from './logic/scenes'
 import { AssetBundleConversionFinishedEvent, AssetBundleConversionManuallyQueuedEvent } from '@dcl/schemas'
 
 export type GlobalContext = {
@@ -24,12 +29,18 @@ export type BaseComponents = {
   logs: ILoggerComponent
   server: IHttpServerComponent<GlobalContext>
   fetch: IFetchComponent
-  taskQueue: ITaskQueue<DeploymentToSqs>
+  triageTaskQueue: ITaskQueue<DeploymentToSqs>
+  conversionTaskQueue: ITaskQueue<DeploymentToSqs>
   metrics: IMetricsComponent<keyof typeof metricDeclarations>
   cdnS3: S3
   runner: IRunnerComponent
   sentry: SentryComponent
   publisher: PublisherComponent
+  filesystem: IFilesystemComponent
+  catalyst: ICatalystComponent
+  unityRunner: IUnityRunnerComponent
+  scenes: IScenesComponent
+  conversionOrchestrator: IConversionOrchestratorComponent
 }
 
 // components used in runtime

@@ -9,13 +9,20 @@ export interface TaskQueueMessage {
   id: string
 }
 
+export type TaskQueueRunnerOptions = {
+  // True when the message was received from the priority queue (when the adapter
+  // is configured with a priorityQueueUrl). Lets callers preserve priority when
+  // republishing the job to a downstream queue (e.g. triage → Unity).
+  isPriority: boolean
+}
+
 export interface ITaskQueue<T> {
   // publishes a job for the queue
   publish(job: T, prioritize?: boolean): Promise<TaskQueueMessage>
   // awaits for a job. then calls and waits for the taskRunner argument.
   // the result is then returned to the wrapper function.
   consumeAndProcessJob<R>(
-    taskRunner: (job: T, message: TaskQueueMessage) => Promise<R>
+    taskRunner: (job: T, message: TaskQueueMessage, opts: TaskQueueRunnerOptions) => Promise<R>
   ): Promise<{ result: R | undefined }>
 }
 
@@ -46,7 +53,11 @@ export function createMemoryQueueAdapter<T>(
   components: Pick<AppComponents, 'logs' | 'metrics'>,
   options: { queueName: string }
 ): ITaskQueue<T> & IBaseComponent {
-  type InternalElement = { message: TaskQueueMessage; job: T }
+  // Honour `prioritize` on publish so tests can exercise the priority lane
+  // without standing up a real SQS adapter. Single in-memory FIFO is fine —
+  // the SQS adapter's "drain priority queue first" behaviour isn't relevant
+  // here because tests typically publish + consume in the same order.
+  type InternalElement = { message: TaskQueueMessage; job: T; isPriority: boolean }
   const q = new AsyncQueue<InternalElement>((_action) => void 0)
   let lastJobId = 0
 
@@ -56,11 +67,11 @@ export function createMemoryQueueAdapter<T>(
     async stop() {
       q.close()
     },
-    async publish(job) {
+    async publish(job, prioritize) {
       const id = 'job-' + (++lastJobId).toString()
       const message: TaskQueueMessage = { id }
-      q.enqueue({ job, message })
-      logger.info(`Publishing job`, { id })
+      q.enqueue({ job, message, isPriority: !!prioritize })
+      logger.info(`Publishing job`, { id, prioritize: prioritize ? 'true' : 'false' })
       components.metrics.increment('job_queue_enqueue_total', { queue_name: options.queueName })
       return message
     },
@@ -70,13 +81,12 @@ export function createMemoryQueueAdapter<T>(
         const { end } = components.metrics.startTimer('job_queue_duration_seconds', { queue_name: options.queueName })
         try {
           logger.info(`Processing job`, { id: it.message.id })
-          const result = await taskRunner(it.job, it.message)
+          const result = await taskRunner(it.job, it.message, { isPriority: it.isPriority })
           logger.info(`Processed job`, { id: it.message.id })
           return { result, message: it.message }
         } catch (err: any) {
           components.metrics.increment('job_queue_failures_total', { queue_name: options.queueName })
           logger.error(err, { id: it.message.id })
-          // q.enqueue(it)
         } finally {
           end()
         }
@@ -163,6 +173,7 @@ export function createSqsAdapter<T>(
           const { response, queueUsed } = await receiveMessage(1)
 
           if (!!response && response.Messages && response.Messages.length > 0) {
+            const isPriority = !!options.priorityQueueUrl && queueUsed === options.priorityQueueUrl
             for (const it of response.Messages) {
               const message: TaskQueueMessage = { id: it.MessageId! }
               const { end } = components.metrics.startTimer('job_queue_duration_seconds', {
@@ -171,7 +182,7 @@ export function createSqsAdapter<T>(
               try {
                 const snsOverSqs: SNSOverSQSMessage = JSON.parse(it.Body!)
                 logger.info(`Processing job`, { id: message.id, message: snsOverSqs.Message })
-                const result = await taskRunner(JSON.parse(snsOverSqs.Message), message)
+                const result = await taskRunner(JSON.parse(snsOverSqs.Message), message, { isPriority })
                 logger.info(`Processed job`, { id: message.id })
                 return { result, message }
               } catch (err: any) {
