@@ -101,23 +101,35 @@ function readByPath(obj: any, dotPath: string): unknown {
  * that case is implausible given SDK conventions, but the trade-off is
  * intentional — see the IMPORTANT comment on `METADATA_ONLY_METADATA_FIELDS`.
  */
-export function findMetadataOnlyHashes(entity: Pick<Entity, 'content' | 'metadata'>): Set<string> {
+export function findMetadataOnlyHashes(
+  content: readonly { file: string; hash: string }[] | undefined,
+  metadata: unknown
+): ReadonlySet<string> {
   const hashes = new Set<string>()
-  const content = entity.content ?? []
+  const entries = content ?? []
 
-  for (const entry of content) {
+  // Case-insensitive index of content paths for the metadata-walker arm
+  // below. Mirrors `computePerAssetDigests` (this file, ~line 846) which
+  // also builds a `lowerCase(file) -> hash` map because the SDK / scene
+  // authors don't consistently match the casing of references against the
+  // content map (e.g. `assets/Images/Foo.PNG` vs `assets/images/foo.png`
+  // resolve to the same asset at runtime). Building it inline here also
+  // turns the per-field lookup from O(N) (Array.find) into O(1) — matters
+  // if `METADATA_ONLY_METADATA_FIELDS` grows.
+  const contentByLowerFile = new Map<string, string>()
+  for (const entry of entries) {
+    contentByLowerFile.set(entry.file.toLowerCase(), entry.hash)
     if (METADATA_ONLY_FILE_PATTERNS.some((re) => re.test(entry.file))) {
       hashes.add(entry.hash)
     }
   }
 
-  const md = entity.metadata
-  if (md && typeof md === 'object') {
+  if (metadata && typeof metadata === 'object') {
     for (const fieldPath of METADATA_ONLY_METADATA_FIELDS) {
-      const value = readByPath(md, fieldPath)
+      const value = readByPath(metadata, fieldPath)
       if (typeof value !== 'string') continue
-      const match = content.find((c) => c.file === value)
-      if (match) hashes.add(match.hash)
+      const hash = contentByLowerFile.get(value.toLowerCase())
+      if (hash !== undefined) hashes.add(hash)
     }
   }
 
@@ -1028,7 +1040,7 @@ export async function checkAssetCache(
   // returned on `AssetCacheResult.metadataOnlyHashes` so `executeConversion`
   // can union it into the `-skippedHashes` flag passed to Unity without
   // re-deriving from the entity.
-  const metadataOnlyHashes = findMetadataOnlyHashes(entity)
+  const metadataOnlyHashes = findMetadataOnlyHashes(entity.content, entity.metadata)
 
   type Probe = { hash: string; skippable: boolean; filename: string; key: string }
   const seen = new Set<string>()
@@ -1143,6 +1155,12 @@ export async function checkAssetCache(
     cached: cachedHashes.length,
     missing: missingHashes.length,
     unitySkippable: unitySkippableHashes.length,
+    // Number of content entries the probe loop excluded as metadata-only
+    // (SDK thumbnail / navmap field). Exposed so `total` makes sense at a
+    // glance — without this, a sudden drop in `total` across deploys would
+    // be unexplained when in fact it reflects the metadata-only filter
+    // kicking in for scenes that previously paid for a wasted Unity build.
+    metadataOnly: metadataOnlyHashes.size,
     hitCacheServed,
     headRequests: pendingIdx.length,
     gltfAssetsDigested: depsDigestByHash.size

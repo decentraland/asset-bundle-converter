@@ -1150,7 +1150,13 @@ namespace DCL.ABConverter
                     int bufferDropped = bufferPaths.RemoveAll(p => settings.skippedHashes.Contains(p.hash));
                     int textureDropped = texturePaths.RemoveAll(p => settings.skippedHashes.Contains(p.hash));
 
-                    log.Info($"Dropped {gltfDropped} broken/metadata-only glb/gltf(s), {bufferDropped} associated buffer(s), and {textureDropped} metadata-only texture(s) — flagged by consumer-server.");
+                    // Category-agnostic phrasing: consumer-server can flag the same
+                    // hash for two reasons (broken glb/gltf or metadata-only file),
+                    // and the Unity-side filter doesn't distinguish — both go through
+                    // the same RemoveAll. Don't assume gltfDropped == broken and
+                    // textureDropped == metadata-only here; the conjunction is the
+                    // common case today but not enforced by the wire format.
+                    log.Info($"Dropped {gltfDropped} glb/gltf(s), {bufferDropped} buffer(s), and {textureDropped} texture(s) — flagged by consumer-server (broken-asset or metadata-only).");
                 }
 
                 // Skip GLTFs/buffers whose canonical asset bundle already exists on the CDN.

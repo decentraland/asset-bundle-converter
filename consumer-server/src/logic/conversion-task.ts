@@ -638,7 +638,8 @@ export async function executeConversion(
   // legacy path with `ASSET_REUSE_ENABLED=false` and any future caller that
   // wants the filter without running the probe.
   const metadataOnlyHashes: ReadonlySet<string> =
-    cacheResult?.metadataOnlyHashes ?? (entity ? findMetadataOnlyHashes(entity) : new Set<string>())
+    cacheResult?.metadataOnlyHashes ??
+    (entity ? findMetadataOnlyHashes(entity.content, entity.metadata) : new Set<string>())
   const unityDropHashes = new Set<string>([...skippedAssets.keys(), ...metadataOnlyHashes])
   if (metadataOnlyHashes.size > 0) {
     logger.info('Dropping metadata-only files from Unity input', {
