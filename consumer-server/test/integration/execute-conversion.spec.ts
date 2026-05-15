@@ -19,31 +19,28 @@ import {
   computeDepsDigest,
   probeHitCache
 } from '../../src/logic/asset-reuse'
-import { createScenesComponent } from '../../src/logic/scenes'
-import { createCatalystMock, createSentryMock, createUnityRunnerMock } from '../mocks'
 import { buildGlb } from '../helpers/glb-fixtures'
 
+jest.mock('../../src/logic/run-conversion', () => ({
+  runConversion: jest.fn(),
+  runLodsConversion: jest.fn()
+}))
+jest.mock('../../src/logic/fetch-entity-by-pointer', () => ({
+  getActiveEntity: jest.fn(),
+  getEntities: jest.fn()
+}))
 jest.mock('../../src/logic/has-content-changed-task', () => {
   const real = jest.requireActual('../../src/logic/has-content-changed-task')
   return { ...real, hasContentChange: jest.fn(async () => true) }
 })
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const MockAws = require('mock-aws-s3')
+import { runConversion } from '../../src/logic/run-conversion'
+import { getActiveEntity } from '../../src/logic/fetch-entity-by-pointer'
 import { executeConversion } from '../../src/logic/conversion-task'
 
-// Module-level catalyst + unity-runner mocks. The factories provide the
-// component-shaped object; we alias the inner jest.fns at module scope so the
-// existing test bodies can keep doing `mockedRunConversion.mockImplementation`
-// without threading `components.unityRunner.runConversion` through every spec.
-const unityRunnerMock = createUnityRunnerMock()
-const catalystMock = createCatalystMock()
-// Re-cast as plain `jest.Mock` to discard the strict component-interface
-// parameter typing — these tests pass partial Entity fixtures and the relaxed
-// signature matches how they worked pre-refactor.
-const mockedRunConversion = unityRunnerMock.runConversion as unknown as jest.Mock
-const mockedRunLodsConversion = unityRunnerMock.runLodsConversion as unknown as jest.Mock
-const mockedGetActiveEntity = catalystMock.getActiveEntity as unknown as jest.Mock
-const mockedGetEntities = catalystMock.getEntities as unknown as jest.Mock
+const mockedRunConversion = runConversion as jest.Mock
+const mockedGetActiveEntity = getActiveEntity as jest.Mock
 const originalNativeFetch = globalThis.fetch
 let mockedFetch: jest.Mock
 
@@ -69,26 +66,12 @@ function buildComponents(bucketBasePath: string, params: Params = {}) {
   MockAws.config.basePath = bucketBasePath
   const cdnS3 = new MockAws.S3({ params: { Bucket: 'test-bucket' } })
 
-  // Sentry is per-buildComponents so each test variant gets its own
-  // captureException / captureMessage call log. The catalyst and unity-runner
-  // mocks are module-scoped (shared across every test) because the test
-  // bodies drive them via module-level aliases.
-  return { config, cdnS3, sentry: createSentryMock(), catalyst: catalystMock, unityRunner: unityRunnerMock }
-}
+  const sentry = {
+    captureMessage: jest.fn(),
+    captureException: jest.fn()
+  } as any
 
-async function buildScenes(
-  base: ReturnType<typeof buildComponents>,
-  logs: import('@well-known-components/interfaces').ILoggerComponent,
-  metrics: import('@well-known-components/interfaces').IMetricsComponent<any>
-) {
-  return createScenesComponent({
-    logs,
-    config: base.config,
-    metrics,
-    cdnS3: base.cdnS3,
-    sentry: base.sentry,
-    catalyst: base.catalyst as any
-  })
+  return { config, cdnS3, sentry }
 }
 
 // Wire up native fetch so glb/gltf digest reads return declared fixtures and
@@ -156,8 +139,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     const base = buildComponents(workDir)
     const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
     const logs = await createLogComponent({ metrics })
-    const scenes = await buildScenes(base, logs, metrics)
-    components = { ...base, metrics, logs, scenes }
+    components = { ...base, metrics, logs }
 
     // Scene source files: respond with a tiny body so uploadSceneSourceFilesToCDN
     // can fetch + S3-PUT without talking to a real catalyst.
@@ -383,7 +365,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       // Mocked Unity: writes the non-cached bundles to outDirectory and returns 0.
       // GLB output uses the composite filename (Unity-side depsDigest naming);
       // BIN stays at the bare `{hash}_{target}` form.
-      mockedRunConversion.mockImplementation(async (options: any) => {
+      mockedRunConversion.mockImplementation(async (_logger: any, _components: any, options: any) => {
         expect(options.depsDigestByHash.get('hGlb')).toBe(perGlbDigest)
         expect(options.depsDigestByHash.get('hNewGlb')).toBe(perGlbDigest)
         await fs.mkdir(options.outDirectory, { recursive: true })
@@ -406,7 +388,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       expect(mockedRunConversion).toHaveBeenCalledTimes(1)
 
       // Assert -cachedHashes contained only the GLB.
-      const passedOptions = mockedRunConversion.mock.calls[0][0]
+      const passedOptions = mockedRunConversion.mock.calls[0][2]
       expect((passedOptions.cachedHashes ?? []).sort()).toEqual(['hGlb'])
 
       // New bundles landed at their canonical paths.
@@ -433,8 +415,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       const off = buildComponents(workDir, { assetReuseEnabled: 'false' })
       const metrics = await createMetricsComponent(metricDeclarations, { config: off.config })
       const logs = await createLogComponent({ metrics })
-      const scenes = await buildScenes(off, logs, metrics)
-      components = { ...off, metrics, logs, scenes }
+      components = { ...off, metrics, logs }
 
       // Seed canonical for every hash in the scene — full-cache short-circuit
       // scenario. The kill switch must bypass it symmetrically to force/doISS,
@@ -450,7 +431,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         metadata: {}
       })
 
-      mockedRunConversion.mockImplementation(async (options: any) => {
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(path.join(options.outDirectory, 'hOnlyGlb_windows'), 'freshly-converted')
         return 0
@@ -476,7 +457,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     })
 
     it('should NOT pass a cachedHashes list to Unity', () => {
-      expect(mockedRunConversion.mock.calls[0][0].cachedHashes).toBeUndefined()
+      expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
     })
 
     it('should upload the freshly-converted bundle to the entity-scoped path (reuse path is gated off by the kill switch)', async () => {
@@ -516,7 +497,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         metadata: {}
       })
 
-      mockedRunConversion.mockImplementation(async (options: any) => {
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(path.join(options.outDirectory, composedGlbFilename), 'fresh-glb')
         return 0
@@ -542,7 +523,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     })
 
     it('should not pass cachedHashes to Unity (force skips the cache probe)', () => {
-      expect(mockedRunConversion.mock.calls[0][0].cachedHashes).toBeUndefined()
+      expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
     })
 
     it('should overwrite existing canonical bytes with the freshly converted output', async () => {
@@ -592,7 +573,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         metadata: {}
       })
 
-      mockedRunConversion.mockImplementation(async (options: any) => {
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(path.join(options.outDirectory, cachedGlbFilename), 'fresh-cached')
         await fs.writeFile(path.join(options.outDirectory, missingGlbFilename), 'fresh-missing')
@@ -615,7 +596,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     })
 
     it('should not pass cachedHashes to Unity even though one asset would have matched', () => {
-      expect(mockedRunConversion.mock.calls[0][0].cachedHashes).toBeUndefined()
+      expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
     })
 
     it('should overwrite the pre-existing canonical bytes for the would-have-been-cached asset', async () => {
@@ -646,7 +627,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         metadata: {}
       })
 
-      mockedRunConversion.mockImplementation(async (options: any) => {
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(path.join(options.outDirectory, 'hGlb_windows'), 'freshly-converted')
         return 0
@@ -672,7 +653,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     })
 
     it('should NOT pass a cachedHashes list to Unity', () => {
-      expect(mockedRunConversion.mock.calls[0][0].cachedHashes).toBeUndefined()
+      expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
     })
 
     it('should upload the freshly-converted bundle to the entity-scoped path (reuse path is gated off by doISS)', async () => {
@@ -701,7 +682,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         metadata: {}
       })
 
-      mockedRunConversion.mockImplementation(async (options: any) => {
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(path.join(options.outDirectory, 'hWearableGlb_windows'), 'new-bundle')
         return 0
@@ -727,7 +708,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     })
 
     it('should NOT pass a cachedHashes list to Unity', () => {
-      expect(mockedRunConversion.mock.calls[0][0].cachedHashes).toBeUndefined()
+      expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
     })
 
     it('should upload the bundle to the entity-scoped path', async () => {
@@ -842,7 +823,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         return realHead(params)
       })
 
-      mockedRunConversion.mockImplementation(async (options: any) => {
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         // Probe failure must NOT zero out depsDigestByHash — otherwise glb
         // bundles would revert to bare names and reintroduce the cross-scene
         // collision.
@@ -869,7 +850,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     })
 
     it('should pass no cached hashes to Unity (cacheResult was set to null)', () => {
-      expect(mockedRunConversion.mock.calls[0][0].cachedHashes).toBeUndefined()
+      expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
     })
 
     it('should still upload to the canonical prefix at the composite glb path', async () => {
@@ -909,7 +890,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         metadata: { main: 'index.js' }
       })
 
-      mockedRunConversion.mockImplementation(async (options: any) => {
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         runConversionOptions = options
         // Unity ignores the broken glb (per `-skippedHashes`) and produces
         // a bundle for the texture, which the integration test asserts
@@ -1041,7 +1022,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     beforeEach(async () => {
       mockedGetActiveEntity.mockRejectedValue(new Error('catalyst unavailable'))
 
-      mockedRunConversion.mockImplementation(async (options: any) => {
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(path.join(options.outDirectory, 'hNoEntity_windows'), 'bundle')
         return 0
@@ -1067,7 +1048,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     })
 
     it('should NOT pass a cachedHashes list to Unity (reuse path requires the entity)', () => {
-      expect(mockedRunConversion.mock.calls[0][0].cachedHashes).toBeUndefined()
+      expect(mockedRunConversion.mock.calls[0][2].cachedHashes).toBeUndefined()
     })
 
     it('should upload the bundle to the entity-scoped path', async () => {
@@ -1092,7 +1073,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         content: [{ file: 'model.glb', hash: 'hGlb' }],
         metadata: {}
       })
-      mockedRunConversion.mockImplementation(async (options: any) => {
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(path.join(options.outDirectory, 'out'), 'x')
         return 0
@@ -1171,7 +1152,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         metadata: {}
       })
 
-      mockedRunConversion.mockImplementation(async (options: any) => {
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(options.outDirectory, { recursive: true })
         await fs.writeFile(path.join(options.outDirectory, 'hGlb_windows'), 'bundle')
         return 0
@@ -1214,7 +1195,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         content: [{ file: 'model.glb', hash: 'hGlb' }],
         metadata: {}
       })
-      mockedRunConversion.mockImplementation(async (options: any) => {
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(path.dirname(options.logFile), { recursive: true })
         await fs.writeFile(options.logFile, 'unity log')
         await fs.mkdir(options.outDirectory, { recursive: true })
@@ -1259,7 +1240,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         content: [{ file: 'model.glb', hash: 'hGlb' }],
         metadata: {}
       })
-      mockedRunConversion.mockImplementation(async (options: any) => {
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(path.dirname(options.logFile), { recursive: true })
         await fs.writeFile(options.logFile, 'unity log')
         await fs.mkdir(options.outDirectory, { recursive: true })
@@ -1292,8 +1273,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       const base = buildComponents(workDir, { buildTarget: 'nintendo-switch' })
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      const scenes = await buildScenes(base, logs, metrics)
-      customComponents = { ...base, metrics, logs, scenes }
+      customComponents = { ...base, metrics, logs }
 
       exitCode = await executeConversion(
         customComponents,
@@ -1325,8 +1305,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       const base = buildComponents(workDir, { assetReuseEnabled: 'flase' /* typo */ })
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      const scenes = await buildScenes(base, logs, metrics)
-      customComponents = { ...base, metrics, logs, scenes }
+      customComponents = { ...base, metrics, logs }
 
       setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
       mockedGetActiveEntity.mockResolvedValue({
@@ -1335,7 +1314,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         content: [{ file: 'model.glb', hash: 'hGlb' }],
         metadata: {}
       })
-      mockedRunConversion.mockImplementation(async (options: any) => {
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(path.dirname(options.logFile), { recursive: true })
         await fs.writeFile(options.logFile, 'unity log')
         await fs.mkdir(options.outDirectory, { recursive: true })
@@ -1540,7 +1519,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       // mock must create the logFile before throwing, because the outer
       // catch in conversion-task.ts reads it first — if it doesn't exist,
       // ENOENT replaces the original error and masks the test's assertion.
-      mockedRunConversion.mockImplementation(async (options: any) => {
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(path.dirname(options.logFile), { recursive: true })
         await fs.writeFile(options.logFile, 'partial log')
         throw new Error('simulated Unity crash')
@@ -1608,8 +1587,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       const base = buildComponents(workDir, { buildTarget: 'webgl' })
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      const scenes = await buildScenes(base, logs, metrics)
-      customComponents = { ...base, metrics, logs, scenes }
+      customComponents = { ...base, metrics, logs }
 
       setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
       mockedGetActiveEntity.mockResolvedValue({
@@ -1619,7 +1597,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         metadata: {}
       })
 
-      mockedRunConversion.mockImplementation(async (options: any) => {
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(path.dirname(options.logFile), { recursive: true })
         await fs.writeFile(options.logFile, 'unity log')
         await fs.mkdir(options.outDirectory, { recursive: true })
@@ -1675,8 +1653,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       const base = buildComponents(workDir, { assetReuseEnabled: 'false' })
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      const scenes = await buildScenes(base, logs, metrics)
-      customComponents = { ...base, metrics, logs, scenes }
+      customComponents = { ...base, metrics, logs }
 
       setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
       mockedGetActiveEntity.mockResolvedValue({
@@ -1685,7 +1662,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         content: [{ file: 'model.glb', hash: 'hGlb' }],
         metadata: {}
       })
-      mockedRunConversion.mockImplementation(async (options: any) => {
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(path.dirname(options.logFile), { recursive: true })
         await fs.writeFile(options.logFile, 'unity log')
         await fs.mkdir(options.outDirectory, { recursive: true })
@@ -1733,8 +1710,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
 
       const metrics = await createMetricsComponent(metricDeclarations, { config: base.config })
       const logs = await createLogComponent({ metrics })
-      const scenes = await buildScenes(base, logs, metrics)
-      customComponents = { ...base, metrics, logs, scenes }
+      customComponents = { ...base, metrics, logs }
 
       // mock-aws-s3 happily accepts any bucket name; captures via uploaded key.
       const realUpload = customComponents.cdnS3.upload.bind(customComponents.cdnS3)
@@ -1753,7 +1729,7 @@ describe('when executing a conversion with asset-reuse enabled', () => {
         metadata: {}
       })
 
-      mockedRunConversion.mockImplementation(async (options: any) => {
+      mockedRunConversion.mockImplementation(async (_l: any, _c: any, options: any) => {
         await fs.mkdir(path.dirname(options.logFile), { recursive: true })
         await fs.mkdir(options.outDirectory, { recursive: true })
         // Write the expected log file that conversion-task's finally tries to upload.
