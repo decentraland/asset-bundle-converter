@@ -272,6 +272,9 @@ namespace DCL.ABConverter
             if (Utils.ParseOption(commandLineArgs, Config.CLI_INCLUDE_SHADER_VARIANTS, 0, out _))
                 settings.includeShaderVariants = true;
 
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_DO_ISS, 0, out _))
+                settings.doISS = true;
+
             // Target is setup during the commandline argument -buildTarget
             settings.buildTarget = EditorUserBuildSettings.activeBuildTarget;
 

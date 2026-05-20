@@ -41,13 +41,11 @@ namespace AssetBundleConverter
 
         /// <summary>
         /// Initializes the InitialSceneStateGenerator for this environment with the given entity DTO.
-        /// This checks compatibility once and caches the result.
+        /// Compatibility is only checked when ISS is enabled — when disabled, the generator is a no-op.
         /// </summary>
-        /// <param name="entityDTO">The entity DTO containing scene information</param>
-        /// <returns>The initialized generator (also accessible via sceneStateGenerator property)</returns>
-        public void InitializeSceneStateGenerator(ContentServerUtils.EntityMappingsDTO entityDTO)
+        public void InitializeSceneStateGenerator(ContentServerUtils.EntityMappingsDTO entityDTO, bool doISS)
         {
-            sceneStateGenerator = new InitialSceneStateGenerator.InitialSceneStateGenerator(this, entityDTO);
+            sceneStateGenerator = new InitialSceneStateGenerator.InitialSceneStateGenerator(this, entityDTO, doISS);
         }
 
         public static Environment CreateWithDefaultImplementations(BuildPipelineType buildPipelineType)

@@ -1,202 +1,150 @@
-// unset:none
-using AssetBundleConverter.StaticSceneAssetBundle;
 using AssetBundleConverter.Wrappers.Interfaces;
 using DCL;
 using DCL.ABConverter;
-using Newtonsoft.Json;
-using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using UnityEditor;
 using UnityEngine;
 
 namespace AssetBundleConverter.InitialSceneStateGenerator
 {
+    /// <summary>
+    /// Consumes a StaticSceneDescriptor.json (built upstream by lod-generator-unity)
+    /// and uses it to (a) instantiate GLTFs at their world transforms during placement,
+    /// and (b) mark a consolidated static asset bundle during conversion.
+    ///
+    /// The descriptor is keyed by asset content hash, so this class no longer needs to
+    /// parse the scene manifest itself.
+    /// </summary>
     public class InitialSceneStateGenerator
     {
-        private Dictionary<string, HashSet<int>> gltfsComponents = new Dictionary<string, HashSet<int>>();
-        private List<string> textureComponents = new List<string>();
-        private List<SceneComponent> convertedJSONComponents = new List<SceneComponent>();
-        private Dictionary<int, bool> entityVisibility = new Dictionary<int, bool>();
+        private const string DESCRIPTOR_PATH = "Assets/_Downloaded/StaticSceneDescriptor.json";
+
+        private readonly Dictionary<string, List<StaticSceneAsset>> hashToTransforms
+            = new Dictionary<string, List<StaticSceneAsset>>();
 
         private readonly Environment env;
         private readonly ContentServerUtils.EntityMappingsDTO entityDTO;
 
-        /// <summary>
-        /// Whether this scene has a compatible manifest for initial scene state generation
-        /// </summary>
         public bool IsCompatible { get; private set; }
 
-        /// <summary>
-        /// Creates a new InitialSceneStateGenerator and checks compatibility once
-        /// </summary>
-        public InitialSceneStateGenerator(Environment env, ContentServerUtils.EntityMappingsDTO entityDTO)
+        public InitialSceneStateGenerator(Environment env, ContentServerUtils.EntityMappingsDTO entityDTO, bool enabled)
         {
             this.env = env;
             this.entityDTO = entityDTO;
-            IsCompatible = TryLoadManifest();
+            IsCompatible = enabled && TryLoadDescriptor();
         }
 
-        private bool TryLoadManifest()
+        private bool TryLoadDescriptor()
         {
             try
             {
-                string manifestPath = $"Assets/_SceneManifest/{entityDTO.id}-lod-manifest.json";
+                if (entityDTO.type?.ToLower() != "scene" || string.IsNullOrEmpty(entityDTO.id))
+                    return false;
 
-                if (entityDTO.type?.ToLower() == "scene" && !string.IsNullOrEmpty(entityDTO.id) && env.file.Exists(manifestPath))
+                if (!env.file.Exists(DESCRIPTOR_PATH))
+                    return false;
+
+                string json = env.file.ReadAllText(DESCRIPTOR_PATH);
+                var descriptor = JsonUtility.FromJson<StaticSceneDescriptor>(json);
+                if (descriptor?.assets == null || descriptor.assets.Count == 0)
+                    return false;
+
+                foreach (var entry in descriptor.assets)
                 {
-                    convertedJSONComponents = JsonConvert.DeserializeObject<List<SceneComponent>>(env.file.ReadAllText(manifestPath));
-                    return convertedJSONComponents != null;
+                    if (string.IsNullOrEmpty(entry.hash)) continue;
+                    if (!hashToTransforms.TryGetValue(entry.hash, out var list))
+                    {
+                        list = new List<StaticSceneAsset>();
+                        hashToTransforms[entry.hash] = list;
+                    }
+                    list.Add(entry);
                 }
 
-                convertedJSONComponents = null;
-                return false;
+                return hashToTransforms.Count > 0;
             }
             catch
             {
-                convertedJSONComponents = null;
                 return false;
             }
         }
 
         /// <summary>
-        /// Always instantiates the asset. If manifest data exists, places instances at their defined transforms.
-        /// If not in manifest, creates a single instance at origin.
-        /// Use this from AssetBundleConverter where all assets must be instantiated.
-        /// We dont care about visibility on this path
+        /// No-op. Kept for call-site compatibility — the descriptor is the parsed state.
         /// </summary>
-        public void InstantiateAsset(string assetPath, GameObject prefab)
-        {
-            // Check if this asset has placement data in the manifest
-            if (IsCompatible && gltfsComponents.TryGetValue(assetPath, out HashSet<int> Component))
-            {
-                List<int> entityIds = Component.ToList();
+        public void GenerateInitialSceneState() { }
 
-                foreach (int entityId in entityIds)
-                    InstantiateWithTransform(prefab, entityId);
+        /// <summary>
+        /// Always instantiates the asset. If the descriptor has entries for this hash,
+        /// places one instance per entry at the recorded world transform. Otherwise,
+        /// creates a single instance at origin.
+        /// </summary>
+        public void InstantiateAsset(string assetHash, GameObject prefab)
+        {
+            if (IsCompatible && !string.IsNullOrEmpty(assetHash) && hashToTransforms.TryGetValue(assetHash, out var list))
+            {
+                foreach (var entry in list)
+                    InstantiateWithTransform(prefab, entry);
             }
             else
             {
-                // No manifest data - create a single instance at origin
                 AssetInstantiator.InstanceGameObject(prefab);
             }
         }
 
         /// <summary>
-        /// Only places assets that exist in the manifest with valid transforms.
-        /// Respects visibility - invisible entities are skipped entirely.
-        /// Use this from ScenePlacementEditor for manifest-driven placement only.
+        /// Only places assets that appear in the descriptor. Use from editor placement tools.
         /// </summary>
-        public void PlaceAssetFromManifest(string assetPath, GameObject prefab)
+        public void PlaceAssetFromManifest(string assetHash, GameObject prefab)
         {
             if (!IsCompatible) return;
+            if (string.IsNullOrEmpty(assetHash)) return;
+            if (!hashToTransforms.TryGetValue(assetHash, out var list)) return;
 
-            if (!gltfsComponents.TryGetValue(assetPath, out HashSet<int> Component))
-                return;
+            foreach (var entry in list)
+                InstantiateWithTransform(prefab, entry);
+        }
 
-            List<int> entityIds = Component.ToList();
+        private static void InstantiateWithTransform(GameObject prefab, StaticSceneAsset entry)
+        {
+            GameObject instance = AssetInstantiator.InstanceGameObject(prefab);
 
-            foreach (int entityId in entityIds)
-            {
-                // Skip invisible entities entirely
-                if (entityVisibility.TryGetValue(entityId, out bool isVisible) && !isVisible)
-                    continue;
+            // Combine prefab's baked-in local transforms with the descriptor's world transforms,
+            // preserving any internal GLTF position/rotation/scale offsets on the prefab root.
+            Vector3 prefabPosition = instance.transform.localPosition;
+            Quaternion prefabRotation = instance.transform.localRotation;
+            Vector3 prefabScale = instance.transform.localScale;
 
-                InstantiateWithTransform(prefab, entityId);
-            }
+            instance.transform.position = entry.position + entry.rotation * prefabPosition;
+            instance.transform.rotation = entry.rotation * prefabRotation;
+            instance.transform.localScale = Vector3.Scale(prefabScale, entry.scale);
         }
 
         /// <summary>
-        /// Creates an instance of the prefab and applies the transform from the manifest for the given entity.
+        /// Marks assets that appear in the descriptor as part of the consolidated
+        /// staticScene_{sceneId} asset bundle; everything else gets its own per-hash bundle.
         /// </summary>
-        private void InstantiateWithTransform(GameObject prefab, int entityId)
-        {
-            GameObject instancedGameObject = AssetInstantiator.InstanceGameObject(prefab);
-
-            Matrix4x4 worldMatrix = GltfTransformDumper.DumpGltfWorldTransforms(convertedJSONComponents, entityId);
-
-            // Extract transforms from JSON world matrix
-            Vector3 jsonPosition = worldMatrix.GetColumn(3);
-
-            Vector3 forward = worldMatrix.GetColumn(2); // Z axis
-            Vector3 up = worldMatrix.GetColumn(1); // Y axis
-            Quaternion jsonRotation = Quaternion.LookRotation(forward, up);
-
-            Vector3 jsonScale = new Vector3(
-                worldMatrix.GetColumn(0).magnitude,
-                worldMatrix.GetColumn(1).magnitude,
-                worldMatrix.GetColumn(2).magnitude
-            );
-
-            // Combine prefab's baked-in transforms with JSON transforms
-            // This preserves any internal GLTF position/rotation/scaling offsets
-            Vector3 prefabPosition = instancedGameObject.transform.localPosition;
-            Quaternion prefabRotation = instancedGameObject.transform.localRotation;
-            Vector3 prefabScale = instancedGameObject.transform.localScale;
-
-            Vector3 finalPosition = jsonPosition + jsonRotation * prefabPosition;
-            Quaternion finalRotation = jsonRotation * prefabRotation;
-            Vector3 finalScale = Vector3.Scale(prefabScale, jsonScale);
-
-            // Apply all transforms
-            instancedGameObject.transform.position = finalPosition;
-            instancedGameObject.transform.rotation = finalRotation;
-            instancedGameObject.transform.localScale = finalScale;
-        }
-
         public void GenerateISSAssetBundle(List<AssetPath> assetPaths, Dictionary<string, IGltfImport> gltfImporters, string finalDownloadedPath)
         {
             string staticSceneABName = $"staticScene_{entityDTO.id}{PlatformUtils.GetPlatform()}";
-            var asset = ScriptableObject.CreateInstance<StaticSceneDescriptor>();
 
-            // Track hashes that have been marked as static to prevent duplicate paths with the same hash
-            // from overwriting the static bundle marking (e.g., "models/win.glb" and "mini-game-assets/models/win.glb" 
-            // can have the same hash but only one path matches the manifest)
+            // Track hashes that have been marked as static to prevent duplicate paths sharing a hash
+            // (e.g., "models/win.glb" and "mini-game-assets/models/win.glb" with the same content hash —
+            // only the path the descriptor referenced should drive the static marking).
             var hashesMarkedAsStatic = new HashSet<string>();
 
             foreach (var assetPath in assetPaths)
             {
                 if (assetPath == null) continue;
-
                 if (assetPath.finalPath.EndsWith(".bin")) continue;
 
-                // Skip if this hash was already processed as static (prevents non-matching duplicate paths from overwriting)
                 if (hashesMarkedAsStatic.Contains(assetPath.hash))
                     continue;
 
-                // Check if this asset matches a GltfContainer source
-                // Emotes should not be added to the static asset bundle
                 bool isEmote = Utils.IsEmoteFileName(assetPath.fileName);
-                bool isStatic = !isEmote && gltfsComponents.ContainsKey(assetPath.filePath);
+                bool isStatic = !isEmote && hashToTransforms.ContainsKey(assetPath.hash);
                 string assetBundleName = assetPath.hash + PlatformUtils.GetPlatform();
 
                 if (isStatic)
                 {
-                    List<int> entityIds = gltfsComponents[assetPath.filePath].ToList();
-
-                    foreach (int entityId in entityIds)
-                    {
-                        asset.assetHash.Add(assetPath.hash);
-                        Matrix4x4 worldMatrix = GltfTransformDumper.DumpGltfWorldTransforms(convertedJSONComponents, entityId);
-                        asset.positions.Add(worldMatrix.GetColumn(3));
-
-                        // Rotation extraction
-                        Vector3 forward = worldMatrix.GetColumn(2); // Z axis
-                        Vector3 up = worldMatrix.GetColumn(1); // Y axis
-                        asset.rotations.Add(Quaternion.LookRotation(forward, up));
-
-                        // Optional: scale extraction
-                        Vector3 scale = new Vector3(
-                            worldMatrix.GetColumn(0).magnitude,
-                            worldMatrix.GetColumn(1).magnitude,
-                            worldMatrix.GetColumn(2).magnitude
-                        );
-
-                        asset.scales.Add(scale);
-                    }
-
-                    // Mark GLTF dependencies as static
                     if (gltfImporters.TryGetValue(assetPath.filePath, out IGltfImport gltfImport))
                     {
                         var dependencies = gltfImport.assetDependencies;
@@ -211,82 +159,11 @@ namespace AssetBundleConverter.InitialSceneStateGenerator
                         }
                     }
 
-                    // Remember this hash was marked as static
                     hashesMarkedAsStatic.Add(assetPath.hash);
                 }
 
-                bool isStaticTexture = textureComponents.Contains(assetPath.filePath);
-                env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, (isStatic || isStaticTexture) ? staticSceneABName : assetBundleName);
-            }
-
-            CreateStaticSceneDescriptor(asset, staticSceneABName, finalDownloadedPath);
-        }
-
-        private void CreateStaticSceneDescriptor(StaticSceneDescriptor asset, string staticSceneABName, string finalDownloadedPath)
-        {
-            string staticSceneDesriptorFilename = "StaticSceneDescriptor.json";
-            string staticSceneDesciptorRelativePath = $"Assets/_Downloaded/{staticSceneDesriptorFilename}";
-            //Export of StaticSceneDescriptor
-            // Convert ScriptableObject to JSON using Newtonsoft.Json
-            var settings = new JsonSerializerSettings
-            {
-                Formatting = Formatting.Indented,
-                ReferenceLoopHandling = ReferenceLoopHandling.Ignore
-            };
-
-            string json = JsonConvert.SerializeObject(asset, settings);
-            File.WriteAllText($"{finalDownloadedPath}/{staticSceneDesriptorFilename}", json);
-
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
-            AssetImporter importer_json = AssetImporter.GetAtPath(staticSceneDesciptorRelativePath);
-            importer_json.SetAssetBundleNameAndVariant(staticSceneABName, "");
-        }
-
-        /// <summary>
-        /// Parses the manifest and builds the component maps for GLTF containers, textures, and visibility
-        /// </summary>
-        public void GenerateInitialSceneState()
-        {
-            if (!IsCompatible) return;
-
-            //TODO (JUANI): There is a bug in the Asset Manifest generator. The entity could be twice, therefore generating
-            //multiple copies of the same asset. By doing this, we ensure that there is only one
-            gltfsComponents = new Dictionary<string, HashSet<int>>();
-            textureComponents = new List<string>();
-            entityVisibility = new Dictionary<int, bool>();
-
-            foreach (var component in convertedJSONComponents)
-            {
-                if (component.componentName == "core::GltfContainer")
-                {
-                    if (component.TryGetData<MeshRendererData>(out var meshData) && !string.IsNullOrEmpty(meshData.src))
-                    {
-                        if (!gltfsComponents.ContainsKey(meshData.src))
-                            gltfsComponents.Add(meshData.src, new HashSet<int>());
-
-                        gltfsComponents[meshData.src].Add(component.entityId);
-                    }
-                }
-                else if (component.componentName == "core::Material")
-                {
-                    if (component.TryGetData<MaterialComponentData>(out var materialData))
-                    {
-                        var textureSources = materialData.GetAllTextureSources();
-                        textureComponents.AddRange(textureSources);
-                    }
-                }
-                else if (component.componentName == "core::VisibilityComponent")
-                {
-                    if (component.TryGetData<VisibilityData>(out var visibilityData))
-                        entityVisibility[component.entityId] = visibilityData.visible;
-                }
+                env.directory.MarkFolderForAssetBundleBuild(assetPath.finalPath, isStatic ? staticSceneABName : assetBundleName);
             }
         }
-
-        /// <summary>
-        /// Gets the parsed JSON components (for external use if needed)
-        /// </summary>
-        public List<SceneComponent> GetConvertedJSONComponents() => convertedJSONComponents;
     }
 }

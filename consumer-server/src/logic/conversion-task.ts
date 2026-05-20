@@ -335,8 +335,7 @@ export async function executeConversion(
         unityPath: $UNITY_PATH,
         timeout: 120 * 60 * 1000, // 120min temporarily doubled
         unityBuildTarget: unityBuildTarget,
-        animation: animation,
-        doISS: doISS
+        animation: animation
       })
     } else {
       exitCode = 0

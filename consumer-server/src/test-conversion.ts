@@ -23,15 +23,13 @@ const args = arg({
   '--pointer': String,
   '--baseUrl': String,
   '--outDir': String,
-  '--logFile': String,
-  '--doISS': Boolean
+  '--logFile': String
 })
 
 const BASE_URL = args['--baseUrl'] || 'https://peer.decentraland.org/content'
 const POINTER = args['--pointer'] || '0,0'
 const OUT_DIRECTORY = args['--outDir']!
 const LOG_FILE = args['--logFile']!
-const DO_ISS = args['--doISS'] ?? false
 const $UNITY_PATH = process.env.UNITY_PATH!
 const $PROJECT_PATH = process.env.PROJECT_PATH!
 const $BUILD_TARGET = process.env.BUILD_TARGET!
@@ -96,8 +94,7 @@ async function main() {
         projectPath: $PROJECT_PATH,
         timeout: 30 * 60 * 1000, // 30min
         unityBuildTarget: unityBuildTarget,
-        animation: animation,
-        doISS: DO_ISS
+        animation: animation
       }
     )
 

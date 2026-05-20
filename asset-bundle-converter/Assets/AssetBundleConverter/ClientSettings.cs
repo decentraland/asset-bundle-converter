@@ -64,6 +64,13 @@ namespace AssetBundleConverter
             public bool cleanAndExitOnFinish = true;
             public bool visualTest = false;
             public bool createAssetBundle = true;
+
+            /// <summary>
+            /// If true, attempt to build a consolidated Initial Scene State (ISS) asset bundle
+            /// using a downloaded StaticSceneDescriptor.json. If the descriptor is missing,
+            /// falls back to per-asset bundling.
+            /// </summary>
+            public bool doISS = false;
             public int downloadBatchSize = 20;
         public float failingConversionTolerance = 1f;
             public bool placeOnScene = false;
