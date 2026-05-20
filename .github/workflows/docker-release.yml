@@ -10,9 +10,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - unity-docker-image: unityci/editor:6000.2.6f2-webgl-3
-            service-name: asset-bundle-converter
-            platform-target: webgl
           - unity-docker-image: unityci/editor:6000.2.6f2-windows-mono-3
             service-name: asset-bundle-converter-windows
             platform-target: windows
@@ -33,10 +30,7 @@ jobs:
   cd-stg:
     strategy:
       matrix:
-        include:
-          - unity-docker-image: unityci/editor:6000.2.6f2-webgl-3
-            service-name: asset-bundle-converter
-            platform-target: webgl
+        include:          
           - unity-docker-image: unityci/editor:6000.2.6f2-windows-mono-3
             service-name: asset-bundle-converter-windows
             platform-target: windows
