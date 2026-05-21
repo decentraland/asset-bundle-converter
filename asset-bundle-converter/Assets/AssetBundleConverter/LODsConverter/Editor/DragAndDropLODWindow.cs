@@ -2,46 +2,79 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using AssetBundleConverter.LODsConverter.Utils;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Networking;
 using Object = UnityEngine.Object;
 
 public class DragAndDropLODWindow : EditorWindow
 {
-    private readonly List<Object> fbxFiles = new ();
-    public static Action<List<string>> OnConvertButtonClicked;
+    private const string DOWNLOAD_FOLDER = "Assets/_DownloadedGLBs";
+
+    private readonly List<Object> glbFiles = new ();
+    private string urlInput = "";
+    private string urlStatus = "";
+    private bool isDownloading;
+    private CatalystSource source = CatalystSource.Catalyst;
+    private CatalystNetwork network = CatalystNetwork.Org;
+
+    [MenuItem("Decentraland/LOD/Build GLB Asset Bundles")]
+    public static void Open()
+    {
+        var window = GetWindow<DragAndDropLODWindow>("GLB → Asset Bundle");
+        window.Show();
+    }
 
     private void OnGUI()
     {
-        GUILayout.Label("Drop your LODs to convert here", EditorStyles.boldLabel);
+        GUILayout.Label("Add GLBs to build as Asset Bundles", EditorStyles.boldLabel);
 
-        // Define a drop area
+        GUILayout.Space(4);
+        GUILayout.Label("Content source", EditorStyles.miniBoldLabel);
+        source = (CatalystSource)EditorGUILayout.EnumPopup("Source", source);
+        network = (CatalystNetwork)EditorGUILayout.EnumPopup("Network", network);
+        EditorGUILayout.LabelField("Endpoint", BuildEndpointPreview(), EditorStyles.miniLabel);
+
+        GUILayout.Space(8);
+        GUILayout.Label("Download from URL", EditorStyles.miniBoldLabel);
+        EditorGUILayout.BeginHorizontal();
+        urlInput = EditorGUILayout.TextField(urlInput);
+        GUI.enabled = !isDownloading && !string.IsNullOrWhiteSpace(urlInput);
+        if (GUILayout.Button(isDownloading ? "Downloading..." : "Download & Add", GUILayout.Width(140)))
+            DownloadAndAdd(urlInput.Trim());
+        GUI.enabled = true;
+        EditorGUILayout.EndHorizontal();
+        if (!string.IsNullOrEmpty(urlStatus))
+            EditorGUILayout.HelpBox(urlStatus, MessageType.Info);
+
+        GUILayout.Space(8);
+
         var dropArea = GUILayoutUtility.GetRect(0, 100, GUILayout.ExpandWidth(true));
-        GUI.Box(dropArea, "Only FBXs allowed", EditorStyles.helpBox);
+        GUI.Box(dropArea, "Drop GLB files here", EditorStyles.helpBox);
 
-        // Check events
         var evt = Event.current;
 
         if (evt.type == EventType.DragUpdated || evt.type == EventType.DragPerform)
         {
             if (dropArea.Contains(evt.mousePosition))
             {
-                // Show a copy cursor when dragging over the drop area
                 DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
 
                 if (evt.type == EventType.DragPerform)
                 {
                     DragAndDrop.AcceptDrag();
 
-                    // Handle all dragged objects
                     foreach (var obj in DragAndDrop.objectReferences)
                     {
                         string path = AssetDatabase.GetAssetPath(obj);
 
-                        // Check if the file is an FBX
-                        if (!path.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase)) continue;
-                        if (!fbxFiles.Contains(obj))
-                            fbxFiles.Add(obj);
+                        if (!path.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) &&
+                            !path.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        if (!glbFiles.Contains(obj))
+                            glbFiles.Add(obj);
                     }
 
                     evt.Use();
@@ -49,18 +82,16 @@ public class DragAndDropLODWindow : EditorWindow
             }
         }
 
-        // Display the list of FBX files
         GUILayout.Space(10);
-        GUILayout.Label("FBX Files:");
-        for (int i = 0; i < fbxFiles.Count; i++)
+        GUILayout.Label("GLB Files:");
+        for (int i = 0; i < glbFiles.Count; i++)
         {
             EditorGUILayout.BeginHorizontal();
-            fbxFiles[i] = EditorGUILayout.ObjectField(fbxFiles[i], typeof(Object), false);
+            glbFiles[i] = EditorGUILayout.ObjectField(glbFiles[i], typeof(Object), false);
 
-            // Add a remove button for each file
             if (GUILayout.Button("Remove", GUILayout.Width(60)))
             {
-                fbxFiles.RemoveAt(i);
+                glbFiles.RemoveAt(i);
             }
 
             EditorGUILayout.EndHorizontal();
@@ -68,30 +99,123 @@ public class DragAndDropLODWindow : EditorWindow
 
         GUILayout.Space(10);
 
-        // Clear All button
-        if (fbxFiles.Count > 0 && GUILayout.Button("Clear All"))
+        if (glbFiles.Count > 0 && GUILayout.Button("Clear All"))
         {
-            fbxFiles.Clear();
+            glbFiles.Clear();
         }
 
-        // Action button
-        if (GUILayout.Button("Convert LODs to ABs"))
+        if (GUILayout.Button("Build Asset Bundles"))
         {
-            var fbxPaths = fbxFiles.Select(fbx =>
+            var paths = glbFiles.Select(f =>
                 {
-                    string assetPath = AssetDatabase.GetAssetPath(fbx);
+                    string assetPath = AssetDatabase.GetAssetPath(f);
                     return Path.Combine(Application.dataPath, assetPath["Assets/".Length..]);
                 })
                 .ToList();
-            OnConvertButtonClicked?.Invoke(fbxPaths);
+
+            Debug.Log($"[LOD] Build button clicked with {paths.Count} GLBs");
+            foreach (var p in paths) Debug.Log($"[LOD]   {p}");
+
+            RunConversion(paths);
         }
     }
 
-    // Static method to open the window
-    public static void Open(Action<List<string>> onConvertCallback = null)
+    private async void RunConversion(List<string> paths)
     {
-        var window = GetWindow<DragAndDropLODWindow>("LOD to AssetBundle Converter");
-        OnConvertButtonClicked = onConvertCallback;
-        window.Show();
+        try
+        {
+            var lodConversion = new LODConversion(LODConstants.DEFAULT_OUTPUT_PATH, paths.ToArray(), source, network);
+            await lodConversion.ConvertLODs();
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[LOD] BUILD EXCEPTION: {e.Message}\n{e.StackTrace}");
+        }
+    }
+
+    private string BuildEndpointPreview()
+    {
+        string tld = network == CatalystNetwork.Org ? "org" : "zone";
+        return source == CatalystSource.Catalyst
+            ? $"https://peer.decentraland.{tld}/content/entities/active/"
+            : $"https://worlds-content-server.decentraland.{tld}/contents/{{hash}}";
+    }
+
+    private async void DownloadAndAdd(string url)
+    {
+        isDownloading = true;
+        urlStatus = $"Downloading {url}...";
+        Repaint();
+
+        try
+        {
+            string fileName = DeriveFileName(url);
+            Directory.CreateDirectory(DOWNLOAD_FOLDER);
+            string assetPath = $"{DOWNLOAD_FOLDER}/{fileName}";
+
+            using (var request = UnityWebRequest.Get(url))
+            {
+                request.downloadHandler = new DownloadHandlerFile(assetPath);
+                var op = request.SendWebRequest();
+                while (!op.isDone)
+                {
+                    await System.Threading.Tasks.Task.Yield();
+                }
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    urlStatus = $"Download failed: {request.error}";
+                    File.Delete(assetPath);
+                    return;
+                }
+            }
+
+            AssetDatabase.Refresh();
+            var imported = AssetDatabase.LoadAssetAtPath<Object>(assetPath);
+            if (imported == null)
+            {
+                urlStatus = $"Downloaded to {assetPath} but Unity could not import it as an asset.";
+                return;
+            }
+
+            if (!glbFiles.Contains(imported))
+                glbFiles.Add(imported);
+
+            urlStatus = $"Added {fileName}";
+            urlInput = "";
+        }
+        catch (Exception e)
+        {
+            urlStatus = $"Download error: {e.Message}";
+            Debug.LogException(e);
+        }
+        finally
+        {
+            isDownloading = false;
+            Repaint();
+        }
+    }
+
+    private static string DeriveFileName(string url)
+    {
+        string name;
+        try
+        {
+            var uri = new Uri(url);
+            name = Path.GetFileName(uri.LocalPath);
+        }
+        catch
+        {
+            name = Path.GetFileName(url);
+        }
+
+        if (string.IsNullOrEmpty(name))
+            name = $"download_{DateTime.UtcNow:yyyyMMdd_HHmmss}.glb";
+
+        if (!name.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) &&
+            !name.EndsWith(".gltf", StringComparison.OrdinalIgnoreCase))
+            name += ".glb";
+
+        return name;
     }
 }
