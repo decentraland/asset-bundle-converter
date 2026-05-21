@@ -12,6 +12,9 @@ using UnityEngine;
 using UnityEngine.Networking;
 using Object = UnityEngine.Object;
 
+public enum CatalystSource { Catalyst, Worlds }
+public enum CatalystNetwork { Org, Zone }
+
 public class LODConversion
 {
     private static readonly int VERTICAL_CLIPPING_ID = Shader.PropertyToID("_VerticalClipping");
@@ -20,15 +23,19 @@ public class LODConversion
     private readonly LODPathHandler lodPathHandler;
     private readonly string[] glbPaths;
     private readonly Shader lodShader;
+    private readonly CatalystSource source;
+    private readonly CatalystNetwork network;
     // Maps AB name -> file directory for metadata writing
     private readonly Dictionary<string, string> bundleToDirectory = new();
 
-    public LODConversion(string customOutputPath, string[] glbPaths)
+    public LODConversion(string customOutputPath, string[] glbPaths, CatalystSource source = CatalystSource.Catalyst, CatalystNetwork network = CatalystNetwork.Org)
     {
         this.glbPaths = glbPaths;
+        this.source = source;
+        this.network = network;
         lodPathHandler = new LODPathHandler(customOutputPath);
         lodShader = Shader.Find("DCL/Scene_TexArray");
-        Debug.Log($"[LOD] LODConversion created. outputPath={customOutputPath}, glbCount={glbPaths.Length}, shader={(lodShader != null ? lodShader.name : "NULL")}");
+        Debug.Log($"[LOD] LODConversion created. outputPath={customOutputPath}, glbCount={glbPaths.Length}, source={source}, network={network}, shader={(lodShader != null ? lodShader.name : "NULL")}");
     }
 
     public async Task ConvertLODs()
@@ -110,24 +117,54 @@ public class LODConversion
     private async Task<Parcel> FetchParcel(string fileNameWithLODLevel)
     {
         string hash = fileNameWithLODLevel.Split('_')[0];
-        string url = "https://peer.decentraland.org/content/entities/active/";
+        string tld = network == CatalystNetwork.Org ? "org" : "zone";
 
-        Debug.Log($"[LOD] Fetching parcel for hash: {hash}");
+        Debug.Log($"[LOD] Fetching parcel for hash: {hash} from {source}/{network}");
 
-        using (var request = UnityWebRequest.Post(url, "{\"ids\":[\"" + hash + "\"]}", "application/json"))
+        if (source == CatalystSource.Catalyst)
         {
-            await request.SendWebRequest();
-
-            if (request.result == UnityWebRequest.Result.Success)
+            string url = $"https://peer.decentraland.{tld}/content/entities/active/";
+            using (var request = UnityWebRequest.Post(url, "{\"ids\":[\"" + hash + "\"]}", "application/json"))
             {
+                await request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    Debug.LogWarning($"[LOD] Failed to fetch parcel for {hash}: {request.error}. Clipping will be zeroed.");
+                    return null;
+                }
+
                 var parcelData = JsonConvert.DeserializeObject<Parcel[]>(request.downloadHandler.text);
+                if (parcelData == null || parcelData.Length == 0)
+                {
+                    Debug.LogWarning($"[LOD] No entity matched hash {hash} on catalyst (likely a content CID, not a scene entity ID). Clipping will be zeroed.");
+                    return null;
+                }
                 Debug.Log($"[LOD] Parcel fetched: {parcelData[0].GetDecodedParcels().Count} parcels");
                 return parcelData[0];
             }
-            else
+        }
+        else // Worlds
+        {
+            string url = $"https://worlds-content-server.decentraland.{tld}/contents/{hash}";
+            using (var request = UnityWebRequest.Get(url))
             {
-                Debug.LogWarning($"[LOD] Failed to fetch parcel for {hash}: {request.error}. Clipping will be zeroed.");
-                return null;
+                await request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    Debug.LogWarning($"[LOD] Failed to fetch world for {hash}: {request.error}. Clipping will be zeroed.");
+                    return null;
+                }
+
+                var parcel = JsonConvert.DeserializeObject<Parcel>(request.downloadHandler.text);
+                if (parcel?.metadata?.scene?.parcels == null || parcel.metadata.scene.parcels.Length == 0)
+                {
+                    Debug.LogWarning($"[LOD] World response for {hash} had no parcel metadata. Clipping will be zeroed.");
+                    return null;
+                }
+                Debug.Log($"[LOD] World fetched: {parcel.GetDecodedParcels().Count} parcels");
+                return parcel;
             }
         }
     }
