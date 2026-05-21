@@ -103,10 +103,7 @@ export async function createConversionOrchestratorComponent(
         platform: platform,
         entityId: job.entity.entityId,
         isLods: !!job.lods,
-        isWorld:
-          !!job.contentServerUrls &&
-          job.contentServerUrls.length > 1 &&
-          job.contentServerUrls[0].includes('worlds-content-server'),
+        isWorld: !!job.contentServerUrls?.length && job.contentServerUrls[0].includes('worlds-content-server'),
         statusCode,
         version: versionToUse
       }
