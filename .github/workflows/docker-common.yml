@@ -142,6 +142,30 @@ jobs:
                 --outDir /tmp-ab \
                 --logFile /tmp-ab/log.txt
 
+      - name: Run test GLB-to-asset-bundle LOD conversion of a fixed pre-generated GLB
+        run: |
+          docker run --rm \
+            -v $(pwd)/tmp/Unity:/root/.local/share/unity3d/Unity \
+            ${{ env.QUAY_URL }}${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }} \
+              sh -c '
+                set -e
+                mkdir -p /tmp-lod
+                xvfb-run --auto-servernum --server-args="-screen 0 640x480x24" "$UNITY_PATH/Editor/Unity" \
+                  -batchmode \
+                  -projectPath "$PROJECT_PATH" \
+                  -executeMethod DCL.ABConverter.LODClient.ExportURLLODsToAssetBundles \
+                  -lods https://lod-unity-bucket-dev-0871c25.s3.us-east-1.amazonaws.com/lods-unity/lods/bafkreierdpwiqnuxftmd6xiibgrvxnwzpsgid6jb2cj2l4ayhvv3g7rtai_1.glb \
+                  -output /tmp-lod \
+                  -logFile /tmp-lod/log.txt
+                echo "--- /tmp-lod after conversion ---"
+                ls -laR /tmp-lod
+                if [ -z "$(find /tmp-lod -type f ! -name "*.log*" ! -name "*.txt" 2>/dev/null)" ]; then
+                  echo "FAIL: no asset bundle produced under /tmp-lod"
+                  tail -200 /tmp-lod/log.txt 2>/dev/null || true
+                  exit 1
+                fi
+              '
+
       - name: Push Docker image to Quay.io
         if: ${{ inputs.upload-image }}
         run: docker push --all-tags ${{ env.QUAY_URL }}${{ inputs.service-name }}

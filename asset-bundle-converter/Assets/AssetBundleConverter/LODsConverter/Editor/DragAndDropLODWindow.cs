@@ -11,9 +11,10 @@ using Object = UnityEngine.Object;
 public class DragAndDropLODWindow : EditorWindow
 {
     private const string DOWNLOAD_FOLDER = "Assets/_DownloadedGLBs";
+    private const string SUGGESTED_URL = "https://lod-unity-bucket-dev-0871c25.s3.us-east-1.amazonaws.com/lods-unity/lods/bafkreierdpwiqnuxftmd6xiibgrvxnwzpsgid6jb2cj2l4ayhvv3g7rtai_1.glb";
 
     private readonly List<Object> glbFiles = new ();
-    private string urlInput = "";
+    private string urlInput = SUGGESTED_URL;
     private string urlStatus = "";
     private bool isDownloading;
     private CatalystSource source = CatalystSource.Catalyst;
