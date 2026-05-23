@@ -59,6 +59,11 @@ export const metricDeclarations = {
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target', 'ab_version', 'outcome']
   },
+  ab_converter_redis_cache_errors_total: {
+    help: 'Counter of Redis errors observed by the cache helpers. operation ∈ {get, set}; kind ∈ {probe-hit, glb-deps}. A sustained spike here means cache lookups are silently falling through to the cold path even when the data is in Redis — alert on this to catch a Redis outage that would otherwise look like normal cache misses on the other counters.',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['operation', 'kind']
+  },
   ab_converter_asset_probe_head_total: {
     help: 'Counter of asset cache probes that required a fresh S3 HEAD request',
     type: IMetricsComponent.CounterType,

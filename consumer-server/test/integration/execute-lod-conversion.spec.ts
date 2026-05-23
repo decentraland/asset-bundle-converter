@@ -17,7 +17,7 @@ const MockAws = require('mock-aws-s3')
 import { executeLODConversion } from '../../src/logic/conversion-task'
 import { createScenesComponent } from '../../src/logic/scenes'
 import { createCatalystMock, createSentryMock, createUnityRunnerMock } from '../mocks'
-import { createMockRedisComponent } from '../helpers/redis-mock'
+import { createInMemoryCacheComponent } from '@dcl/memory-cache-component'
 
 const unityRunnerMock = createUnityRunnerMock()
 const mockedRunConversion = unityRunnerMock.runConversion as unknown as jest.Mock
@@ -60,7 +60,7 @@ async function buildScenes(
     cdnS3: base.cdnS3,
     sentry: base.sentry,
     catalyst: base.catalyst as any,
-    redis: createMockRedisComponent()
+    redis: createInMemoryCacheComponent()
   })
 }
 

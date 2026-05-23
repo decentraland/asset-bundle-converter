@@ -18,7 +18,7 @@ import { canonicalFilenameForAsset, computeDepsDigest } from '../../src/logic/as
 import { createScenesComponent } from '../../src/logic/scenes'
 import { createCatalystMock, createSentryMock, createUnityRunnerMock } from '../mocks'
 import { buildGlb } from '../helpers/glb-fixtures'
-import { createMockRedisComponent } from '../helpers/redis-mock'
+import { createInMemoryCacheComponent } from '@dcl/memory-cache-component'
 
 jest.mock('../../src/logic/has-content-changed-task', () => {
   const real = jest.requireActual('../../src/logic/has-content-changed-task')
@@ -85,7 +85,7 @@ async function buildScenes(
     cdnS3: base.cdnS3,
     sentry: base.sentry,
     catalyst: base.catalyst as any,
-    redis: createMockRedisComponent()
+    redis: createInMemoryCacheComponent()
   })
 }
 

@@ -37,7 +37,7 @@ import {
   MockedCdnS3,
   MockedSentryComponent
 } from '../mocks'
-import { createMockRedisComponent } from '../helpers/redis-mock'
+import { createInMemoryCacheComponent } from '@dcl/memory-cache-component'
 
 const mockedCheckAssetCache = checkAssetCache as jest.Mock
 const mockedComputePerAssetDigests = computePerAssetDigests as jest.Mock
@@ -77,7 +77,7 @@ async function buildHarness(overrides?: { cdnBucket?: string }): Promise<Harness
     cdnS3: cdnS3 as any,
     sentry,
     catalyst,
-    redis: createMockRedisComponent()
+    redis: createInMemoryCacheComponent()
   })
 
   const originalFetch = globalThis.fetch
@@ -201,7 +201,7 @@ describe('when getCdnBucket is called', () => {
         cdnS3: {} as any,
         sentry: {} as any,
         catalyst: {} as any,
-        redis: createMockRedisComponent()
+        redis: createInMemoryCacheComponent()
       })
     })
 

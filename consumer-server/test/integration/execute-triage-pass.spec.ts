@@ -15,7 +15,7 @@ import { canonicalFilenameForAsset, computeDepsDigest } from '../../src/logic/as
 import { createScenesComponent } from '../../src/logic/scenes'
 import { createCatalystMock, createSentryMock, createUnityRunnerMock } from '../mocks'
 import { buildGlb } from '../helpers/glb-fixtures'
-import { createMockRedisComponent } from '../helpers/redis-mock'
+import { createInMemoryCacheComponent } from '@dcl/memory-cache-component'
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const MockAws = require('mock-aws-s3')
@@ -112,7 +112,7 @@ describe('when running executeTriagePass against a scene', () => {
       cdnS3: base.cdnS3,
       sentry: base.sentry,
       catalyst: base.catalyst as any,
-      redis: createMockRedisComponent()
+      redis: createInMemoryCacheComponent()
     })
     components = { ...base, metrics, logs, scenes }
 

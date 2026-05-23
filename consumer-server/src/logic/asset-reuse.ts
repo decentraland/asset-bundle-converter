@@ -278,16 +278,30 @@ const REDIS_HIT_MARKER = '1'
 /**
  * Wraps `redis.get` so a Redis outage / transient failure is logged and
  * treated as a cache miss instead of failing the entire probe. Returns `true`
- * only when the key is present in Redis.
+ * only when the key is present in Redis AND the stored value matches the
+ * expected marker — guards against cross-version garbage or accidental writes
+ * under one of our keys returning a false-positive hit.
  */
 async function safeRedisHit(
   redis: ICacheStorageComponent,
   key: string,
-  logger: ILoggerComponent.ILogger
+  logger: ILoggerComponent.ILogger,
+  metrics?: AppComponents['metrics']
 ): Promise<boolean> {
   try {
-    const value = await redis.get<string>(key)
-    return value !== null
+    const value = await redis.get<unknown>(key)
+    if (value === null) return false
+    if (value !== REDIS_HIT_MARKER) {
+      // Defense in depth: a value that isn't the expected sentinel could come
+      // from a stale codebase version or a manual SET on the same key. Treat
+      // as a miss and fall through to S3 HEAD; debug-level rather than warn
+      // because this should never fire in normal operation.
+      logger.debug('redis probe-cache value failed shape validation; treating as miss', {
+        key
+      } as any)
+      return false
+    }
+    return true
   } catch (err: any) {
     // Warn-level: a Redis blip is recoverable and would otherwise look like a
     // silent cache-cold pod. Don't escalate to error — we don't want
@@ -296,6 +310,9 @@ async function safeRedisHit(
       key,
       error: err?.message ?? String(err)
     } as any)
+    if (metrics) {
+      metrics.increment('ab_converter_redis_cache_errors_total', { operation: 'get', kind: 'probe-hit' })
+    }
     return false
   }
 }
@@ -310,7 +327,8 @@ async function safeRedisSet(
   redis: ICacheStorageComponent,
   key: string,
   ttlSeconds: number,
-  logger: ILoggerComponent.ILogger
+  logger: ILoggerComponent.ILogger,
+  metrics?: AppComponents['metrics']
 ): Promise<void> {
   try {
     await redis.set(key, REDIS_HIT_MARKER, ttlSeconds)
@@ -319,6 +337,9 @@ async function safeRedisSet(
       key,
       error: err?.message ?? String(err)
     } as any)
+    if (metrics) {
+      metrics.increment('ab_converter_redis_cache_errors_total', { operation: 'set', kind: 'probe-hit' })
+    }
   }
 }
 
@@ -350,7 +371,8 @@ function isGlbDepsCacheValue(value: unknown): value is GlbDepsCacheValue {
 async function safeRedisGetGlbDeps(
   redis: ICacheStorageComponent,
   glbHash: string,
-  logger: ILoggerComponent.ILogger
+  logger: ILoggerComponent.ILogger,
+  metrics?: AppComponents['metrics']
 ): Promise<GlbDepsCacheValue | null> {
   try {
     const raw = await redis.get<unknown>(`${GLB_DEPS_CACHE_KEY_PREFIX}${glbHash}`)
@@ -369,6 +391,9 @@ async function safeRedisGetGlbDeps(
       glbHash,
       error: err?.message ?? String(err)
     } as any)
+    if (metrics) {
+      metrics.increment('ab_converter_redis_cache_errors_total', { operation: 'get', kind: 'glb-deps' })
+    }
     return null
   }
 }
@@ -383,7 +408,8 @@ async function safeRedisSetGlbDeps(
   glbHash: string,
   value: GlbDepsCacheValue,
   ttlSeconds: number,
-  logger: ILoggerComponent.ILogger
+  logger: ILoggerComponent.ILogger,
+  metrics?: AppComponents['metrics']
 ): Promise<void> {
   try {
     await redis.set(`${GLB_DEPS_CACHE_KEY_PREFIX}${glbHash}`, value, ttlSeconds)
@@ -392,6 +418,9 @@ async function safeRedisSetGlbDeps(
       glbHash,
       error: err?.message ?? String(err)
     } as any)
+    if (metrics) {
+      metrics.increment('ab_converter_redis_cache_errors_total', { operation: 'set', kind: 'glb-deps' })
+    }
   }
 }
 
@@ -1029,7 +1058,7 @@ export async function computePerAssetDigests(
       // content map, which varies per-entity.
       let uris: string[] | undefined
       if (redis) {
-        const cached = await safeRedisGetGlbDeps(redis, entry.hash, logger)
+        const cached = await safeRedisGetGlbDeps(redis, entry.hash, logger, metrics)
         if (cached !== null) {
           if (metrics && metricLabels) {
             metrics.increment('ab_converter_glb_deps_cache_total', { ...metricLabels, outcome: 'hit' })
@@ -1060,7 +1089,14 @@ export async function computePerAssetDigests(
           // Cache the unparseable result so subsequent probes anywhere in the
           // fleet don't re-fetch + re-parse a structurally broken glb.
           if (redis) {
-            void safeRedisSetGlbDeps(redis, entry.hash, { kind: 'unparseable', detail }, redisTtlSeconds, logger)
+            void safeRedisSetGlbDeps(
+              redis,
+              entry.hash,
+              { kind: 'unparseable', detail },
+              redisTtlSeconds,
+              logger,
+              metrics
+            )
           }
           return {
             kind: 'skip',
@@ -1072,7 +1108,7 @@ export async function computePerAssetDigests(
         // probe. Fire-and-forget; the caller's result doesn't depend on
         // propagation.
         if (redis) {
-          void safeRedisSetGlbDeps(redis, entry.hash, { kind: 'ok', uris }, redisTtlSeconds, logger)
+          void safeRedisSetGlbDeps(redis, entry.hash, { kind: 'ok', uris }, redisTtlSeconds, logger, metrics)
         }
       }
 
@@ -1299,14 +1335,14 @@ export async function checkAssetCache(
     probes.map((_, i) => i),
     concurrency,
     async (i): Promise<boolean> => {
-      if (await safeRedisHit(components.redis, probes[i].key, logger)) {
+      if (await safeRedisHit(components.redis, probes[i].key, logger, components.metrics)) {
         cacheHitCount++
         return true
       }
       const exists = await headExists(components.cdnS3, cdnBucket, probes[i].key)
       if (exists) {
         headHitCount++
-        void safeRedisSet(components.redis, probes[i].key, redisTtlSeconds, logger)
+        void safeRedisSet(components.redis, probes[i].key, redisTtlSeconds, logger, components.metrics)
       }
       return exists
     }

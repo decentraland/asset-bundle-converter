@@ -88,11 +88,14 @@ export async function createScenesComponent(
   // that don't set CDN_BUCKET still get a deterministic string.
   const cachedCdnBucket = (await config.getString('CDN_BUCKET')) || 'CDN_BUCKET'
 
-  // Redis hit-cache TTL is process-lifetime; resolve once and forward to every
-  // `checkAssetCache` call. Unset (or unparseable) keeps the implementation
-  // default — canonical bundles are immutable so the TTL only governs how long
-  // a key takes up Redis space, not correctness.
-  const redisTtlSecondsRaw = await config.getNumber('ASSET_PROBE_HIT_CACHE_TTL_SECONDS')
+  // Shared TTL applied to BOTH Redis caches the probe path uses:
+  //   - the probe hit-cache (canonical S3 existence markers)
+  //   - the glb URI cache (parsed dep refs for digest computation)
+  // Process-lifetime; resolve once and forward into every call. Unset (or
+  // unparseable) keeps the implementation default — both cached values are
+  // content-deterministic so a stale entry is harmless, the TTL only governs
+  // how long the keyspace holds dead entries.
+  const redisTtlSecondsRaw = await config.getNumber('REDIS_CACHE_TTL_SECONDS')
   const cachedRedisTtlSeconds =
     redisTtlSecondsRaw !== undefined && redisTtlSecondsRaw > 0 ? redisTtlSecondsRaw : undefined
 

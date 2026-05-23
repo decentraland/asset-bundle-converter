@@ -905,9 +905,11 @@ describe('when computing per-asset digests with the redis URI cache', () => {
 
   describe('and redis.get throws (transient outage during the lookup)', () => {
     let result: { digests: ReadonlyMap<string, string>; skipped: ReadonlyMap<string, SkippedAsset> }
+    let metricsMock: ReturnType<typeof makeMockMetrics>
 
     beforeEach(async () => {
       const { redis } = makeMockRedis({ getThrows: true })
+      metricsMock = makeMockMetrics()
       const fetcher = makeFetcher(new Map([['hGlb', buildGlb(['texture.png'])]]))
       const entity = {
         content: [
@@ -917,12 +919,61 @@ describe('when computing per-asset digests with the redis URI cache', () => {
       }
       result = await computePerAssetDigests(entity as any, 'https://peer.decentraland.org/content', {
         fetcher,
-        redis
+        redis,
+        metrics: metricsMock.metrics
       })
     })
 
     it('should fall back to fetch + parse and still produce the digest', () => {
       expect(result.digests.get('hGlb')).toMatch(/^[0-9a-f]{32}$/)
+    })
+
+    it('should increment the redis cache errors counter with operation=get, kind=glb-deps', () => {
+      const err = metricsMock.calls.find(
+        (c) =>
+          c.name === 'ab_converter_redis_cache_errors_total' &&
+          c.labels.operation === 'get' &&
+          c.labels.kind === 'glb-deps'
+      )
+      expect(err).toBeDefined()
+    })
+  })
+
+  describe('and redis.set throws after a successful parse (cache write fails)', () => {
+    let result: { digests: ReadonlyMap<string, string>; skipped: ReadonlyMap<string, SkippedAsset> }
+    let metricsMock: ReturnType<typeof makeMockMetrics>
+
+    beforeEach(async () => {
+      const { redis } = makeMockRedis({ setThrows: true })
+      metricsMock = makeMockMetrics()
+      const fetcher = makeFetcher(new Map([['hGlb', buildGlb(['texture.png'])]]))
+      const entity = {
+        content: [
+          { file: 'model.glb', hash: 'hGlb' },
+          { file: 'texture.png', hash: 'hTex' }
+        ]
+      }
+      result = await computePerAssetDigests(entity as any, 'https://peer.decentraland.org/content', {
+        fetcher,
+        redis,
+        metrics: metricsMock.metrics
+      })
+      // Drain microtasks so the fire-and-forget set has a chance to complete + log.
+      await new Promise((r) => setImmediate(r))
+    })
+
+    it('should still produce the digest (the write-back error is non-fatal)', () => {
+      expect(result.digests.get('hGlb')).toMatch(/^[0-9a-f]{32}$/)
+    })
+
+    it('should increment the redis cache errors counter with operation=set, kind=glb-deps', () => {
+      const err = metricsMock.calls.find(
+        (c) =>
+          c.name === 'ab_converter_redis_cache_errors_total' &&
+          c.labels.operation === 'set' &&
+          c.labels.kind === 'glb-deps'
+      )
+      expect(err).toBeDefined()
     })
   })
 
@@ -2400,6 +2451,16 @@ describe('when checking the asset cache against S3', () => {
     it('should fall through to S3 HEAD and complete the probe successfully', () => {
       expect(setup.calls.map((c) => c.Key)).toEqual(['v48/assets/h1_windows'])
     })
+
+    it('should increment the redis cache errors counter with operation=get, kind=probe-hit', () => {
+      const err = setup.metricsCalls.find(
+        (m) =>
+          m.name === 'ab_converter_redis_cache_errors_total' &&
+          m.labels.operation === 'get' &&
+          m.labels.kind === 'probe-hit'
+      )
+      expect(err).toBeDefined()
+    })
   })
 
   describe('and the redis set() throws after a HEAD hit (cache write fails)', () => {
@@ -2419,6 +2480,45 @@ describe('when checking the asset cache against S3', () => {
 
     it('should still report the asset as cached (HEAD already confirmed it)', () => {
       expect(result.cachedHashes).toEqual(['h1'])
+    })
+
+    it('should increment the redis cache errors counter with operation=set, kind=probe-hit', () => {
+      const err = setup.metricsCalls.find(
+        (m) =>
+          m.name === 'ab_converter_redis_cache_errors_total' &&
+          m.labels.operation === 'set' &&
+          m.labels.kind === 'probe-hit'
+      )
+      expect(err).toBeDefined()
+    })
+  })
+
+  describe('and redis returns a value under the probe key that is not the expected marker', () => {
+    let setup: ReturnType<typeof makeMockComponents>
+    let result: any
+
+    beforeEach(async () => {
+      // Seed the redis store with a value that's NOT REDIS_HIT_MARKER (e.g.,
+      // garbage from a prior codebase version or an accidental SET). Defense
+      // in depth: we must NOT count this as a hit; fall through to S3 HEAD.
+      setup = makeMockComponents(new Set())
+      ;(setup.components.redis as any).get = async () => 'unexpected-garbage-value'
+      result = await checkAssetCache(setup.components, {
+        entity: { content: [{ file: 'a.png', hash: 'h1' }] } as any,
+        abVersion: 'v48',
+        buildTarget: 'windows',
+        cdnBucket: 'bucket',
+        depsDigestByHash: new Map()
+      })
+    })
+
+    it('should treat the value as a miss and run the S3 HEAD', () => {
+      expect(setup.calls.map((c) => c.Key)).toEqual(['v48/assets/h1_windows'])
+    })
+
+    it('should mark the asset as missing (S3 was empty, garbage value did not count)', () => {
+      expect(result.missingHashes).toEqual(['h1'])
+      expect(result.cachedHashes).toEqual([])
     })
   })
 
