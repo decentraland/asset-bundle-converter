@@ -868,8 +868,13 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       expect(mockedRunConversion).toHaveBeenCalledTimes(1)
     })
 
-    it('should pass no cached hashes to Unity (cacheResult was set to null)', () => {
-      expect(mockedRunConversion.mock.calls[0][0].cachedHashes).toBeUndefined()
+    it('should pass no cached hashes to Unity (per-asset HEAD failures treated as misses)', () => {
+      // With per-asset retry-then-miss, a transient 5xx no longer throws out of
+      // the probe — the probe completes and reports every failed key as a miss.
+      // Unity therefore receives an empty cachedHashes list (which the runner
+      // filters out at spawn time, equivalent to `undefined`).
+      const cachedHashes = mockedRunConversion.mock.calls[0][0].cachedHashes
+      expect(cachedHashes === undefined || cachedHashes.length === 0).toBe(true)
     })
 
     it('should still upload to the canonical prefix at the composite glb path', async () => {
