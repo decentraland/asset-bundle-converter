@@ -19,6 +19,7 @@ import { createSnsComponent } from './adapters/sns'
 import { createFilesystemComponent } from './adapters/filesystem'
 import { createCatalystComponent } from './adapters/catalyst'
 import { createUnityRunnerComponent } from './adapters/unity-runner'
+import { createRedisComponent } from './adapters/redis'
 import { createConversionOrchestratorComponent } from './logic/conversion-orchestrator'
 import { createScenesComponent } from './logic/scenes'
 import { parseBooleanFlag } from './logic/conversion-task'
@@ -108,7 +109,8 @@ export async function initComponents(): Promise<AppComponents> {
   const filesystem = await createFilesystemComponent({ metrics })
   const catalyst = await createCatalystComponent({ fetch })
   const unityRunner = await createUnityRunnerComponent({ logs, metrics })
-  const scenes = await createScenesComponent({ logs, config, metrics, cdnS3, sentry, catalyst })
+  const redis = await createRedisComponent({ config, logs })
+  const scenes = await createScenesComponent({ logs, config, metrics, cdnS3, sentry, catalyst, redis })
   const conversionOrchestrator = await createConversionOrchestratorComponent({
     logs,
     metrics,
@@ -138,6 +140,7 @@ export async function initComponents(): Promise<AppComponents> {
     filesystem,
     catalyst,
     unityRunner,
+    redis,
     scenes,
     conversionOrchestrator
   }

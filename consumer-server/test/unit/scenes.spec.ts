@@ -37,6 +37,7 @@ import {
   MockedCdnS3,
   MockedSentryComponent
 } from '../mocks'
+import { createMockRedisComponent } from '../helpers/redis-mock'
 
 const mockedCheckAssetCache = checkAssetCache as jest.Mock
 const mockedComputePerAssetDigests = computePerAssetDigests as jest.Mock
@@ -75,7 +76,8 @@ async function buildHarness(overrides?: { cdnBucket?: string }): Promise<Harness
     metrics,
     cdnS3: cdnS3 as any,
     sentry,
-    catalyst
+    catalyst,
+    redis: createMockRedisComponent()
   })
 
   const originalFetch = globalThis.fetch
@@ -198,7 +200,8 @@ describe('when getCdnBucket is called', () => {
         metrics,
         cdnS3: {} as any,
         sentry: {} as any,
-        catalyst: {} as any
+        catalyst: {} as any,
+        redis: createMockRedisComponent()
       })
     })
 

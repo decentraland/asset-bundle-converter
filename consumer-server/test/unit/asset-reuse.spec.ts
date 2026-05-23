@@ -64,10 +64,15 @@ function makeMockLogger() {
   return { logger, messages }
 }
 
-function makeMockComponents(existingKeys: Set<string>) {
+function makeMockComponents(
+  existingKeys: Set<string>,
+  options: { redisHits?: Set<string>; redisGetThrows?: boolean; redisSetThrows?: boolean } = {}
+) {
   const { s3, calls } = makeMockS3(existingKeys)
   const { logger } = makeMockLogger()
   const metricsCalls: Array<{ name: string; labels: any; value?: number }> = []
+  const redisGetCalls: string[] = []
+  const redisSetCalls: Array<{ key: string; ttl?: number }> = []
   return {
     components: {
       cdnS3: s3 as any,
@@ -76,10 +81,45 @@ function makeMockComponents(existingKeys: Set<string>) {
         increment: (name: string, labels: any, value?: number) => metricsCalls.push({ name, labels, value }),
         decrement: () => {},
         observe: () => {}
+      } as any,
+      redis: {
+        async get(key: string) {
+          redisGetCalls.push(key)
+          if (options.redisGetThrows) throw new Error('simulated redis get failure')
+          return options.redisHits?.has(key) ? '1' : null
+        },
+        async set(key: string, _value: unknown, ttl?: number) {
+          redisSetCalls.push({ key, ttl })
+          if (options.redisSetThrows) throw new Error('simulated redis set failure')
+        },
+        async remove() {},
+        async keys() {
+          return []
+        },
+        async setInHash() {},
+        async getFromHash() {
+          return null
+        },
+        async removeFromHash() {},
+        async getAllHashFields() {
+          return {}
+        },
+        async acquireLock() {
+          throw new Error('not supported in mock')
+        },
+        async releaseLock() {},
+        async tryAcquireLock() {
+          return false
+        },
+        async tryReleaseLock() {
+          return false
+        }
       } as any
     },
     calls,
-    metricsCalls
+    metricsCalls,
+    redisGetCalls,
+    redisSetCalls
   }
 }
 
@@ -1665,6 +1705,127 @@ describe('when checking the asset cache against S3', () => {
         depsDigestByHash
       })
       expect(calls).toHaveLength(2)
+    })
+  })
+
+  describe('and the redis hit-cache is populated with a key that the local LRU has never seen', () => {
+    let setup: ReturnType<typeof makeMockComponents>
+
+    beforeEach(async () => {
+      setup = makeMockComponents(new Set(), { redisHits: new Set(['v48/assets/h1_windows']) })
+      await checkAssetCache(setup.components, {
+        entity: { content: [{ file: 'a.png', hash: 'h1' }] } as any,
+        abVersion: 'v48',
+        buildTarget: 'windows',
+        cdnBucket: 'bucket',
+        depsDigestByHash: new Map()
+      })
+    })
+
+    it('should skip the S3 HEAD entirely', () => {
+      expect(setup.calls).toHaveLength(0)
+    })
+
+    it('should record the hit under source=redis in the per-source counter', () => {
+      const redisHits = setup.metricsCalls.find(
+        (m) => m.name === 'ab_converter_asset_probe_hit_cache_source_total' && m.labels.source === 'redis'
+      )
+      expect(redisHits?.value).toBe(1)
+    })
+
+    it('should populate the local LRU so the next probe is purely local', async () => {
+      const second = makeMockComponents(new Set())
+      await checkAssetCache(second.components, {
+        entity: { content: [{ file: 'a.png', hash: 'h1' }] } as any,
+        abVersion: 'v48',
+        buildTarget: 'windows',
+        cdnBucket: 'bucket',
+        depsDigestByHash: new Map()
+      })
+      expect(second.calls).toHaveLength(0)
+      expect(second.redisGetCalls).toEqual([])
+    })
+  })
+
+  describe('and the redis hit-cache misses on a key', () => {
+    let setup: ReturnType<typeof makeMockComponents>
+
+    beforeEach(async () => {
+      setup = makeMockComponents(new Set(['v48/assets/h1_windows']))
+      await checkAssetCache(setup.components, {
+        entity: { content: [{ file: 'a.png', hash: 'h1' }] } as any,
+        abVersion: 'v48',
+        buildTarget: 'windows',
+        cdnBucket: 'bucket',
+        depsDigestByHash: new Map()
+      })
+    })
+
+    it('should fall through to the S3 HEAD probe', () => {
+      expect(setup.calls.map((c) => c.Key)).toEqual(['v48/assets/h1_windows'])
+    })
+
+    it('should write the confirmed key back to redis for cross-pod reuse', () => {
+      expect(setup.redisSetCalls.map((c) => c.key)).toEqual(['v48/assets/h1_windows'])
+    })
+  })
+
+  describe('and the redis get() throws (transient outage mid-probe)', () => {
+    let setup: ReturnType<typeof makeMockComponents>
+
+    beforeEach(async () => {
+      setup = makeMockComponents(new Set(['v48/assets/h1_windows']), { redisGetThrows: true })
+      await checkAssetCache(setup.components, {
+        entity: { content: [{ file: 'a.png', hash: 'h1' }] } as any,
+        abVersion: 'v48',
+        buildTarget: 'windows',
+        cdnBucket: 'bucket',
+        depsDigestByHash: new Map()
+      })
+    })
+
+    it('should fall through to S3 HEAD and complete the probe successfully', () => {
+      expect(setup.calls.map((c) => c.Key)).toEqual(['v48/assets/h1_windows'])
+    })
+  })
+
+  describe('and the redis set() throws after a HEAD hit (cache write fails)', () => {
+    let setup: ReturnType<typeof makeMockComponents>
+    let result: any
+
+    beforeEach(async () => {
+      setup = makeMockComponents(new Set(['v48/assets/h1_windows']), { redisSetThrows: true })
+      result = await checkAssetCache(setup.components, {
+        entity: { content: [{ file: 'a.png', hash: 'h1' }] } as any,
+        abVersion: 'v48',
+        buildTarget: 'windows',
+        cdnBucket: 'bucket',
+        depsDigestByHash: new Map()
+      })
+    })
+
+    it('should still report the asset as cached (HEAD already confirmed it)', () => {
+      expect(result.cachedHashes).toEqual(['h1'])
+    })
+  })
+
+  describe('and a custom redisTtlSeconds is supplied', () => {
+    let setup: ReturnType<typeof makeMockComponents>
+
+    beforeEach(async () => {
+      setup = makeMockComponents(new Set(['v48/assets/h1_windows']))
+      await checkAssetCache(setup.components, {
+        entity: { content: [{ file: 'a.png', hash: 'h1' }] } as any,
+        abVersion: 'v48',
+        buildTarget: 'windows',
+        cdnBucket: 'bucket',
+        depsDigestByHash: new Map(),
+        redisTtlSeconds: 60
+      })
+    })
+
+    it('should forward the TTL on the redis set call', () => {
+      expect(setup.redisSetCalls[0]?.ttl).toBe(60)
     })
   })
 })

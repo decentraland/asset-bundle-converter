@@ -66,12 +66,12 @@ function toError(e: unknown): Error {
  * stays unit-tested in place.
  */
 export async function createScenesComponent(
-  components: Pick<AppComponents, 'logs' | 'config' | 'metrics' | 'cdnS3' | 'sentry' | 'catalyst'>
+  components: Pick<AppComponents, 'logs' | 'config' | 'metrics' | 'cdnS3' | 'sentry' | 'catalyst' | 'redis'>
 ): Promise<IScenesComponent> {
-  // `metrics` isn't destructured here because this component's own methods
-  // don't emit metrics directly — but it's required in the Pick<> because the
-  // delegated impls (`checkAssetCacheImpl` and friends) read it from the
-  // captured `components` reference passed through below.
+  // `metrics` and `redis` aren't destructured here because this component's own
+  // methods don't use them directly — but they're required in the Pick<>
+  // because the delegated impls (`checkAssetCacheImpl` and friends) read them
+  // from the captured `components` reference passed through below.
   const { logs, config, cdnS3, sentry, catalyst } = components
 
   // CDN_BUCKET is a process-lifetime env var — resolve it once at construction
@@ -80,6 +80,14 @@ export async function createScenesComponent(
   // function: a missing env var falls back to the literal so local dev / tests
   // that don't set CDN_BUCKET still get a deterministic string.
   const cachedCdnBucket = (await config.getString('CDN_BUCKET')) || 'CDN_BUCKET'
+
+  // Redis hit-cache TTL is process-lifetime; resolve once and forward to every
+  // `checkAssetCache` call. Unset (or unparseable) keeps the implementation
+  // default — canonical bundles are immutable so the TTL only governs how long
+  // a key takes up Redis space, not correctness.
+  const redisTtlSecondsRaw = await config.getNumber('ASSET_PROBE_HIT_CACHE_TTL_SECONDS')
+  const cachedRedisTtlSeconds =
+    redisTtlSecondsRaw !== undefined && redisTtlSecondsRaw > 0 ? redisTtlSecondsRaw : undefined
 
   // The async signature is preserved for interface flexibility (callers `await`
   // this without caring whether the impl is sync or async, and a future variant
@@ -222,7 +230,7 @@ export async function createScenesComponent(
   }
 
   async function checkAssetCache(args: CheckAssetCacheArgs): Promise<AssetCacheResult> {
-    return checkAssetCacheImpl(components, args)
+    return checkAssetCacheImpl(components, { ...args, redisTtlSeconds: cachedRedisTtlSeconds })
   }
 
   async function computePerAssetDigests(

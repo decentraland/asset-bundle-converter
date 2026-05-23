@@ -4,10 +4,18 @@ import * as path from 'path'
 import * as fs from 'fs/promises'
 import * as crypto from 'crypto'
 import { AppComponents } from '../types'
+import { IRedisComponent } from '../adapters/redis'
 import { normalizeContentsBaseUrl } from '../utils'
 import { bufferExtensions, fileExtension, gltfExtensions, textureExtensions } from './extensions'
 import { parseGltfDepRefs, resolveUriToContentFile } from './gltf-deps'
 import { isS3NotFound } from './s3-helpers'
+
+// Default TTL for Redis-stored asset probe hits. Canonical bundles are
+// immutable, so a stale hit is harmless — but giving entries a finite lifetime
+// keeps the Redis keyspace bounded across AB_VERSION bumps and lets evictions
+// reclaim cache for cold content. Override via `redisTtlSeconds` on the
+// `checkAssetCache` params.
+const DEFAULT_REDIS_HIT_CACHE_TTL_SECONDS = 86_400
 
 // Re-export so callers still referencing `asset-reuse.ts` for this helper keep
 // working. Single source of truth is `extensions.ts`.
@@ -272,6 +280,74 @@ export const probeHitCache = {
   },
   clear: function () {
     probeHitCache.hits.clear()
+  }
+}
+
+/**
+ * Sentinel value stored under each Redis-cached probe key. Content is
+ * irrelevant — only the key's existence matters — but a non-empty string keeps
+ * the value out of `JSON.parse` edge cases where `null`/`undefined` could be
+ * confused with "key absent".
+ */
+const REDIS_HIT_MARKER = '1'
+
+/**
+ * Best-effort detection for whether the supplied redis component is
+ * functional. When `REDIS_URL` is unset, `createRedisComponent` returns a
+ * null-object whose `get`/`set` are no-ops; calling into it works, but it'd
+ * burn the per-key worker round-trip for nothing. Treat the absence of a
+ * working `set` method as "no Redis backend" so the probe loop can skip the
+ * Redis pass entirely.
+ *
+ * Kept conservative: we ALWAYS run when the field is wired (even if it's the
+ * null-object) rather than try to introspect — the null-object's `get` is the
+ * trivial branch and adding logic to skip it would risk masking real Redis
+ * misconfigurations.
+ */
+function hasRedisHitCache(redis: IRedisComponent | undefined): redis is IRedisComponent {
+  return redis !== undefined && redis !== null
+}
+
+/**
+ * Wraps `redis.get` so a Redis outage / transient failure is logged and
+ * treated as a cache miss instead of failing the entire probe. Returns `true`
+ * only when the key is present in Redis.
+ */
+async function safeRedisHit(redis: IRedisComponent, key: string, logger: ILoggerComponent.ILogger): Promise<boolean> {
+  try {
+    const value = await redis.get<string>(key)
+    return value !== null
+  } catch (err: any) {
+    // Warn-level: a Redis blip is recoverable and would otherwise look like a
+    // silent cache-cold pod. Don't escalate to error — we don't want
+    // dashboards lighting up red for routine reconnect cycles.
+    logger.warn('redis hit-cache get failed; falling back to S3 HEAD for this key', {
+      key,
+      error: err?.message ?? String(err)
+    } as any)
+    return false
+  }
+}
+
+/**
+ * Wraps `redis.set` for write-through on S3 HEAD hits. Best-effort and
+ * fire-and-forget at the call site — the probe result is already known by the
+ * time we get here, so cache propagation latency must not be on the critical
+ * path.
+ */
+async function safeRedisSet(
+  redis: IRedisComponent,
+  key: string,
+  ttlSeconds: number,
+  logger: ILoggerComponent.ILogger
+): Promise<void> {
+  try {
+    await redis.set(key, REDIS_HIT_MARKER, ttlSeconds)
+  } catch (err: any) {
+    logger.warn('redis hit-cache set failed; local LRU still populated', {
+      key,
+      error: err?.message ?? String(err)
+    } as any)
   }
 }
 
@@ -995,6 +1071,10 @@ type CheckAssetCacheParams = {
   contentServerUrl?: string
   /** Injectable fetcher for glb bytes — forwarded to `computePerAssetDigests`. */
   fetcher?: GltfFetcher
+  /** TTL applied to Redis-stored hit-cache entries. Defaults to
+   * {@link DEFAULT_REDIS_HIT_CACHE_TTL_SECONDS}. Ignored when no Redis component
+   * is supplied (or when its `set` is a no-op). */
+  redisTtlSeconds?: number
 }
 
 /**
@@ -1003,13 +1083,14 @@ type CheckAssetCacheParams = {
  * the subset of cached hashes whose file extension is safe to skip on the Unity side.
  */
 export async function checkAssetCache(
-  components: Pick<AppComponents, 'cdnS3' | 'logs' | 'metrics'>,
+  components: Pick<AppComponents, 'cdnS3' | 'logs' | 'metrics' | 'redis'>,
   params: CheckAssetCacheParams
 ): Promise<AssetCacheResult> {
   const { entity, abVersion, buildTarget, cdnBucket } = params
   // S3 HEAD is cheap and non-blocking; 50 saturates the probe phase for typical
   // scenes (dozens of assets) without exhausting the default HTTPS agent pool.
   const concurrency = params.concurrency ?? 50
+  const redisTtlSeconds = params.redisTtlSeconds ?? DEFAULT_REDIS_HIT_CACHE_TTL_SECONDS
   const logger = components.logs.getLogger('AssetReuse')
 
   let depsDigestByHash: ReadonlyMap<string, string>
@@ -1089,37 +1170,93 @@ export async function checkAssetCache(
     }
   }
 
-  // Fast-path: skip S3 HEAD for hashes the hit-cache already confirmed as canonical.
+  // Fast-path: skip S3 HEAD for hashes the local hit-cache already confirmed as canonical.
   const hits: boolean[] = new Array(probes.length)
   const pendingIdx: number[] = []
   for (let i = 0; i < probes.length; i++) {
     if (probeHitCache.has(probes[i].key)) hits[i] = true
     else pendingIdx.push(i)
   }
+  const localHitCount = probes.length - pendingIdx.length
 
-  const hitCacheServed = probes.length - pendingIdx.length
-  if (pendingIdx.length > 0) {
-    const fetched = await mapBounded(pendingIdx, concurrency, (i) =>
+  // Second-level: Redis-backed shared hit-cache. Local LRUs are cold on every
+  // pod restart; sharing hits across pods amortises S3 HEAD cost across the
+  // whole worker pool. The worker also writes through to local on a Redis hit
+  // so subsequent probes on the same pod skip Redis too.
+  //
+  // Per-key Redis errors are swallowed and counted; the worker falls through
+  // to S3 HEAD. Treating Redis as best-effort keeps a Redis outage from tipping
+  // healthy conversions back into the legacy Unity path.
+  let redisHitCount = 0
+  let headHitCount = 0
+  let stillPendingIdx: number[] = pendingIdx
+  if (pendingIdx.length > 0 && hasRedisHitCache(components.redis)) {
+    const redisResults = await mapBounded(pendingIdx, concurrency, async (i) =>
+      safeRedisHit(components.redis, probes[i].key, logger)
+    )
+    const remaining: number[] = []
+    for (let j = 0; j < pendingIdx.length; j++) {
+      if (redisResults[j]) {
+        const idx = pendingIdx[j]
+        hits[idx] = true
+        probeHitCache.add(probes[idx].key)
+        redisHitCount++
+      } else {
+        remaining.push(pendingIdx[j])
+      }
+    }
+    stillPendingIdx = remaining
+  }
+
+  // Third-level: cold path — S3 HEAD for everything Redis didn't satisfy.
+  // On hit, write through to both Redis and local so the next probe (here or
+  // anywhere else in the pool) skips this lookup.
+  if (stillPendingIdx.length > 0) {
+    const fetched = await mapBounded(stillPendingIdx, concurrency, (i) =>
       headExists(components.cdnS3, cdnBucket, probes[i].key)
     )
-    for (let j = 0; j < pendingIdx.length; j++) {
-      hits[pendingIdx[j]] = fetched[j]
-      if (fetched[j]) probeHitCache.add(probes[pendingIdx[j]].key)
+    for (let j = 0; j < stillPendingIdx.length; j++) {
+      const idx = stillPendingIdx[j]
+      hits[idx] = fetched[j]
+      if (fetched[j]) {
+        probeHitCache.add(probes[idx].key)
+        headHitCount++
+        // Fire-and-forget Redis write — the result is already known; we don't
+        // gate the conversion on cache propagation latency.
+        void safeRedisSet(components.redis, probes[idx].key, redisTtlSeconds, logger)
+      }
     }
   }
 
-  if (hitCacheServed > 0) {
+  if (localHitCount > 0) {
     components.metrics.increment(
       'ab_converter_asset_probe_hit_cache_total',
       { build_target: buildTarget, ab_version: abVersion },
-      hitCacheServed
+      localHitCount
+    )
+    components.metrics.increment(
+      'ab_converter_asset_probe_hit_cache_source_total',
+      { build_target: buildTarget, ab_version: abVersion, source: 'local' },
+      localHitCount
     )
   }
-  if (pendingIdx.length > 0) {
+  if (redisHitCount > 0) {
+    components.metrics.increment(
+      'ab_converter_asset_probe_hit_cache_total',
+      { build_target: buildTarget, ab_version: abVersion },
+      redisHitCount
+    )
+    components.metrics.increment(
+      'ab_converter_asset_probe_hit_cache_source_total',
+      { build_target: buildTarget, ab_version: abVersion, source: 'redis' },
+      redisHitCount
+    )
+  }
+  if (stillPendingIdx.length > 0) {
     components.metrics.increment(
       'ab_converter_asset_probe_head_total',
       { build_target: buildTarget, ab_version: abVersion },
-      pendingIdx.length
+      stillPendingIdx.length
     )
   }
 
@@ -1161,8 +1298,10 @@ export async function checkAssetCache(
     // be unexplained when in fact it reflects the metadata-only filter
     // kicking in for scenes that previously paid for a wasted Unity build.
     metadataOnly: metadataOnlyHashes.size,
-    hitCacheServed,
-    headRequests: pendingIdx.length,
+    hitCacheServedLocal: localHitCount,
+    hitCacheServedRedis: redisHitCount,
+    headRequests: stillPendingIdx.length,
+    headHits: headHitCount,
     gltfAssetsDigested: depsDigestByHash.size
   } as any)
 

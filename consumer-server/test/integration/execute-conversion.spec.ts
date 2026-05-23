@@ -22,6 +22,7 @@ import {
 import { createScenesComponent } from '../../src/logic/scenes'
 import { createCatalystMock, createSentryMock, createUnityRunnerMock } from '../mocks'
 import { buildGlb } from '../helpers/glb-fixtures'
+import { createMockRedisComponent } from '../helpers/redis-mock'
 
 jest.mock('../../src/logic/has-content-changed-task', () => {
   const real = jest.requireActual('../../src/logic/has-content-changed-task')
@@ -87,7 +88,8 @@ async function buildScenes(
     metrics,
     cdnS3: base.cdnS3,
     sentry: base.sentry,
-    catalyst: base.catalyst as any
+    catalyst: base.catalyst as any,
+    redis: createMockRedisComponent()
   })
 }
 

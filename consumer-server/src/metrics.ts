@@ -50,9 +50,14 @@ export const metricDeclarations = {
     labelNames: ['build_target', 'ab_version']
   },
   ab_converter_asset_probe_hit_cache_total: {
-    help: 'Counter of asset cache probes served from the process-local hit-cache (skipping S3 HEAD)',
+    help: 'Counter of asset cache probes served from any hit-cache layer (local LRU or shared Redis), skipping S3 HEAD',
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target', 'ab_version']
+  },
+  ab_converter_asset_probe_hit_cache_source_total: {
+    help: 'Counter of asset cache probe hits broken down by source layer. source ∈ {local, redis}. Use to gauge cross-pod cache benefit: a high redis ratio means workers are sharing canonical lookups; near-zero means pods are mostly self-serving.',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['build_target', 'ab_version', 'source']
   },
   ab_converter_asset_probe_head_total: {
     help: 'Counter of asset cache probes that required a fresh S3 HEAD request',

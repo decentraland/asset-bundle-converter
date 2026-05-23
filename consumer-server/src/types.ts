@@ -15,6 +15,7 @@ import { SentryComponent } from './adapters/sentry'
 import { IFilesystemComponent } from './adapters/filesystem'
 import { ICatalystComponent } from './adapters/catalyst'
 import { IUnityRunnerComponent } from './adapters/unity-runner'
+import { IRedisComponent } from './adapters/redis'
 import { IConversionOrchestratorComponent } from './logic/conversion-orchestrator'
 import { IScenesComponent } from './logic/scenes'
 import { AssetBundleConversionFinishedEvent, AssetBundleConversionManuallyQueuedEvent } from '@dcl/schemas'
@@ -39,6 +40,7 @@ export type BaseComponents = {
   filesystem: IFilesystemComponent
   catalyst: ICatalystComponent
   unityRunner: IUnityRunnerComponent
+  redis: IRedisComponent
   scenes: IScenesComponent
   conversionOrchestrator: IConversionOrchestratorComponent
 }
