@@ -2,6 +2,7 @@ import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
 import {
+  AssetCacheResult,
   canonicalFilenameForAsset,
   checkAssetCache,
   computeDepsDigest,
@@ -1336,29 +1337,157 @@ describe('when checking the asset cache against S3', () => {
     })
   })
 
-  describe('and S3 returns a non-404 error', () => {
-    it('should propagate the error to the caller', async () => {
-      const s3Error: any = new Error('boom')
-      s3Error.statusCode = 500
+  describe('and S3 returns a transient 5xx that recovers within the retry budget', () => {
+    let metricsCalls: Array<{ name: string; labels: any; value?: number }>
+    let result: AssetCacheResult
+    let headCallCount: number
+
+    beforeEach(async () => {
+      headCallCount = 0
       const s3: any = {
-        headObject: () => ({ promise: async () => { throw s3Error } })
+        headObject: () => ({
+          promise: async () => {
+            headCallCount++
+            if (headCallCount === 1) {
+              const err: any = new Error('throttled')
+              err.statusCode = 503
+              throw err
+            }
+            return {}
+          }
+        })
       }
       const { logger } = makeMockLogger()
+      metricsCalls = []
       const components = {
         cdnS3: s3,
         logs: { getLogger: () => logger },
-        metrics: { increment: () => {}, decrement: () => {}, observe: () => {} }
+        metrics: {
+          increment: (name: string, labels: any, value?: number) => metricsCalls.push({ name, labels, value }),
+          decrement: () => {},
+          observe: () => {}
+        }
       } as any
+      result = await checkAssetCache(components, {
+        entity: { content: [{ file: 'a.glb', hash: 'h' }] } as any,
+        abVersion: 'v48',
+        buildTarget: 'windows',
+        cdnBucket: 'bucket',
+        depsDigestByHash: new Map([['h', computeDepsDigest([])]])
+      })
+    })
 
-      await expect(
-        checkAssetCache(components, {
-          entity: { content: [{ file: 'a.glb', hash: 'h' }] } as any,
-          abVersion: 'v48',
-          buildTarget: 'windows',
-          cdnBucket: 'bucket',
-          depsDigestByHash: new Map([['h', computeDepsDigest([])]])
+    it('should report the asset as cached (retry recovered the HEAD)', () => {
+      expect(result.cachedHashes).toEqual(['h'])
+    })
+
+    it('should emit a retried counter (not exhausted)', () => {
+      const retried = metricsCalls.find(
+        (m) => m.name === 'ab_converter_s3_head_errors_total' && m.labels.retry_outcome === 'retried'
+      )
+      const exhausted = metricsCalls.find(
+        (m) => m.name === 'ab_converter_s3_head_errors_total' && m.labels.retry_outcome === 'exhausted'
+      )
+      expect(retried).toBeDefined()
+      expect(exhausted).toBeUndefined()
+    })
+  })
+
+  describe('and S3 keeps returning 5xx until the retry budget is exhausted', () => {
+    let metricsCalls: Array<{ name: string; labels: any; value?: number }>
+    let result: AssetCacheResult
+
+    beforeEach(async () => {
+      const s3: any = {
+        headObject: () => ({
+          promise: async () => {
+            const err: any = new Error('still throttled')
+            err.statusCode = 503
+            throw err
+          }
         })
-      ).rejects.toThrow('boom')
+      }
+      const { logger } = makeMockLogger()
+      metricsCalls = []
+      const components = {
+        cdnS3: s3,
+        logs: { getLogger: () => logger },
+        metrics: {
+          increment: (name: string, labels: any, value?: number) => metricsCalls.push({ name, labels, value }),
+          decrement: () => {},
+          observe: () => {}
+        }
+      } as any
+      result = await checkAssetCache(components, {
+        entity: { content: [{ file: 'a.glb', hash: 'h' }] } as any,
+        abVersion: 'v48',
+        buildTarget: 'windows',
+        cdnBucket: 'bucket',
+        depsDigestByHash: new Map([['h', computeDepsDigest([])]])
+      })
+    })
+
+    it('should treat the asset as a miss without throwing', () => {
+      expect(result.missingHashes).toEqual(['h'])
+      expect(result.cachedHashes).toEqual([])
+    })
+
+    it('should emit an exhausted counter', () => {
+      const exhausted = metricsCalls.find(
+        (m) => m.name === 'ab_converter_s3_head_errors_total' && m.labels.retry_outcome === 'exhausted'
+      )
+      expect(exhausted).toBeDefined()
+    })
+  })
+
+  describe('and S3 returns a non-retryable error (e.g. AccessDenied)', () => {
+    let metricsCalls: Array<{ name: string; labels: any; value?: number }>
+    let result: AssetCacheResult
+    let headCallCount: number
+
+    beforeEach(async () => {
+      headCallCount = 0
+      const s3: any = {
+        headObject: () => ({
+          promise: async () => {
+            headCallCount++
+            const err: any = new Error('forbidden')
+            err.statusCode = 403
+            err.code = 'AccessDenied'
+            throw err
+          }
+        })
+      }
+      const { logger } = makeMockLogger()
+      metricsCalls = []
+      const components = {
+        cdnS3: s3,
+        logs: { getLogger: () => logger },
+        metrics: {
+          increment: (name: string, labels: any, value?: number) => metricsCalls.push({ name, labels, value }),
+          decrement: () => {},
+          observe: () => {}
+        }
+      } as any
+      result = await checkAssetCache(components, {
+        entity: { content: [{ file: 'a.glb', hash: 'h' }] } as any,
+        abVersion: 'v48',
+        buildTarget: 'windows',
+        cdnBucket: 'bucket',
+        depsDigestByHash: new Map([['h', computeDepsDigest([])]])
+      })
+    })
+
+    it('should NOT retry — burning the attempt budget on AccessDenied is wasted work', () => {
+      expect(headCallCount).toBe(1)
+    })
+
+    it('should mark the asset as missing and emit an exhausted counter', () => {
+      expect(result.missingHashes).toEqual(['h'])
+      const exhausted = metricsCalls.find(
+        (m) => m.name === 'ab_converter_s3_head_errors_total' && m.labels.retry_outcome === 'exhausted'
+      )
+      expect(exhausted).toBeDefined()
     })
   })
 

@@ -321,6 +321,116 @@ async function headExists(s3: AppComponents['cdnS3'], bucket: string, key: strin
 }
 
 /**
+ * Number of HEAD attempts per asset before giving up. Three is enough to
+ * absorb the common transient cases (one 503, one socket reset, one
+ * throttle) without compounding scene latency past acceptable bounds: at
+ * three attempts the worst-case wait is ~100 + ~200 = ~300ms of backoff
+ * plus three round-trips.
+ */
+const HEAD_RETRY_ATTEMPTS = 3
+
+/**
+ * Base backoff in ms. Equal-jitter is applied so concurrent probes (50 in
+ * flight, by default) don't all retry on the same tick. Keep this small —
+ * the absolute floor on probe latency is set by the slowest retried probe,
+ * and a single hot asset across the fleet shouldn't add wall-clock to every
+ * scene.
+ */
+const HEAD_RETRY_BASE_DELAY_MS = 100
+
+/** Sleep that doesn't pin the event loop; equal-jitter applied at call site. */
+function delayMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Wrap `headExists` with bounded-retry semantics. Transient S3 errors (5xx,
+ * throttling, transient network) are retried with equal-jitter exponential
+ * backoff; 404s are returned as `false` immediately (the "not cached" signal
+ * is content-deterministic, not transient). On exhausted retries this
+ * function does NOT throw — it returns `false` so a per-asset HEAD failure
+ * is treated as a miss without dragging the entire probe down. The caller
+ * sees missing canonical bundles, Unity rebuilds them, and we don't lose
+ * the whole conversion to a single hot key.
+ *
+ * Emits `ab_converter_s3_head_errors_total{retry_outcome=retried|exhausted}`
+ * so dashboards can surface S3 flakiness before it spreads into Unity
+ * fallback cost.
+ *
+ * @returns `true` if the object exists, `false` on 404 OR after exhausting
+ *   retries (caller's view of "treat as miss" is identical for both — the
+ *   metric distinguishes them).
+ */
+async function headExistsWithRetry(
+  s3: AppComponents['cdnS3'],
+  bucket: string,
+  key: string,
+  metrics: AppComponents['metrics'],
+  labels: { build_target: string; ab_version: string }
+): Promise<boolean> {
+  for (let attempt = 1; attempt <= HEAD_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return await headExists(s3, bucket, key)
+    } catch (err: unknown) {
+      // 404 is normalized inside headExists; reaching here means a non-404
+      // failure. Retry the transient kinds and exit early on permanent ones.
+      if (!isRetryableS3Error(err)) {
+        break
+      }
+      if (attempt < HEAD_RETRY_ATTEMPTS) {
+        metrics.increment('ab_converter_s3_head_errors_total', { ...labels, retry_outcome: 'retried' })
+        // Equal jitter: sleep in [base/2, base) × 2^(attempt-1). Spreads the
+        // 50-concurrent probe wakeup tick so we don't dogpile S3 right after a
+        // shared throttle window expires.
+        const exp = HEAD_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1)
+        const jittered = Math.floor(exp / 2 + Math.random() * (exp / 2))
+        await delayMs(jittered)
+      }
+    }
+  }
+  // Exhausted (or hit a non-retryable error like auth). Count once and treat
+  // as a miss — Unity will rebuild whichever canonical bundle we couldn't
+  // confirm.
+  metrics.increment('ab_converter_s3_head_errors_total', { ...labels, retry_outcome: 'exhausted' })
+  return false
+}
+
+/**
+ * Distinguishes retryable S3 / network errors from permanent ones. 5xx
+ * responses, throttling, and known transient network codes get retried; auth
+ * failures, invalid-argument errors, and other 4xx (other than 404 which is
+ * already normalised upstream) do not. Conservative: when unsure, we DON'T
+ * retry — repeating an auth-failure burns the attempt budget without help,
+ * and pushing the error past the exhausted path produces the same caller
+ * outcome (treat as miss) anyway.
+ */
+function isRetryableS3Error(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const e = err as { statusCode?: number; code?: string; retryable?: boolean }
+  // The AWS SDK v2 sets a `retryable` flag on its own errors. Trust it when
+  // present — the SDK already classifies its own transient cases.
+  if (e.retryable === true) return true
+  if (typeof e.statusCode === 'number' && e.statusCode >= 500 && e.statusCode < 600) return true
+  // Common transient network / throttling shapes the SDK propagates.
+  if (
+    e.code === 'ECONNRESET' ||
+    e.code === 'ETIMEDOUT' ||
+    e.code === 'EAI_AGAIN' ||
+    e.code === 'NetworkingError' ||
+    e.code === 'TimeoutError' ||
+    e.code === 'RequestTimeout' ||
+    e.code === 'ThrottlingException' ||
+    e.code === 'Throttling' ||
+    e.code === 'SlowDown' ||
+    e.code === 'ServiceUnavailable' ||
+    e.code === 'InternalError'
+  ) {
+    return true
+  }
+  return false
+}
+
+/**
  * Array-map with bounded concurrency — runs `fn` over every element of `items`
  * in parallel with at most `concurrency` in-flight promises at a time. Results
  * come back in the same order as `items`.
@@ -1099,8 +1209,18 @@ export async function checkAssetCache(
 
   const hitCacheServed = probes.length - pendingIdx.length
   if (pendingIdx.length > 0) {
+    // Per-asset retry + miss-on-exhausted lives inside `headExistsWithRetry`;
+    // a single hot key throwing 503 doesn't drag the whole probe through the
+    // Promise.all-reject path anymore. Treat exhausted retries as "miss" so
+    // Unity rebuilds whichever bundle we couldn't confirm — the canonical
+    // object either exists (next probe will re-confirm) or it doesn't
+    // (Unity uploads it). Either way the worst case is a redo, not a lost
+    // job.
     const fetched = await mapBounded(pendingIdx, concurrency, (i) =>
-      headExists(components.cdnS3, cdnBucket, probes[i].key)
+      headExistsWithRetry(components.cdnS3, cdnBucket, probes[i].key, components.metrics, {
+        build_target: buildTarget,
+        ab_version: abVersion
+      })
     )
     for (let j = 0; j < pendingIdx.length; j++) {
       hits[pendingIdx[j]] = fetched[j]

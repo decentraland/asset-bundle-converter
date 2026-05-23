@@ -64,6 +64,11 @@ export const metricDeclarations = {
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target', 'ab_version']
   },
+  ab_converter_s3_head_errors_total: {
+    help: 'Counter of S3 HEAD failures inside the asset probe, labelled by retry_outcome ∈ {retried, exhausted}. `retried` means a transient error that was recovered within the attempt budget; `exhausted` means all retries failed and the probe treated the asset as a miss. A sustained spike on `retried` flags S3 flakiness before it tips into `exhausted` and Unity-fallback cost.',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['build_target', 'ab_version', 'retry_outcome']
+  },
   ab_converter_glb_skipped_total: {
     help: 'Counter of glb/gltf assets silently skipped (missing dependencies or unparseable bytes)',
     type: IMetricsComponent.CounterType,
