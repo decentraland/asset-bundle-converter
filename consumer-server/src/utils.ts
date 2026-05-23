@@ -48,3 +48,32 @@ export function getAbVersionEnvName(buildTarget: string) {
       throw 'Invalid buildTarget'
   }
 }
+
+/**
+ * Wrap an async `fn` with a histogram observation. Uses the WKC metrics
+ * `startTimer(name, labels)` → `{ end }` pattern; `end()` records elapsed
+ * seconds into the named histogram. Called from `try { … } finally { end() }`
+ * so a phase that throws is still measured — slow-then-fail looks the same
+ * as slow-success on the dashboard, which is what you want for capacity
+ * planning.
+ *
+ * @typeParam T - Resolved value of `fn`.
+ * @param metrics - The metrics component (any subset of `IMetricsComponent`
+ *   that exposes `startTimer`).
+ * @param name - Histogram name as declared in `metricDeclarations`.
+ * @param labels - Label values matching the histogram's `labelNames`.
+ * @param fn - The async work whose duration is recorded.
+ */
+export async function withPhaseTimer<T>(
+  metrics: { startTimer: (name: any, labels?: any) => { end: () => void } },
+  name: string,
+  labels: Record<string, string>,
+  fn: () => Promise<T>
+): Promise<T> {
+  const { end } = metrics.startTimer(name, labels)
+  try {
+    return await fn()
+  } finally {
+    end()
+  }
+}

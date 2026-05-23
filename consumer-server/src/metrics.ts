@@ -88,6 +88,46 @@ export const metricDeclarations = {
     help: 'Counter of triage jobs that ran Unity inline on the triage pod because Conversion-queue publish failed. Pair with conversion_queue_publish_errors_total to confirm fallback coverage.',
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target']
+  },
+  // Per-phase wall-clock histograms. The end-to-end `job_queue_duration_seconds`
+  // only tells us a job got slower; these tell us which phase. Buckets are
+  // sized to the typical phase duration so percentiles aren't all crowded in
+  // the rightmost bucket.
+  ab_converter_phase_catalyst_fetch_seconds: {
+    help: 'Histogram of wall-clock duration for catalyst entity fetches inside a conversion job. Includes retry-after backoff.',
+    type: IMetricsComponent.HistogramType,
+    labelNames: ['build_target', 'ab_version'],
+    buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30]
+  },
+  ab_converter_phase_digest_seconds: {
+    help: 'Histogram of wall-clock duration for per-asset (glb/gltf) digest computation, including catalyst glb-bytes fetches.',
+    type: IMetricsComponent.HistogramType,
+    labelNames: ['build_target', 'ab_version'],
+    buckets: [0.1, 0.5, 1, 2, 5, 10, 30, 60]
+  },
+  ab_converter_phase_probe_seconds: {
+    help: 'Histogram of wall-clock duration for the asset cache probe (local LRU + Redis + S3 HEAD).',
+    type: IMetricsComponent.HistogramType,
+    labelNames: ['build_target', 'ab_version'],
+    buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5]
+  },
+  ab_converter_phase_unity_seconds: {
+    help: 'Histogram of wall-clock duration for the Unity child process (runConversion / runLodsConversion).',
+    type: IMetricsComponent.HistogramType,
+    labelNames: ['build_target', 'ab_version'],
+    buckets: [1, 5, 10, 30, 60, 120, 300, 600, 1200, 3600]
+  },
+  ab_converter_phase_upload_seconds: {
+    help: 'Histogram of wall-clock duration for uploadDir + manifest publishes to the CDN bucket.',
+    type: IMetricsComponent.HistogramType,
+    labelNames: ['build_target', 'ab_version'],
+    buckets: [0.5, 1, 2, 5, 10, 30, 60, 120]
+  },
+  ab_converter_phase_cleanup_seconds: {
+    help: 'Histogram of wall-clock duration for the post-conversion rimraf block (Library, outDir, _Downloaded, log file, scene manifest).',
+    type: IMetricsComponent.HistogramType,
+    labelNames: ['build_target', 'ab_version'],
+    buckets: [0.1, 0.5, 1, 2, 5, 10, 30, 60]
   }
 }
 
