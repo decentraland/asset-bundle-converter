@@ -33,11 +33,13 @@ const DEFAULT_REDIS_GLB_DEPS_TTL_SECONDS = 86_400
  * hash (the URIs live inside the glb bytes), so we cache it directly and avoid
  * re-fetching + re-parsing on subsequent probes that reference the same glb.
  *
- * `unparseable` skips ARE also cached: structural defects in glb bytes (bad
- * magic, truncated JSON chunk, percent-encoding that fails to decode) are
- * deterministic per hash. `missing-deps` skips are deliberately NOT cached —
- * they depend on `entity.content` so the same glb can be missing-deps in one
- * entity and ok in another.
+ * Only `parseGltfDepRefs` failures (bad glb magic, truncated chunk, JSON
+ * parse, non-object root) are written as `kind: 'unparseable'` — those are
+ * deterministic per glb hash. URI-resolution failures (percent-encoding,
+ * scheme/absolute paths, paths that escape root) and missing-deps both
+ * happen DOWNSTREAM of the cache write: they depend on `entry.file` (the
+ * glb's location in the entity) and `entity.content` respectively, so they
+ * can't be cached safely.
  */
 type GlbDepsCacheValue = { kind: 'ok'; uris: string[] } | { kind: 'unparseable'; detail: string }
 
@@ -1286,6 +1288,15 @@ export async function checkAssetCache(
     // `computePerAssetDigests` call — that's the path that emits the warn
     // log + `ab_converter_glb_skipped_total` counter. New callers should
     // follow the production pattern rather than relying on this fallback.
+    //
+    // We deliberately do NOT plumb redis / metrics / logger through here.
+    // The component-aware plumbing for `computePerAssetDigests` lives in
+    // `scenes/component.ts`'s wrapper — that's the single place that
+    // wires the URI cache, metric labels, and logger. Duplicating that
+    // here would create two callers that need to stay in sync; the
+    // fallback gets correct results, just no URI cache benefit. If
+    // tests need the cache, they should go through the scenes component
+    // wrapper.
     const result = await computePerAssetDigests(entity, params.contentServerUrl, { fetcher: params.fetcher })
     depsDigestByHash = result.digests
   }
