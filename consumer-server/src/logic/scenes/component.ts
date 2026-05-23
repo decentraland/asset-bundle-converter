@@ -25,6 +25,9 @@ type CheckAssetCacheArgs = {
 type ComputePerAssetDigestsOptions = {
   aggregateTimeoutMs?: number
   fetcher?: (url: string, ext: '.glb' | '.gltf') => Promise<Buffer>
+  /** Label values forwarded to the glb-deps cache outcome counter. When
+   * absent the metric isn't emitted, but the cache still works. */
+  metricLabels?: { build_target: string; ab_version: string }
 }
 
 // Upper bound on a single `/entities/active` catalyst call before we fall back
@@ -68,11 +71,15 @@ function toError(e: unknown): Error {
 export async function createScenesComponent(
   components: Pick<AppComponents, 'logs' | 'config' | 'metrics' | 'cdnS3' | 'sentry' | 'catalyst' | 'redis'>
 ): Promise<IScenesComponent> {
-  // `metrics` and `redis` aren't destructured here because this component's own
-  // methods don't use them directly — but they're required in the Pick<>
-  // because the delegated impls (`checkAssetCacheImpl` and friends) read them
-  // from the captured `components` reference passed through below.
-  const { logs, config, cdnS3, sentry, catalyst } = components
+  // `metrics` isn't destructured here because this component's own methods
+  // don't emit metrics directly — but it's required in the Pick<> because the
+  // delegated impls (`checkAssetCacheImpl` and friends) read it from the
+  // captured `components` reference passed through below. `redis` IS
+  // destructured because `computePerAssetDigests` plumbs it through as an
+  // explicit option to the underlying free function (alongside logger +
+  // metrics) for the new glb URI cache.
+  const { logs, config, cdnS3, sentry, catalyst, redis } = components
+  const digestCacheLogger = logs.getLogger('glb-deps-cache')
 
   // CDN_BUCKET is a process-lifetime env var — resolve it once at construction
   // so `probe()` and downstream callers don't pay a config lookup per call.
@@ -238,7 +245,14 @@ export async function createScenesComponent(
     contentServerUrl: string,
     options?: ComputePerAssetDigestsOptions
   ): Promise<PerAssetDigestResult> {
-    return computePerAssetDigestsImpl(entity, contentServerUrl, options)
+    return computePerAssetDigestsImpl(entity, contentServerUrl, {
+      ...options,
+      redis,
+      redisTtlSeconds: cachedRedisTtlSeconds,
+      logger: digestCacheLogger,
+      metrics: components.metrics,
+      metricLabels: options?.metricLabels
+    })
   }
 
   async function purgeCachedBundlesFromOutput(outDirectory: string, cachedHashes: string[]): Promise<number> {
@@ -303,7 +317,8 @@ export async function createScenesComponent(
     let skippedAssets: ReadonlyMap<string, SkippedAsset>
     try {
       const digestResult = await computePerAssetDigests(entity, contentServerUrl, {
-        aggregateTimeoutMs: PROBE_DIGEST_TIMEOUT_MS
+        aggregateTimeoutMs: PROBE_DIGEST_TIMEOUT_MS,
+        metricLabels: { build_target: buildTarget, ab_version: abVersion }
       })
       depsDigestByHash = digestResult.digests
       skippedAssets = digestResult.skipped

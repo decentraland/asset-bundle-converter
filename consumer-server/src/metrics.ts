@@ -59,6 +59,11 @@ export const metricDeclarations = {
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target', 'ab_version', 'source']
   },
+  ab_converter_glb_deps_cache_total: {
+    help: 'Counter of Redis-cached glb URI lookups, labelled by outcome ∈ {hit, miss}. A hit means the catalyst byte fetch + JSON parse for that glb was skipped because another probe (here or on a peer pod) already cached the URI list. Track hit rate to size the cache and tune the TTL.',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['build_target', 'ab_version', 'outcome']
+  },
   ab_converter_asset_probe_head_total: {
     help: 'Counter of asset cache probes that required a fresh S3 HEAD request',
     type: IMetricsComponent.CounterType,

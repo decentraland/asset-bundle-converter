@@ -17,6 +17,42 @@ import { isS3NotFound } from './s3-helpers'
 // `checkAssetCache` params.
 const DEFAULT_REDIS_HIT_CACHE_TTL_SECONDS = 86_400
 
+// Key prefix for the Redis-cached glb URI list. Distinct namespace from the
+// probe hit-cache (which stores canonical S3 paths) so the two can never
+// collide regardless of how the underlying redis cluster is shared.
+const GLB_DEPS_CACHE_KEY_PREFIX = 'glb-deps:'
+
+// Default TTL for Redis-stored glb URI parse results. Like the probe hit-cache,
+// the value is a deterministic function of the glb's content hash (the URIs are
+// inside the glb's own bytes), so a stale entry is harmless — TTL only governs
+// how long the keyspace holds dead entries from no-longer-referenced glbs.
+const DEFAULT_REDIS_GLB_DEPS_TTL_SECONDS = 86_400
+
+/**
+ * Redis cache value for a parsed glb. The URI list IS deterministic per glb
+ * hash (the URIs live inside the glb bytes), so we cache it directly and avoid
+ * re-fetching + re-parsing on subsequent probes that reference the same glb.
+ *
+ * `unparseable` skips ARE also cached: structural defects in glb bytes (bad
+ * magic, truncated JSON chunk, percent-encoding that fails to decode) are
+ * deterministic per hash. `missing-deps` skips are deliberately NOT cached —
+ * they depend on `entity.content` so the same glb can be missing-deps in one
+ * entity and ok in another.
+ */
+type GlbDepsCacheValue = { kind: 'ok'; uris: string[] } | { kind: 'unparseable'; detail: string }
+
+// Silent logger used as the default in `computePerAssetDigests` when no
+// logger is supplied — keeps existing callers (tests, the migrate script)
+// from emitting unexpected log output after we added Redis-cache fallback
+// warnings.
+const NULL_LOGGER: ILoggerComponent.ILogger = {
+  log: () => {},
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {}
+}
+
 // Re-export so callers still referencing `asset-reuse.ts` for this helper keep
 // working. Single source of truth is `extensions.ts`.
 export { fileExtension } from './extensions'
@@ -346,6 +382,79 @@ async function safeRedisSet(
   } catch (err: any) {
     logger.warn('redis hit-cache set failed; local LRU still populated', {
       key,
+      error: err?.message ?? String(err)
+    } as any)
+  }
+}
+
+/**
+ * Validate a value pulled out of Redis matches the {@link GlbDepsCacheValue}
+ * shape before trusting it. Corruption or a stale entry written by a different
+ * codebase version could otherwise be cast straight to the expected type and
+ * crash the worker downstream. Keep this conservative: reject anything that
+ * doesn't structurally match, fall through to the fetch+parse path.
+ */
+function isGlbDepsCacheValue(value: unknown): value is GlbDepsCacheValue {
+  if (!value || typeof value !== 'object') return false
+  const v = value as { kind?: unknown; uris?: unknown; detail?: unknown }
+  if (v.kind === 'ok') {
+    if (!Array.isArray(v.uris)) return false
+    return v.uris.every((u) => typeof u === 'string')
+  }
+  if (v.kind === 'unparseable') {
+    return typeof v.detail === 'string'
+  }
+  return false
+}
+
+/**
+ * Wraps `redis.get` for the glb URI cache. On any Redis-side failure (network,
+ * timeout, corrupted JSON) returns `null` and logs at warn level — the caller
+ * falls through to the fetch + parse path. Never throws into the worker.
+ */
+async function safeRedisGetGlbDeps(
+  redis: IRedisComponent,
+  glbHash: string,
+  logger: ILoggerComponent.ILogger
+): Promise<GlbDepsCacheValue | null> {
+  try {
+    const raw = await redis.get<unknown>(`${GLB_DEPS_CACHE_KEY_PREFIX}${glbHash}`)
+    if (raw === null) return null
+    if (!isGlbDepsCacheValue(raw)) {
+      // Stale or corrupted entry — fall through to the fetch path. Log at
+      // debug rather than warn so a one-off corruption doesn't spam ops.
+      logger.debug('redis glb-deps cache value failed shape validation; ignoring', {
+        glbHash
+      } as any)
+      return null
+    }
+    return raw
+  } catch (err: any) {
+    logger.warn('redis glb-deps cache get failed; falling back to catalyst fetch', {
+      glbHash,
+      error: err?.message ?? String(err)
+    } as any)
+    return null
+  }
+}
+
+/**
+ * Fire-and-forget write of a parsed glb result to Redis. Mirrors
+ * {@link safeRedisSet} — propagation latency must not block the worker
+ * returning its result to the caller.
+ */
+async function safeRedisSetGlbDeps(
+  redis: IRedisComponent,
+  glbHash: string,
+  value: GlbDepsCacheValue,
+  ttlSeconds: number,
+  logger: ILoggerComponent.ILogger
+): Promise<void> {
+  try {
+    await redis.set(`${GLB_DEPS_CACHE_KEY_PREFIX}${glbHash}`, value, ttlSeconds)
+  } catch (err: any) {
+    logger.warn('redis glb-deps cache set failed; subsequent probes will recompute', {
+      glbHash,
       error: err?.message ?? String(err)
     } as any)
   }
@@ -907,7 +1016,31 @@ export type PerAssetDigestResult = {
 export async function computePerAssetDigests(
   entity: Pick<Entity, 'content'>,
   contentServerUrl: string,
-  options?: { fetcher?: GltfFetcher; concurrency?: number; aggregateTimeoutMs?: number }
+  options?: {
+    fetcher?: GltfFetcher
+    concurrency?: number
+    aggregateTimeoutMs?: number
+    /** Optional shared Redis cache for parsed glb URIs. When supplied, each
+     * glb's URI list is looked up by hash BEFORE the catalyst byte fetch;
+     * on hit the fetch + JSON parse are skipped and we go straight to
+     * URI-resolution against `entity.content`. Hash uniquely identifies the
+     * glb bytes, so the cached URIs are valid across entities and pods —
+     * different entities referencing the same glb hash share the lookup. */
+    redis?: IRedisComponent
+    /** TTL for Redis-cached URI entries. Defaults to
+     * {@link DEFAULT_REDIS_GLB_DEPS_TTL_SECONDS}. Ignored when no redis is
+     * supplied. */
+    redisTtlSeconds?: number
+    /** Logger used by the glb-deps cache helpers for warn-level fallback
+     * messages on Redis errors. Defaults to a silent no-op so existing
+     * callers (tests, migrate script) don't see unexpected output. */
+    logger?: ILoggerComponent.ILogger
+    /** Metrics component for cache outcome counters. Optional — when unset,
+     * the cache still works, only the observability disappears. */
+    metrics?: AppComponents['metrics']
+    /** Build target / AB version label values, passed through to metrics. */
+    metricLabels?: { build_target: string; ab_version: string }
+  }
 ): Promise<PerAssetDigestResult> {
   const fetcher = options?.fetcher ?? defaultGltfFetcher
   // 20 in-flight catalyst fetches — below the S3 HEAD probe concurrency (50)
@@ -923,6 +1056,11 @@ export async function computePerAssetDigests(
   // process doesn't hang on lingering tasks. Default undefined keeps the
   // public API non-breaking — callers opt in.
   const aggregateTimeoutMs = options?.aggregateTimeoutMs
+  const redis = options?.redis
+  const redisTtlSeconds = options?.redisTtlSeconds ?? DEFAULT_REDIS_GLB_DEPS_TTL_SECONDS
+  const logger = options?.logger ?? NULL_LOGGER
+  const metrics = options?.metrics
+  const metricLabels = options?.metricLabels
 
   const content = entity.content ?? []
   // Case-insensitive lookup: glTF URIs and entity content-map paths may
@@ -947,23 +1085,59 @@ export async function computePerAssetDigests(
     concurrency,
     async (entry): Promise<WorkerResult> => {
       const ext = fileExtension(entry.file) as '.glb' | '.gltf'
-      // Fetch errors stay throws — they're transient and bubble up to
-      // `executeConversion` where they trigger SQS retry. Only content-
-      // determined defects (parse + resolve) become skips.
-      const bytes = await fetcher(`${contentsBaseUrl}${entry.hash}`, ext)
 
-      let uris: string[]
-      try {
-        uris = parseGltfDepRefs(bytes, ext)
-      } catch (err: any) {
-        return {
-          kind: 'skip',
-          skip: {
-            hash: entry.hash,
-            file: entry.file,
-            reason: 'unparseable',
-            detail: truncateSkipDetail(err?.message ?? String(err))
+      // Redis cache lookup: the URI list is a deterministic function of the
+      // glb bytes (and therefore of its content hash), so we can skip the
+      // catalyst byte fetch + JSON parse on hit. `unparseable` outcomes are
+      // also cached — structural defects in glb bytes don't change between
+      // probes. `missing-deps` is NOT cached because it depends on the entity
+      // content map, which varies per-entity.
+      let uris: string[] | undefined
+      if (redis) {
+        const cached = await safeRedisGetGlbDeps(redis, entry.hash, logger)
+        if (cached !== null) {
+          if (metrics && metricLabels) {
+            metrics.increment('ab_converter_glb_deps_cache_total', { ...metricLabels, outcome: 'hit' })
           }
+          if (cached.kind === 'unparseable') {
+            return {
+              kind: 'skip',
+              skip: { hash: entry.hash, file: entry.file, reason: 'unparseable', detail: cached.detail }
+            }
+          }
+          uris = cached.uris
+        }
+      }
+
+      if (uris === undefined) {
+        if (metrics && metricLabels && redis) {
+          metrics.increment('ab_converter_glb_deps_cache_total', { ...metricLabels, outcome: 'miss' })
+        }
+        // Fetch errors stay throws — they're transient and bubble up to
+        // `executeConversion` where they trigger SQS retry. Only content-
+        // determined defects (parse + resolve) become skips.
+        const bytes = await fetcher(`${contentsBaseUrl}${entry.hash}`, ext)
+
+        try {
+          uris = parseGltfDepRefs(bytes, ext)
+        } catch (err: any) {
+          const detail = truncateSkipDetail(err?.message ?? String(err))
+          // Cache the unparseable result so subsequent probes anywhere in the
+          // fleet don't re-fetch + re-parse a structurally broken glb.
+          if (redis) {
+            void safeRedisSetGlbDeps(redis, entry.hash, { kind: 'unparseable', detail }, redisTtlSeconds, logger)
+          }
+          return {
+            kind: 'skip',
+            skip: { hash: entry.hash, file: entry.file, reason: 'unparseable', detail }
+          }
+        }
+
+        // Successful parse — write the URI list back to Redis for the next
+        // probe. Fire-and-forget; the caller's result doesn't depend on
+        // propagation.
+        if (redis) {
+          void safeRedisSetGlbDeps(redis, entry.hash, { kind: 'ok', uris }, redisTtlSeconds, logger)
         }
       }
 
