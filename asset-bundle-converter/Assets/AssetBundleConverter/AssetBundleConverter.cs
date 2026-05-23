@@ -424,13 +424,17 @@ namespace DCL.ABConverter
                     assetsToMark.Remove(gltf.AssetPath);
                     continue;
                 }
-                finally
-                {
-                    await Resources.UnloadUnusedAssets();
-                }
 
                 totalGltfsProcessed++;
             }
+
+            // Resources.UnloadUnusedAssets sweeps the entire asset graph + forces
+            // a GC pass and is one of Unity's most expensive editor APIs (100ms+
+            // each call on a non-trivial project). It used to run in a per-GLTF
+            // finally, paying that cost N times per scene (20-50 GLTFs is
+            // typical). Hoisted to a single call after the import loop so the
+            // sweep amortises across the whole scene.
+            await Resources.UnloadUnusedAssets();
 
             EditorUtility.ClearProgressBar();
 
