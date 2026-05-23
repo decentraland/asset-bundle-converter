@@ -1,4 +1,4 @@
-import type { IRedisComponent } from '../../src/adapters/redis'
+import type { ICacheStorageComponent } from '@dcl/core-commons'
 
 /**
  * Lightweight redis mock for unit / integration tests that build their own
@@ -7,7 +7,7 @@ import type { IRedisComponent } from '../../src/adapters/redis'
  * to drive specific Redis behavior (hits, simulated failures) construct their
  * own mock inline rather than extending this.
  */
-export function createMockRedisComponent(): IRedisComponent {
+export function createMockRedisComponent(): ICacheStorageComponent {
   return {
     async get() {
       return null

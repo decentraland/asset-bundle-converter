@@ -4,7 +4,7 @@ import * as path from 'path'
 import * as fs from 'fs/promises'
 import * as crypto from 'crypto'
 import { AppComponents } from '../types'
-import { IRedisComponent } from '../adapters/redis'
+import { ICacheStorageComponent } from '@dcl/core-commons'
 import { normalizeContentsBaseUrl } from '../utils'
 import { bufferExtensions, fileExtension, gltfExtensions, textureExtensions } from './extensions'
 import { parseGltfDepRefs, resolveUriToContentFile } from './gltf-deps'
@@ -342,7 +342,7 @@ const REDIS_HIT_MARKER = '1'
  * trivial branch and adding logic to skip it would risk masking real Redis
  * misconfigurations.
  */
-function hasRedisHitCache(redis: IRedisComponent | undefined): redis is IRedisComponent {
+function hasRedisHitCache(redis: ICacheStorageComponent | undefined): redis is ICacheStorageComponent {
   return redis !== undefined && redis !== null
 }
 
@@ -351,7 +351,11 @@ function hasRedisHitCache(redis: IRedisComponent | undefined): redis is IRedisCo
  * treated as a cache miss instead of failing the entire probe. Returns `true`
  * only when the key is present in Redis.
  */
-async function safeRedisHit(redis: IRedisComponent, key: string, logger: ILoggerComponent.ILogger): Promise<boolean> {
+async function safeRedisHit(
+  redis: ICacheStorageComponent,
+  key: string,
+  logger: ILoggerComponent.ILogger
+): Promise<boolean> {
   try {
     const value = await redis.get<string>(key)
     return value !== null
@@ -374,7 +378,7 @@ async function safeRedisHit(redis: IRedisComponent, key: string, logger: ILogger
  * path.
  */
 async function safeRedisSet(
-  redis: IRedisComponent,
+  redis: ICacheStorageComponent,
   key: string,
   ttlSeconds: number,
   logger: ILoggerComponent.ILogger
@@ -415,7 +419,7 @@ function isGlbDepsCacheValue(value: unknown): value is GlbDepsCacheValue {
  * falls through to the fetch + parse path. Never throws into the worker.
  */
 async function safeRedisGetGlbDeps(
-  redis: IRedisComponent,
+  redis: ICacheStorageComponent,
   glbHash: string,
   logger: ILoggerComponent.ILogger
 ): Promise<GlbDepsCacheValue | null> {
@@ -446,7 +450,7 @@ async function safeRedisGetGlbDeps(
  * returning its result to the caller.
  */
 async function safeRedisSetGlbDeps(
-  redis: IRedisComponent,
+  redis: ICacheStorageComponent,
   glbHash: string,
   value: GlbDepsCacheValue,
   ttlSeconds: number,
@@ -1028,7 +1032,7 @@ export async function computePerAssetDigests(
      * URI-resolution against `entity.content`. Hash uniquely identifies the
      * glb bytes, so the cached URIs are valid across entities and pods —
      * different entities referencing the same glb hash share the lookup. */
-    redis?: IRedisComponent
+    redis?: ICacheStorageComponent
     /** TTL for Redis-cached URI entries. Defaults to
      * {@link DEFAULT_REDIS_GLB_DEPS_TTL_SECONDS}. Ignored when no redis is
      * supplied. */
