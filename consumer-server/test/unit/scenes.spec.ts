@@ -970,6 +970,46 @@ describe('when probe is called', () => {
     })
   })
 
+  describe('and the scenes wrapper invokes the underlying digest pass', () => {
+    // Coverage for the wrapper's plumbing: probe() calls the scenes-local
+    // `computePerAssetDigests`, which is the SINGLE place that injects redis,
+    // metrics, logger, and the metric labels into the underlying free
+    // function. Without this test, forgetting to plumb any of those would
+    // silently disable the URI cache (or its observability) in production.
+    let harness: Harness
+
+    beforeEach(async () => {
+      harness = await buildHarness()
+      harness.catalyst.getActiveEntity.mockResolvedValueOnce(buildSceneEntity())
+      mockedComputePerAssetDigests.mockResolvedValueOnce({
+        digests: new Map([['h-glb', 'digest-1']]),
+        skipped: new Map()
+      })
+      mockedCheckAssetCache.mockResolvedValueOnce(
+        buildAssetCacheResult({ cachedHashes: [], missingHashes: ['h-glb'] })
+      )
+      await harness.scenes.probe(buildProbeArgs({ buildTarget: 'windows', abVersion: 'v48' }))
+    })
+
+    afterEach(() => {
+      globalThis.fetch = harness.originalFetch
+      jest.clearAllMocks()
+    })
+
+    it('should forward the redis component, metrics, logger, and per-call metric labels', () => {
+      expect(mockedComputePerAssetDigests).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(String),
+        expect.objectContaining({
+          redis: expect.objectContaining({ get: expect.any(Function), set: expect.any(Function) }),
+          metrics: expect.objectContaining({ increment: expect.any(Function) }),
+          logger: expect.objectContaining({ warn: expect.any(Function) }),
+          metricLabels: { build_target: 'windows', ab_version: 'v48' }
+        })
+      )
+    })
+  })
+
   describe('and the cache probe finds every hash already canonical', () => {
     let harness: Harness
     let outcome: Awaited<ReturnType<IScenesComponent['probe']>>
