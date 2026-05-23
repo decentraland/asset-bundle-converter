@@ -23,8 +23,6 @@ jobs:
     strategy:
       matrix:
         include:
-        - service_name: asset-bundle-converter
-          build_target: webgl
         - service_name: asset-bundle-converter-windows
           build_target: windows
         - service_name: asset-bundle-converter-mac
