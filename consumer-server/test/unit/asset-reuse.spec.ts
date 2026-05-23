@@ -688,24 +688,36 @@ describe('when computing per-asset digests with the redis URI cache', () => {
     seeded?: Map<string, unknown>
     getThrows?: boolean
     setThrows?: boolean
+    /** When set, every `set` waits this many milliseconds before resolving.
+     * Used to verify the writeback is genuinely fire-and-forget (the
+     * function under test should return before the set completes). */
+    setDelayMs?: number
   }
 
   function makeMockRedis(options: RedisMockOptions = {}) {
     const getCalls: string[] = []
     const setCalls: Array<{ key: string; value: unknown; ttl?: number }> = []
-    const seeded = options.seeded ?? new Map<string, unknown>()
+    // Single mutable store so `set` writes flow back into subsequent `get`s —
+    // makes the mock self-consistent across calls without forcing tests to
+    // manually propagate writes. Seeded from the optional input.
+    const store = new Map<string, unknown>(options.seeded ? Array.from(options.seeded) : [])
     return {
       getCalls,
       setCalls,
+      store,
       redis: {
         async get(key: string) {
           getCalls.push(key)
           if (options.getThrows) throw new Error('simulated redis get failure')
-          return seeded.has(key) ? seeded.get(key) : null
+          return store.has(key) ? store.get(key) : null
         },
         async set(key: string, value: unknown, ttl?: number) {
           setCalls.push({ key, value, ttl })
+          if (options.setDelayMs !== undefined) {
+            await new Promise((r) => setTimeout(r, options.setDelayMs))
+          }
           if (options.setThrows) throw new Error('simulated redis set failure')
+          store.set(key, value)
         },
         async remove() {},
         async keys() {
@@ -729,6 +741,21 @@ describe('when computing per-asset digests with the redis URI cache', () => {
         async tryReleaseLock() {
           return false
         }
+      } as any
+    }
+  }
+
+  function makeMockMetrics() {
+    const calls: Array<{ name: string; labels: any; value?: number }> = []
+    return {
+      calls,
+      metrics: {
+        increment: (name: string, labels: any, value?: number) => calls.push({ name, labels, value }),
+        decrement: () => {},
+        observe: () => {},
+        startTimer: () => ({ end: () => {} }),
+        reset: () => {},
+        resetAll: () => {}
       } as any
     }
   }
@@ -979,10 +1006,8 @@ describe('when computing per-asset digests with the redis URI cache', () => {
         redis: mock.redis
       })
       await waitForRedisSets(mock.setCalls, 1)
-      // Seed the cache from the previous probe's write — the mock starts empty
-      // so we propagate manually here.
-      const lastSet = mock.setCalls[mock.setCalls.length - 1]
-      ;(mock.redis as any).get = async (key: string) => (key === lastSet.key ? lastSet.value : null)
+      // No manual propagation needed — the mock's `set` persists into the
+      // same store the next `get` reads from.
 
       // Second probe: same glb hash, different entity (different texture hash
       // mapped to the same filename). Cache hit means digest differs from A
@@ -1001,6 +1026,347 @@ describe('when computing per-asset digests with the redis URI cache', () => {
 
     it('should only invoke the fetcher once across both probes', () => {
       expect(fetcherCallCount).toBe(1)
+    })
+  })
+
+  describe('and the cache outcome metric is observed', () => {
+    describe('and a cached entry exists for the glb hash', () => {
+      let metricsMock: ReturnType<typeof makeMockMetrics>
+
+      beforeEach(async () => {
+        const seeded = new Map<string, unknown>()
+        seeded.set('glb-deps:hGlb', { kind: 'ok', uris: ['texture.png'] })
+        const { redis } = makeMockRedis({ seeded })
+        metricsMock = makeMockMetrics()
+        const fetcher: GltfFetcher = async () => buildGlb(['texture.png'])
+        await computePerAssetDigests(
+          {
+            content: [
+              { file: 'model.glb', hash: 'hGlb' },
+              { file: 'texture.png', hash: 'hTex' }
+            ]
+          } as any,
+          'https://peer.decentraland.org/content',
+          {
+            fetcher,
+            redis,
+            metrics: metricsMock.metrics,
+            metricLabels: { build_target: 'windows', ab_version: 'v48' }
+          }
+        )
+      })
+
+      it('should increment the hit outcome counter with the supplied labels', () => {
+        const hit = metricsMock.calls.find(
+          (c) => c.name === 'ab_converter_glb_deps_cache_total' && c.labels.outcome === 'hit'
+        )
+        expect(hit).toBeDefined()
+        expect(hit?.labels).toMatchObject({ build_target: 'windows', ab_version: 'v48' })
+      })
+
+      it('should NOT also increment the miss outcome counter', () => {
+        const miss = metricsMock.calls.find(
+          (c) => c.name === 'ab_converter_glb_deps_cache_total' && c.labels.outcome === 'miss'
+        )
+        expect(miss).toBeUndefined()
+      })
+    })
+
+    describe('and the cache is empty for the glb hash', () => {
+      let metricsMock: ReturnType<typeof makeMockMetrics>
+
+      beforeEach(async () => {
+        const { redis } = makeMockRedis()
+        metricsMock = makeMockMetrics()
+        const fetcher = makeFetcher(new Map([['hGlb', buildGlb(['texture.png'])]]))
+        await computePerAssetDigests(
+          {
+            content: [
+              { file: 'model.glb', hash: 'hGlb' },
+              { file: 'texture.png', hash: 'hTex' }
+            ]
+          } as any,
+          'https://peer.decentraland.org/content',
+          {
+            fetcher,
+            redis,
+            metrics: metricsMock.metrics,
+            metricLabels: { build_target: 'mac', ab_version: 'v49' }
+          }
+        )
+      })
+
+      it('should increment the miss outcome counter with the supplied labels', () => {
+        const miss = metricsMock.calls.find(
+          (c) => c.name === 'ab_converter_glb_deps_cache_total' && c.labels.outcome === 'miss'
+        )
+        expect(miss).toBeDefined()
+        expect(miss?.labels).toMatchObject({ build_target: 'mac', ab_version: 'v49' })
+      })
+
+      it('should NOT increment the hit outcome counter', () => {
+        const hit = metricsMock.calls.find(
+          (c) => c.name === 'ab_converter_glb_deps_cache_total' && c.labels.outcome === 'hit'
+        )
+        expect(hit).toBeUndefined()
+      })
+    })
+  })
+
+  describe('and the TTL on URI cache writes is observed', () => {
+    describe('and no redisTtlSeconds is supplied', () => {
+      let mock: ReturnType<typeof makeMockRedis>
+
+      beforeEach(async () => {
+        mock = makeMockRedis()
+        const fetcher = makeFetcher(new Map([['hGlb', buildGlb(['texture.png'])]]))
+        await computePerAssetDigests(
+          {
+            content: [
+              { file: 'model.glb', hash: 'hGlb' },
+              { file: 'texture.png', hash: 'hTex' }
+            ]
+          } as any,
+          'https://peer.decentraland.org/content',
+          { fetcher, redis: mock.redis }
+        )
+        await waitForRedisSets(mock.setCalls, 1)
+      })
+
+      it('should write the URI list with the default 24h TTL', () => {
+        expect(mock.setCalls[0]?.ttl).toBe(86_400)
+      })
+    })
+
+    describe('and a custom redisTtlSeconds is supplied', () => {
+      let mock: ReturnType<typeof makeMockRedis>
+
+      beforeEach(async () => {
+        mock = makeMockRedis()
+        const fetcher = makeFetcher(new Map([['hGlb', buildGlb(['texture.png'])]]))
+        await computePerAssetDigests(
+          {
+            content: [
+              { file: 'model.glb', hash: 'hGlb' },
+              { file: 'texture.png', hash: 'hTex' }
+            ]
+          } as any,
+          'https://peer.decentraland.org/content',
+          { fetcher, redis: mock.redis, redisTtlSeconds: 600 }
+        )
+        await waitForRedisSets(mock.setCalls, 1)
+      })
+
+      it('should forward the configured TTL on the URI cache write', () => {
+        expect(mock.setCalls[0]?.ttl).toBe(600)
+      })
+    })
+
+    describe('and the parse fails so an unparseable skip is written', () => {
+      let mock: ReturnType<typeof makeMockRedis>
+
+      beforeEach(async () => {
+        mock = makeMockRedis()
+        const fetcher: GltfFetcher = async () => Buffer.from('not a glb')
+        await computePerAssetDigests(
+          { content: [{ file: 'broken.glb', hash: 'hBroken' }] } as any,
+          'https://peer.decentraland.org/content',
+          { fetcher, redis: mock.redis, redisTtlSeconds: 300 }
+        )
+        await waitForRedisSets(mock.setCalls, 1)
+      })
+
+      it('should also forward the configured TTL on the unparseable cache write', () => {
+        expect(mock.setCalls[0]?.ttl).toBe(300)
+      })
+    })
+  })
+
+  describe('and the probe contains a mix of cached and uncached glbs', () => {
+    let mock: ReturnType<typeof makeMockRedis>
+    let metricsMock: ReturnType<typeof makeMockMetrics>
+    let fetcherCallCount: number
+    let result: { digests: ReadonlyMap<string, string>; skipped: ReadonlyMap<string, SkippedAsset> }
+
+    beforeEach(async () => {
+      // Seed only one glb's URIs — the other is a cache miss.
+      const seeded = new Map<string, unknown>()
+      seeded.set('glb-deps:hHot', { kind: 'ok', uris: ['shared.png'] })
+      mock = makeMockRedis({ seeded })
+      metricsMock = makeMockMetrics()
+
+      fetcherCallCount = 0
+      const realFetcher = makeFetcher(new Map([['hCold', buildGlb(['shared.png'])]]))
+      const countingFetcher: GltfFetcher = async (url, ext) => {
+        fetcherCallCount++
+        return realFetcher(url, ext)
+      }
+
+      result = await computePerAssetDigests(
+        {
+          content: [
+            { file: 'hot.glb', hash: 'hHot' },
+            { file: 'cold.glb', hash: 'hCold' },
+            { file: 'shared.png', hash: 'hShared' }
+          ]
+        } as any,
+        'https://peer.decentraland.org/content',
+        {
+          fetcher: countingFetcher,
+          redis: mock.redis,
+          metrics: metricsMock.metrics,
+          metricLabels: { build_target: 'windows', ab_version: 'v48' }
+        }
+      )
+      await waitForRedisSets(mock.setCalls, 1)
+    })
+
+    it('should invoke the fetcher exactly once (for the cold glb only)', () => {
+      expect(fetcherCallCount).toBe(1)
+    })
+
+    it('should produce digests for both glbs', () => {
+      expect(result.digests.get('hHot')).toMatch(/^[0-9a-f]{32}$/)
+      expect(result.digests.get('hCold')).toMatch(/^[0-9a-f]{32}$/)
+    })
+
+    it('should emit one hit and one miss outcome counter', () => {
+      const hits = metricsMock.calls.filter(
+        (c) => c.name === 'ab_converter_glb_deps_cache_total' && c.labels.outcome === 'hit'
+      )
+      const misses = metricsMock.calls.filter(
+        (c) => c.name === 'ab_converter_glb_deps_cache_total' && c.labels.outcome === 'miss'
+      )
+      expect(hits).toHaveLength(1)
+      expect(misses).toHaveLength(1)
+    })
+
+    it('should write the cold glb URIs back to redis (and only those)', () => {
+      expect(mock.setCalls).toHaveLength(1)
+      expect(mock.setCalls[0]).toMatchObject({ key: 'glb-deps:hCold' })
+    })
+  })
+
+  describe('and two computePerAssetDigests calls share one redis instance (simulated cross-pod)', () => {
+    // Closest unit-level approximation to two pods sharing a real Redis: the
+    // mock self-persists writes into a single store, so the second call sees
+    // what the first wrote. Stronger than the back-to-back test above because
+    // we don't manually propagate — a bug in the writeback path would break
+    // this assertion.
+    let mock: ReturnType<typeof makeMockRedis>
+    let fetcherCallCount: number
+
+    beforeEach(async () => {
+      mock = makeMockRedis()
+      fetcherCallCount = 0
+      const realFetcher = makeFetcher(new Map([['hShared', buildGlb(['common.png'])]]))
+      const countingFetcher: GltfFetcher = async (url, ext) => {
+        fetcherCallCount++
+        return realFetcher(url, ext)
+      }
+
+      // "Pod 1" probes scene A.
+      const entityA = {
+        content: [
+          { file: 'common.glb', hash: 'hShared' },
+          { file: 'common.png', hash: 'hTexA' }
+        ]
+      }
+      await computePerAssetDigests(entityA as any, 'https://peer.decentraland.org/content', {
+        fetcher: countingFetcher,
+        redis: mock.redis
+      })
+      await waitForRedisSets(mock.setCalls, 1)
+
+      // "Pod 2" probes scene B — different entity, same glb hash but a
+      // different texture mapped to "common.png". The cached URI list still
+      // applies; only the resolution differs (producing a different digest).
+      const entityB = {
+        content: [
+          { file: 'common.glb', hash: 'hShared' },
+          { file: 'common.png', hash: 'hTexB' }
+        ]
+      }
+      await computePerAssetDigests(entityB as any, 'https://peer.decentraland.org/content', {
+        fetcher: countingFetcher,
+        redis: mock.redis
+      })
+    })
+
+    it('should fetch the glb bytes only once across both probes', () => {
+      expect(fetcherCallCount).toBe(1)
+    })
+
+    it('should leave the shared store with exactly one URI cache entry', () => {
+      const glbEntries = Array.from(mock.store.keys()).filter((k) => k.startsWith('glb-deps:'))
+      expect(glbEntries).toEqual(['glb-deps:hShared'])
+    })
+  })
+
+  describe('and the redis.set is slow to resolve (fire-and-forget writeback)', () => {
+    // The writeback uses `void safeRedisSetGlbDeps(...)` so the function MUST
+    // resolve its result before the set completes. A regression that awaited
+    // the set inline would block this test from returning within the small
+    // window before the delay elapses.
+    let mock: ReturnType<typeof makeMockRedis>
+    let result: { digests: ReadonlyMap<string, string>; skipped: ReadonlyMap<string, SkippedAsset> }
+    let setCallsAtReturn: number
+
+    beforeEach(async () => {
+      mock = makeMockRedis({ setDelayMs: 80 })
+      const fetcher = makeFetcher(new Map([['hGlb', buildGlb(['texture.png'])]]))
+      const start = Date.now()
+      result = await computePerAssetDigests(
+        {
+          content: [
+            { file: 'model.glb', hash: 'hGlb' },
+            { file: 'texture.png', hash: 'hTex' }
+          ]
+        } as any,
+        'https://peer.decentraland.org/content',
+        { fetcher, redis: mock.redis }
+      )
+      // Snapshot how many sets had completed (i.e. set their `store` entry)
+      // by the time the function returned. With fire-and-forget the function
+      // should return well before the 80ms set delay; if it awaited the set,
+      // `store.size` would be 1 here.
+      const elapsed = Date.now() - start
+      setCallsAtReturn = mock.store.size
+      // Sanity check on the assumption — the function ran in well under the
+      // set delay. If this ever flips, the test below is meaningless.
+      expect(elapsed).toBeLessThan(80)
+    })
+
+    it('should return the correct digest without waiting for the writeback', () => {
+      expect(result.digests.get('hGlb')).toMatch(/^[0-9a-f]{32}$/)
+    })
+
+    it('should not have completed the redis set by the time the function returns', () => {
+      expect(setCallsAtReturn).toBe(0)
+    })
+  })
+
+  describe('and a glb has no images and no buffers (empty URI list)', () => {
+    let mock: ReturnType<typeof makeMockRedis>
+    let result: { digests: ReadonlyMap<string, string>; skipped: ReadonlyMap<string, SkippedAsset> }
+
+    beforeEach(async () => {
+      mock = makeMockRedis()
+      const fetcher = makeFetcher(new Map([['hEmpty', buildGlb([], [])]]))
+      result = await computePerAssetDigests(
+        { content: [{ file: 'empty.glb', hash: 'hEmpty' }] } as any,
+        'https://peer.decentraland.org/content',
+        { fetcher, redis: mock.redis }
+      )
+      await waitForRedisSets(mock.setCalls, 1)
+    })
+
+    it('should still produce a digest (computed from an empty deps set)', () => {
+      expect(result.digests.get('hEmpty')).toMatch(/^[0-9a-f]{32}$/)
+    })
+
+    it('should write the empty URI list back to redis as kind=ok', () => {
+      expect(mock.setCalls[0]).toMatchObject({ value: { kind: 'ok', uris: [] } })
     })
   })
 })
