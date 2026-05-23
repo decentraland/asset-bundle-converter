@@ -9,7 +9,6 @@ import {
   findMetadataOnlyHashes,
   MAX_SKIP_DETAIL_LENGTH,
   parseRetryAfterMs,
-  probeHitCache,
   purgeCachedBundlesFromOutput,
   SKIP_DETAIL_TRUNCATION_MARKER,
   GltfFetcher,
@@ -22,8 +21,6 @@ const originalFetch = globalThis.fetch
 let mockedFetch: jest.Mock
 
 beforeEach(() => {
-  // The hit-cache is process-local and survives across tests unless we clear it.
-  probeHitCache.clear()
   mockedFetch = jest.fn()
   globalThis.fetch = mockedFetch as any
 })
@@ -74,6 +71,13 @@ function makeMockComponents(
   const metricsCalls: Array<{ name: string; labels: any; value?: number }> = []
   const redisGetCalls: string[] = []
   const redisSetCalls: Array<{ key: string; ttl?: number }> = []
+  // Self-persisting store seeded from `options.redisHits`. Writes flow back so
+  // a second probe sees what a previous one cached — mirrors real Redis
+  // semantics and lets cross-call tests share one mock instance.
+  const redisStore = new Map<string, unknown>()
+  if (options.redisHits) {
+    for (const key of options.redisHits) redisStore.set(key, '1')
+  }
   return {
     components: {
       cdnS3: s3 as any,
@@ -87,11 +91,12 @@ function makeMockComponents(
         async get(key: string) {
           redisGetCalls.push(key)
           if (options.redisGetThrows) throw new Error('simulated redis get failure')
-          return options.redisHits?.has(key) ? '1' : null
+          return redisStore.has(key) ? redisStore.get(key) : null
         },
-        async set(key: string, _value: unknown, ttl?: number) {
+        async set(key: string, value: unknown, ttl?: number) {
           redisSetCalls.push({ key, ttl })
           if (options.redisSetThrows) throw new Error('simulated redis set failure')
+          redisStore.set(key, value)
         },
         async remove() {},
         async keys() {
@@ -2192,12 +2197,15 @@ describe('when checking the asset cache against S3', () => {
     })
   })
 
-  describe('and the hit-cache already knows a hash is canonical', () => {
-    it('should skip the S3 HEAD for that hash on the next conversion', async () => {
+  describe('and a previous probe wrote a key into Redis', () => {
+    it('should skip the S3 HEAD for that hash on a subsequent probe', async () => {
+      // Self-persisting Redis mock + same `components` instance across both
+      // probes — first run writes the S3-confirmed key to Redis, second run
+      // reads it back and short-circuits the S3 HEAD.
       const existing = new Set(['v48/assets/h1_windows', 'v48/assets/h2_windows'])
-      const firstRun = makeMockComponents(existing)
+      const { components, calls } = makeMockComponents(existing)
 
-      await checkAssetCache(firstRun.components, {
+      await checkAssetCache(components, {
         entity: {
           content: [
             { file: 'a.png', hash: 'h1' },
@@ -2209,10 +2217,10 @@ describe('when checking the asset cache against S3', () => {
         cdnBucket: 'bucket',
         depsDigestByHash: new Map()
       })
-      expect(firstRun.calls).toHaveLength(2)
+      expect(calls).toHaveLength(2)
 
-      const secondRun = makeMockComponents(new Set())
-      const result = await checkAssetCache(secondRun.components, {
+      const callsBeforeSecondRun = calls.length
+      const result = await checkAssetCache(components, {
         entity: {
           content: [
             { file: 'a.png', hash: 'h1' },
@@ -2225,16 +2233,19 @@ describe('when checking the asset cache against S3', () => {
         depsDigestByHash: new Map()
       })
 
-      expect(secondRun.calls.map((c) => c.Key)).toEqual(['v48/assets/h3_windows'])
+      // Only h3 was HEAD'd this time; h1 came back from Redis without an S3 call.
+      expect(calls.slice(callsBeforeSecondRun).map((c) => c.Key)).toEqual(['v48/assets/h3_windows'])
       expect(result.cachedHashes).toEqual(['h1'])
       expect(result.missingHashes).toEqual(['h3'])
     })
 
-    it('should emit hit-cache and head-probe metrics separately', async () => {
+    it('should emit hit-cache and head-probe metrics independently', async () => {
+      // First run is all S3 HEADs (Redis cold). Second run mixes a Redis hit
+      // (h1) with an S3 HEAD (h3) so both counters tick once.
       const existing = new Set(['v48/assets/h1_windows', 'v48/assets/h2_windows'])
+      const { components, metricsCalls } = makeMockComponents(existing)
 
-      const firstRun = makeMockComponents(existing)
-      await checkAssetCache(firstRun.components, {
+      await checkAssetCache(components, {
         entity: {
           content: [
             { file: 'a.png', hash: 'h1' },
@@ -2246,11 +2257,11 @@ describe('when checking the asset cache against S3', () => {
         cdnBucket: 'bucket',
         depsDigestByHash: new Map()
       })
-      expect(firstRun.metricsCalls.find((m) => m.name === 'ab_converter_asset_probe_head_total')?.value).toBe(2)
-      expect(firstRun.metricsCalls.find((m) => m.name === 'ab_converter_asset_probe_hit_cache_total')).toBeUndefined()
+      expect(metricsCalls.find((m) => m.name === 'ab_converter_asset_probe_head_total')?.value).toBe(2)
+      expect(metricsCalls.find((m) => m.name === 'ab_converter_asset_probe_hit_cache_total')).toBeUndefined()
 
-      const secondRun = makeMockComponents(new Set())
-      await checkAssetCache(secondRun.components, {
+      const metricsCountBeforeSecondRun = metricsCalls.length
+      await checkAssetCache(components, {
         entity: {
           content: [
             { file: 'a.png', hash: 'h1' },
@@ -2262,8 +2273,9 @@ describe('when checking the asset cache against S3', () => {
         cdnBucket: 'bucket',
         depsDigestByHash: new Map()
       })
-      expect(secondRun.metricsCalls.find((m) => m.name === 'ab_converter_asset_probe_hit_cache_total')?.value).toBe(1)
-      expect(secondRun.metricsCalls.find((m) => m.name === 'ab_converter_asset_probe_head_total')?.value).toBe(1)
+      const secondRunMetrics = metricsCalls.slice(metricsCountBeforeSecondRun)
+      expect(secondRunMetrics.find((m) => m.name === 'ab_converter_asset_probe_hit_cache_total')?.value).toBe(1)
+      expect(secondRunMetrics.find((m) => m.name === 'ab_converter_asset_probe_head_total')?.value).toBe(1)
     })
 
     it('should not confuse hashes across build targets or AB versions', async () => {
@@ -2298,79 +2310,6 @@ describe('when checking the asset cache against S3', () => {
       })
       expect(v49Run.calls.map((c) => c.Key)).toEqual(['v49/assets/h1_windows'])
     })
-
-    it('should keep working when methods are called without the object receiver', () => {
-      const { has, add } = probeHitCache
-      add('k')
-      expect(has('k')).toBe(true)
-    })
-
-    it('should evict the least-recently-used entry when full (insertion order)', () => {
-      const originalMax = probeHitCache.maxSize
-      try {
-        probeHitCache.maxSize = 3
-        probeHitCache.add('k1')
-        probeHitCache.add('k2')
-        probeHitCache.add('k3')
-        probeHitCache.add('k4')
-
-        expect(probeHitCache.has('k1')).toBe(false)
-        expect(probeHitCache.has('k2')).toBe(true)
-        expect(probeHitCache.has('k3')).toBe(true)
-        expect(probeHitCache.has('k4')).toBe(true)
-      } finally {
-        probeHitCache.maxSize = originalMax
-      }
-    })
-
-    it('should promote a key to MRU on has() so it survives the next eviction', () => {
-      const originalMax = probeHitCache.maxSize
-      try {
-        probeHitCache.maxSize = 3
-        probeHitCache.add('k1')
-        probeHitCache.add('k2')
-        probeHitCache.add('k3')
-        expect(probeHitCache.has('k1')).toBe(true)
-        probeHitCache.add('k4')
-
-        expect(probeHitCache.has('k1')).toBe(true)
-        expect(probeHitCache.has('k2')).toBe(false)
-        expect(probeHitCache.has('k3')).toBe(true)
-        expect(probeHitCache.has('k4')).toBe(true)
-      } finally {
-        probeHitCache.maxSize = originalMax
-      }
-    })
-
-    it('should refresh the LRU position when add() is called on an existing key', () => {
-      const originalMax = probeHitCache.maxSize
-      try {
-        probeHitCache.maxSize = 3
-        probeHitCache.add('k1')
-        probeHitCache.add('k2')
-        probeHitCache.add('k3')
-        probeHitCache.add('k1')
-        probeHitCache.add('k4')
-
-        expect(probeHitCache.has('k1')).toBe(true)
-        expect(probeHitCache.has('k2')).toBe(false)
-        expect(probeHitCache.has('k3')).toBe(true)
-        expect(probeHitCache.has('k4')).toBe(true)
-      } finally {
-        probeHitCache.maxSize = originalMax
-      }
-    })
-
-    it('should not grow past maxSize no matter how many unique keys are added', () => {
-      const originalMax = probeHitCache.maxSize
-      try {
-        probeHitCache.maxSize = 5
-        for (let i = 0; i < 100; i++) probeHitCache.add(`key-${i}`)
-        expect(probeHitCache.hits.size).toBe(5)
-      } finally {
-        probeHitCache.maxSize = originalMax
-      }
-    })
   })
 
   describe('and a HEAD probe misses', () => {
@@ -2397,7 +2336,7 @@ describe('when checking the asset cache against S3', () => {
     })
   })
 
-  describe('and the redis hit-cache is populated with a key that the local LRU has never seen', () => {
+  describe('and the redis hit-cache is populated for a probed key', () => {
     let setup: ReturnType<typeof makeMockComponents>
 
     beforeEach(async () => {
@@ -2415,24 +2354,9 @@ describe('when checking the asset cache against S3', () => {
       expect(setup.calls).toHaveLength(0)
     })
 
-    it('should record the hit under source=redis in the per-source counter', () => {
-      const redisHits = setup.metricsCalls.find(
-        (m) => m.name === 'ab_converter_asset_probe_hit_cache_source_total' && m.labels.source === 'redis'
-      )
-      expect(redisHits?.value).toBe(1)
-    })
-
-    it('should populate the local LRU so the next probe is purely local', async () => {
-      const second = makeMockComponents(new Set())
-      await checkAssetCache(second.components, {
-        entity: { content: [{ file: 'a.png', hash: 'h1' }] } as any,
-        abVersion: 'v48',
-        buildTarget: 'windows',
-        cdnBucket: 'bucket',
-        depsDigestByHash: new Map()
-      })
-      expect(second.calls).toHaveLength(0)
-      expect(second.redisGetCalls).toEqual([])
+    it('should increment the hit-cache counter', () => {
+      const hit = setup.metricsCalls.find((m) => m.name === 'ab_converter_asset_probe_hit_cache_total')
+      expect(hit?.value).toBe(1)
     })
   })
 

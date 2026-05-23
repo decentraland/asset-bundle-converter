@@ -50,14 +50,9 @@ export const metricDeclarations = {
     labelNames: ['build_target', 'ab_version']
   },
   ab_converter_asset_probe_hit_cache_total: {
-    help: 'Counter of asset cache probes served from any hit-cache layer (local LRU or shared Redis), skipping S3 HEAD',
+    help: 'Counter of asset cache probes served from the Redis hit-cache (skipping S3 HEAD)',
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target', 'ab_version']
-  },
-  ab_converter_asset_probe_hit_cache_source_total: {
-    help: 'Counter of asset cache probe hits broken down by source layer. source ∈ {local, redis}. Use to gauge cross-pod cache benefit: a high redis ratio means workers are sharing canonical lookups; near-zero means pods are mostly self-serving.',
-    type: IMetricsComponent.CounterType,
-    labelNames: ['build_target', 'ab_version', 'source']
   },
   ab_converter_glb_deps_cache_total: {
     help: 'Counter of Redis-cached glb URI lookups, labelled by outcome ∈ {hit, miss}. A hit means the catalyst byte fetch + JSON parse for that glb was skipped because another probe (here or on a peer pod) already cached the URI list. Track hit rate to size the cache and tune the TTL.',

@@ -11,7 +11,7 @@ import { createConfigComponent } from '@well-known-components/env-config-provide
 import { createLogComponent } from '@well-known-components/logger'
 import { createMetricsComponent } from '@well-known-components/metrics'
 import { metricDeclarations } from '../../src/metrics'
-import { canonicalFilenameForAsset, computeDepsDigest, probeHitCache } from '../../src/logic/asset-reuse'
+import { canonicalFilenameForAsset, computeDepsDigest } from '../../src/logic/asset-reuse'
 import { createScenesComponent } from '../../src/logic/scenes'
 import { createCatalystMock, createSentryMock, createUnityRunnerMock } from '../mocks'
 import { buildGlb } from '../helpers/glb-fixtures'
@@ -120,7 +120,6 @@ describe('when running executeTriagePass against a scene', () => {
     globalThis.fetch = mockedFetch as any
     mockedFetch.mockResolvedValue(responseFor(Buffer.from('fake-source-file')))
 
-    probeHitCache.clear()
     jest.clearAllMocks()
     mockedFetch.mockResolvedValue(responseFor(Buffer.from('fake-source-file')))
   })
