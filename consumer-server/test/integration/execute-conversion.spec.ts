@@ -233,6 +233,146 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     })
   })
 
+  describe('and per-stage phase timing is observed', () => {
+    let startTimerSpy: jest.SpyInstance
+
+    beforeEach(async () => {
+      startTimerSpy = jest.spyOn(components.metrics, 'startTimer')
+
+      // Minimal entity: one already-canonical asset so the conversion takes the
+      // full-cache short-circuit. Unity isn't spawned; we still pass through
+      // catalyst fetch + digest + probe + upload + cleanup.
+      const content = [
+        { file: 'model.glb', hash: 'hGlb' },
+        { file: 'texture.png', hash: 'hTex' },
+        { file: 'main.crdt', hash: 'hMainCrdt' },
+        { file: 'scene.json', hash: 'hSceneJson' },
+        { file: 'index.js', hash: 'hIndexJs' }
+      ]
+      setupFetchMock(new Map([['hGlb', buildGlb(['texture.png'])]]))
+      const glbDigest = computeDepsDigest([{ file: 'texture.png', hash: 'hTex' }])
+      const digests = new Map([['hGlb', glbDigest]])
+      const glbFilename = canonicalFilenameForAsset('hGlb', '.glb', 'windows', digests)
+      const texFilename = canonicalFilenameForAsset('hTex', '.png', 'windows', digests)
+      await components.cdnS3
+        .putObject({ Bucket: 'test-bucket', Key: `v48/assets/${glbFilename}`, Body: 'glb-bytes' })
+        .promise()
+      await components.cdnS3
+        .putObject({ Bucket: 'test-bucket', Key: `v48/assets/${texFilename}`, Body: 'tex-bytes' })
+        .promise()
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-entity-1',
+        type: 'scene',
+        content,
+        metadata: { main: 'index.js' }
+      })
+
+      await executeConversion(
+        components,
+        'bafy-entity-1',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should observe the catalyst fetch phase with build_target and ab_version labels', () => {
+      expect(startTimerSpy).toHaveBeenCalledWith('ab_converter_phase_catalyst_fetch_seconds', {
+        build_target: 'windows',
+        ab_version: 'v48'
+      })
+    })
+
+    it('should observe the digest phase with build_target and ab_version labels', () => {
+      expect(startTimerSpy).toHaveBeenCalledWith('ab_converter_phase_digest_seconds', {
+        build_target: 'windows',
+        ab_version: 'v48'
+      })
+    })
+
+    it('should observe the probe phase with build_target and ab_version labels', () => {
+      expect(startTimerSpy).toHaveBeenCalledWith('ab_converter_phase_probe_seconds', {
+        build_target: 'windows',
+        ab_version: 'v48'
+      })
+    })
+
+    it('should observe the upload phase with build_target and ab_version labels (fast-path uploads count too)', () => {
+      expect(startTimerSpy).toHaveBeenCalledWith('ab_converter_phase_upload_seconds', {
+        build_target: 'windows',
+        ab_version: 'v48'
+      })
+    })
+
+    it('should NOT observe the unity phase on the full-cache short-circuit', () => {
+      expect(startTimerSpy).not.toHaveBeenCalledWith('ab_converter_phase_unity_seconds', expect.anything())
+    })
+
+    it('should NOT observe the cleanup phase on the full-cache short-circuit (nothing to clean up)', () => {
+      expect(startTimerSpy).not.toHaveBeenCalledWith('ab_converter_phase_cleanup_seconds', expect.anything())
+    })
+  })
+
+  describe('and per-stage phase timing is observed on the Unity (partial-hit) path', () => {
+    let startTimerSpy: jest.SpyInstance
+
+    beforeEach(async () => {
+      startTimerSpy = jest.spyOn(components.metrics, 'startTimer')
+
+      // Partial-hit setup: one cached glb + one un-cached texture, so the probe
+      // returns missingHashes != 0 and the Unity path runs (covers unity +
+      // upload + cleanup phases).
+      const content = [
+        { file: 'model.glb', hash: 'hGlbU' },
+        { file: 'texture.png', hash: 'hTexU' },
+        { file: 'main.crdt', hash: 'hMain' },
+        { file: 'scene.json', hash: 'hScene' },
+        { file: 'index.js', hash: 'hIndex' }
+      ]
+      setupFetchMock(new Map([['hGlbU', buildGlb(['texture.png'])]]))
+      // No canonical objects seeded — both hashes miss; Unity runs.
+      mockedGetActiveEntity.mockResolvedValue({
+        id: 'bafy-partial',
+        type: 'scene',
+        content,
+        metadata: { main: 'index.js' }
+      })
+      mockedRunConversion.mockImplementation(async (options: any) => {
+        // Touch the out-directory so the post-conversion readdir + upload have
+        // something to walk. Mirrors what the real Unity child would produce.
+        await fs.mkdir(options.outDirectory, { recursive: true })
+        await fs.writeFile(path.join(options.outDirectory, 'placeholder.manifest'), 'x')
+        return 0
+      })
+
+      await executeConversion(
+        components,
+        'bafy-partial',
+        'https://peer.decentraland.org/content',
+        false,
+        undefined,
+        undefined,
+        'v48'
+      )
+    })
+
+    it('should observe the unity phase', () => {
+      expect(startTimerSpy).toHaveBeenCalledWith('ab_converter_phase_unity_seconds', {
+        build_target: 'windows',
+        ab_version: 'v48'
+      })
+    })
+
+    it('should observe the cleanup phase', () => {
+      expect(startTimerSpy).toHaveBeenCalledWith('ab_converter_phase_cleanup_seconds', {
+        build_target: 'windows',
+        ab_version: 'v48'
+      })
+    })
+  })
+
   describe('and the entity uses the text .gltf + .bin form', () => {
     it('should fold the deps digest into the gltf canonical path and ignore the buffer in the manifest (no standalone bin bundle exists)', async () => {
       // `.gltf` (text) references `.bin` buffers by URI. The bin contributes

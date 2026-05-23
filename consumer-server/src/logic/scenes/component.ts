@@ -1,6 +1,6 @@
 import { Entity } from '@dcl/schemas'
 import { AppComponents } from '../../types'
-import { getUnityBuildTarget, normalizeContentsBaseUrl } from '../../utils'
+import { getUnityBuildTarget, normalizeContentsBaseUrl, withPhaseTimer } from '../../utils'
 import {
   AssetCacheResult,
   PerAssetDigestResult,
@@ -68,11 +68,10 @@ function toError(e: unknown): Error {
 export async function createScenesComponent(
   components: Pick<AppComponents, 'logs' | 'config' | 'metrics' | 'cdnS3' | 'sentry' | 'catalyst'>
 ): Promise<IScenesComponent> {
-  // `metrics` isn't destructured here because this component's own methods
-  // don't emit metrics directly — but it's required in the Pick<> because the
-  // delegated impls (`checkAssetCacheImpl` and friends) read it from the
-  // captured `components` reference passed through below.
-  const { logs, config, cdnS3, sentry, catalyst } = components
+  // Destructure everything except the captured `components` itself — that
+  // reference is forwarded verbatim to the delegated impls (`checkAssetCacheImpl`
+  // and friends) so they keep their direct access to whatever fields they read.
+  const { logs, config, metrics, cdnS3, sentry, catalyst } = components
 
   // CDN_BUCKET is a process-lifetime env var — resolve it once at construction
   // so `probe()` and downstream callers don't pay a config lookup per call.
@@ -277,7 +276,12 @@ export async function createScenesComponent(
     let entity: Entity
     let entityType: string
     try {
-      const fetched = await catalyst.getActiveEntity(entityId, contentServerUrl, CATALYST_FETCH_TIMEOUT_MS)
+      const fetched = await withPhaseTimer(
+        metrics,
+        'ab_converter_phase_catalyst_fetch_seconds',
+        { build_target: buildTarget, ab_version: abVersion },
+        () => catalyst.getActiveEntity(entityId, contentServerUrl, CATALYST_FETCH_TIMEOUT_MS)
+      )
       if (!fetched) throw new Error('entity no longer active on catalyst (redeployed or evicted)')
       entity = fetched
       entityType = entity.type
@@ -294,9 +298,12 @@ export async function createScenesComponent(
     let depsDigestByHash: ReadonlyMap<string, string>
     let skippedAssets: ReadonlyMap<string, SkippedAsset>
     try {
-      const digestResult = await computePerAssetDigests(entity, contentServerUrl, {
-        aggregateTimeoutMs: PROBE_DIGEST_TIMEOUT_MS
-      })
+      const digestResult = await withPhaseTimer(
+        metrics,
+        'ab_converter_phase_digest_seconds',
+        { build_target: buildTarget, ab_version: abVersion },
+        () => computePerAssetDigests(entity, contentServerUrl, { aggregateTimeoutMs: PROBE_DIGEST_TIMEOUT_MS })
+      )
       depsDigestByHash = digestResult.digests
       skippedAssets = digestResult.skipped
     } catch (err: any) {
@@ -352,13 +359,19 @@ export async function createScenesComponent(
 
     let cacheResult: AssetCacheResult
     try {
-      cacheResult = await checkAssetCache({
-        entity,
-        abVersion,
-        buildTarget,
-        cdnBucket,
-        depsDigestByHash
-      })
+      cacheResult = await withPhaseTimer(
+        metrics,
+        'ab_converter_phase_probe_seconds',
+        { build_target: buildTarget, ab_version: abVersion },
+        () =>
+          checkAssetCache({
+            entity,
+            abVersion,
+            buildTarget,
+            cdnBucket,
+            depsDigestByHash
+          })
+      )
     } catch (e: any) {
       logger.warn(`Asset cache probe failed: ${e?.message ?? e}`)
       return {

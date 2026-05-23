@@ -8,7 +8,7 @@ import { AppComponents } from '../types'
 import * as fs from 'fs'
 import * as path from 'path'
 import { hasContentChange } from './has-content-changed-task'
-import { getUnityBuildTarget } from '../utils'
+import { getUnityBuildTarget, withPhaseTimer } from '../utils'
 import { AssetCacheResult, findMetadataOnlyHashes, SkippedAsset } from './asset-reuse'
 import { Manifest } from './scenes'
 
@@ -326,16 +326,22 @@ export async function executeLODConversion(
   }
 
   try {
-    const exitCode = await components.unityRunner.runLodsConversion({
-      entityId,
-      logFile,
-      outDirectory,
-      lods,
-      unityPath: $UNITY_PATH,
-      projectPath: $PROJECT_PATH,
-      timeout: 60 * 60 * 1000,
-      unityBuildTarget
-    })
+    const exitCode = await withPhaseTimer(
+      components.metrics,
+      'ab_converter_phase_unity_seconds',
+      { build_target: $BUILD_TARGET, ab_version: abVersion },
+      () =>
+        components.unityRunner.runLodsConversion({
+          entityId,
+          logFile,
+          outDirectory,
+          lods,
+          unityPath: $UNITY_PATH,
+          projectPath: $PROJECT_PATH,
+          timeout: 60 * 60 * 1000,
+          unityBuildTarget
+        })
+    )
 
     components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })
 
@@ -348,20 +354,26 @@ export async function executeLODConversion(
       return 5 // UNEXPECTED_ERROR exit code
     }
 
-    await uploadDir(components.cdnS3, cdnBucket, outDirectory, 'LOD', {
-      concurrency: 10,
-      matches: [
-        {
-          // the rest of the elements will be uploaded as application/wasm
-          // to be compressed and cached by cloudflare
-          match: '**/*',
-          contentType: 'application/wasm',
-          immutable: true,
-          variants: [FileVariant.Brotli, FileVariant.Uncompressed],
-          skipRepeated: true
-        }
-      ]
-    })
+    await withPhaseTimer(
+      components.metrics,
+      'ab_converter_phase_upload_seconds',
+      { build_target: $BUILD_TARGET, ab_version: abVersion },
+      () =>
+        uploadDir(components.cdnS3, cdnBucket, outDirectory, 'LOD', {
+          concurrency: 10,
+          matches: [
+            {
+              // the rest of the elements will be uploaded as application/wasm
+              // to be compressed and cached by cloudflare
+              match: '**/*',
+              contentType: 'application/wasm',
+              immutable: true,
+              variants: [FileVariant.Brotli, FileVariant.Uncompressed],
+              skipRepeated: true
+            }
+          ]
+        })
+    )
 
     return exitCode ?? -1
   } catch (error: any) {
@@ -392,26 +404,33 @@ export async function executeLODConversion(
       logger.info(`!!!!!!!! Log file not deleted or uploaded ${logFile}`, defaultLoggerMetadata)
     }
 
-    // delete output files
-    try {
-      await rimraf(logFile, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
-    }
-    try {
-      await rimraf(outDirectory, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
-    }
-    // delete library folder
-    try {
-      await rimraf(`${$PROJECT_PATH}/Library`, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
-    }
+    await withPhaseTimer(
+      components.metrics,
+      'ab_converter_phase_cleanup_seconds',
+      { build_target: $BUILD_TARGET, ab_version: abVersion },
+      async () => {
+        // delete output files
+        try {
+          await rimraf(logFile, { maxRetries: 3 })
+        } catch (err: any) {
+          logger.error(err, defaultLoggerMetadata)
+        }
+        try {
+          await rimraf(outDirectory, { maxRetries: 3 })
+        } catch (err: any) {
+          logger.error(err, defaultLoggerMetadata)
+        }
+        // delete library folder
+        try {
+          await rimraf(`${$PROJECT_PATH}/Library`, { maxRetries: 3 })
+        } catch (err: any) {
+          logger.error(err, defaultLoggerMetadata)
+        }
 
-    // delete scene manifest folder
-    await deleteSceneManifestFolder($PROJECT_PATH, logger, defaultLoggerMetadata)
+        // delete scene manifest folder
+        await deleteSceneManifestFolder($PROJECT_PATH, logger, defaultLoggerMetadata)
+      }
+    )
   }
 
   logger.debug('LOD Conversion finished', defaultLoggerMetadata)
@@ -578,15 +597,21 @@ export async function executeConversion(
         cached: outcome.cacheResult.cachedHashes.length
       } as any)
       try {
-        await components.scenes.uploadFastPathResult({
-          entity: outcome.entity,
-          contentServerUrl,
-          cdnBucket,
-          manifestFile,
-          entityScopedUploadPath: `${abVersion}/${entityId}`,
-          abVersion,
-          cacheResult: outcome.cacheResult
-        })
+        await withPhaseTimer(
+          components.metrics,
+          'ab_converter_phase_upload_seconds',
+          { build_target: $BUILD_TARGET, ab_version: abVersion },
+          () =>
+            components.scenes.uploadFastPathResult({
+              entity: outcome.entity,
+              contentServerUrl,
+              cdnBucket,
+              manifestFile,
+              entityScopedUploadPath: `${abVersion}/${entityId}`,
+              abVersion,
+              cacheResult: outcome.cacheResult
+            })
+        )
       } catch (err: any) {
         // Short-circuit failed post-probe. SQS will retry; capture for
         // visibility because the main-path error handler below never runs.
@@ -676,25 +701,31 @@ export async function executeConversion(
     logger.info(`HasContentChanged for ${entityId} result was ${hasContentChanged}`)
   }
 
-  let exitCode
+  let exitCode: number | undefined
   try {
     if (hasContentChanged) {
-      exitCode = await components.unityRunner.runConversion({
-        contentServerUrl,
-        entityId,
-        entityType,
-        logFile,
-        outDirectory,
-        projectPath: $PROJECT_PATH,
-        unityPath: $UNITY_PATH,
-        timeout: 120 * 60 * 1000, // 120min temporarily doubled
-        unityBuildTarget: unityBuildTarget,
-        animation: animation,
-        doISS: doISS,
-        cachedHashes: useAssetReuse && cacheResult ? cacheResult.unitySkippableHashes : undefined,
-        skippedHashes: unityDropHashes.size > 0 ? [...unityDropHashes] : undefined,
-        depsDigestByHash
-      })
+      exitCode = await withPhaseTimer(
+        components.metrics,
+        'ab_converter_phase_unity_seconds',
+        { build_target: $BUILD_TARGET, ab_version: abVersion },
+        () =>
+          components.unityRunner.runConversion({
+            contentServerUrl,
+            entityId,
+            entityType,
+            logFile,
+            outDirectory,
+            projectPath: $PROJECT_PATH,
+            unityPath: $UNITY_PATH,
+            timeout: 120 * 60 * 1000, // 120min temporarily doubled
+            unityBuildTarget: unityBuildTarget,
+            animation: animation,
+            doISS: doISS,
+            cachedHashes: useAssetReuse && cacheResult ? cacheResult.unitySkippableHashes : undefined,
+            skippedHashes: unityDropHashes.size > 0 ? [...unityDropHashes] : undefined,
+            depsDigestByHash
+          })
+      )
     } else {
       exitCode = 0
     }
@@ -741,39 +772,51 @@ export async function executeConversion(
 
     const bundleUploadPath = useAssetReuse ? assetReuseUploadPath : entityScopedUploadPath
 
-    // first upload the content (bundles go to the canonical prefix when reuse is on)
-    await uploadDir(components.cdnS3, cdnBucket, outDirectory, bundleUploadPath, {
-      concurrency: 10,
-      matches: [
-        {
-          match: '**/*.manifest',
-          contentType: 'text/cache-manifest',
-          immutable: true,
-          variants: [FileVariant.Brotli, FileVariant.Uncompressed]
-        },
-        {
-          // the rest of the elements will be uploaded as application/wasm
-          // to be compressed and cached by cloudflare
-          match: '**/*',
-          contentType: 'application/wasm',
-          immutable: true,
-          variants: [FileVariant.Brotli, FileVariant.Uncompressed],
-          skipRepeated: true
+    await withPhaseTimer(
+      components.metrics,
+      'ab_converter_phase_upload_seconds',
+      { build_target: $BUILD_TARGET, ab_version: abVersion },
+      async () => {
+        // first upload the content (bundles go to the canonical prefix when reuse is on)
+        await uploadDir(components.cdnS3, cdnBucket, outDirectory, bundleUploadPath, {
+          concurrency: 10,
+          matches: [
+            {
+              match: '**/*.manifest',
+              contentType: 'text/cache-manifest',
+              immutable: true,
+              variants: [FileVariant.Brotli, FileVariant.Uncompressed]
+            },
+            {
+              // the rest of the elements will be uploaded as application/wasm
+              // to be compressed and cached by cloudflare
+              match: '**/*',
+              contentType: 'application/wasm',
+              immutable: true,
+              variants: [FileVariant.Brotli, FileVariant.Uncompressed],
+              skipRepeated: true
+            }
+          ]
+        })
+
+        logger.debug('Content files uploaded', defaultLoggerMetadata)
+
+        // Upload index.js and main.crdt to CDN so the desktop Explorer client
+        // can fetch them from S3 instead of the catalyst (see issue #7625).
+        // Scene source files stay entity-scoped regardless of reuse mode.
+        if (entity && exitCode === 0 && entityType === 'scene') {
+          await components.scenes.uploadSceneSourceFilesToCDN(
+            entity,
+            contentServerUrl,
+            entityScopedUploadPath,
+            cdnBucket
+          )
         }
-      ]
-    })
 
-    logger.debug('Content files uploaded', defaultLoggerMetadata)
-
-    // Upload index.js and main.crdt to CDN so the desktop Explorer client
-    // can fetch them from S3 instead of the catalyst (see issue #7625).
-    // Scene source files stay entity-scoped regardless of reuse mode.
-    if (entity && exitCode === 0 && entityType === 'scene') {
-      await components.scenes.uploadSceneSourceFilesToCDN(entity, contentServerUrl, entityScopedUploadPath, cdnBucket)
-    }
-
-    // and then replace the manifest
-    await components.scenes.uploadEntityManifest(cdnBucket, manifestFile, manifest)
+        // and then replace the manifest
+        await components.scenes.uploadEntityManifest(cdnBucket, manifestFile, manifest)
+      }
+    )
 
     if (exitCode !== 0 || manifest.files.length === 0) {
       const log = await promises.readFile(logFile, 'utf8')
@@ -850,32 +893,39 @@ export async function executeConversion(
       logger.info(`!!!!!!!! Log file not deleted or uploaded ${logFile}`, defaultLoggerMetadata)
     }
 
-    // delete output files
-    try {
-      await rimraf(logFile, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
-    }
-    try {
-      await rimraf(outDirectory, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
-    }
-    // delete library folder
-    try {
-      await rimraf(`${$PROJECT_PATH}/Library`, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(`Error deleting library folder: ${err}`, defaultLoggerMetadata)
-    }
-    //delete _Download folder
-    try {
-      await rimraf(`${$PROJECT_PATH}/Assets/_Downloaded`, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
-    }
+    await withPhaseTimer(
+      components.metrics,
+      'ab_converter_phase_cleanup_seconds',
+      { build_target: $BUILD_TARGET, ab_version: abVersion },
+      async () => {
+        // delete output files
+        try {
+          await rimraf(logFile, { maxRetries: 3 })
+        } catch (err: any) {
+          logger.error(err, defaultLoggerMetadata)
+        }
+        try {
+          await rimraf(outDirectory, { maxRetries: 3 })
+        } catch (err: any) {
+          logger.error(err, defaultLoggerMetadata)
+        }
+        // delete library folder
+        try {
+          await rimraf(`${$PROJECT_PATH}/Library`, { maxRetries: 3 })
+        } catch (err: any) {
+          logger.error(`Error deleting library folder: ${err}`, defaultLoggerMetadata)
+        }
+        //delete _Download folder
+        try {
+          await rimraf(`${$PROJECT_PATH}/Assets/_Downloaded`, { maxRetries: 3 })
+        } catch (err: any) {
+          logger.error(err, defaultLoggerMetadata)
+        }
 
-    // delete scene manifest folder
-    await deleteSceneManifestFolder($PROJECT_PATH, logger, defaultLoggerMetadata)
+        // delete scene manifest folder
+        await deleteSceneManifestFolder($PROJECT_PATH, logger, defaultLoggerMetadata)
+      }
+    )
   }
 
   logger.debug('Conversion finished', defaultLoggerMetadata)
