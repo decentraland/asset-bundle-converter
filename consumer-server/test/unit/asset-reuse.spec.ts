@@ -1405,8 +1405,41 @@ describe('when computing per-asset digests with the redis URI cache', () => {
       expect(result.digests.get('hEmpty')).toMatch(/^[0-9a-f]{32}$/)
     })
 
-    it('should write the empty URI list back to redis as kind=ok', () => {
+    it('should write the empty URI list back to redis', () => {
       expect(mock.setCalls[0]).toMatchObject({ value: [] })
+    })
+  })
+
+  describe('and the redis cache holds an empty URI list for the glb hash', () => {
+    // Boundary case: `[]` is a valid `string[]` and must NOT be rejected by
+    // the validator. The worker should treat it as a hit (no fetcher call)
+    // and produce a digest from the empty deps set.
+    let fetcherSpy: jest.Mock
+    let result: { digests: ReadonlyMap<string, string>; skipped: ReadonlyMap<string, SkippedAsset> }
+
+    beforeEach(async () => {
+      const seeded = new Map<string, unknown>()
+      seeded.set('glb-deps:hEmpty', [])
+      const { redis } = makeMockRedis({ seeded })
+
+      const fetcher: GltfFetcher = jest.fn(async () => {
+        throw new Error('fetcher should not be called on cache hit')
+      })
+      fetcherSpy = fetcher as unknown as jest.Mock
+
+      result = await computePerAssetDigests(
+        { content: [{ file: 'empty.glb', hash: 'hEmpty' }] } as any,
+        'https://peer.decentraland.org/content',
+        { fetcher, redis }
+      )
+    })
+
+    it('should NOT invoke the gltf fetcher', () => {
+      expect(fetcherSpy).not.toHaveBeenCalled()
+    })
+
+    it('should produce a digest from the empty deps set', () => {
+      expect(result.digests.get('hEmpty')).toMatch(/^[0-9a-f]{32}$/)
     })
   })
 })
