@@ -345,9 +345,9 @@ async function safeRedisSet(
 
 /**
  * Validate a value pulled out of Redis matches the {@link GlbDepsCacheValue}
- * shape (string array) before trusting it. Guards against corruption or a
- * stale entry written by a previous codebase version when the shape was a
- * discriminated union.
+ * shape (string array) before trusting it. Defence in depth against accidental
+ * writes under our keys (manual `SET` against the cluster, key collision with
+ * another tool, garbage from a misconfigured client).
  */
 function isGlbDepsCacheValue(value: unknown): value is GlbDepsCacheValue {
   return Array.isArray(value) && value.every((u) => typeof u === 'string')

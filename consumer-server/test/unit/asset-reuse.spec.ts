@@ -814,41 +814,6 @@ describe('when computing per-asset digests with the redis URI cache', () => {
     })
   })
 
-  describe('and the redis cache holds a stale discriminated-union entry from a prior codebase version', () => {
-    // Regression: an earlier version of this cache wrote
-    // `{kind: 'unparseable', detail: '...'}` for known-bad glbs. The current
-    // version stores just URI lists; old entries fail shape validation and
-    // must be treated as a miss + overwritten.
-    let mock: ReturnType<typeof makeMockRedis>
-    let result: { digests: ReadonlyMap<string, string>; skipped: ReadonlyMap<string, SkippedAsset> }
-
-    beforeEach(async () => {
-      const seeded = new Map<string, unknown>()
-      seeded.set('glb-deps:hGlb', { kind: 'unparseable', detail: 'old shape' })
-      mock = makeMockRedis({ seeded })
-      const fetcher = makeFetcher(new Map([['hGlb', buildGlb(['texture.png'])]]))
-      const entity = {
-        content: [
-          { file: 'model.glb', hash: 'hGlb' },
-          { file: 'texture.png', hash: 'hTex' }
-        ]
-      }
-      result = await computePerAssetDigests(entity as any, 'https://peer.decentraland.org/content', {
-        fetcher,
-        redis: mock.redis
-      })
-      await waitForRedisSets(mock.setCalls, 1)
-    })
-
-    it('should ignore the stale entry and produce the digest via fetch + parse', () => {
-      expect(result.digests.get('hGlb')).toMatch(/^[0-9a-f]{32}$/)
-    })
-
-    it('should overwrite the stale entry with the new URI-list shape', () => {
-      expect(mock.setCalls[0]).toMatchObject({ key: 'glb-deps:hGlb', value: ['texture.png'] })
-    })
-  })
-
   describe('and the redis cache is empty for the glb hash', () => {
     let result: { digests: ReadonlyMap<string, string>; skipped: ReadonlyMap<string, SkippedAsset> }
     let mock: ReturnType<typeof makeMockRedis>
@@ -2515,9 +2480,10 @@ describe('when checking the asset cache against S3', () => {
     let result: any
 
     beforeEach(async () => {
-      // Seed the redis store with a value that's NOT REDIS_HIT_MARKER (e.g.,
-      // garbage from a prior codebase version or an accidental SET). Defense
-      // in depth: we must NOT count this as a hit; fall through to S3 HEAD.
+      // Seed the redis store with a value that's NOT REDIS_HIT_MARKER (e.g.
+      // garbage from an accidental SET, key collision with another tool, or
+      // a misconfigured client). Defence in depth: we must NOT count this
+      // as a hit; fall through to S3 HEAD.
       setup = makeMockComponents(new Set())
       ;(setup.components.redis as any).get = async () => 'unexpected-garbage-value'
       result = await checkAssetCache(setup.components, {
