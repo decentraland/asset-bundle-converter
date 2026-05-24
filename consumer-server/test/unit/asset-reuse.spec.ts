@@ -947,38 +947,6 @@ describe('when computing per-asset digests with the redis URI cache', () => {
     })
   })
 
-  describe('and a corrupted cache entry that fails shape validation is stored', () => {
-    let result: { digests: ReadonlyMap<string, string>; skipped: ReadonlyMap<string, SkippedAsset> }
-    let mock: ReturnType<typeof makeMockRedis>
-
-    beforeEach(async () => {
-      const seeded = new Map<string, unknown>()
-      // Wrong shape — the cache stores string[], this is a number.
-      seeded.set('glb-deps:hGlb', 42)
-      mock = makeMockRedis({ seeded })
-      const fetcher = makeFetcher(new Map([['hGlb', buildGlb(['texture.png'])]]))
-      const entity = {
-        content: [
-          { file: 'model.glb', hash: 'hGlb' },
-          { file: 'texture.png', hash: 'hTex' }
-        ]
-      }
-      result = await computePerAssetDigests(entity as any, 'https://peer.decentraland.org/content', {
-        fetcher,
-        redis: mock.redis
-      })
-      await waitForRedisSets(mock.setCalls, 1)
-    })
-
-    it('should fall through to fetch + parse and produce the correct digest', () => {
-      expect(result.digests.get('hGlb')).toMatch(/^[0-9a-f]{32}$/)
-    })
-
-    it('should write a correctly shaped entry back to overwrite the corruption', () => {
-      expect(mock.setCalls[0]).toMatchObject({ value: ['texture.png'] })
-    })
-  })
-
   describe('and a missing-deps skip is produced', () => {
     let mock: ReturnType<typeof makeMockRedis>
 
@@ -2475,35 +2443,6 @@ describe('when checking the asset cache against S3', () => {
     })
   })
 
-  describe('and redis returns a value under the probe key that is not the expected marker', () => {
-    let setup: ReturnType<typeof makeMockComponents>
-    let result: any
-
-    beforeEach(async () => {
-      // Seed the redis store with a value that's NOT REDIS_HIT_MARKER (e.g.
-      // garbage from an accidental SET, key collision with another tool, or
-      // a misconfigured client). Defence in depth: we must NOT count this
-      // as a hit; fall through to S3 HEAD.
-      setup = makeMockComponents(new Set())
-      ;(setup.components.redis as any).get = async () => 'unexpected-garbage-value'
-      result = await checkAssetCache(setup.components, {
-        entity: { content: [{ file: 'a.png', hash: 'h1' }] } as any,
-        abVersion: 'v48',
-        buildTarget: 'windows',
-        cdnBucket: 'bucket',
-        depsDigestByHash: new Map()
-      })
-    })
-
-    it('should treat the value as a miss and run the S3 HEAD', () => {
-      expect(setup.calls.map((c) => c.Key)).toEqual(['v48/assets/h1_windows'])
-    })
-
-    it('should mark the asset as missing (S3 was empty, garbage value did not count)', () => {
-      expect(result.missingHashes).toEqual(['h1'])
-      expect(result.cachedHashes).toEqual([])
-    })
-  })
 
   describe('and a custom redisTtlSeconds is supplied', () => {
     let setup: ReturnType<typeof makeMockComponents>

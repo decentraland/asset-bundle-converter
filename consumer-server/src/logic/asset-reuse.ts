@@ -28,21 +28,6 @@ const GLB_DEPS_CACHE_KEY_PREFIX = 'glb-deps:'
 // how long the keyspace holds dead entries from no-longer-referenced glbs.
 const DEFAULT_REDIS_GLB_DEPS_TTL_SECONDS = 86_400
 
-/**
- * Redis cache value for a parsed glb: just the URI list pulled out of the glb
- * bytes by `parseGltfDepRefs`. The list is deterministic per glb hash, so a
- * cache hit lets the worker skip the catalyst byte fetch + JSON parse and go
- * straight to URI resolution.
- *
- * Parse failures (bad glb magic, truncated chunk, JSON parse, non-object root)
- * are NOT cached. They're rare in practice, the metric
- * `ab_converter_glb_skipped_total{reason="unparseable"}` already surfaces the
- * rate, and not caching them sidesteps a class of problems: stale `detail`
- * strings across codebase versions, parser improvements being masked by
- * cached negatives for up to the TTL, and a simpler value shape to validate.
- */
-type GlbDepsCacheValue = string[]
-
 // Silent logger used as the default in `computePerAssetDigests` when no
 // logger is supplied — keeps existing callers (tests, the migrate script)
 // from emitting unexpected log output after we added Redis-cache fallback
@@ -278,9 +263,8 @@ const REDIS_HIT_MARKER = '1'
 /**
  * Wraps `redis.get` so a Redis outage / transient failure is logged and
  * treated as a cache miss instead of failing the entire probe. Returns `true`
- * only when the key is present in Redis AND the stored value matches the
- * expected marker — guards against cross-version garbage or accidental writes
- * under one of our keys returning a false-positive hit.
+ * when the key is present (the stored value is the sentinel we wrote, no
+ * point inspecting it — we control the writes).
  */
 async function safeRedisHit(
   redis: ICacheStorageComponent,
@@ -289,19 +273,8 @@ async function safeRedisHit(
   metrics?: AppComponents['metrics']
 ): Promise<boolean> {
   try {
-    const value = await redis.get<unknown>(key)
-    if (value === null) return false
-    if (value !== REDIS_HIT_MARKER) {
-      // Defense in depth: a value that isn't the expected sentinel could come
-      // from a stale codebase version or a manual SET on the same key. Treat
-      // as a miss and fall through to S3 HEAD; debug-level rather than warn
-      // because this should never fire in normal operation.
-      logger.debug('redis probe-cache value failed shape validation; treating as miss', {
-        key
-      } as any)
-      return false
-    }
-    return true
+    const value = await redis.get<string>(key)
+    return value !== null
   } catch (err: any) {
     // Warn-level: a Redis blip is recoverable and would otherwise look like a
     // silent cache-cold pod. Don't escalate to error — we don't want
@@ -344,16 +317,6 @@ async function safeRedisSet(
 }
 
 /**
- * Validate a value pulled out of Redis matches the {@link GlbDepsCacheValue}
- * shape (string array) before trusting it. Defence in depth against accidental
- * writes under our keys (manual `SET` against the cluster, key collision with
- * another tool, garbage from a misconfigured client).
- */
-function isGlbDepsCacheValue(value: unknown): value is GlbDepsCacheValue {
-  return Array.isArray(value) && value.every((u) => typeof u === 'string')
-}
-
-/**
  * Wraps `redis.get` for the glb URI cache. On any Redis-side failure (network,
  * timeout, corrupted JSON) returns `null` and logs at warn level — the caller
  * falls through to the fetch + parse path. Never throws into the worker.
@@ -363,19 +326,9 @@ async function safeRedisGetGlbDeps(
   glbHash: string,
   logger: ILoggerComponent.ILogger,
   metrics?: AppComponents['metrics']
-): Promise<GlbDepsCacheValue | null> {
+): Promise<string[] | null> {
   try {
-    const raw = await redis.get<unknown>(`${GLB_DEPS_CACHE_KEY_PREFIX}${glbHash}`)
-    if (raw === null) return null
-    if (!isGlbDepsCacheValue(raw)) {
-      // Stale or corrupted entry — fall through to the fetch path. Log at
-      // debug rather than warn so a one-off corruption doesn't spam ops.
-      logger.debug('redis glb-deps cache value failed shape validation; ignoring', {
-        glbHash
-      } as any)
-      return null
-    }
-    return raw
+    return await redis.get<string[]>(`${GLB_DEPS_CACHE_KEY_PREFIX}${glbHash}`)
   } catch (err: any) {
     logger.warn('redis glb-deps cache get failed; falling back to catalyst fetch', {
       glbHash,
@@ -396,7 +349,7 @@ async function safeRedisGetGlbDeps(
 async function safeRedisSetGlbDeps(
   redis: ICacheStorageComponent,
   glbHash: string,
-  value: GlbDepsCacheValue,
+  value: string[],
   ttlSeconds: number,
   logger: ILoggerComponent.ILogger,
   metrics?: AppComponents['metrics']
