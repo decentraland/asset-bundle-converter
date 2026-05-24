@@ -311,6 +311,14 @@ export async function executeLODConversion(
   const unityBuildTarget = getUnityBuildTarget($BUILD_TARGET)
 
   const logger = components.logs.getLogger(`ExecuteConversion`)
+  const $UNITY_WORKER_ENABLED = parseBooleanFlag(
+    await components.config.getString('UNITY_WORKER_ENABLED'),
+    false,
+    (raw) =>
+      logger.warn(
+        `Unrecognized value for UNITY_WORKER_ENABLED: "${raw}" — falling back to the default (false). Accepted values: true/false/1/0/yes/no/on/off.`
+      )
+  )
 
   const cdnBucket = await components.scenes.getCdnBucket()
   const logFile = `/tmp/lods_logs/export_log_${entityId}_${Date.now()}.txt`
@@ -403,11 +411,14 @@ export async function executeLODConversion(
     } catch (err: any) {
       logger.error(err, defaultLoggerMetadata)
     }
-    // delete library folder
-    try {
-      await rimraf(`${$PROJECT_PATH}/Library`, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
+    // Library is preserved across requests in worker mode — that warm
+    // AssetDatabase is the whole point of keeping Unity alive.
+    if (!$UNITY_WORKER_ENABLED) {
+      try {
+        await rimraf(`${$PROJECT_PATH}/Library`, { maxRetries: 3 })
+      } catch (err: any) {
+        logger.error(err, defaultLoggerMetadata)
+      }
     }
 
     // delete scene manifest folder
@@ -448,6 +459,14 @@ export async function executeConversion(
     logger.warn(
       `Unrecognized value for ASSET_REUSE_ENABLED: "${raw}" — falling back to the default (true). Accepted values: true/false/1/0/yes/no/on/off.`
     )
+  )
+  const $UNITY_WORKER_ENABLED = parseBooleanFlag(
+    await components.config.getString('UNITY_WORKER_ENABLED'),
+    false,
+    (raw) =>
+      logger.warn(
+        `Unrecognized value for UNITY_WORKER_ENABLED: "${raw}" — falling back to the default (false). Accepted values: true/false/1/0/yes/no/on/off.`
+      )
   )
 
   // unityBuildTarget is also computed inside probeScene's validation step, but
@@ -861,17 +880,21 @@ export async function executeConversion(
     } catch (err: any) {
       logger.error(err, defaultLoggerMetadata)
     }
-    // delete library folder
-    try {
-      await rimraf(`${$PROJECT_PATH}/Library`, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(`Error deleting library folder: ${err}`, defaultLoggerMetadata)
-    }
-    //delete _Download folder
-    try {
-      await rimraf(`${$PROJECT_PATH}/Assets/_Downloaded`, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
+    // Library and _Downloaded are preserved across requests in worker mode —
+    // the warm AssetDatabase is the whole point of keeping Unity alive, and
+    // _Downloaded is flat-by-hash (Config.cs:35-44) so shared assets across
+    // conversions get free download skips.
+    if (!$UNITY_WORKER_ENABLED) {
+      try {
+        await rimraf(`${$PROJECT_PATH}/Library`, { maxRetries: 3 })
+      } catch (err: any) {
+        logger.error(`Error deleting library folder: ${err}`, defaultLoggerMetadata)
+      }
+      try {
+        await rimraf(`${$PROJECT_PATH}/Assets/_Downloaded`, { maxRetries: 3 })
+      } catch (err: any) {
+        logger.error(err, defaultLoggerMetadata)
+      }
     }
 
     // delete scene manifest folder

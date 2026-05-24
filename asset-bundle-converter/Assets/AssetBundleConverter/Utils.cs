@@ -315,6 +315,12 @@ namespace DCL.ABConverter
         {
             Debug.Log($"Process finished with code {errorCode}");
 
+            // Worker mode: turn the exit into an exception caught at the
+            // request boundary so the Unity process stays alive to serve the
+            // next request. Stays false in Phase 1 — no behaviour change.
+            if (DCL.ABConverter.Worker.WorkerServer.IsActive)
+                throw new DCL.ABConverter.Worker.ConversionAbort(errorCode);
+
             if (Application.isBatchMode)
                 EditorApplication.Exit(errorCode);
         }
