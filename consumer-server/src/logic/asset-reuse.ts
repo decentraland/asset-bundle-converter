@@ -29,19 +29,19 @@ const GLB_DEPS_CACHE_KEY_PREFIX = 'glb-deps:'
 const DEFAULT_REDIS_GLB_DEPS_TTL_SECONDS = 86_400
 
 /**
- * Redis cache value for a parsed glb. The URI list IS deterministic per glb
- * hash (the URIs live inside the glb bytes), so we cache it directly and avoid
- * re-fetching + re-parsing on subsequent probes that reference the same glb.
+ * Redis cache value for a parsed glb: just the URI list pulled out of the glb
+ * bytes by `parseGltfDepRefs`. The list is deterministic per glb hash, so a
+ * cache hit lets the worker skip the catalyst byte fetch + JSON parse and go
+ * straight to URI resolution.
  *
- * Only `parseGltfDepRefs` failures (bad glb magic, truncated chunk, JSON
- * parse, non-object root) are written as `kind: 'unparseable'` — those are
- * deterministic per glb hash. URI-resolution failures (percent-encoding,
- * scheme/absolute paths, paths that escape root) and missing-deps both
- * happen DOWNSTREAM of the cache write: they depend on `entry.file` (the
- * glb's location in the entity) and `entity.content` respectively, so they
- * can't be cached safely.
+ * Parse failures (bad glb magic, truncated chunk, JSON parse, non-object root)
+ * are NOT cached. They're rare in practice, the metric
+ * `ab_converter_glb_skipped_total{reason="unparseable"}` already surfaces the
+ * rate, and not caching them sidesteps a class of problems: stale `detail`
+ * strings across codebase versions, parser improvements being masked by
+ * cached negatives for up to the TTL, and a simpler value shape to validate.
  */
-type GlbDepsCacheValue = { kind: 'ok'; uris: string[] } | { kind: 'unparseable'; detail: string }
+type GlbDepsCacheValue = string[]
 
 // Silent logger used as the default in `computePerAssetDigests` when no
 // logger is supplied — keeps existing callers (tests, the migrate script)
@@ -345,22 +345,12 @@ async function safeRedisSet(
 
 /**
  * Validate a value pulled out of Redis matches the {@link GlbDepsCacheValue}
- * shape before trusting it. Corruption or a stale entry written by a different
- * codebase version could otherwise be cast straight to the expected type and
- * crash the worker downstream. Keep this conservative: reject anything that
- * doesn't structurally match, fall through to the fetch+parse path.
+ * shape (string array) before trusting it. Guards against corruption or a
+ * stale entry written by a previous codebase version when the shape was a
+ * discriminated union.
  */
 function isGlbDepsCacheValue(value: unknown): value is GlbDepsCacheValue {
-  if (!value || typeof value !== 'object') return false
-  const v = value as { kind?: unknown; uris?: unknown; detail?: unknown }
-  if (v.kind === 'ok') {
-    if (!Array.isArray(v.uris)) return false
-    return v.uris.every((u) => typeof u === 'string')
-  }
-  if (v.kind === 'unparseable') {
-    return typeof v.detail === 'string'
-  }
-  return false
+  return Array.isArray(value) && value.every((u) => typeof u === 'string')
 }
 
 /**
@@ -1052,10 +1042,10 @@ export async function computePerAssetDigests(
 
       // Redis cache lookup: the URI list is a deterministic function of the
       // glb bytes (and therefore of its content hash), so we can skip the
-      // catalyst byte fetch + JSON parse on hit. `unparseable` outcomes are
-      // also cached — structural defects in glb bytes don't change between
-      // probes. `missing-deps` is NOT cached because it depends on the entity
-      // content map, which varies per-entity.
+      // catalyst byte fetch + JSON parse on hit. Parse failures are NOT
+      // cached — they're rare and `ab_converter_glb_skipped_total{reason}`
+      // already tracks the rate. `missing-deps` skips can't be cached either:
+      // they depend on the entity content map, which varies per-entity.
       let uris: string[] | undefined
       if (redis) {
         const cached = await safeRedisGetGlbDeps(redis, entry.hash, logger, metrics)
@@ -1063,13 +1053,7 @@ export async function computePerAssetDigests(
           if (metrics && metricLabels) {
             metrics.increment('ab_converter_glb_deps_cache_total', { ...metricLabels, outcome: 'hit' })
           }
-          if (cached.kind === 'unparseable') {
-            return {
-              kind: 'skip',
-              skip: { hash: entry.hash, file: entry.file, reason: 'unparseable', detail: cached.detail }
-            }
-          }
-          uris = cached.uris
+          uris = cached
         }
       }
 
@@ -1085,22 +1069,20 @@ export async function computePerAssetDigests(
         try {
           uris = parseGltfDepRefs(bytes, ext)
         } catch (err: any) {
-          const detail = truncateSkipDetail(err?.message ?? String(err))
-          // Cache the unparseable result so subsequent probes anywhere in the
-          // fleet don't re-fetch + re-parse a structurally broken glb.
-          if (redis) {
-            void safeRedisSetGlbDeps(
-              redis,
-              entry.hash,
-              { kind: 'unparseable', detail },
-              redisTtlSeconds,
-              logger,
-              metrics
-            )
-          }
+          // Parse failure: skip but do NOT cache. The next probe will refetch
+          // and re-fail consistently; the cost is bounded by how rare
+          // structurally broken glbs are in practice. Not caching keeps the
+          // cache value shape narrow (just URI lists) and ensures any future
+          // parser improvement takes effect immediately rather than waiting
+          // for the TTL to elapse on cached negatives.
           return {
             kind: 'skip',
-            skip: { hash: entry.hash, file: entry.file, reason: 'unparseable', detail }
+            skip: {
+              hash: entry.hash,
+              file: entry.file,
+              reason: 'unparseable',
+              detail: truncateSkipDetail(err?.message ?? String(err))
+            }
           }
         }
 
@@ -1108,7 +1090,7 @@ export async function computePerAssetDigests(
         // probe. Fire-and-forget; the caller's result doesn't depend on
         // propagation.
         if (redis) {
-          void safeRedisSetGlbDeps(redis, entry.hash, { kind: 'ok', uris }, redisTtlSeconds, logger, metrics)
+          void safeRedisSetGlbDeps(redis, entry.hash, uris, redisTtlSeconds, logger, metrics)
         }
       }
 
