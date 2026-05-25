@@ -16,6 +16,14 @@ CONTENT_URL="${CONTENT_URL:-https://peer.decentraland.zone/content}"
 OUTPUT_DIR="${OUTPUT_DIR:-../AssetBundlesTest}"
 LOCAL_LOG_FILE="${LOCAL_LOG_FILE:-testResultLog.txt}"
 
+if [ ! -x "$UNITY_PATH" ]; then
+  echo "ERROR: Unity binary not found or not executable at: $UNITY_PATH" >&2
+  echo "  Either fix the default in convert-lods.sh or override via env:" >&2
+  echo "    UNITY_PATH=/path/to/Unity ./convert-lods.sh" >&2
+  echo "  (also check that \$UNITY_PATH in your shell isn't set with a typo)" >&2
+  exit 1
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
 echo "Running LOD AB converter"
