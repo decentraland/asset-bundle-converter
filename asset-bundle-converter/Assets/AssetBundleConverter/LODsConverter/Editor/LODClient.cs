@@ -14,8 +14,7 @@ namespace DCL.ABConverter
     {
         // Used by the consumer-server:
         //   -lods <url1;url2;...> -output <dir>
-        //   [-lodSource catalyst|worlds]   (default: catalyst)
-        //   [-lodNetwork org|zone]         (default: org)
+        //   [-contentServerUrl <url>]   (default: https://peer.decentraland.org/content)
         public static async void ExportURLLODsToAssetBundles()
         {
             try
@@ -24,6 +23,7 @@ namespace DCL.ABConverter
 
                 string customOutputDirectory = "";
                 string lodsURL = "";
+                string contentServerUrl = "";
 
                 if (Utils.ParseOption(commandLineArgs, Config.LODS_URL, 1, out string[] lodsURLArg))
                     lodsURL = lodsURLArg[0];
@@ -31,9 +31,10 @@ namespace DCL.ABConverter
                 if (Utils.ParseOption(commandLineArgs, Config.CLI_SET_CUSTOM_OUTPUT_ROOT_PATH, 1, out string[] outputDirectoryArg))
                     customOutputDirectory = outputDirectoryArg[0] + "/";
 
-                var source = ParseSource(commandLineArgs);
-                var network = ParseNetwork(commandLineArgs);
-                Debug.Log($"[LOD] Resolved environment: source={source}, network={network}");
+                if (Utils.ParseOption(commandLineArgs, Config.CLI_CONTENT_SERVER_URL, 1, out string[] contentServerUrlArg)
+                    && contentServerUrlArg != null
+                    && !string.IsNullOrWhiteSpace(contentServerUrlArg[0]))
+                    contentServerUrl = contentServerUrlArg[0].Trim();
 
                 if (string.IsNullOrEmpty(lodsURL))
                 {
@@ -64,7 +65,10 @@ namespace DCL.ABConverter
                 }
 
                 AssetDatabase.Refresh();
-                var lodConversion = new LODConversion(customOutputDirectory, localPaths.ToArray(), source, network);
+
+                var lodConversion = string.IsNullOrEmpty(contentServerUrl)
+                    ? new LODConversion(customOutputDirectory, localPaths.ToArray())
+                    : new LODConversion(customOutputDirectory, localPaths.ToArray(), contentServerUrl);
                 await lodConversion.ConvertLODs();
                 EditorApplication.Exit(0);
             }
@@ -73,32 +77,6 @@ namespace DCL.ABConverter
                 Debug.LogError($"[LOD] ExportURLLODsToAssetBundles failed: {e.Message}\n{e.StackTrace}");
                 EditorApplication.Exit(1);
             }
-        }
-
-        private static CatalystSource ParseSource(string[] commandLineArgs)
-        {
-            if (!Utils.ParseOption(commandLineArgs, Config.CLI_LOD_SOURCE, 1, out string[] arg) || arg == null || string.IsNullOrEmpty(arg[0]))
-                return CatalystSource.Catalyst;
-
-            string raw = arg[0].Trim();
-            if (string.Equals(raw, "worlds", StringComparison.OrdinalIgnoreCase)) return CatalystSource.Worlds;
-            if (string.Equals(raw, "catalyst", StringComparison.OrdinalIgnoreCase)) return CatalystSource.Catalyst;
-
-            Debug.LogWarning($"[LOD] Unknown -lodSource value '{raw}', defaulting to Catalyst. Accepted: catalyst|worlds.");
-            return CatalystSource.Catalyst;
-        }
-
-        private static CatalystNetwork ParseNetwork(string[] commandLineArgs)
-        {
-            if (!Utils.ParseOption(commandLineArgs, Config.CLI_LOD_NETWORK, 1, out string[] arg) || arg == null || string.IsNullOrEmpty(arg[0]))
-                return CatalystNetwork.Org;
-
-            string raw = arg[0].Trim();
-            if (string.Equals(raw, "zone", StringComparison.OrdinalIgnoreCase)) return CatalystNetwork.Zone;
-            if (string.Equals(raw, "org", StringComparison.OrdinalIgnoreCase)) return CatalystNetwork.Org;
-
-            Debug.LogWarning($"[LOD] Unknown -lodNetwork value '{raw}', defaulting to Org. Accepted: org|zone.");
-            return CatalystNetwork.Org;
         }
 
         private static async Task<string> DownloadAsync(string url, string downloadDir)

@@ -13,12 +13,15 @@ public class DragAndDropLODWindow : EditorWindow
     private const string DOWNLOAD_FOLDER = "Assets/_DownloadedGLBs";
     private const string SUGGESTED_URL = "https://lod-unity-bucket-dev-0871c25.s3.us-east-1.amazonaws.com/lods-unity/lods/bafkreierdpwiqnuxftmd6xiibgrvxnwzpsgid6jb2cj2l4ayhvv3g7rtai_1.glb";
 
+    private static readonly string[] SOURCE_LABELS = { "Catalyst", "Worlds" };
+    private static readonly string[] NETWORK_LABELS = { "Org", "Zone" };
+
     private readonly List<Object> glbFiles = new ();
     private string urlInput = SUGGESTED_URL;
     private string urlStatus = "";
     private bool isDownloading;
-    private CatalystSource source = CatalystSource.Catalyst;
-    private CatalystNetwork network = CatalystNetwork.Org;
+    private int sourceIndex; // 0 = Catalyst, 1 = Worlds
+    private int networkIndex; // 0 = Org, 1 = Zone
 
     [MenuItem("Decentraland/LOD/Build GLB Asset Bundles")]
     public static void Open()
@@ -33,9 +36,9 @@ public class DragAndDropLODWindow : EditorWindow
 
         GUILayout.Space(4);
         GUILayout.Label("Content source", EditorStyles.miniBoldLabel);
-        source = (CatalystSource)EditorGUILayout.EnumPopup("Source", source);
-        network = (CatalystNetwork)EditorGUILayout.EnumPopup("Network", network);
-        EditorGUILayout.LabelField("Endpoint", BuildEndpointPreview(), EditorStyles.miniLabel);
+        sourceIndex = EditorGUILayout.Popup("Source", sourceIndex, SOURCE_LABELS);
+        networkIndex = EditorGUILayout.Popup("Network", networkIndex, NETWORK_LABELS);
+        EditorGUILayout.LabelField("Endpoint", BuildContentServerUrl(), EditorStyles.miniLabel);
 
         GUILayout.Space(8);
         GUILayout.Label("Download from URL", EditorStyles.miniBoldLabel);
@@ -125,7 +128,7 @@ public class DragAndDropLODWindow : EditorWindow
     {
         try
         {
-            var lodConversion = new LODConversion(LODConstants.DEFAULT_OUTPUT_PATH, paths.ToArray(), source, network);
+            var lodConversion = new LODConversion(LODConstants.DEFAULT_OUTPUT_PATH, paths.ToArray(), BuildContentServerUrl());
             await lodConversion.ConvertLODs();
         }
         catch (Exception e)
@@ -134,12 +137,12 @@ public class DragAndDropLODWindow : EditorWindow
         }
     }
 
-    private string BuildEndpointPreview()
+    private string BuildContentServerUrl()
     {
-        string tld = network == CatalystNetwork.Org ? "org" : "zone";
-        return source == CatalystSource.Catalyst
-            ? $"https://peer.decentraland.{tld}/content/entities/active/"
-            : $"https://worlds-content-server.decentraland.{tld}/contents/{{hash}}";
+        string tld = networkIndex == 0 ? "org" : "zone";
+        return sourceIndex == 0
+            ? $"https://peer.decentraland.{tld}/content"
+            : $"https://worlds-content-server.decentraland.{tld}";
     }
 
     private async void DownloadAndAdd(string url)

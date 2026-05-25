@@ -301,7 +301,8 @@ export async function executeLODConversion(
   components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'unityRunner' | 'scenes'>,
   entityId: string,
   lods: string[],
-  abVersion: string
+  abVersion: string,
+  contentServerUrl?: string
 ): Promise<number> {
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
@@ -334,7 +335,8 @@ export async function executeLODConversion(
       unityPath: $UNITY_PATH,
       projectPath: $PROJECT_PATH,
       timeout: 60 * 60 * 1000,
-      unityBuildTarget
+      unityBuildTarget,
+      contentServerUrl
     })
 
     components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })

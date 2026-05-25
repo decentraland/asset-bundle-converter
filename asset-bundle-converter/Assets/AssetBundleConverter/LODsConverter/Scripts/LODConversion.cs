@@ -12,30 +12,27 @@ using UnityEngine;
 using UnityEngine.Networking;
 using Object = UnityEngine.Object;
 
-public enum CatalystSource { Catalyst, Worlds }
-public enum CatalystNetwork { Org, Zone }
-
 public class LODConversion
 {
+    private const string DEFAULT_CONTENT_SERVER_URL = "https://peer.decentraland.org/content";
+
     private static readonly int VERTICAL_CLIPPING_ID = Shader.PropertyToID("_VerticalClipping");
     private static readonly int PLANE_CLIPPING_ID = Shader.PropertyToID("_PlaneClipping");
 
     private readonly LODPathHandler lodPathHandler;
     private readonly string[] glbPaths;
     private readonly Shader lodShader;
-    private readonly CatalystSource source;
-    private readonly CatalystNetwork network;
+    private readonly string contentServerUrl;
     // Maps AB name -> file directory for metadata writing
     private readonly Dictionary<string, string> bundleToDirectory = new();
 
-    public LODConversion(string customOutputPath, string[] glbPaths, CatalystSource source = CatalystSource.Catalyst, CatalystNetwork network = CatalystNetwork.Org)
+    public LODConversion(string customOutputPath, string[] glbPaths, string contentServerUrl = DEFAULT_CONTENT_SERVER_URL)
     {
         this.glbPaths = glbPaths;
-        this.source = source;
-        this.network = network;
+        this.contentServerUrl = string.IsNullOrWhiteSpace(contentServerUrl) ? DEFAULT_CONTENT_SERVER_URL : contentServerUrl.Trim();
         lodPathHandler = new LODPathHandler(customOutputPath);
         lodShader = Shader.Find("DCL/Scene_TexArray");
-        Debug.Log($"[LOD] LODConversion created. outputPath={customOutputPath}, glbCount={glbPaths.Length}, source={source}, network={network}, shader={(lodShader != null ? lodShader.name : "NULL")}");
+        Debug.Log($"[LOD] LODConversion created. outputPath={customOutputPath}, glbCount={glbPaths.Length}, contentServerUrl={this.contentServerUrl}, shader={(lodShader != null ? lodShader.name : "NULL")}");
     }
 
     public async Task ConvertLODs()
@@ -117,36 +114,28 @@ public class LODConversion
     private async Task<Parcel> FetchParcel(string fileNameWithLODLevel)
     {
         string hash = fileNameWithLODLevel.Split('_')[0];
-        string tld = network == CatalystNetwork.Org ? "org" : "zone";
 
-        Debug.Log($"[LOD] Fetching parcel for hash: {hash} from {source}/{network}");
-
-        if (source == CatalystSource.Catalyst)
+        // The only inference we keep: which API shape to call. The hostname is
+        // the discriminator — worlds-content-server.* speaks GET /contents/{hash}
+        // returning a single entity; everything else (peer.*, sdk-team-cdn, …)
+        // speaks POST /entities/active/ returning an entity array.
+        string baseUrl = contentServerUrl.TrimEnd('/');
+        bool isWorlds;
+        try
         {
-            string url = $"https://peer.decentraland.{tld}/content/entities/active/";
-            using (var request = UnityWebRequest.Post(url, "{\"ids\":[\"" + hash + "\"]}", "application/json"))
-            {
-                await request.SendWebRequest();
-
-                if (request.result != UnityWebRequest.Result.Success)
-                {
-                    Debug.LogWarning($"[LOD] Failed to fetch parcel for {hash}: {request.error}. Clipping will be zeroed.");
-                    return null;
-                }
-
-                var parcelData = JsonConvert.DeserializeObject<Parcel[]>(request.downloadHandler.text);
-                if (parcelData == null || parcelData.Length == 0)
-                {
-                    Debug.LogWarning($"[LOD] No entity matched hash {hash} on catalyst (likely a content CID, not a scene entity ID). Clipping will be zeroed.");
-                    return null;
-                }
-                Debug.Log($"[LOD] Parcel fetched: {parcelData[0].GetDecodedParcels().Count} parcels");
-                return parcelData[0];
-            }
+            isWorlds = new Uri(baseUrl).Host.StartsWith("worlds-content-server", StringComparison.OrdinalIgnoreCase);
         }
-        else // Worlds
+        catch (Exception e)
         {
-            string url = $"https://worlds-content-server.decentraland.{tld}/contents/{hash}";
+            Debug.LogWarning($"[LOD] Could not parse contentServerUrl '{contentServerUrl}': {e.Message}. Defaulting to catalyst-style request.");
+            isWorlds = false;
+        }
+
+        Debug.Log($"[LOD] Fetching parcel for hash: {hash} via {baseUrl} ({(isWorlds ? "worlds" : "catalyst")})");
+
+        if (isWorlds)
+        {
+            string url = $"{baseUrl}/contents/{hash}";
             using (var request = UnityWebRequest.Get(url))
             {
                 await request.SendWebRequest();
@@ -165,6 +154,29 @@ public class LODConversion
                 }
                 Debug.Log($"[LOD] World fetched: {parcel.GetDecodedParcels().Count} parcels");
                 return parcel;
+            }
+        }
+        else
+        {
+            string url = $"{baseUrl}/entities/active/";
+            using (var request = UnityWebRequest.Post(url, "{\"ids\":[\"" + hash + "\"]}", "application/json"))
+            {
+                await request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    Debug.LogWarning($"[LOD] Failed to fetch parcel for {hash}: {request.error}. Clipping will be zeroed.");
+                    return null;
+                }
+
+                var parcelData = JsonConvert.DeserializeObject<Parcel[]>(request.downloadHandler.text);
+                if (parcelData == null || parcelData.Length == 0)
+                {
+                    Debug.LogWarning($"[LOD] No entity matched hash {hash} on {baseUrl} (likely a content CID, not a scene entity ID). Clipping will be zeroed.");
+                    return null;
+                }
+                Debug.Log($"[LOD] Parcel fetched: {parcelData[0].GetDecodedParcels().Count} parcels");
+                return parcelData[0];
             }
         }
     }
