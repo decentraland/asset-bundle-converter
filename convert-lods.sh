@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Local-dev helper for the LOD asset-bundle pipeline. Mirrors the CI step
+# defined in .github/workflows/docker-common.yml but skips xvfb-run because
+# it runs against a native Unity install (macOS) rather than the headless
+# image. All values below have sensible defaults; override any of them
+# from the environment if you need to point at a different scene / env.
+
+set -u  # fail if any expanded var is unset (defaults below cover this)
+set -e  # stop on first error
+
+# --- Configurable defaults (override via env when invoking) --------------
+UNITY_PATH="${UNITY_PATH:-/Applications/Unity/Hub/Editor/6000.2.6f2/Unity.app/Contents/MacOS/Unity}"
+PROJECT_PATH="${PROJECT_PATH:-$(pwd)/asset-bundle-converter}"
+LOD_URL="${LOD_URL:-https://lod-unity-bucket-dev-0871c25.s3.us-east-1.amazonaws.com/lods-unity/lods/bafkreiecbcziuwjcqrs2zbe7ncy2pssefgd4cg7vj5o4ywrn5umt6nobi4_1.glb}"
+CONTENT_URL="${CONTENT_URL:-https://peer.decentraland.zone/content}"
+OUTPUT_DIR="${OUTPUT_DIR:-../AssetBundlesTest}"
+LOCAL_LOG_FILE="${LOCAL_LOG_FILE:-testResultLog.txt}"
+
+mkdir -p "$OUTPUT_DIR"
+
+echo "Running LOD AB converter"
+echo "  Unity:          $UNITY_PATH"
+echo "  Project path:   $PROJECT_PATH"
+echo "  LOD URL:        $LOD_URL"
+echo "  Content server: $CONTENT_URL"
+echo "  Output dir:     $OUTPUT_DIR"
+echo "  Log file:       $LOCAL_LOG_FILE"
+
+"$UNITY_PATH" \
+  -batchmode \
+  -projectPath "$PROJECT_PATH" \
+  -executeMethod DCL.ABConverter.LODClient.ExportURLLODsToAssetBundles \
+  -lods "$LOD_URL" \
+  -contentServerUrl "$CONTENT_URL" \
+  -output "$OUTPUT_DIR" \
+  -logFile "$LOCAL_LOG_FILE"
+
+UNITY_EXIT_CODE=$?
+exit $UNITY_EXIT_CODE
