@@ -41,6 +41,8 @@ namespace DCL.ABConverter
         internal static string[] textureExtensions = { ".jpg", ".png", ".jpeg", ".tga", ".gif", ".bmp", ".psd", ".tiff", ".iff", ".ktx" };
 
         internal const string LODS_URL = "lods";
+        internal const string CLI_LOD_SOURCE = "lodSource";
+        internal const string CLI_LOD_NETWORK = "lodNetwork";
 
         internal static string GetDownloadPath() => PathUtils.FixDirectorySeparator(DOWNLOADED_PATH_ROOT + DASH);
     }
