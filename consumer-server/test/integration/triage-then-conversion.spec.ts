@@ -228,7 +228,8 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
         expect.anything(),
         'bafy-lod-job',
         ['lod1.glb'],
-        'v48'
+        'v48',
+        'https://peer.decentraland.org/content'
       )
     })
   })

@@ -24,6 +24,12 @@ if [ ! -x "$UNITY_PATH" ]; then
   exit 1
 fi
 
+# Wipe the download folder + its .meta so every run starts from a clean
+# AssetDatabase state. Stale .meta files from a previous run on a different
+# importer chain make Unity throw ArgumentOutOfRangeException on the first
+# import — much faster to re-download than to chase it down.
+rm -rf "$PROJECT_PATH/Assets/_DownloadedGLBs" "$PROJECT_PATH/Assets/_DownloadedGLBs.meta"
+
 mkdir -p "$OUTPUT_DIR"
 
 echo "Running LOD AB converter"

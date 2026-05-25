@@ -174,7 +174,8 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is fals
         expect.anything(),
         'bafy-lod',
         ['lod-1.glb', 'lod-2.glb'],
-        'v48'
+        'v48',
+        'https://peer.decentraland.org/content'
       )
       expect(mockedExecuteConversion).not.toHaveBeenCalled()
     })
@@ -352,7 +353,8 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
         expect.anything(),
         'bafy-lod',
         ['lod-1.glb', 'lod-2.glb'],
-        'v48'
+        'v48',
+        'https://peer.decentraland.org/content'
       )
     })
 
@@ -445,7 +447,8 @@ describe('when processConversionJob is called', () => {
         expect.anything(),
         'bafy-lod',
         ['lod-1.glb', 'lod-2.glb'],
-        'v48'
+        'v48',
+        'https://peer.decentraland.org/content'
       )
       expect(mockedExecuteConversion).not.toHaveBeenCalled()
     })
