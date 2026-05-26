@@ -11,10 +11,11 @@ import { createConfigComponent } from '@well-known-components/env-config-provide
 import { createLogComponent } from '@well-known-components/logger'
 import { createMetricsComponent } from '@well-known-components/metrics'
 import { metricDeclarations } from '../../src/metrics'
-import { canonicalFilenameForAsset, computeDepsDigest, probeHitCache } from '../../src/logic/asset-reuse'
+import { canonicalFilenameForAsset, computeDepsDigest } from '../../src/logic/asset-reuse'
 import { createScenesComponent } from '../../src/logic/scenes'
 import { createCatalystMock, createSentryMock, createUnityRunnerMock } from '../mocks'
 import { buildGlb } from '../helpers/glb-fixtures'
+import { createInMemoryCacheComponent } from '@dcl/memory-cache-component'
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const MockAws = require('mock-aws-s3')
@@ -110,7 +111,8 @@ describe('when running executeTriagePass against a scene', () => {
       metrics,
       cdnS3: base.cdnS3,
       sentry: base.sentry,
-      catalyst: base.catalyst as any
+      catalyst: base.catalyst as any,
+      redis: createInMemoryCacheComponent()
     })
     components = { ...base, metrics, logs, scenes }
 
@@ -118,7 +120,6 @@ describe('when running executeTriagePass against a scene', () => {
     globalThis.fetch = mockedFetch as any
     mockedFetch.mockResolvedValue(responseFor(Buffer.from('fake-source-file')))
 
-    probeHitCache.clear()
     jest.clearAllMocks()
     mockedFetch.mockResolvedValue(responseFor(Buffer.from('fake-source-file')))
   })

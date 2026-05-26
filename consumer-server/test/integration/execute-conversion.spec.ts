@@ -14,14 +14,11 @@ import { createConfigComponent } from '@well-known-components/env-config-provide
 import { createLogComponent } from '@well-known-components/logger'
 import { createMetricsComponent } from '@well-known-components/metrics'
 import { metricDeclarations } from '../../src/metrics'
-import {
-  canonicalFilenameForAsset,
-  computeDepsDigest,
-  probeHitCache
-} from '../../src/logic/asset-reuse'
+import { canonicalFilenameForAsset, computeDepsDigest } from '../../src/logic/asset-reuse'
 import { createScenesComponent } from '../../src/logic/scenes'
 import { createCatalystMock, createSentryMock, createUnityRunnerMock } from '../mocks'
 import { buildGlb } from '../helpers/glb-fixtures'
+import { createInMemoryCacheComponent } from '@dcl/memory-cache-component'
 
 jest.mock('../../src/logic/has-content-changed-task', () => {
   const real = jest.requireActual('../../src/logic/has-content-changed-task')
@@ -87,7 +84,8 @@ async function buildScenes(
     metrics,
     cdnS3: base.cdnS3,
     sentry: base.sentry,
-    catalyst: base.catalyst as any
+    catalyst: base.catalyst as any,
+    redis: createInMemoryCacheComponent()
   })
 }
 
@@ -165,7 +163,6 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     globalThis.fetch = mockedFetch as any
     mockedFetch.mockResolvedValue(responseFor(Buffer.from('fake-source-file')))
 
-    probeHitCache.clear()
     jest.clearAllMocks()
     mockedFetch.mockResolvedValue(responseFor(Buffer.from('fake-source-file')))
   })

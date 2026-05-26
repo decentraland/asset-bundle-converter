@@ -4,10 +4,41 @@ import * as path from 'path'
 import * as fs from 'fs/promises'
 import * as crypto from 'crypto'
 import { AppComponents } from '../types'
+import { ICacheStorageComponent } from '@dcl/core-commons'
 import { normalizeContentsBaseUrl } from '../utils'
 import { bufferExtensions, fileExtension, gltfExtensions, textureExtensions } from './extensions'
 import { parseGltfDepRefs, resolveUriToContentFile } from './gltf-deps'
 import { isS3NotFound } from './s3-helpers'
+
+// Default TTL for Redis-stored asset probe hits. Canonical bundles are
+// immutable, so a stale hit is harmless — but giving entries a finite lifetime
+// keeps the Redis keyspace bounded across AB_VERSION bumps and lets evictions
+// reclaim cache for cold content. Override via `redisTtlSeconds` on the
+// `checkAssetCache` params.
+const DEFAULT_REDIS_HIT_CACHE_TTL_SECONDS = 86_400
+
+// Key prefix for the Redis-cached glb URI list. Distinct namespace from the
+// probe hit-cache (which stores canonical S3 paths) so the two can never
+// collide regardless of how the underlying redis cluster is shared.
+const GLB_DEPS_CACHE_KEY_PREFIX = 'glb-deps:'
+
+// Default TTL for Redis-stored glb URI parse results. Like the probe hit-cache,
+// the value is a deterministic function of the glb's content hash (the URIs are
+// inside the glb's own bytes), so a stale entry is harmless — TTL only governs
+// how long the keyspace holds dead entries from no-longer-referenced glbs.
+const DEFAULT_REDIS_GLB_DEPS_TTL_SECONDS = 86_400
+
+// Silent logger used as the default in `computePerAssetDigests` when no
+// logger is supplied — keeps existing callers (tests, the migrate script)
+// from emitting unexpected log output after we added Redis-cache fallback
+// warnings.
+const NULL_LOGGER: ILoggerComponent.ILogger = {
+  log: () => {},
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {}
+}
 
 // Re-export so callers still referencing `asset-reuse.ts` for this helper keep
 // working. Single source of truth is `extensions.ts`.
@@ -221,57 +252,116 @@ export function canonicalFilenameForAsset(
   return `${hash}_${target}`
 }
 
-// Process-local LRU cache of canonical keys confirmed to exist in S3. Canonical
-// bundles are immutable once written (immutable Cache-Control, content-addressed
-// path), so a HIT is valid forever — we evict purely on usage pressure, not on
-// time. MISSES are intentionally NOT cached: another worker racing the same asset
-// may have just uploaded it, and a stale-miss would force pointless Unity
-// re-conversion.
-//
-// The entries are plain canonical keys (`{abVersion}/assets/{hash}_{target}`) so
-// that a version bump or a different build target never returns a false positive.
-// NOTE: keys do NOT include the S3 bucket name — the cache assumes a worker is
-// bound to a single CDN bucket for its lifetime, which is the current deploy
-// shape (one bucket per worker pool). If we ever run a process that probes
-// against multiple buckets (e.g. staging-vs-prod dual-writes), a HIT confirmed
-// in bucket A would spuriously satisfy a later probe for bucket B. Either
-// introduce the bucket into the key or instantiate one cache per bucket
-// before making that deploy change.
-// LRU ordering is maintained via JS Set insertion order — on every hit we
-// delete + re-add the key so it becomes the most-recently-used entry, and on
-// eviction we drop the first (least-recently-used) element.
-//
-// The members below are named function expressions that reference the
-// `probeHitCache` module binding directly (not `this`), so destructured
-// usage like `const { has, add } = probeHitCache; add(k); has(k)` still works
-// — see the unit-test covering that pattern.
-// Exported for unit testing.
-export const probeHitCache = {
-  hits: new Set<string>(),
-  maxSize: 20_000,
-  has: function (key: string): boolean {
-    if (!probeHitCache.hits.has(key)) return false
-    // Touch: move the key to the back of the Set so it's now the MRU entry.
-    probeHitCache.hits.delete(key)
-    probeHitCache.hits.add(key)
-    return true
-  },
-  add: function (key: string) {
-    // If the key is already present, just refresh its LRU position.
-    if (probeHitCache.hits.has(key)) {
-      probeHitCache.hits.delete(key)
-      probeHitCache.hits.add(key)
-      return
+/**
+ * Sentinel value written under each cached probe key. The read path uses
+ * `redis.exists` and never inspects this value — it only exists because
+ * `redis.set` needs something to store.
+ */
+const REDIS_HIT_MARKER = '1'
+
+/**
+ * Wraps `redis.exists` so a Redis outage / transient failure is logged and
+ * treated as a cache miss instead of failing the entire probe. Existence is
+ * the only signal we need (the value is a sentinel we wrote), so `exists`
+ * avoids the value transfer and JSON parse that a `get` would incur.
+ */
+async function safeRedisHit(
+  redis: ICacheStorageComponent,
+  key: string,
+  logger: ILoggerComponent.ILogger,
+  metrics?: AppComponents['metrics']
+): Promise<boolean> {
+  try {
+    return await redis.exists(key)
+  } catch (err: any) {
+    // Warn-level: a Redis blip is recoverable and would otherwise look like a
+    // silent cache-cold pod. Don't escalate to error — we don't want
+    // dashboards lighting up red for routine reconnect cycles.
+    logger.warn('redis hit-cache exists failed; falling back to S3 HEAD for this key', {
+      key,
+      error: err?.message ?? String(err)
+    } as any)
+    if (metrics) {
+      metrics.increment('ab_converter_redis_cache_errors_total', { operation: 'exists', kind: 'probe-hit' })
     }
-    // New key + at capacity: evict the least-recently-used entry (front of Set).
-    if (probeHitCache.hits.size >= probeHitCache.maxSize) {
-      const lru = probeHitCache.hits.values().next().value
-      if (lru !== undefined) probeHitCache.hits.delete(lru)
+    return false
+  }
+}
+
+/**
+ * Wraps `redis.set` for write-through on S3 HEAD hits. Best-effort and
+ * fire-and-forget at the call site — the probe result is already known by the
+ * time we get here, so cache propagation latency must not be on the critical
+ * path.
+ */
+async function safeRedisSet(
+  redis: ICacheStorageComponent,
+  key: string,
+  ttlSeconds: number,
+  logger: ILoggerComponent.ILogger,
+  metrics?: AppComponents['metrics']
+): Promise<void> {
+  try {
+    await redis.set(key, REDIS_HIT_MARKER, ttlSeconds)
+  } catch (err: any) {
+    logger.warn('redis hit-cache set failed; next probe for this key will refetch', {
+      key,
+      error: err?.message ?? String(err)
+    } as any)
+    if (metrics) {
+      metrics.increment('ab_converter_redis_cache_errors_total', { operation: 'set', kind: 'probe-hit' })
     }
-    probeHitCache.hits.add(key)
-  },
-  clear: function () {
-    probeHitCache.hits.clear()
+  }
+}
+
+/**
+ * Wraps `redis.get` for the glb URI cache. On any Redis-side failure (network,
+ * timeout, corrupted JSON) returns `null` and logs at warn level — the caller
+ * falls through to the fetch + parse path. Never throws into the worker.
+ */
+async function safeRedisGetGlbDeps(
+  redis: ICacheStorageComponent,
+  glbHash: string,
+  logger: ILoggerComponent.ILogger,
+  metrics?: AppComponents['metrics']
+): Promise<string[] | null> {
+  try {
+    return await redis.get<string[]>(`${GLB_DEPS_CACHE_KEY_PREFIX}${glbHash}`)
+  } catch (err: any) {
+    logger.warn('redis glb-deps cache get failed; falling back to catalyst fetch', {
+      glbHash,
+      error: err?.message ?? String(err)
+    } as any)
+    if (metrics) {
+      metrics.increment('ab_converter_redis_cache_errors_total', { operation: 'get', kind: 'glb-deps' })
+    }
+    return null
+  }
+}
+
+/**
+ * Fire-and-forget write of a parsed glb result to Redis. Mirrors
+ * {@link safeRedisSet} — propagation latency must not block the worker
+ * returning its result to the caller.
+ */
+async function safeRedisSetGlbDeps(
+  redis: ICacheStorageComponent,
+  glbHash: string,
+  value: string[],
+  ttlSeconds: number,
+  logger: ILoggerComponent.ILogger,
+  metrics?: AppComponents['metrics']
+): Promise<void> {
+  try {
+    await redis.set(`${GLB_DEPS_CACHE_KEY_PREFIX}${glbHash}`, value, ttlSeconds)
+  } catch (err: any) {
+    logger.warn('redis glb-deps cache set failed; subsequent probes will recompute', {
+      glbHash,
+      error: err?.message ?? String(err)
+    } as any)
+    if (metrics) {
+      metrics.increment('ab_converter_redis_cache_errors_total', { operation: 'set', kind: 'glb-deps' })
+    }
   }
 }
 
@@ -831,7 +921,31 @@ export type PerAssetDigestResult = {
 export async function computePerAssetDigests(
   entity: Pick<Entity, 'content'>,
   contentServerUrl: string,
-  options?: { fetcher?: GltfFetcher; concurrency?: number; aggregateTimeoutMs?: number }
+  options?: {
+    fetcher?: GltfFetcher
+    concurrency?: number
+    aggregateTimeoutMs?: number
+    /** Optional shared Redis cache for parsed glb URIs. When supplied, each
+     * glb's URI list is looked up by hash BEFORE the catalyst byte fetch;
+     * on hit the fetch + JSON parse are skipped and we go straight to
+     * URI-resolution against `entity.content`. Hash uniquely identifies the
+     * glb bytes, so the cached URIs are valid across entities and pods —
+     * different entities referencing the same glb hash share the lookup. */
+    redis?: ICacheStorageComponent
+    /** TTL for Redis-cached URI entries. Defaults to
+     * {@link DEFAULT_REDIS_GLB_DEPS_TTL_SECONDS}. Ignored when no redis is
+     * supplied. */
+    redisTtlSeconds?: number
+    /** Logger used by the glb-deps cache helpers for warn-level fallback
+     * messages on Redis errors. Defaults to a silent no-op so existing
+     * callers (tests, migrate script) don't see unexpected output. */
+    logger?: ILoggerComponent.ILogger
+    /** Metrics component for cache outcome counters. Optional — when unset,
+     * the cache still works, only the observability disappears. */
+    metrics?: AppComponents['metrics']
+    /** Build target / AB version label values, passed through to metrics. */
+    metricLabels?: { build_target: string; ab_version: string }
+  }
 ): Promise<PerAssetDigestResult> {
   const fetcher = options?.fetcher ?? defaultGltfFetcher
   // 20 in-flight catalyst fetches — below the S3 HEAD probe concurrency (50)
@@ -847,6 +961,11 @@ export async function computePerAssetDigests(
   // process doesn't hang on lingering tasks. Default undefined keeps the
   // public API non-breaking — callers opt in.
   const aggregateTimeoutMs = options?.aggregateTimeoutMs
+  const redis = options?.redis
+  const redisTtlSeconds = options?.redisTtlSeconds ?? DEFAULT_REDIS_GLB_DEPS_TTL_SECONDS
+  const logger = options?.logger ?? NULL_LOGGER
+  const metrics = options?.metrics
+  const metricLabels = options?.metricLabels
 
   const content = entity.content ?? []
   // Case-insensitive lookup: glTF URIs and entity content-map paths may
@@ -871,23 +990,58 @@ export async function computePerAssetDigests(
     concurrency,
     async (entry): Promise<WorkerResult> => {
       const ext = fileExtension(entry.file) as '.glb' | '.gltf'
-      // Fetch errors stay throws — they're transient and bubble up to
-      // `executeConversion` where they trigger SQS retry. Only content-
-      // determined defects (parse + resolve) become skips.
-      const bytes = await fetcher(`${contentsBaseUrl}${entry.hash}`, ext)
 
-      let uris: string[]
-      try {
-        uris = parseGltfDepRefs(bytes, ext)
-      } catch (err: any) {
-        return {
-          kind: 'skip',
-          skip: {
-            hash: entry.hash,
-            file: entry.file,
-            reason: 'unparseable',
-            detail: truncateSkipDetail(err?.message ?? String(err))
+      // Redis cache lookup: the URI list is a deterministic function of the
+      // glb bytes (and therefore of its content hash), so we can skip the
+      // catalyst byte fetch + JSON parse on hit. Parse failures are NOT
+      // cached — they're rare and `ab_converter_glb_skipped_total{reason}`
+      // already tracks the rate. `missing-deps` skips can't be cached either:
+      // they depend on the entity content map, which varies per-entity.
+      let uris: string[] | undefined
+      if (redis) {
+        const cached = await safeRedisGetGlbDeps(redis, entry.hash, logger, metrics)
+        if (cached !== null) {
+          if (metrics && metricLabels) {
+            metrics.increment('ab_converter_glb_deps_cache_total', { ...metricLabels, outcome: 'hit' })
           }
+          uris = cached
+        }
+      }
+
+      if (uris === undefined) {
+        if (metrics && metricLabels && redis) {
+          metrics.increment('ab_converter_glb_deps_cache_total', { ...metricLabels, outcome: 'miss' })
+        }
+        // Fetch errors stay throws — they're transient and bubble up to
+        // `executeConversion` where they trigger SQS retry. Only content-
+        // determined defects (parse + resolve) become skips.
+        const bytes = await fetcher(`${contentsBaseUrl}${entry.hash}`, ext)
+
+        try {
+          uris = parseGltfDepRefs(bytes, ext)
+        } catch (err: any) {
+          // Parse failure: skip but do NOT cache. The next probe will refetch
+          // and re-fail consistently; the cost is bounded by how rare
+          // structurally broken glbs are in practice. Not caching keeps the
+          // cache value shape narrow (just URI lists) and ensures any future
+          // parser improvement takes effect immediately rather than waiting
+          // for the TTL to elapse on cached negatives.
+          return {
+            kind: 'skip',
+            skip: {
+              hash: entry.hash,
+              file: entry.file,
+              reason: 'unparseable',
+              detail: truncateSkipDetail(err?.message ?? String(err))
+            }
+          }
+        }
+
+        // Successful parse — write the URI list back to Redis for the next
+        // probe. Fire-and-forget; the caller's result doesn't depend on
+        // propagation.
+        if (redis) {
+          void safeRedisSetGlbDeps(redis, entry.hash, uris, redisTtlSeconds, logger, metrics)
         }
       }
 
@@ -995,6 +1149,10 @@ type CheckAssetCacheParams = {
   contentServerUrl?: string
   /** Injectable fetcher for glb bytes — forwarded to `computePerAssetDigests`. */
   fetcher?: GltfFetcher
+  /** TTL applied to Redis-stored hit-cache entries. Defaults to
+   * {@link DEFAULT_REDIS_HIT_CACHE_TTL_SECONDS}. Ignored when no Redis component
+   * is supplied (or when its `set` is a no-op). */
+  redisTtlSeconds?: number
 }
 
 /**
@@ -1003,13 +1161,14 @@ type CheckAssetCacheParams = {
  * the subset of cached hashes whose file extension is safe to skip on the Unity side.
  */
 export async function checkAssetCache(
-  components: Pick<AppComponents, 'cdnS3' | 'logs' | 'metrics'>,
+  components: Pick<AppComponents, 'cdnS3' | 'logs' | 'metrics' | 'redis'>,
   params: CheckAssetCacheParams
 ): Promise<AssetCacheResult> {
   const { entity, abVersion, buildTarget, cdnBucket } = params
   // S3 HEAD is cheap and non-blocking; 50 saturates the probe phase for typical
   // scenes (dozens of assets) without exhausting the default HTTPS agent pool.
   const concurrency = params.concurrency ?? 50
+  const redisTtlSeconds = params.redisTtlSeconds ?? DEFAULT_REDIS_HIT_CACHE_TTL_SECONDS
   const logger = components.logs.getLogger('AssetReuse')
 
   let depsDigestByHash: ReadonlyMap<string, string>
@@ -1031,6 +1190,15 @@ export async function checkAssetCache(
     // `computePerAssetDigests` call — that's the path that emits the warn
     // log + `ab_converter_glb_skipped_total` counter. New callers should
     // follow the production pattern rather than relying on this fallback.
+    //
+    // We deliberately do NOT plumb redis / metrics / logger through here.
+    // The component-aware plumbing for `computePerAssetDigests` lives in
+    // `scenes/component.ts`'s wrapper — that's the single place that
+    // wires the URI cache, metric labels, and logger. Duplicating that
+    // here would create two callers that need to stay in sync; the
+    // fallback gets correct results, just no URI cache benefit. If
+    // tests need the cache, they should go through the scenes component
+    // wrapper.
     const result = await computePerAssetDigests(entity, params.contentServerUrl, { fetcher: params.fetcher })
     depsDigestByHash = result.digests
   }
@@ -1089,37 +1257,43 @@ export async function checkAssetCache(
     }
   }
 
-  // Fast-path: skip S3 HEAD for hashes the hit-cache already confirmed as canonical.
-  const hits: boolean[] = new Array(probes.length)
-  const pendingIdx: number[] = []
-  for (let i = 0; i < probes.length; i++) {
-    if (probeHitCache.has(probes[i].key)) hits[i] = true
-    else pendingIdx.push(i)
-  }
-
-  const hitCacheServed = probes.length - pendingIdx.length
-  if (pendingIdx.length > 0) {
-    const fetched = await mapBounded(pendingIdx, concurrency, (i) =>
-      headExists(components.cdnS3, cdnBucket, probes[i].key)
-    )
-    for (let j = 0; j < pendingIdx.length; j++) {
-      hits[pendingIdx[j]] = fetched[j]
-      if (fetched[j]) probeHitCache.add(probes[pendingIdx[j]].key)
+  // Per-probe: check Redis first, fall through to S3 HEAD on miss. Redis errors
+  // are swallowed and counted as misses inside `safeRedisHit`, so a transient
+  // Redis outage degrades gracefully to "do S3 HEAD" rather than failing the
+  // probe. On an S3 HEAD hit we write the key back to Redis fire-and-forget so
+  // the next probe (here or on a peer pod) finds it cached.
+  let cacheHitCount = 0
+  let headHitCount = 0
+  const hits = await mapBounded(
+    probes.map((_, i) => i),
+    concurrency,
+    async (i): Promise<boolean> => {
+      if (await safeRedisHit(components.redis, probes[i].key, logger, components.metrics)) {
+        cacheHitCount++
+        return true
+      }
+      const exists = await headExists(components.cdnS3, cdnBucket, probes[i].key)
+      if (exists) {
+        headHitCount++
+        void safeRedisSet(components.redis, probes[i].key, redisTtlSeconds, logger, components.metrics)
+      }
+      return exists
     }
-  }
+  )
+  const headRequestCount = probes.length - cacheHitCount
 
-  if (hitCacheServed > 0) {
+  if (cacheHitCount > 0) {
     components.metrics.increment(
       'ab_converter_asset_probe_hit_cache_total',
       { build_target: buildTarget, ab_version: abVersion },
-      hitCacheServed
+      cacheHitCount
     )
   }
-  if (pendingIdx.length > 0) {
+  if (headRequestCount > 0) {
     components.metrics.increment(
       'ab_converter_asset_probe_head_total',
       { build_target: buildTarget, ab_version: abVersion },
-      pendingIdx.length
+      headRequestCount
     )
   }
 
@@ -1161,8 +1335,9 @@ export async function checkAssetCache(
     // be unexplained when in fact it reflects the metadata-only filter
     // kicking in for scenes that previously paid for a wasted Unity build.
     metadataOnly: metadataOnlyHashes.size,
-    hitCacheServed,
-    headRequests: pendingIdx.length,
+    hitCacheServed: cacheHitCount,
+    headRequests: headRequestCount,
+    headHits: headHitCount,
     gltfAssetsDigested: depsDigestByHash.size
   } as any)
 

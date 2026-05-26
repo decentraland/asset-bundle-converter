@@ -37,6 +37,7 @@ import {
   MockedCdnS3,
   MockedSentryComponent
 } from '../mocks'
+import { createInMemoryCacheComponent } from '@dcl/memory-cache-component'
 
 const mockedCheckAssetCache = checkAssetCache as jest.Mock
 const mockedComputePerAssetDigests = computePerAssetDigests as jest.Mock
@@ -75,7 +76,8 @@ async function buildHarness(overrides?: { cdnBucket?: string }): Promise<Harness
     metrics,
     cdnS3: cdnS3 as any,
     sentry,
-    catalyst
+    catalyst,
+    redis: createInMemoryCacheComponent()
   })
 
   const originalFetch = globalThis.fetch
@@ -198,7 +200,8 @@ describe('when getCdnBucket is called', () => {
         metrics,
         cdnS3: {} as any,
         sentry: {} as any,
-        catalyst: {} as any
+        catalyst: {} as any,
+        redis: createInMemoryCacheComponent()
       })
     })
 
@@ -962,6 +965,46 @@ describe('when probe is called', () => {
         expect.objectContaining({
           kind: 'partial-hit',
           cacheResult: expect.objectContaining({ cachedHashes: ['h-tex-1'], missingHashes: ['h-glb'] })
+        })
+      )
+    })
+  })
+
+  describe('and the scenes wrapper invokes the underlying digest pass', () => {
+    // Coverage for the wrapper's plumbing: probe() calls the scenes-local
+    // `computePerAssetDigests`, which is the SINGLE place that injects redis,
+    // metrics, logger, and the metric labels into the underlying free
+    // function. Without this test, forgetting to plumb any of those would
+    // silently disable the URI cache (or its observability) in production.
+    let harness: Harness
+
+    beforeEach(async () => {
+      harness = await buildHarness()
+      harness.catalyst.getActiveEntity.mockResolvedValueOnce(buildSceneEntity())
+      mockedComputePerAssetDigests.mockResolvedValueOnce({
+        digests: new Map([['h-glb', 'digest-1']]),
+        skipped: new Map()
+      })
+      mockedCheckAssetCache.mockResolvedValueOnce(
+        buildAssetCacheResult({ cachedHashes: [], missingHashes: ['h-glb'] })
+      )
+      await harness.scenes.probe(buildProbeArgs({ buildTarget: 'windows', abVersion: 'v48' }))
+    })
+
+    afterEach(() => {
+      globalThis.fetch = harness.originalFetch
+      jest.clearAllMocks()
+    })
+
+    it('should forward the redis component, metrics, logger, and per-call metric labels', () => {
+      expect(mockedComputePerAssetDigests).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(String),
+        expect.objectContaining({
+          redis: expect.objectContaining({ get: expect.any(Function), set: expect.any(Function) }),
+          metrics: expect.objectContaining({ increment: expect.any(Function) }),
+          logger: expect.objectContaining({ warn: expect.any(Function) }),
+          metricLabels: { build_target: 'windows', ab_version: 'v48' }
         })
       )
     })
