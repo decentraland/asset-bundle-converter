@@ -36,6 +36,12 @@ namespace DCL.ABConverter
                     && !string.IsNullOrWhiteSpace(contentServerUrlArg[0]))
                     contentServerUrl = contentServerUrlArg[0].Trim();
 
+                // Emit before any other LOD work so the Unity batch-mode log
+                // alone is enough to tell whether the upstream caller passed
+                // -contentServerUrl. Pairs with the same line on the consumer-
+                // server side ("Starting LOD conversion for … contentServerUrl=…").
+                Debug.Log($"[LOD] CLI args parsed. contentServerUrl={(string.IsNullOrEmpty(contentServerUrl) ? "(none, LODConversion will use default)" : contentServerUrl)}, lods={lodsURL}, output={customOutputDirectory}");
+
                 if (string.IsNullOrEmpty(lodsURL))
                 {
                     Debug.LogError("[LOD] -lods argument missing or empty.");
