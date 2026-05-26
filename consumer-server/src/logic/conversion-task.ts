@@ -320,7 +320,7 @@ export async function executeLODConversion(
   const defaultLoggerMetadata = { entityId, lods, version: abVersion, logFile, contentServerUrl } as any
 
   logger.info(
-    `Starting LOD conversion for ${$BUILD_TARGET} — contentServerUrl=${contentServerUrl ?? '(none, Unity will use default)'}`,
+    `Starting LOD conversion for ${$BUILD_TARGET} — entityId=${entityId} contentServerUrl=${contentServerUrl ?? '(none, Unity will use default)'}`,
     defaultLoggerMetadata
   )
 
