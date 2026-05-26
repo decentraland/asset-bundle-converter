@@ -317,9 +317,12 @@ export async function executeLODConversion(
   const logFile = `/tmp/lods_logs/export_log_${entityId}_${Date.now()}.txt`
   const s3LogKey = `logs/lods/${abVersion}/${entityId}/${new Date().toISOString()}.txt`
   const outDirectory = `/tmp/lods_contents/entity_${entityId}`
-  const defaultLoggerMetadata = { entityId, lods, version: abVersion, logFile } as any
+  const defaultLoggerMetadata = { entityId, lods, version: abVersion, logFile, contentServerUrl } as any
 
-  logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
+  logger.info(
+    `Starting LOD conversion for ${$BUILD_TARGET} — contentServerUrl=${contentServerUrl ?? '(none, Unity will use default)'}`,
+    defaultLoggerMetadata
+  )
 
   if (!unityBuildTarget) {
     logger.error('Could not find a build target', { ...defaultLoggerMetadata } as any)
