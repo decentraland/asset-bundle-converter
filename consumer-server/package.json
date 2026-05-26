@@ -21,9 +21,9 @@
   "dependencies": {
     "@aws-sdk/client-sns": "^3.699.0",
     "@dcl/cdn-uploader": "^1.5.0",
-    "@dcl/core-commons": "^0.7.0",
-    "@dcl/memory-cache-component": "^2.3.0",
-    "@dcl/redis-component": "^3.0.2",
+    "@dcl/core-commons": "^0.8.0",
+    "@dcl/memory-cache-component": "^2.4.0",
+    "@dcl/redis-component": "^3.1.0",
     "@dcl/schemas": "^19.6.0",
     "@sentry/node": "^8.27.0",
     "@well-known-components/env-config-provider": "^1.2.0",

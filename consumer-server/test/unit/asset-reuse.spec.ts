@@ -64,12 +64,18 @@ function makeMockLogger() {
 
 function makeMockComponents(
   existingKeys: Set<string>,
-  options: { redisHits?: Set<string>; redisGetThrows?: boolean; redisSetThrows?: boolean } = {}
+  options: {
+    redisHits?: Set<string>
+    redisGetThrows?: boolean
+    redisExistsThrows?: boolean
+    redisSetThrows?: boolean
+  } = {}
 ) {
   const { s3, calls } = makeMockS3(existingKeys)
   const { logger } = makeMockLogger()
   const metricsCalls: Array<{ name: string; labels: any; value?: number }> = []
   const redisGetCalls: string[] = []
+  const redisExistsCalls: string[] = []
   const redisSetCalls: Array<{ key: string; ttl?: number }> = []
   // Self-persisting store seeded from `options.redisHits`. Writes flow back so
   // a second probe sees what a previous one cached — mirrors real Redis
@@ -98,6 +104,11 @@ function makeMockComponents(
           if (options.redisSetThrows) throw new Error('simulated redis set failure')
           redisStore.set(key, value)
         },
+        async exists(key: string) {
+          redisExistsCalls.push(key)
+          if (options.redisExistsThrows) throw new Error('simulated redis exists failure')
+          return redisStore.has(key)
+        },
         async remove() {},
         async keys() {
           return []
@@ -125,6 +136,7 @@ function makeMockComponents(
     calls,
     metricsCalls,
     redisGetCalls,
+    redisExistsCalls,
     redisSetCalls
   }
 }
@@ -723,6 +735,9 @@ describe('when computing per-asset digests with the redis URI cache', () => {
           }
           if (options.setThrows) throw new Error('simulated redis set failure')
           store.set(key, value)
+        },
+        async exists(key: string) {
+          return store.has(key)
         },
         async remove() {},
         async keys() {
@@ -2384,11 +2399,11 @@ describe('when checking the asset cache against S3', () => {
     })
   })
 
-  describe('and the redis get() throws (transient outage mid-probe)', () => {
+  describe('and the redis exists() throws (transient outage mid-probe)', () => {
     let setup: ReturnType<typeof makeMockComponents>
 
     beforeEach(async () => {
-      setup = makeMockComponents(new Set(['v48/assets/h1_windows']), { redisGetThrows: true })
+      setup = makeMockComponents(new Set(['v48/assets/h1_windows']), { redisExistsThrows: true })
       await checkAssetCache(setup.components, {
         entity: { content: [{ file: 'a.png', hash: 'h1' }] } as any,
         abVersion: 'v48',
@@ -2402,11 +2417,11 @@ describe('when checking the asset cache against S3', () => {
       expect(setup.calls.map((c) => c.Key)).toEqual(['v48/assets/h1_windows'])
     })
 
-    it('should increment the redis cache errors counter with operation=get, kind=probe-hit', () => {
+    it('should increment the redis cache errors counter with operation=exists, kind=probe-hit', () => {
       const err = setup.metricsCalls.find(
         (m) =>
           m.name === 'ab_converter_redis_cache_errors_total' &&
-          m.labels.operation === 'get' &&
+          m.labels.operation === 'exists' &&
           m.labels.kind === 'probe-hit'
       )
       expect(err).toBeDefined()

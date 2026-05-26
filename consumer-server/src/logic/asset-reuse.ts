@@ -253,18 +253,17 @@ export function canonicalFilenameForAsset(
 }
 
 /**
- * Sentinel value stored under each cached probe key. Content is irrelevant —
- * only the key's existence matters — but a non-empty string keeps the value
- * out of `JSON.parse` edge cases where `null`/`undefined` could be confused
- * with "key absent".
+ * Sentinel value written under each cached probe key. The read path uses
+ * `redis.exists` and never inspects this value — it only exists because
+ * `redis.set` needs something to store.
  */
 const REDIS_HIT_MARKER = '1'
 
 /**
- * Wraps `redis.get` so a Redis outage / transient failure is logged and
- * treated as a cache miss instead of failing the entire probe. Returns `true`
- * when the key is present (the stored value is the sentinel we wrote, no
- * point inspecting it — we control the writes).
+ * Wraps `redis.exists` so a Redis outage / transient failure is logged and
+ * treated as a cache miss instead of failing the entire probe. Existence is
+ * the only signal we need (the value is a sentinel we wrote), so `exists`
+ * avoids the value transfer and JSON parse that a `get` would incur.
  */
 async function safeRedisHit(
   redis: ICacheStorageComponent,
@@ -273,18 +272,17 @@ async function safeRedisHit(
   metrics?: AppComponents['metrics']
 ): Promise<boolean> {
   try {
-    const value = await redis.get<string>(key)
-    return value !== null
+    return await redis.exists(key)
   } catch (err: any) {
     // Warn-level: a Redis blip is recoverable and would otherwise look like a
     // silent cache-cold pod. Don't escalate to error — we don't want
     // dashboards lighting up red for routine reconnect cycles.
-    logger.warn('redis hit-cache get failed; falling back to S3 HEAD for this key', {
+    logger.warn('redis hit-cache exists failed; falling back to S3 HEAD for this key', {
       key,
       error: err?.message ?? String(err)
     } as any)
     if (metrics) {
-      metrics.increment('ab_converter_redis_cache_errors_total', { operation: 'get', kind: 'probe-hit' })
+      metrics.increment('ab_converter_redis_cache_errors_total', { operation: 'exists', kind: 'probe-hit' })
     }
     return false
   }
