@@ -25,6 +25,9 @@ type CheckAssetCacheArgs = {
 type ComputePerAssetDigestsOptions = {
   aggregateTimeoutMs?: number
   fetcher?: (url: string, ext: '.glb' | '.gltf') => Promise<Buffer>
+  /** Label values forwarded to the glb-deps cache outcome counter. When
+   * absent the metric isn't emitted, but the cache still works. */
+  metricLabels?: { build_target: string; ab_version: string }
 }
 
 // Upper bound on a single `/entities/active` catalyst call before we fall back
@@ -66,13 +69,17 @@ function toError(e: unknown): Error {
  * stays unit-tested in place.
  */
 export async function createScenesComponent(
-  components: Pick<AppComponents, 'logs' | 'config' | 'metrics' | 'cdnS3' | 'sentry' | 'catalyst'>
+  components: Pick<AppComponents, 'logs' | 'config' | 'metrics' | 'cdnS3' | 'sentry' | 'catalyst' | 'redis'>
 ): Promise<IScenesComponent> {
   // `metrics` isn't destructured here because this component's own methods
   // don't emit metrics directly — but it's required in the Pick<> because the
   // delegated impls (`checkAssetCacheImpl` and friends) read it from the
-  // captured `components` reference passed through below.
-  const { logs, config, cdnS3, sentry, catalyst } = components
+  // captured `components` reference passed through below. `redis` IS
+  // destructured because `computePerAssetDigests` plumbs it through as an
+  // explicit option to the underlying free function (alongside logger +
+  // metrics) for the new glb URI cache.
+  const { logs, config, cdnS3, sentry, catalyst, redis } = components
+  const digestCacheLogger = logs.getLogger('glb-deps-cache')
 
   // CDN_BUCKET is a process-lifetime env var — resolve it once at construction
   // so `probe()` and downstream callers don't pay a config lookup per call.
@@ -80,6 +87,17 @@ export async function createScenesComponent(
   // function: a missing env var falls back to the literal so local dev / tests
   // that don't set CDN_BUCKET still get a deterministic string.
   const cachedCdnBucket = (await config.getString('CDN_BUCKET')) || 'CDN_BUCKET'
+
+  // Shared TTL applied to BOTH Redis caches the probe path uses:
+  //   - the probe hit-cache (canonical S3 existence markers)
+  //   - the glb URI cache (parsed dep refs for digest computation)
+  // Process-lifetime; resolve once and forward into every call. Unset (or
+  // unparseable) keeps the implementation default — both cached values are
+  // content-deterministic so a stale entry is harmless, the TTL only governs
+  // how long the keyspace holds dead entries.
+  const redisTtlSecondsRaw = await config.getNumber('REDIS_CACHE_TTL_SECONDS')
+  const cachedRedisTtlSeconds =
+    redisTtlSecondsRaw !== undefined && redisTtlSecondsRaw > 0 ? redisTtlSecondsRaw : undefined
 
   // The async signature is preserved for interface flexibility (callers `await`
   // this without caring whether the impl is sync or async, and a future variant
@@ -222,7 +240,7 @@ export async function createScenesComponent(
   }
 
   async function checkAssetCache(args: CheckAssetCacheArgs): Promise<AssetCacheResult> {
-    return checkAssetCacheImpl(components, args)
+    return checkAssetCacheImpl(components, { ...args, redisTtlSeconds: cachedRedisTtlSeconds })
   }
 
   async function computePerAssetDigests(
@@ -230,7 +248,14 @@ export async function createScenesComponent(
     contentServerUrl: string,
     options?: ComputePerAssetDigestsOptions
   ): Promise<PerAssetDigestResult> {
-    return computePerAssetDigestsImpl(entity, contentServerUrl, options)
+    return computePerAssetDigestsImpl(entity, contentServerUrl, {
+      ...options,
+      redis,
+      redisTtlSeconds: cachedRedisTtlSeconds,
+      logger: digestCacheLogger,
+      metrics: components.metrics,
+      metricLabels: options?.metricLabels
+    })
   }
 
   async function purgeCachedBundlesFromOutput(outDirectory: string, cachedHashes: string[]): Promise<number> {
@@ -295,7 +320,8 @@ export async function createScenesComponent(
     let skippedAssets: ReadonlyMap<string, SkippedAsset>
     try {
       const digestResult = await computePerAssetDigests(entity, contentServerUrl, {
-        aggregateTimeoutMs: PROBE_DIGEST_TIMEOUT_MS
+        aggregateTimeoutMs: PROBE_DIGEST_TIMEOUT_MS,
+        metricLabels: { build_target: buildTarget, ab_version: abVersion }
       })
       depsDigestByHash = digestResult.digests
       skippedAssets = digestResult.skipped

@@ -50,9 +50,19 @@ export const metricDeclarations = {
     labelNames: ['build_target', 'ab_version']
   },
   ab_converter_asset_probe_hit_cache_total: {
-    help: 'Counter of asset cache probes served from the process-local hit-cache (skipping S3 HEAD)',
+    help: 'Counter of asset cache probes served from the Redis hit-cache (skipping S3 HEAD)',
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target', 'ab_version']
+  },
+  ab_converter_glb_deps_cache_total: {
+    help: 'Counter of Redis-cached glb URI lookups, labelled by outcome ∈ {hit, miss}. A hit means the catalyst byte fetch + JSON parse for that glb was skipped because another probe (here or on a peer pod) already cached the URI list. Track hit rate to size the cache and tune the TTL.',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['build_target', 'ab_version', 'outcome']
+  },
+  ab_converter_redis_cache_errors_total: {
+    help: 'Counter of Redis errors observed by the cache helpers. operation ∈ {get, set, exists}; kind ∈ {probe-hit, glb-deps}. A sustained spike here means cache lookups are silently falling through to the cold path even when the data is in Redis — alert on this to catch a Redis outage that would otherwise look like normal cache misses on the other counters.',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['operation', 'kind']
   },
   ab_converter_asset_probe_head_total: {
     help: 'Counter of asset cache probes that required a fresh S3 HEAD request',
