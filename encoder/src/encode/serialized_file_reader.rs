@@ -211,6 +211,91 @@ pub fn parse_serialized_file(bytes: &[u8]) -> Result<ParsedSerializedFile, Seria
     })
 }
 
+/// One entry in the SerializedFile externals (FileIdentifier) table. A
+/// Material's `m_Shader` PPtr with `file_id = N` resolves against
+/// `externals[N-1]` (file_id 0 = this file, 1 = first external).
+#[derive(Debug, Clone)]
+pub struct ParsedExternal {
+    /// Usually empty (the legacy "asset path" temp field).
+    pub temp_path: String,
+    pub guid: [u8; 16],
+    pub type_id: i32,
+    /// The real reference. For DCL glb shader refs this is the CAB path
+    /// `archive:/CAB-<hash>/CAB-<hash>` of the StreamingAssets shader bundle.
+    pub path: String,
+}
+
+/// Parse the externals (FileIdentifier) table. Re-walks the metadata past
+/// the type table, object table, and script-types table to reach it.
+/// Additive to `parse_serialized_file` (which only needs the type table),
+/// kept separate so the well-tested type path is untouched.
+pub fn parse_externals(bytes: &[u8]) -> Result<Vec<ParsedExternal>, SerializeError> {
+    if bytes.len() < HEADER_SIZE {
+        return Err(SerializeError::Format("SerializedFile too short".into()));
+    }
+    let metadata_size = i64::from_be_bytes(bytes[0x10..0x18].try_into().unwrap()) as usize;
+    let metadata = &bytes[HEADER_SIZE..HEADER_SIZE + metadata_size];
+    let mut cur = 0usize;
+
+    // unity_version cstring, target_platform i32, enable_type_tree u8.
+    cur += read_cstring(&metadata[cur..])?.1;
+    cur += 4;
+    let enable_type_tree = metadata[cur] != 0;
+    cur += 1;
+
+    // Type table — skip each entry (same layout as parse_serialized_file).
+    let type_count = i32::from_le_bytes(metadata[cur..cur + 4].try_into().unwrap()) as usize;
+    cur += 4;
+    for _ in 0..type_count {
+        cur += 4; // class_id
+        cur += 1; // is_stripped
+        let sti = i16::from_le_bytes(metadata[cur..cur + 2].try_into().unwrap());
+        cur += 2;
+        if sti >= 0 {
+            cur += 16; // script_id
+        }
+        cur += 16; // old_type_hash
+        if enable_type_tree {
+            let nc = u32::from_le_bytes(metadata[cur..cur + 4].try_into().unwrap()) as usize;
+            let sb = u32::from_le_bytes(metadata[cur + 4..cur + 8].try_into().unwrap()) as usize;
+            let hr = 8 + nc * 32 + sb;
+            let dc = u32::from_le_bytes(metadata[cur + hr..cur + hr + 4].try_into().unwrap()) as usize;
+            cur += hr + 4 + dc * 4;
+        }
+    }
+
+    // Object table — 4-byte aligned entries, 24 bytes each.
+    let object_count = i32::from_le_bytes(metadata[cur..cur + 4].try_into().unwrap()) as usize;
+    cur += 4;
+    for _ in 0..object_count {
+        let pad = (4 - (cur % 4)) % 4;
+        cur += pad + 24;
+    }
+
+    // Script-types table (added format >= 11): each = i32 + i64.
+    let script_count = i32::from_le_bytes(metadata[cur..cur + 4].try_into().unwrap()) as usize;
+    cur += 4;
+    cur += script_count * 12;
+
+    // Externals (FileIdentifier) table.
+    let ext_count = i32::from_le_bytes(metadata[cur..cur + 4].try_into().unwrap()) as usize;
+    cur += 4;
+    let mut externals = Vec::with_capacity(ext_count);
+    for _ in 0..ext_count {
+        let (temp_path, n) = read_cstring(&metadata[cur..])?;
+        cur += n;
+        let mut guid = [0u8; 16];
+        guid.copy_from_slice(&metadata[cur..cur + 16]);
+        cur += 16;
+        let type_id = i32::from_le_bytes(metadata[cur..cur + 4].try_into().unwrap());
+        cur += 4;
+        let (path, n) = read_cstring(&metadata[cur..])?;
+        cur += n;
+        externals.push(ParsedExternal { temp_path, guid, type_id, path });
+    }
+    Ok(externals)
+}
+
 fn read_cstring(bytes: &[u8]) -> Result<(String, usize), SerializeError> {
     let null_idx = bytes
         .iter()
