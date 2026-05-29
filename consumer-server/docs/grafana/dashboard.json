@@ -1,0 +1,1332 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "target": { "limit": 100, "matchAny": false, "tags": [], "type": "dashboard" },
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "panels": [],
+      "title": "Stats",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 80 } ] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "/^sum$/", "values": false },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum(ab_converter_running_conversion{service=~\"$service\"})",
+          "legendFormat": "sum",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Running conversions",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Triage passes currently in flight (probe + fast-path or republish decision). Distinct from Running conversions which counts Unity spawns only.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 80 } ] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 1 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "/^sum$/", "values": false },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum(ab_converter_running_triage{service=~\"$service\"})",
+          "legendFormat": "sum",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Running triage",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "id": 4,
+      "panels": [],
+      "title": "Throughput & queue",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 80 } ] },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
+      "id": 5,
+      "maxDataPoints": 300,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.5, sum(rate(job_queue_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le))",
+          "interval": "5m",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.75, sum(rate(job_queue_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le))",
+          "interval": "5m",
+          "legendFormat": "p75",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum(rate(job_queue_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le))",
+          "interval": "5m",
+          "legendFormat": "p95",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum(rate(job_queue_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])) by (le))",
+          "interval": "5m",
+          "legendFormat": "p99",
+          "refId": "D"
+        }
+      ],
+      "title": "Processing time percentiles",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "barAlignment": 1,
+            "drawStyle": "bars",
+            "fillOpacity": 100,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 0,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 80 } ] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
+      "id": 6,
+      "interval": "1m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (exit_code) (increase(ab_converter_exit_codes{service=~\"$service\"}[$__interval:]))",
+          "legendFormat": "exit_code={{exit_code}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum(increase(ab_converter_empty_conversion{service=~\"$service\"}[$__interval:]))",
+          "legendFormat": "empty_conversion",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum(increase(job_queue_failures_total{service=~\"$service\"}[$__interval:]))",
+          "legendFormat": "queue_failures",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum(increase(ab_converter_timeout{service=~\"$service\"}[$__interval:]))",
+          "legendFormat": "timeout",
+          "refId": "D"
+        }
+      ],
+      "title": "Exit codes",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 19,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 80 } ] },
+          "unit": "short"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Processed" }, "properties": [ { "id": "custom.axisPlacement", "value": "right" } ] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "id": 7,
+      "interval": "1m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
+          "dimensions": { "QueueName": "$selected_queue" },
+          "label": "Pending jobs",
+          "matchExact": true,
+          "metricEditorMode": 0,
+          "metricName": "ApproximateNumberOfMessagesVisible",
+          "metricQueryType": 0,
+          "namespace": "AWS/SQS",
+          "period": "$__interval",
+          "queryMode": "Metrics",
+          "refId": "A",
+          "region": "default",
+          "statistic": "Maximum"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
+          "dimensions": { "QueueName": "$selected_queue" },
+          "label": "Processing jobs",
+          "matchExact": true,
+          "metricEditorMode": 0,
+          "metricName": "ApproximateNumberOfMessagesNotVisible",
+          "metricQueryType": 0,
+          "namespace": "AWS/SQS",
+          "period": "$__interval",
+          "queryMode": "Metrics",
+          "refId": "B",
+          "region": "default",
+          "statistic": "Maximum"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
+          "dimensions": { "QueueName": "$selected_queue" },
+          "label": "Processed",
+          "matchExact": true,
+          "metricEditorMode": 0,
+          "metricName": "NumberOfMessagesDeleted",
+          "metricQueryType": 0,
+          "namespace": "AWS/SQS",
+          "period": "$__interval",
+          "queryMode": "Metrics",
+          "refId": "C",
+          "region": "default",
+          "statistic": "Sum"
+        }
+      ],
+      "title": "Queued conversion jobs",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 19,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 80 } ] },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "id": 8,
+      "interval": "1m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
+          "dimensions": { "QueueName": "$selected_queue" },
+          "label": "Oldest message",
+          "matchExact": true,
+          "metricEditorMode": 0,
+          "metricName": "ApproximateAgeOfOldestMessage",
+          "metricQueryType": 0,
+          "namespace": "AWS/SQS",
+          "period": "$__interval",
+          "queryMode": "Metrics",
+          "refId": "A",
+          "region": "default",
+          "statistic": "Maximum"
+        }
+      ],
+      "title": "Oldest message",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "id": 9,
+      "panels": [],
+      "title": "Per-asset reuse (PR #258)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Hits / (hits + misses), per build_target. Hits = asset hash already canonicalized in {AB_VERSION}/assets/. Higher is better.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "id": 10,
+      "maxDataPoints": 300,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (build_target) (rate(ab_converter_asset_cache_hits_total{service=~\"$service\"}[$__rate_interval])) / clamp_min(sum by (build_target) (rate(ab_converter_asset_cache_hits_total{service=~\"$service\"}[$__rate_interval])) + sum by (build_target) (rate(ab_converter_asset_cache_misses_total{service=~\"$service\"}[$__rate_interval])), 1)",
+          "legendFormat": "{{build_target}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Asset cache hit ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Per-asset cache hits and misses, by build_target.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 0,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "normal" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "id": 11,
+      "interval": "1m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (build_target) (increase(ab_converter_asset_cache_hits_total{service=~\"$service\"}[$__interval:]))",
+          "legendFormat": "hits {{build_target}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (build_target) (increase(ab_converter_asset_cache_misses_total{service=~\"$service\"}[$__interval:]))",
+          "legendFormat": "misses {{build_target}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Asset cache hits vs misses",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Scenes that skipped Unity entirely because every referenced asset was already canonicalized.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 0,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 32 },
+      "id": 12,
+      "interval": "1m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (build_target) (increase(ab_converter_asset_reuse_short_circuit_total{service=~\"$service\"}[$__interval:]))",
+          "legendFormat": "{{build_target}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Scene short-circuits (Unity skipped)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Where each cache probe was served from. Process-local hit-cache skips S3; S3 HEAD costs a round-trip. Higher hit-cache share is better.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 40,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": { "group": "A", "mode": "normal" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 32 },
+      "id": 13,
+      "maxDataPoints": 300,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum(rate(ab_converter_asset_probe_hit_cache_total{service=~\"$service\"}[$__rate_interval]))",
+          "legendFormat": "process-local hit-cache",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum(rate(ab_converter_asset_probe_head_total{service=~\"$service\"}[$__rate_interval]))",
+          "legendFormat": "s3 HEAD",
+          "refId": "B"
+        }
+      ],
+      "title": "Cache probe source (local LRU vs S3 HEAD)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "S3 probe failures. Non-zero means the conversion fell back to a full Unity run — investigate S3 / network.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 0,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "line+area" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "transparent", "value": null }, { "color": "red", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 32 },
+      "id": 14,
+      "interval": "1m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum(increase(ab_converter_asset_cache_probe_errors_total{service=~\"$service\"}[$__interval:]))",
+          "legendFormat": "probe errors",
+          "refId": "A"
+        }
+      ],
+      "title": "Cache probe errors",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 40 },
+      "id": 15,
+      "panels": [],
+      "title": "Triage outcomes & queue republish",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Per-scene triage outcomes over the dashboard time range. outcome ∈ {already_converted, fast_path, republished, failed}.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false }
+          },
+          "mappings": [],
+          "unit": "short"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "failed" }, "properties": [ { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } } ] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 41 },
+      "id": 16,
+      "options": {
+        "displayLabels": ["percent"],
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true,
+          "values": ["value", "percent"]
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": ["sum"],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (outcome) (increase(ab_converter_triage_outcomes_total{service=~\"$service\"}[$__range]))",
+          "instant": true,
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Triage outcomes by outcome",
+      "type": "piechart"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Triage → Conversion-queue republishes over the dashboard time range, split by priority lane.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false }
+          },
+          "mappings": [],
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 41 },
+      "id": 17,
+      "options": {
+        "displayLabels": ["percent"],
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true,
+          "values": ["value", "percent"]
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": ["sum"],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (priority) (increase(ab_converter_conversion_queue_publish_total{service=~\"$service\"}[$__range]))",
+          "instant": true,
+          "legendFormat": "{{priority}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Conversion-queue publishes by priority",
+      "type": "piechart"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Conversion-queue publish errors paired with inline-fallback. Same shape on both series = wedged queue but no lost work. Divergence = lost work.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "publish errors" }, "properties": [ { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } } ] },
+          { "matcher": { "id": "byName", "options": "inline fallback" }, "properties": [ { "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } } ] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 49 },
+      "id": 18,
+      "interval": "1m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum(increase(ab_converter_conversion_queue_publish_errors_total{service=~\"$service\"}[$__interval:]))",
+          "legendFormat": "publish errors",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum(increase(ab_converter_republish_fallback_inline_total{service=~\"$service\"}[$__interval:]))",
+          "legendFormat": "inline fallback",
+          "refId": "B"
+        }
+      ],
+      "title": "Publish errors + inline fallback",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 57 },
+      "id": 19,
+      "panels": [],
+      "title": "Glb skipped",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "description": "Glb/gltf assets silently skipped per scene. reason ∈ {missing-deps, unparseable}.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 0,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "normal" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 58 },
+      "id": 20,
+      "interval": "1m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "sum by (reason) (increase(ab_converter_glb_skipped_total{service=~\"$service\"}[$__interval:]))",
+          "legendFormat": "{{reason}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Glb skipped by reason",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 66 },
+      "id": 21,
+      "panels": [],
+      "title": "Infrastructure",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 13,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "line+area" }
+          },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "transparent", "value": 1 } ] },
+          "unit": "percent"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "pending_messages" },
+            "properties": [
+              { "id": "custom.drawStyle", "value": "line" },
+              { "id": "custom.lineWidth", "value": 0 },
+              { "id": "unit", "value": "short" },
+              { "id": "decimals", "value": 0 },
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "custom.axisLabel", "value": "pending_messages" },
+              { "id": "max" }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 67 },
+      "id": 22,
+      "interval": "1m",
+      "maxDataPoints": 300,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "alias": "Max CPU",
+          "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
+          "dimensions": { "ServiceName": "$selected_ecs_service" },
+          "label": "Max CPU",
+          "matchExact": false,
+          "metricEditorMode": 0,
+          "metricName": "CPUUtilization",
+          "metricQueryType": 0,
+          "namespace": "AWS/ECS",
+          "period": "$__interval",
+          "queryMode": "Metrics",
+          "refId": "A",
+          "region": "default",
+          "statistic": "Maximum"
+        },
+        {
+          "alias": "Avg CPU",
+          "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
+          "dimensions": { "ServiceName": "$selected_ecs_service" },
+          "label": "Avg CPU",
+          "matchExact": false,
+          "metricEditorMode": 0,
+          "metricName": "CPUUtilization",
+          "metricQueryType": 0,
+          "namespace": "AWS/ECS",
+          "period": "$__interval",
+          "queryMode": "Metrics",
+          "refId": "B",
+          "region": "default",
+          "statistic": "Average"
+        },
+        {
+          "alias": "Min CPU",
+          "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
+          "dimensions": { "ServiceName": "$selected_ecs_service" },
+          "label": "Min CPU",
+          "matchExact": false,
+          "metricEditorMode": 0,
+          "metricName": "CPUUtilization",
+          "metricQueryType": 0,
+          "namespace": "AWS/ECS",
+          "period": "$__interval",
+          "queryMode": "Metrics",
+          "refId": "C",
+          "region": "default",
+          "statistic": "Minimum"
+        },
+        {
+          "alias": "pending_messages",
+          "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
+          "dimensions": { "QueueName": "$selected_queue" },
+          "label": "pending_messages",
+          "matchExact": true,
+          "metricEditorMode": 0,
+          "metricName": "ApproximateNumberOfMessagesVisible",
+          "metricQueryType": 0,
+          "namespace": "AWS/SQS",
+          "period": "$__interval",
+          "queryMode": "Metrics",
+          "refId": "D",
+          "region": "default",
+          "statistic": "Maximum"
+        }
+      ],
+      "title": "CPU",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "dashed+area" }
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "dark-red", "value": null }, { "color": "transparent", "value": 1000000000 } ] },
+          "unit": "decbytes"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 67 },
+      "id": 23,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": false },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "ab_converter_free_disk_space{service=~\"$service\"}",
+          "legendFormat": "{{instance}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Free disk space",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "continuous-GrYlRd" },
+          "custom": {
+            "fillOpacity": 99,
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineWidth": 0,
+            "spanNulls": false
+          },
+          "mappings": [
+            { "options": { "1": { "color": "green", "index": 4 }, "N/A": { "color": "semi-dark-green", "index": 0 }, "null": { "color": "blue", "index": 1, "text": "N/A" } }, "type": "value" },
+            { "options": { "from": 0, "result": { "color": "green", "index": 2 }, "to": 0 }, "type": "range" },
+            { "options": { "match": "null+nan", "result": { "color": "semi-dark-green", "index": 3 } }, "type": "special" }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 80 } ] },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 75 },
+      "id": 24,
+      "interval": "1m",
+      "maxDataPoints": 150,
+      "options": {
+        "alignValue": "center",
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "mergeValues": true,
+        "rowHeight": 0.89,
+        "showValue": "never",
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "editorMode": "code",
+          "expr": "max_over_time(up{service=~\"$service\"}[15s:]) != 0",
+          "interval": "1m",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Running instances",
+      "type": "state-timeline"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 81 },
+      "id": 25,
+      "panels": [],
+      "title": "Logs",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
+      "gridPos": { "h": 17, "w": 24, "x": 0, "y": 82 },
+      "id": 26,
+      "options": {
+        "dedupStrategy": "exact",
+        "enableInfiniteScrolling": false,
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Ascending",
+        "wrapLogMessage": true
+      },
+      "pluginVersion": "11.5.2",
+      "targets": [
+        {
+          "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
+          "expression": "fields @timestamp, @message\n| filter @message like /\\[(ERROR|WARNING)\\]/\n| sort @timestamp desc\n| limit 2000",
+          "logGroupNames": [ "$loggroupname" ],
+          "logGroups": [],
+          "queryMode": "Logs",
+          "refId": "A",
+          "region": "default",
+          "statsGroups": []
+        }
+      ],
+      "title": "Logs",
+      "type": "logs"
+    }
+  ],
+  "preload": false,
+  "refresh": "",
+  "schemaVersion": 40,
+  "tags": [ "platform" ],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": "prd", "value": "prd" },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Environment",
+        "multi": false,
+        "name": "env",
+        "options": [
+          { "text": "dev", "value": "dev", "selected": false },
+          { "text": "stg", "value": "stg", "selected": false },
+          { "text": "prd", "value": "prd", "selected": true },
+          { "text": "biz", "value": "biz", "selected": false }
+        ],
+        "query": "dev,stg,prd,biz",
+        "queryValue": "",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "current": { "text": "prom-prd", "value": "prom-prd" },
+        "hide": 2,
+        "includeAll": false,
+        "label": "Prometheus DS",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "/-${env}$/i",
+        "skipUrlSync": true,
+        "type": "datasource"
+      },
+      {
+        "current": { "text": "ioi-prd", "value": "ioi-prd" },
+        "hide": 2,
+        "includeAll": false,
+        "label": "CloudWatch DS",
+        "multi": false,
+        "name": "cw_datasource",
+        "options": [],
+        "query": "cloudwatch",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "/-${env}$/i",
+        "skipUrlSync": true,
+        "type": "datasource"
+      },
+      {
+        "current": { "text": "asset-bundle-converter", "value": "asset-bundle-converter" },
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "definition": "label_values(ab_converter_running_conversion, service)",
+        "hide": 2,
+        "includeAll": false,
+        "name": "service",
+        "options": [],
+        "query": { "query": "label_values(ab_converter_running_conversion, service)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "regex": "",
+        "sort": 5,
+        "type": "query"
+      },
+      {
+        "current": { "text": "ab-conversion-queue-65f0539", "value": "ab-conversion-queue-65f0539" },
+        "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
+        "definition": "",
+        "hide": 2,
+        "includeAll": false,
+        "name": "selected_queue",
+        "options": [],
+        "query": {
+          "dimensionFilters": {},
+          "dimensionKey": "QueueName",
+          "metricName": "ApproximateNumberOfMessagesVisible",
+          "namespace": "AWS/SQS",
+          "queryType": "dimensionValues",
+          "refId": "CloudWatchVariableQueryEditor-VariableQuery",
+          "region": "default",
+          "resourceType": ""
+        },
+        "refresh": 2,
+        "regex": "ab-conversion-.+",
+        "type": "query"
+      },
+      {
+        "current": { "text": "asset-bundle-converter-blue-8369c6e", "value": "asset-bundle-converter-blue-8369c6e" },
+        "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
+        "definition": "",
+        "hide": 2,
+        "name": "selected_ecs_service",
+        "options": [],
+        "query": {
+          "dimensionKey": "ServiceName",
+          "metricName": "CPUUtilization",
+          "namespace": "AWS/ECS",
+          "queryType": "dimensionValues",
+          "refId": "CloudWatchVariableQueryEditor-VariableQuery",
+          "region": "default"
+        },
+        "refresh": 2,
+        "regex": "asset-bundle-converter-.*",
+        "type": "query"
+      },
+      {
+        "current": {
+          "text": ["asset-bundle-converter-blue", "asset-bundle-converter-mac-blue", "asset-bundle-converter-windows-blue"],
+          "value": ["asset-bundle-converter-blue", "asset-bundle-converter-mac-blue", "asset-bundle-converter-windows-blue"]
+        },
+        "datasource": { "type": "cloudwatch", "uid": "${cw_datasource}" },
+        "definition": "",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Log groups",
+        "multi": true,
+        "name": "loggroupname",
+        "options": [],
+        "query": {
+          "dimensionKey": "LogGroupName",
+          "metricName": "IncomingLogEvents",
+          "namespace": "AWS/Logs",
+          "queryType": "dimensionValues",
+          "refId": "CloudWatchVariableQueryEditor-VariableQuery",
+          "region": "default"
+        },
+        "refresh": 2,
+        "regex": "asset-bundle-converter.+",
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-2d", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Asset Bundle Conversion",
+  "uid": "ab-converter-v2",
+  "version": 1,
+  "weekStart": ""
+}
