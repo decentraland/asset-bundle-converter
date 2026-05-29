@@ -551,9 +551,219 @@ fn tex_env_value(te: &TexEnv) -> Value {
 // `encode/mesh.rs` carries the typed `UnityMesh` struct + conversion
 // stubs. This builder takes that struct and produces the Value::Seq.
 
-pub fn build_mesh_value(_m: &super::mesh::UnityMesh) -> Value {
-    // TODO — biggest scope. Dump_class_tree -- 43 + iterate.
-    Value::Seq(vec![])
+// Serialized-form Mesh (the byte-exact view, distinct from the
+// geometry-oriented `mesh::UnityMesh` used by the glTF converter). Field
+// layout verified by dump-fields against a real v49 (Unity 6000.2.6f2)
+// glb Mesh — walk EXACT. 25 root fields; the always-empty sub-structures
+// for a static DCL mesh (blend shapes, bind pose, bone data, compressed
+// mesh) are hardcoded in the builder, so this struct carries only the
+// fields that actually vary.
+#[derive(Debug, Default, Clone)]
+pub struct MeshAabb {
+    pub center: [f32; 3],
+    pub extent: [f32; 3],
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct MeshSubMesh {
+    pub first_byte: u32,
+    pub index_count: u32,
+    pub topology: i32,
+    pub base_vertex: u32,
+    pub first_vertex: u32,
+    pub vertex_count: u32,
+    pub local_aabb: MeshAabb,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct MeshChannel {
+    pub stream: u8,
+    pub offset: u8,
+    pub format: u8,
+    pub dimension: u8,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct MeshLodRange {
+    pub index_start: u32,
+    pub index_count: u32,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct UnityMeshObject {
+    pub name: String,
+    pub sub_meshes: Vec<MeshSubMesh>,
+    pub root_bone_name_hash: u32,
+    pub mesh_compression: u8,
+    pub is_readable: u8,
+    pub keep_vertices: u8,
+    pub keep_indices: u8,
+    pub index_format: i32,
+    /// Raw index buffer bytes (16- or 32-bit indices per index_format).
+    pub index_buffer: Vec<u8>,
+    pub vertex_count: u32,
+    /// 14 channel slots (Unity emits all 14; unused slots are zeroed).
+    pub channels: Vec<MeshChannel>,
+    /// Interleaved vertex stream bytes.
+    pub vertex_data: Vec<u8>,
+    pub local_aabb: MeshAabb,
+    pub mesh_usage_flags: i32,
+    pub cooking_options: i32,
+    pub mesh_metrics: [f32; 2],
+    pub stream_offset: u64,
+    pub stream_size: u32,
+    pub stream_path: String,
+    // m_MeshLodInfo (Unity 6):
+    pub lod_slope: f32,
+    pub lod_bias: f32,
+    pub lod_num_levels: i32,
+    /// One Vec<MeshLodRange> per MeshLodSubMesh (its m_Levels array).
+    pub lod_sub_meshes: Vec<Vec<MeshLodRange>>,
+}
+
+fn mesh_aabb_value(a: &MeshAabb) -> Value {
+    Value::Seq(vec![
+        Value::Seq(vec![Value::F32(a.center[0]), Value::F32(a.center[1]), Value::F32(a.center[2])]),
+        Value::Seq(vec![Value::F32(a.extent[0]), Value::F32(a.extent[1]), Value::F32(a.extent[2])]),
+    ])
+}
+
+/// Empty 5-child PackedBitVector: m_NumItems, m_Range, m_Start, m_Data, m_BitSize.
+fn empty_pbv5() -> Value {
+    Value::Seq(vec![
+        Value::U32(0),
+        Value::F32(0.0),
+        Value::F32(0.0),
+        Value::Bytes(vec![]),
+        Value::U8(0),
+    ])
+}
+
+/// Empty 3-child PackedBitVector: m_NumItems, m_Data, m_BitSize.
+fn empty_pbv3() -> Value {
+    Value::Seq(vec![Value::U32(0), Value::Bytes(vec![]), Value::U8(0)])
+}
+
+pub fn build_mesh_value(m: &UnityMeshObject) -> Value {
+    Value::Seq(vec![
+        // 0: m_Name
+        Value::String(m.name.clone()),
+        // 1: m_SubMeshes (Array<SubMesh>)
+        Value::Array(
+            m.sub_meshes
+                .iter()
+                .map(|s| {
+                    Value::Seq(vec![
+                        Value::U32(s.first_byte),
+                        Value::U32(s.index_count),
+                        Value::I32(s.topology),
+                        Value::U32(s.base_vertex),
+                        Value::U32(s.first_vertex),
+                        Value::U32(s.vertex_count),
+                        mesh_aabb_value(&s.local_aabb),
+                    ])
+                })
+                .collect(),
+        ),
+        // 2: m_Shapes (BlendShapeData: vertices, shapes, channels, fullWeights — all empty)
+        Value::Seq(vec![
+            Value::Array(vec![]),
+            Value::Array(vec![]),
+            Value::Array(vec![]),
+            Value::Array(vec![]),
+        ]),
+        // 3: m_BindPose (Array<Matrix4x4f>, empty)
+        Value::Array(vec![]),
+        // 4: m_BoneNameHashes (Array<u32>, empty)
+        Value::Array(vec![]),
+        // 5: m_RootBoneNameHash (u32)
+        Value::U32(m.root_bone_name_hash),
+        // 6: m_BonesAABB (Array, empty)
+        Value::Array(vec![]),
+        // 7: m_VariableBoneCountWeights (struct{ m_Data: Array<u32> empty })
+        Value::Seq(vec![Value::Array(vec![])]),
+        // 8-11: m_MeshCompression / m_IsReadable / m_KeepVertices / m_KeepIndices (bytes)
+        Value::U8(m.mesh_compression),
+        Value::U8(m.is_readable),
+        Value::U8(m.keep_vertices),
+        Value::U8(m.keep_indices),
+        // 12: m_IndexFormat (i32)
+        Value::I32(m.index_format),
+        // 13: m_IndexBuffer (TypelessData<u8>, ALIGN)
+        Value::Bytes(m.index_buffer.clone()),
+        // 14: m_VertexData (struct: m_VertexCount, m_Channels, m_DataSize)
+        Value::Seq(vec![
+            Value::U32(m.vertex_count),
+            Value::Array(
+                m.channels
+                    .iter()
+                    .map(|c| {
+                        Value::Seq(vec![
+                            Value::U8(c.stream),
+                            Value::U8(c.offset),
+                            Value::U8(c.format),
+                            Value::U8(c.dimension),
+                        ])
+                    })
+                    .collect(),
+            ),
+            Value::Bytes(m.vertex_data.clone()),
+        ]),
+        // 15: m_CompressedMesh (10 PackedBitVectors + m_UVInfo) — all empty
+        Value::Seq(vec![
+            empty_pbv5(), // m_Vertices
+            empty_pbv5(), // m_UV
+            empty_pbv5(), // m_Normals
+            empty_pbv5(), // m_Tangents
+            empty_pbv3(), // m_Weights
+            empty_pbv3(), // m_NormalSigns
+            empty_pbv3(), // m_TangentSigns
+            empty_pbv5(), // m_FloatColors
+            empty_pbv3(), // m_BoneIndices
+            empty_pbv3(), // m_Triangles
+            Value::U32(0), // m_UVInfo
+        ]),
+        // 16: m_LocalAABB
+        mesh_aabb_value(&m.local_aabb),
+        // 17: m_MeshUsageFlags (i32)
+        Value::I32(m.mesh_usage_flags),
+        // 18: m_CookingOptions (i32)
+        Value::I32(m.cooking_options),
+        // 19: m_BakedConvexCollisionMesh (TypelessData, empty)
+        Value::Bytes(vec![]),
+        // 20: m_BakedTriangleCollisionMesh (TypelessData, empty)
+        Value::Bytes(vec![]),
+        // 21-22: m_MeshMetrics[0..1] (f32)
+        Value::F32(m.mesh_metrics[0]),
+        Value::F32(m.mesh_metrics[1]),
+        // 23: m_StreamData (StreamingInfo: offset u64, size u32, path string)
+        Value::Seq(vec![
+            Value::U64(m.stream_offset),
+            Value::U32(m.stream_size),
+            Value::String(m.stream_path.clone()),
+        ]),
+        // 24: m_MeshLodInfo (LodSelectionCurve, m_NumLevels, m_SubMeshes)
+        Value::Seq(vec![
+            // m_LodSelectionCurve: m_LodSlope, m_LodBias
+            Value::Seq(vec![Value::F32(m.lod_slope), Value::F32(m.lod_bias)]),
+            // m_NumLevels
+            Value::I32(m.lod_num_levels),
+            // m_SubMeshes (Array<MeshLodSubMesh{ m_Levels: Array<MeshLodRange> }>)
+            Value::Array(
+                m.lod_sub_meshes
+                    .iter()
+                    .map(|levels| {
+                        Value::Seq(vec![Value::Array(
+                            levels
+                                .iter()
+                                .map(|r| Value::Seq(vec![Value::U32(r.index_start), Value::U32(r.index_count)]))
+                                .collect(),
+                        )])
+                    })
+                    .collect(),
+            ),
+        ]),
+    ])
 }
 
 // ===========================================================================
