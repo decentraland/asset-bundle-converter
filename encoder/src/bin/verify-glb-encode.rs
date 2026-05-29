@@ -1,15 +1,12 @@
-//! End-to-end: run the full glb→bundle graph pipeline (convert_glb_scene +
-//! convert_glb_material + assemble_glb_graph) and validate against the real
-//! production bundle:
-//!   (a) our bundle parses back;
-//!   (b) the GameObject-graph object histogram matches Unity's for the
-//!       structural classes (GameObject/Transform/MeshFilter/MeshRenderer/
-//!       MeshCollider/Mesh) — Material/Texture2D may differ (no textures yet);
-//!   (c) every Mesh object we emit is byte-equal to a production Mesh.
+//! End-to-end: run the full glb→bundle graph pipeline and validate against
+//! the real production bundle: (a) parses back; (b) the structural object
+//! histogram (GameObject/Transform/MeshFilter/MeshRenderer/MeshCollider/Mesh)
+//! matches Unity; (c) every emitted Mesh is byte-equal to production; (d) the
+//! in-bundle Texture2D count is reported.
 //!
 //! Usage: verify-glb-encode <source.glb> <real-bundle>
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::process::ExitCode;
 use dcl_asset_bundle_encoder::encode::bundle_assembler::{assemble_glb_graph, GlbGraphInput};
 use dcl_asset_bundle_encoder::encode::gltf_material::{convert_glb_material, MaterialTextures};
@@ -33,12 +30,36 @@ fn run(glb_path: &str, bundle_path: &str) -> Result<(), String> {
     let j: serde_json::Value = serde_json::from_slice(&glb[20..20 + jlen]).map_err(|e| e.to_string())?;
     let materials: Vec<_> = j["materials"].as_array().map(|a| (0..a.len()).map(|i| convert_glb_material(&j, i, &MaterialTextures::default())).collect()).unwrap_or_default();
 
+    // base-color image index per material + embedded image bytes.
+    let bin = &glb[20 + jlen + 8..];
+    let textures = j["textures"].as_array();
+    let images = j["images"].as_array();
+    let bvs = j["bufferViews"].as_array();
+    let mut base_color_image = Vec::new();
+    let mut image_bytes: HashMap<usize, Vec<u8>> = HashMap::new();
+    if let Some(mats) = j["materials"].as_array() {
+        for m in mats {
+            let img = m["pbrMetallicRoughness"]["baseColorTexture"]["index"].as_u64()
+                .and_then(|ti| textures.and_then(|t| t.get(ti as usize))).and_then(|tx| tx["source"].as_u64()).map(|s| s as usize);
+            base_color_image.push(img);
+            if let Some(i) = img {
+                if let Some(bv) = images.and_then(|im| im.get(i)).and_then(|im| im["bufferView"].as_u64()) {
+                    if let Some(b) = bvs.and_then(|a| a.get(bv as usize)) {
+                        let o = b["byteOffset"].as_u64().unwrap_or(0) as usize; let l = b["byteLength"].as_u64().unwrap_or(0) as usize;
+                        if let Some(s) = bin.get(o..o + l) { image_bytes.insert(i, s.to_vec()); }
+                    }
+                }
+            }
+        }
+    }
+
     let db = dcl_asset_bundle_encoder::encode::type_tree_db::load_fixture_with_class(43).ok_or("no fixture")?;
     let bundle = assemble_glb_graph(&db, BuildTarget::Windows, &db.unity_version, &GlbGraphInput {
         bundle_name: "test_windows", root_name: "testhash", content_filename: "test.glb",
-        scene: &scene, materials: &materials, shader_cab_path: CAB, dependencies: &[], metadata_timestamp: 0,
+        scene: &scene, materials: &materials, base_color_image: &base_color_image, images: &image_bytes,
+        shader_cab_path: CAB, dependencies: &[], metadata_timestamp: 0,
     }).map_err(|e| format!("{e}"))?;
-    eprintln!("[encode] {} nodes, {} prims -> {} byte bundle", scene.nodes.len(), scene.total_primitives, bundle.len());
+    eprintln!("[encode] {} nodes, {} prims, {} textures -> {} bytes", scene.nodes.len(), scene.total_primitives, image_bytes.len(), bundle.len());
 
     let (our_hist, our_meshes) = inspect(&bundle)?;
     let real = std::fs::read(bundle_path).map_err(|e| e.to_string())?;
@@ -46,25 +67,22 @@ fn run(glb_path: &str, bundle_path: &str) -> Result<(), String> {
     eprintln!("[hist] ours: {our_hist:?}");
     eprintln!("[hist] real: {real_hist:?}");
 
-    // (b) structural classes must match
     let mut ok = true;
     for c in [1, 4, 33, 23, 64, 43] {
         if our_hist.get(&c).copied().unwrap_or(0) != real_hist.get(&c).copied().unwrap_or(0) {
-            eprintln!("[structural] MISMATCH class {c}: ours={} real={}", our_hist.get(&c).copied().unwrap_or(0), real_hist.get(&c).copied().unwrap_or(0));
-            ok = false;
+            eprintln!("[structural] MISMATCH class {c}: ours={} real={}", our_hist.get(&c).copied().unwrap_or(0), real_hist.get(&c).copied().unwrap_or(0)); ok = false;
         }
     }
-    // (c) every emitted Mesh is byte-equal to some production Mesh
     let mut matched = 0;
     for m in &our_meshes { if real_meshes.iter().any(|r| r == m) { matched += 1; } }
     eprintln!("[mesh] {}/{} emitted meshes byte-equal to production", matched, our_meshes.len());
+    eprintln!("[tex] Texture2D: ours={} real={}", our_hist.get(&28).copied().unwrap_or(0), real_hist.get(&28).copied().unwrap_or(0));
     if matched != our_meshes.len() { ok = false; }
 
     if ok { eprintln!("[verify] ✓ graph structure matches + all meshes byte-equal ✓"); Ok(()) }
     else { Err("structural/mesh mismatch".into()) }
 }
 
-/// (class histogram, Mesh-object byte list)
 fn inspect(bundle: &[u8]) -> Result<(BTreeMap<i32, u32>, Vec<Vec<u8>>), String> {
     let pb = parse_bundle(bundle).map_err(|e| format!("{e}"))?;
     let n = pb.directory.iter().find(|n| !n.path.ends_with(".resS")).ok_or("no SF")?;
@@ -78,8 +96,7 @@ fn inspect(bundle: &[u8]) -> Result<(BTreeMap<i32, u32>, Vec<Vec<u8>>), String> 
     let mut idx2cls = vec![];
     for _ in 0..tc { let cid = i32::from_le_bytes(md[cur..cur + 4].try_into().unwrap()); idx2cls.push(cid); cur += 4 + 1 + 2 + 16; let nc = u32::from_le_bytes(md[cur..cur + 4].try_into().unwrap()) as usize; let sb = u32::from_le_bytes(md[cur + 4..cur + 8].try_into().unwrap()) as usize; let bs = 8 + nc * 32 + sb; let dc = u32::from_le_bytes(md[cur + bs..cur + bs + 4].try_into().unwrap()) as usize; cur += bs + 4 + dc * 4; }
     let oc = i32::from_le_bytes(md[cur..cur + 4].try_into().unwrap()) as usize; cur += 4;
-    let mut hist = BTreeMap::new();
-    let mut meshes = vec![];
+    let mut hist = BTreeMap::new(); let mut meshes = vec![];
     for _ in 0..oc { let pad = (4 - (cur % 4)) % 4; cur += pad; let bstart = i64::from_le_bytes(md[cur + 8..cur + 16].try_into().unwrap()) as usize; let bsl = u32::from_le_bytes(md[cur + 16..cur + 20].try_into().unwrap()) as usize; let t = i32::from_le_bytes(md[cur + 20..cur + 24].try_into().unwrap()) as usize; cur += 24; let cid = idx2cls[t]; *hist.entry(cid).or_insert(0) += 1; if cid == 43 { meshes.push(sf[dofs + bstart..dofs + bstart + bsl].to_vec()); } }
     Ok((hist, meshes))
 }

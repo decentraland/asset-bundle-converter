@@ -315,6 +315,11 @@ pub struct GlbGraphInput<'a> {
     /// Materials by glTF material index (shader PPtr already set by
     /// `convert_glb_material`). Visible primitives reference these.
     pub materials: &'a [UnityMaterial],
+    /// glTF material index → its base-color image index (None = untextured).
+    pub base_color_image: &'a [Option<usize>],
+    /// Image index → decoded PNG/JPG bytes (embedded glb images). Each
+    /// referenced image becomes one in-bundle Texture2D wired into `_BaseMap`.
+    pub images: &'a std::collections::HashMap<usize, Vec<u8>>,
     pub shader_cab_path: &'a str,
     pub dependencies: &'a [String],
     pub metadata_timestamp: i64,
@@ -366,6 +371,33 @@ pub fn assemble_glb_graph(
         input.materials.get(idx).unwrap_or(&default_material)
     };
 
+    // Emit one in-bundle Texture2D per base-color image referenced by a
+    // VISIBLE primitive's material, and map image index → its PPtr. Decode
+    // failures skip the texture (material stays untextured) rather than fail.
+    // Textures are RGBA32 (uncompressed) — loadable, but not byte-identical
+    // to Unity's BC7 output.
+    let mut used_images: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
+    for node in &input.scene.nodes {
+        if node.is_collider {
+            continue;
+        }
+        for prim in &node.primitives {
+            if let Some(Some(img)) = input.base_color_image.get(prim.material_index) {
+                used_images.insert(*img);
+            }
+        }
+    }
+    let mut img_pptr: std::collections::HashMap<usize, PPtr> = std::collections::HashMap::new();
+    for img in used_images {
+        let Some(png) = input.images.get(&img) else { continue };
+        let Ok(tex) = decode_to_texture2d(&format!("texture_{img}"), png) else { continue };
+        let Ok(bytes) = serialize_texture2d(&tex, db) else { continue };
+        let tid = id();
+        objects.push(PreparedObject { class_id: CLASS_TEXTURE2D, path_id: tid, data: bytes });
+        preload.push(here(tid));
+        img_pptr.insert(img, here(tid));
+    }
+
     // Emit the per-primitive components (MeshFilter + Mesh + renderer/collider)
     // for a GameObject `go`, returning the component PPtr list (sans Transform,
     // which is prepended by the caller).
@@ -396,6 +428,16 @@ pub fn assemble_glb_graph(
             let mat_id = id();
             let mut material = material_for(prim.material_index).clone();
             material.shader = PPtr { file_id: 1, path_id: crate::encode::gltf_material::DCL_SCENE_SHADER_PATH_ID };
+            // Wire the base-color texture into _BaseMap, if this material has one.
+            if let Some(Some(img)) = input.base_color_image.get(prim.material_index) {
+                if let Some(pptr) = img_pptr.get(img) {
+                    for (name, te) in material.tex_envs.iter_mut() {
+                        if name == "_BaseMap" {
+                            te.texture = pptr.clone();
+                        }
+                    }
+                }
+            }
             objects.push(PreparedObject { class_id: CLASS_MATERIAL, path_id: mat_id, data: serialize_class(db, CLASS_MATERIAL, &build_material_value(&material))? });
             preload.push(here(mat_id));
             let mr = UnityMeshRenderer {

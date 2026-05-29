@@ -496,6 +496,49 @@ fn shader_cab_path(target: BuildTarget) -> Option<&'static str> {
     }
 }
 
+/// Build (per-material base-color image index, image index → embedded PNG/JPG
+/// bytes) from a parsed glb. `material.baseColorTexture.index → textures[].source
+/// → images[].bufferView` gives the image; only embedded images (with a
+/// bufferView) are extracted — external-uri images are left out (they'd need
+/// the entity contentMap + fetched texture bytes).
+fn extract_base_color_images(
+    j: &serde_json::Value,
+    glb_bytes: &Bytes,
+) -> (Vec<Option<usize>>, HashMap<usize, Vec<u8>>) {
+    let jlen = u32::from_le_bytes(glb_bytes[12..16].try_into().unwrap()) as usize;
+    let bin = glb_bytes.get(20 + jlen + 8..).unwrap_or(&[]);
+    let textures = j["textures"].as_array();
+    let images = j["images"].as_array();
+    let bvs = j["bufferViews"].as_array();
+
+    let mut base_color_image = Vec::new();
+    let mut image_bytes: HashMap<usize, Vec<u8>> = HashMap::new();
+    if let Some(mats) = j["materials"].as_array() {
+        for m in mats {
+            let img_idx = m["pbrMetallicRoughness"]["baseColorTexture"]["index"]
+                .as_u64()
+                .and_then(|ti| textures.and_then(|t| t.get(ti as usize)))
+                .and_then(|tx| tx["source"].as_u64())
+                .map(|s| s as usize);
+            base_color_image.push(img_idx);
+            if let Some(img) = img_idx {
+                if !image_bytes.contains_key(&img) {
+                    if let Some(bv) = images.and_then(|im| im.get(img)).and_then(|im| im["bufferView"].as_u64()) {
+                        if let Some(b) = bvs.and_then(|a| a.get(bv as usize)) {
+                            let o = b["byteOffset"].as_u64().unwrap_or(0) as usize;
+                            let l = b["byteLength"].as_u64().unwrap_or(0) as usize;
+                            if let Some(slice) = bin.get(o..o + l) {
+                                image_bytes.insert(img, slice.to_vec());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (base_color_image, image_bytes)
+}
+
 /// Encode a glb into a loadable UnityFS bundle.
 ///
 /// Phase 1 scope (end-to-end, parse-back-validated): single visible mesh,
@@ -548,6 +591,12 @@ fn encode_glb_bundle(
         .map(|a| (0..a.len()).map(|i| convert_glb_material(&j, i, &MaterialTextures::default())).collect())
         .unwrap_or_default();
 
+    // Per-material base-color image index + embedded image bytes (for the
+    // in-bundle Texture2D + _BaseMap wiring). External-uri images aren't
+    // threaded here yet (they'd need the entity contentMap + texture bytes);
+    // embedded images cover the common DCL glb case.
+    let (base_color_image, image_bytes) = extract_base_color_images(&j, glb_bytes);
+
     let suffix = build_target.filename_suffix();
     let bundle_name = format!("{hash}_{digest}{suffix}");
 
@@ -561,6 +610,8 @@ fn encode_glb_bundle(
             content_filename: filename,
             scene: &scene,
             materials: &materials,
+            base_color_image: &base_color_image,
+            images: &image_bytes,
             shader_cab_path: cab,
             dependencies: dep_cids,
             metadata_timestamp: 0,
