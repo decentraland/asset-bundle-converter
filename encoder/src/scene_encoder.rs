@@ -488,9 +488,17 @@ enum EncodeAssetError {
 /// Windows value is verified constant across v49 bundles; mac/webgl ship a
 /// different shader bundle and need their own extracted CAB.
 fn shader_cab_path(target: BuildTarget) -> Option<&'static str> {
+    // The shader bundle's CAB differs per platform (different StreamingAssets
+    // shader bundle build); the Material's m_Shader path_id is identical
+    // across platforms (0x6a1984f5061ced9d). Both verified constant across
+    // the downloaded v49 corpus via parse_externals. WebGL has no v49 bundles
+    // yet (conversion hasn't run for it), so it returns None until one exists.
     match target {
         BuildTarget::Windows => {
             Some("archive:/CAB-51fbd4c9d0fb3e603fd599ac9f5d01e1/CAB-51fbd4c9d0fb3e603fd599ac9f5d01e1")
+        }
+        BuildTarget::Mac => {
+            Some("archive:/CAB-5ba4993b7ea166819a0af9aec5b25b8c/CAB-5ba4993b7ea166819a0af9aec5b25b8c")
         }
         _ => None,
     }

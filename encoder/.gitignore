@@ -21,3 +21,5 @@ index.d.ts
 # them on demand with scripts/regenerate-fixtures.sh (CI does this before
 # tests; devs run it before the verifiers).
 /baked-fixtures/typetrees/*.bin
+/downloaded-mac
+/downloaded-webgl
