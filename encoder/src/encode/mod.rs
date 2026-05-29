@@ -21,6 +21,7 @@
 pub mod bundle_assembler;
 pub mod class_writers;
 pub mod glb_parser;
+pub mod gltf_material;
 pub mod gltf_mesh;
 pub mod material;
 pub mod mesh;
