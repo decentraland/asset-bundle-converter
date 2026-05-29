@@ -402,13 +402,49 @@ pub fn build_mesh_renderer_value(m: &UnityMeshRenderer) -> Value {
 // the bake-time shader-guids.json. Caller must register the external
 // before building this Value.
 
-#[derive(Debug, Default)]
+// Verified field layout (dump-fields against a real v49 DCL/Scene glb
+// Material, walk EXACT 1224/1224). 12 root children:
+//
+//   0  m_Name (string)
+//   1  m_Shader (PPtr<Shader>)            — external ref; see below
+//   2  m_ValidKeywords (vector<string>)
+//   3  m_InvalidKeywords (vector<string>)
+//   4  m_LightmapFlags (u32)
+//   5  m_EnableInstancingVariants (byte, size=1)
+//   6  m_DoubleSidedGI (byte, size=1, ALIGN)
+//   7  m_CustomRenderQueue (i32)
+//   8  stringTagMap (map<string,string>)
+//   9  disabledShaderPasses (vector<string>)
+//   10 m_SavedProperties (UnityPropertySheet, 4 children):
+//        m_TexEnvs (map<string, UnityTexEnv>)
+//        m_Ints    (map<string, i32>)
+//        m_Floats  (map<string, f32>)
+//        m_Colors  (map<string, RGBAf>)
+//   11 m_BuildTextureStacks (vector<>)
+//
+// The m_Shader PPtr is the load-bearing external: file_id indexes the
+// SerializedFile externals table (the `archive:/CAB-<shaderbundle>/…`
+// entry the assembler registers), path_id is the shader's m_PathID
+// inside that StreamingAssets shader bundle. Verified real value:
+// file_id=1, path_id=0x6a1984f5061ced9d.
+#[derive(Debug, Default, Clone)]
 pub struct UnityMaterial {
     pub name: String,
     pub shader: PPtr,
-    pub texture_props: Vec<(String, TexEnv)>,
+    pub valid_keywords: Vec<String>,
+    pub invalid_keywords: Vec<String>,
+    pub lightmap_flags: u32,
+    pub enable_instancing_variants: u8,
+    pub double_sided_gi: u8,
+    pub custom_render_queue: i32,
+    pub string_tag_map: Vec<(String, String)>,
+    pub disabled_shader_passes: Vec<String>,
+    pub tex_envs: Vec<(String, TexEnv)>,
+    pub int_props: Vec<(String, i32)>,
     pub float_props: Vec<(String, f32)>,
     pub color_props: Vec<(String, [f32; 4])>,
+    /// Always empty in DCL bundles; element type is irrelevant while empty.
+    pub build_texture_stacks: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -418,11 +454,81 @@ pub struct TexEnv {
     pub offset: [f32; 2],
 }
 
-pub fn build_material_value(_m: &UnityMaterial) -> Value {
-    // TODO — Material's TypeTree is the biggest at 3822 bytes; need
-    // an iteration cycle with dump_class_tree -- 21 + verify against
-    // a real Material object.
-    Value::Seq(vec![])
+pub fn build_material_value(m: &UnityMaterial) -> Value {
+    Value::Seq(vec![
+        // 0: m_Name
+        Value::String(m.name.clone()),
+        // 1: m_Shader (PPtr<Shader>)
+        pptr_value(&m.shader),
+        // 2: m_ValidKeywords (vector<string>)
+        Value::Array(m.valid_keywords.iter().map(|s| Value::String(s.clone())).collect()),
+        // 3: m_InvalidKeywords (vector<string>)
+        Value::Array(m.invalid_keywords.iter().map(|s| Value::String(s.clone())).collect()),
+        // 4: m_LightmapFlags
+        Value::U32(m.lightmap_flags),
+        // 5: m_EnableInstancingVariants (1 byte)
+        Value::U8(m.enable_instancing_variants),
+        // 6: m_DoubleSidedGI (1 byte, ALIGN handled by the writer)
+        Value::U8(m.double_sided_gi),
+        // 7: m_CustomRenderQueue
+        Value::I32(m.custom_render_queue),
+        // 8: stringTagMap (map<string,string>)
+        Value::Array(
+            m.string_tag_map
+                .iter()
+                .map(|(k, v)| Value::Seq(vec![Value::String(k.clone()), Value::String(v.clone())]))
+                .collect(),
+        ),
+        // 9: disabledShaderPasses (vector<string>)
+        Value::Array(m.disabled_shader_passes.iter().map(|s| Value::String(s.clone())).collect()),
+        // 10: m_SavedProperties (UnityPropertySheet)
+        Value::Seq(vec![
+            // m_TexEnvs (map<string, UnityTexEnv>)
+            Value::Array(
+                m.tex_envs
+                    .iter()
+                    .map(|(name, te)| Value::Seq(vec![Value::String(name.clone()), tex_env_value(te)]))
+                    .collect(),
+            ),
+            // m_Ints (map<string, i32>)
+            Value::Array(
+                m.int_props
+                    .iter()
+                    .map(|(k, v)| Value::Seq(vec![Value::String(k.clone()), Value::I32(*v)]))
+                    .collect(),
+            ),
+            // m_Floats (map<string, f32>)
+            Value::Array(
+                m.float_props
+                    .iter()
+                    .map(|(k, v)| Value::Seq(vec![Value::String(k.clone()), Value::F32(*v)]))
+                    .collect(),
+            ),
+            // m_Colors (map<string, RGBAf>)
+            Value::Array(
+                m.color_props
+                    .iter()
+                    .map(|(k, c)| {
+                        Value::Seq(vec![
+                            Value::String(k.clone()),
+                            Value::Seq(vec![Value::F32(c[0]), Value::F32(c[1]), Value::F32(c[2]), Value::F32(c[3])]),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ]),
+        // 11: m_BuildTextureStacks (vector<>)
+        Value::Array(m.build_texture_stacks.iter().map(|s| Value::String(s.clone())).collect()),
+    ])
+}
+
+/// UnityTexEnv: m_Texture (PPtr) + m_Scale (Vector2f) + m_Offset (Vector2f).
+fn tex_env_value(te: &TexEnv) -> Value {
+    Value::Seq(vec![
+        pptr_value(&te.texture),
+        Value::Seq(vec![Value::F32(te.scale[0]), Value::F32(te.scale[1])]),
+        Value::Seq(vec![Value::F32(te.offset[0]), Value::F32(te.offset[1])]),
+    ])
 }
 
 // ===========================================================================
