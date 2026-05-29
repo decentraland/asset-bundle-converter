@@ -345,15 +345,12 @@ impl SceneEncoderInner {
                 .cloned()
                 .unwrap_or_default();
             match encode_glb_bundle(
-                &self.shader_manifest,
+                &self.type_tree_db,
                 self.build_target,
-                input.shader_type,
                 hash,
                 filename,
                 bytes,
                 &digest,
-                &input.content_map,
-                &texture_bytes,
                 &dep_cids,
             ) {
                 Ok(bundle) => {
@@ -486,56 +483,109 @@ enum EncodeAssetError {
 // equivalent. Then iterate to add glb support, then Mac/WebGL.
 // ===========================================================================
 
-#[allow(clippy::too_many_arguments)]
-fn encode_glb_bundle(
-    _shader_manifest: &ShaderManifest,
-    _build_target: BuildTarget,
-    _shader_type: ShaderType,
-    _hash: &str,
-    _filename: &str,
-    _glb_bytes: &Bytes,
-    _digest: &str,
-    _content_map: &[ContentEntry],
-    _texture_bytes: &HashMap<String, Bytes>,
-    _dep_cids: &[String],
-) -> Result<Bundle, EncodeAssetError> {
-    // ---------- TODO (phase 1: full glb encoder for Windows) -------------
-    // 1. Parse the glb container (gltf-rs / our own minimal parser).
-    //    - Validate magic, JSON chunk, BIN chunk.
-    //    - Resolve images[].uri / buffers[].uri against `content_map`.
-    // 2. For each Material in the glb:
-    //    a. Pick the shader name (DCL/Scene for ShaderType::Dcl).
-    //    b. Look up its ShaderEntry in `shader_manifest`.
-    //    c. Emit a serialised Unity Material asset with an external PPtr
-    //       (fileID → external-ref-table index, pathID → ShaderEntry.path_id).
-    //    d. Map glTF PBR properties to the DCL/Scene property block.
-    //    e. Enable keywords FW_PLUS, FW_PLUS_LIGHT_SHADOWS (see
-    //       AssetBundleConverterMaterialGenerator.cs:9-27).
-    // 3. For each Mesh:
-    //    a. Convert glTF vertex channels (POSITION/NORMAL/TANGENT/TEXCOORD_n/
-    //       COLOR_0/JOINTS_0/WEIGHTS_0) to Unity's channel-packed layout.
-    //    b. Generate sub-mesh descriptors from glTF primitives.
-    //    c. Encode for the target's GPU mesh format (Windows = native LE
-    //       interleaved; WebGL might differ — verify against fixtures).
-    // 4. Emit the GameObject prefab root with MeshFilter+MeshRenderer
-    //    components referencing the encoded mesh + material PPtrs.
-    // 5. Build the inline `metadata.json` TextAsset listing dependency
-    //    hashes (texture CIDs + buffer CIDs that this glb references).
-    //    Shaders are NOT in this list (filtered out — see
-    //    AssetBundleMetadataBuilder.cs:42 and the conversation
-    //    discussing Explorer-side shader resolution).
-    // 6. Wrap everything in UnityFS with ChunkBasedCompression (LZ4) per
-    //    `serialize_unityfs_container` below.
-    //
-    // Bundle name: `{hash}_{digest}_{platform_suffix}` (see
-    // MarkAllAssetBundles in AssetBundleConverter.cs:906-977). The naming
-    // contract is load-bearing — must align with consumer-server's
-    // canonical probe.
-    // --------------------------------------------------------------------
+/// DCL/Scene shader-bundle CAB path the Material's `m_Shader` external
+/// resolves against (the Explorer's StreamingAssets shader bundle). The
+/// Windows value is verified constant across v49 bundles; mac/webgl ship a
+/// different shader bundle and need their own extracted CAB.
+fn shader_cab_path(target: BuildTarget) -> Option<&'static str> {
+    match target {
+        BuildTarget::Windows => {
+            Some("archive:/CAB-51fbd4c9d0fb3e603fd599ac9f5d01e1/CAB-51fbd4c9d0fb3e603fd599ac9f5d01e1")
+        }
+        _ => None,
+    }
+}
 
-    Err(EncodeAssetError::Fatal(EncoderError::Internal(
-        "encode_glb_bundle: scene encoder core not implemented in this scaffold — see TODO".into(),
-    )))
+/// Encode a glb into a loadable UnityFS bundle.
+///
+/// Phase 1 scope (end-to-end, parse-back-validated): single visible mesh,
+/// single primitive, single material, no texture. The mesh geometry and the
+/// material properties are byte-validated against production (see
+/// `gltf_mesh` / `gltf_material`); the assembled component graph is
+/// structurally self-consistent (it parses back) but uses encoder-local
+/// path-IDs, so it isn't byte-identical to Unity's output and its rendering
+/// is confirmed only by the Explorer-load spike.
+///
+/// The richer graph — root + per-primitive child GameObjects, the
+/// MeshRenderer/MeshCollider split for `_collider` meshes, and in-bundle
+/// Texture2D + material texture PPtr wiring — is the next phase. Glbs that
+/// need it return a `PartialFailure` so the scene still proceeds (and, with
+/// `ENCODER_FALLBACK_TO_UNITY`, Unity converts them).
+fn encode_glb_bundle(
+    type_tree_db: &TypeTreeDb,
+    build_target: BuildTarget,
+    hash: &str,
+    filename: &str,
+    glb_bytes: &Bytes,
+    digest: &str,
+    dep_cids: &[String],
+) -> Result<Bundle, EncodeAssetError> {
+    use crate::encode::bundle_assembler::{assemble_glb_bundle, GlbBundleInput};
+    use crate::encode::gltf_material::{convert_glb_material, MaterialTextures, DCL_SCENE_SHADER_PATH_ID};
+    use crate::encode::gltf_mesh::convert_glb_meshes;
+
+    let partial = |reason: &str, message: String| EncodeAssetError::PartialFailure {
+        reason: reason.to_string(),
+        message,
+    };
+
+    let meshes = convert_glb_meshes(glb_bytes)
+        .map_err(|e| partial("glb_mesh_convert", format!("{filename}: {e}")))?;
+
+    // Phase-1 guard: only single visible-mesh glbs assemble for now.
+    if meshes.len() != 1 || meshes[0].is_collider {
+        return Err(partial(
+            "glb_multi_object_unimplemented",
+            format!(
+                "{filename}: {} mesh-primitive(s){}; only single visible-mesh glbs assemble in phase 1",
+                meshes.len(),
+                if meshes.first().map(|m| m.is_collider).unwrap_or(false) { " (collider)" } else { "" }
+            ),
+        ));
+    }
+    let cm = &meshes[0];
+
+    let cab = shader_cab_path(build_target).ok_or_else(|| {
+        partial(
+            "glb_shader_cab_missing",
+            format!("no shader CAB path for {build_target:?} (Windows-only in phase 1)"),
+        )
+    })?;
+
+    // Material for the primitive (default material index 0).
+    let jlen = u32::from_le_bytes(glb_bytes[12..16].try_into().unwrap()) as usize;
+    let j: serde_json::Value = serde_json::from_slice(&glb_bytes[20..20 + jlen])
+        .map_err(|e| partial("glb_json", format!("{filename}: {e}")))?;
+    let mat_idx = j["meshes"][0]["primitives"][0]["material"].as_u64().unwrap_or(0) as usize;
+    let material = convert_glb_material(&j, mat_idx, &MaterialTextures::default());
+
+    let suffix = build_target.filename_suffix();
+    let bundle_name = format!("{hash}_{digest}{suffix}");
+
+    let unityfs_bytes = assemble_glb_bundle(
+        type_tree_db,
+        build_target,
+        &type_tree_db.unity_version,
+        &GlbBundleInput {
+            bundle_name: &bundle_name,
+            content_filename: filename,
+            game_object_name: &cm.name,
+            mesh: &cm.mesh,
+            material: &material,
+            shader_cab_path: cab,
+            shader_path_id: DCL_SCENE_SHADER_PATH_ID,
+            dependencies: dep_cids,
+            metadata_timestamp: 0,
+        },
+    )
+    .map_err(|e| EncodeAssetError::Fatal(EncoderError::Internal(format!("assemble_glb_bundle {hash}: {e}"))))?;
+
+    Ok(Bundle {
+        source_hash: hash.to_string(),
+        bundle_name,
+        dependencies: dep_cids.to_vec(),
+        uncompressed_bytes: unityfs_bytes,
+    })
 }
 
 fn encode_texture_bundle(

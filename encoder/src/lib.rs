@@ -22,7 +22,9 @@ pub mod catalyst_client;
 pub mod encode;
 mod errors;
 mod scene_encoder;
-mod types;
+// Public: the assembler API (`assemble_glb_bundle`, `assemble_texture_bundle`)
+// takes `BuildTarget`, so callers and verifier binaries need it.
+pub mod types;
 
 // napi-rs surface — gated so the lib stays linkable from src/bin/ targets.
 #[cfg(feature = "napi-bindings")]
