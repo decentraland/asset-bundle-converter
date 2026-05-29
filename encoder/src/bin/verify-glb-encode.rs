@@ -68,7 +68,7 @@ fn run(glb_path: &str, bundle_path: &str) -> Result<(), String> {
     eprintln!("[hist] real: {real_hist:?}");
 
     let mut ok = true;
-    for c in [1, 4, 33, 23, 64, 43] {
+    for c in [1, 4, 33, 23, 64, 43, 21, 28] {
         if our_hist.get(&c).copied().unwrap_or(0) != real_hist.get(&c).copied().unwrap_or(0) {
             eprintln!("[structural] MISMATCH class {c}: ours={} real={}", our_hist.get(&c).copied().unwrap_or(0), real_hist.get(&c).copied().unwrap_or(0)); ok = false;
         }

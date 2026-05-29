@@ -366,11 +366,6 @@ pub fn assemble_glb_graph(
     let mut tfs: Vec<TfSpec> = Vec::new();
     let mut tf_children: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
 
-    let default_material = UnityMaterial::default();
-    let material_for = |idx: usize| -> &UnityMaterial {
-        input.materials.get(idx).unwrap_or(&default_material)
-    };
-
     // Emit one in-bundle Texture2D per base-color image referenced by a
     // VISIBLE primitive's material, with pixels STREAMED into a `.resS`
     // sidecar via m_StreamData (matching production's structure: a tiny
@@ -396,19 +391,70 @@ pub fn assemble_glb_graph(
             }
         }
     }
+    // Unity emits TWO Texture2D per referenced image (one wired into the
+    // material's _BaseMap, one unreferenced sibling). We reproduce the count;
+    // the first copy is the _BaseMap target.
     let mut img_pptr: std::collections::HashMap<usize, PPtr> = std::collections::HashMap::new();
     for img in used_images {
         let Some(png) = input.images.get(&img) else { continue };
-        let Ok(tex) = decode_to_texture2d(&format!("texture_{img}"), png) else { continue };
-        let offset = ress.len() as u64;
-        let stream = TextureStream { offset, path: &ress_path };
-        let Ok(bytes) = serialize_texture2d_streamed(&tex, db, &stream) else { continue };
-        ress.extend_from_slice(&tex.image_data);
-        let tid = id();
-        objects.push(PreparedObject { class_id: CLASS_TEXTURE2D, path_id: tid, data: bytes });
-        preload.push(here(tid));
-        img_pptr.insert(img, here(tid));
+        let Ok(tex) = decode_to_texture2d(&format!("image_{img}"), png) else { continue };
+        for copy in 0..2 {
+            let offset = ress.len() as u64;
+            let stream = TextureStream { offset, path: &ress_path };
+            let Ok(bytes) = serialize_texture2d_streamed(&tex, db, &stream) else { continue };
+            ress.extend_from_slice(&tex.image_data);
+            let tid = id();
+            objects.push(PreparedObject { class_id: CLASS_TEXTURE2D, path_id: tid, data: bytes });
+            preload.push(here(tid));
+            if copy == 0 {
+                img_pptr.insert(img, here(tid));
+            }
+        }
     }
+
+    // Pre-create one shared Material per glb material (wired to its base-color
+    // texture), plus one extra untextured "DCL_Scene" default — matching
+    // Unity's `materials = glb_materials + 1` count. Visible MeshRenderers
+    // reference the shared per-glb-material object; the default + any
+    // collider-only material objects are emitted but unreferenced.
+    let set_base_map = |m: &mut UnityMaterial, p: &PPtr| {
+        for (name, te) in m.tex_envs.iter_mut() {
+            if name == "_BaseMap" {
+                te.texture = p.clone();
+            }
+        }
+    };
+    let mut material_pptr: Vec<i64> = Vec::with_capacity(input.materials.len());
+    for (idx, base) in input.materials.iter().enumerate() {
+        let mut material = base.clone();
+        material.shader = PPtr { file_id: 1, path_id: crate::encode::gltf_material::DCL_SCENE_SHADER_PATH_ID };
+        if let Some(Some(img)) = input.base_color_image.get(idx) {
+            if let Some(p) = img_pptr.get(img) {
+                set_base_map(&mut material, p);
+            }
+        }
+        let mid = id();
+        objects.push(PreparedObject { class_id: CLASS_MATERIAL, path_id: mid, data: serialize_class(db, CLASS_MATERIAL, &build_material_value(&material))? });
+        preload.push(here(mid));
+        material_pptr.push(mid);
+    }
+    // The +1 default DCL_Scene material (untextured; unreferenced orphan).
+    let default_pptr = {
+        let mut dm = input.materials.first().cloned().unwrap_or_default();
+        dm.name = "DCL_Scene".to_string();
+        dm.shader = PPtr { file_id: 1, path_id: crate::encode::gltf_material::DCL_SCENE_SHADER_PATH_ID };
+        for (_, te) in dm.tex_envs.iter_mut() {
+            te.texture = PPtr::default();
+        }
+        let mid = id();
+        objects.push(PreparedObject { class_id: CLASS_MATERIAL, path_id: mid, data: serialize_class(db, CLASS_MATERIAL, &build_material_value(&dm))? });
+        preload.push(here(mid));
+        mid
+    };
+    // Resolve a primitive's material to its shared object's path_id.
+    let material_id_for = |material_index: usize| -> i64 {
+        material_pptr.get(material_index).copied().unwrap_or(default_pptr)
+    };
 
     // Emit the per-primitive components (MeshFilter + Mesh + renderer/collider)
     // for a GameObject `go`, returning the component PPtr list (sans Transform,
@@ -437,21 +483,8 @@ pub fn assemble_glb_graph(
                 data: serialize_class(db, CLASS_MESHCOLLIDER, &build_mesh_collider_value(&UnityMeshCollider { game_object: here(go), mesh: here(mesh_id) }))?,
             });
         } else {
-            let mat_id = id();
-            let mut material = material_for(prim.material_index).clone();
-            material.shader = PPtr { file_id: 1, path_id: crate::encode::gltf_material::DCL_SCENE_SHADER_PATH_ID };
-            // Wire the base-color texture into _BaseMap, if this material has one.
-            if let Some(Some(img)) = input.base_color_image.get(prim.material_index) {
-                if let Some(pptr) = img_pptr.get(img) {
-                    for (name, te) in material.tex_envs.iter_mut() {
-                        if name == "_BaseMap" {
-                            te.texture = pptr.clone();
-                        }
-                    }
-                }
-            }
-            objects.push(PreparedObject { class_id: CLASS_MATERIAL, path_id: mat_id, data: serialize_class(db, CLASS_MATERIAL, &build_material_value(&material))? });
-            preload.push(here(mat_id));
+            // Reference the shared per-glb-material object (pre-created above).
+            let mat_id = material_id_for(prim.material_index);
             let mr = UnityMeshRenderer {
                 game_object: here(go),
                 enabled: 1,
