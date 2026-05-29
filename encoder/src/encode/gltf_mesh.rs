@@ -1,29 +1,32 @@
-//! glTF/glb mesh → Unity `UnityMeshObject` conversion.
+//! glTF/glb mesh + scene-graph → Unity conversion.
 //!
-//! The transform rules below were reverse-engineered by converting source
-//! glbs and diffing the result, byte-for-byte, against the REAL Unity Mesh
-//! objects in the corresponding ab-cdn v49 bundles (Unity 6000.2.6f2).
-//! `verify-mesh-from-glb` is the regression harness; across the downloaded
-//! v49 corpus this reproduces every production Mesh exactly except for a
-//! sub-ULP rounding difference in the bounding-box floats of some collider
-//! meshes (≈microns; functionally irrelevant).
+//! The per-primitive transform rules below were reverse-engineered by
+//! converting source glbs and diffing the result, byte-for-byte, against the
+//! REAL Unity Mesh objects in the corresponding ab-cdn v49 bundles (Unity
+//! 6000.2.6f2). `verify-mesh-from-glb` is the regression harness; across the
+//! downloaded v49 corpus this reproduces every production Mesh exactly except
+//! for a sub-ULP rounding difference in the bounding-box floats of some
+//! collider meshes (≈microns; functionally irrelevant).
 //!
 //! Unity's rules (DCL converter):
 //!   * **One Mesh object per glb primitive.** A glb mesh with N primitives
-//!     becomes N separate Mesh objects, all sharing the glb mesh's name,
-//!     each with a single submesh.
-//!   * **Coordinate handedness:** negate X on position AND normal
-//!     (glTF right-handed → Unity left-handed).
-//!   * **UV:** `v → 1 - v`; the UV channel (channel 4, stream 1) is emitted
-//!     only when the primitive has `TEXCOORD_0`.
-//!   * **Indices:** reverse winding per triangle (`a,b,c → a,c,b`, because
-//!     negating X flips facing) and widen to UInt32 (m_IndexFormat=1).
-//!   * **Vertex layout:** two streams — stream 0 = position(12B)+normal(12B)
-//!     interleaved per vertex (24B), stream 1 = UV(8B). Stream 0 is padded
-//!     to a 16-byte boundary before stream 1.
-//!   * **m_MeshUsageFlags = 0x10** when the mesh's referencing node name
-//!     ends with `_collider` (DCL collider convention → CPU-readable for
-//!     physics), else 0.
+//!     becomes N separate Mesh objects, all sharing the glb mesh's name.
+//!   * **Coordinate handedness:** negate X on position AND normal.
+//!   * **UV:** `v → 1 - v`; the UV channel (channel 4, stream 1) only when
+//!     the primitive has `TEXCOORD_0`.
+//!   * **Indices:** reverse winding per triangle and widen to UInt32.
+//!   * **Vertex layout:** two streams — stream 0 = position(12)+normal(12)
+//!     interleaved (24B), stream 1 = UV(8B), stream 0 padded to 16 bytes.
+//!   * **m_MeshUsageFlags = 0x10** when the mesh's referencing node name ends
+//!     `_collider` (DCL collider convention → CPU-readable for physics).
+//!
+//! Scene graph (`convert_glb_scene`, verified against multi-mesh bundles):
+//!   * an "entity root" GameObject named after the glb hash;
+//!   * each glb node with a mesh → its primitive 0 attaches to a GameObject
+//!     named after the node; primitives 1..N become child GameObjects named
+//!     `{meshName}_{i}`;
+//!   * collider nodes (`_collider`) get a MeshCollider instead of a
+//!     MeshRenderer.
 
 use serde_json::Value as J;
 
@@ -54,8 +57,8 @@ pub struct ConvertedMesh {
     pub mesh: UnityMeshObject,
 }
 
-/// Convert every (mesh × primitive) in a glb into a Unity `UnityMeshObject`.
-pub fn convert_glb_meshes(glb: &[u8]) -> Result<Vec<ConvertedMesh>, GltfMeshError> {
+/// Parse the glb header into (json, bin-chunk-bytes).
+fn parse_glb(glb: &[u8]) -> Result<(J, &[u8]), GltfMeshError> {
     if glb.len() < 20 || &glb[0..4] != b"glTF" {
         return Err(GltfMeshError::NotGlb);
     }
@@ -64,12 +67,24 @@ pub fn convert_glb_meshes(glb: &[u8]) -> Result<Vec<ConvertedMesh>, GltfMeshErro
         return Err(GltfMeshError::Structure("JSON chunk overruns file".into()));
     }
     let j: J = serde_json::from_slice(&glb[20..20 + jlen]).map_err(|e| GltfMeshError::Json(e.to_string()))?;
-    // BIN chunk follows the JSON chunk: 8-byte chunk header (length + type).
     let bin = glb.get(20 + jlen + 8..).unwrap_or(&[]);
+    Ok((j, bin))
+}
 
+/// Convert glTF `meshes[mesh_idx].primitives[prim_idx]` to a UnityMeshObject.
+/// `is_collider` sets `m_MeshUsageFlags`. This is the byte-validated core.
+fn convert_primitive(
+    j: &J,
+    bin: &[u8],
+    mesh_idx: usize,
+    prim_idx: usize,
+    is_collider: bool,
+) -> Result<UnityMeshObject, GltfMeshError> {
     let bvs = j["bufferViews"].as_array().ok_or_else(|| GltfMeshError::Structure("no bufferViews".into()))?;
     let accs = j["accessors"].as_array().ok_or_else(|| GltfMeshError::Structure("no accessors".into()))?;
-    let meshes = j["meshes"].as_array().ok_or_else(|| GltfMeshError::Structure("no meshes".into()))?;
+    let mesh = &j["meshes"][mesh_idx];
+    let name = mesh["name"].as_str().unwrap_or("").to_string();
+    let prim = &mesh["primitives"][prim_idx];
 
     let bvbytes = |bvi: usize| -> &[u8] {
         let b = &bvs[bvi];
@@ -85,140 +100,232 @@ pub fn convert_glb_meshes(glb: &[u8]) -> Result<Vec<ConvertedMesh>, GltfMeshErro
     };
     let getf = |buf: &[u8], i: usize| f32::from_le_bytes(buf[i * 4..i * 4 + 4].try_into().unwrap());
 
-    // Collider meshes: any node whose name ends "_collider".
-    let mut collider_mesh = std::collections::HashSet::new();
+    let at = &prim["attributes"];
+    let pos_ai = at["POSITION"].as_u64().ok_or_else(|| GltfMeshError::Structure("primitive has no POSITION".into()))? as usize;
+    let (pos, vcount) = acc_bytes(pos_ai);
+    let nrm = at["NORMAL"].as_u64().map(|ai| acc_bytes(ai as usize).0);
+    let uv = at["TEXCOORD_0"].as_u64().map(|ai| acc_bytes(ai as usize).0);
+    let has_uv = uv.is_some();
+
+    let mut s0 = Vec::with_capacity(vcount * 24);
+    let mut s1 = Vec::with_capacity(vcount * 8);
+    let mut minp = [f32::MAX; 3];
+    let mut maxp = [f32::MIN; 3];
+    for v in 0..vcount {
+        let px = -getf(pos, v * 3);
+        let py = getf(pos, v * 3 + 1);
+        let pz = getf(pos, v * 3 + 2);
+        for (k, c) in [px, py, pz].iter().enumerate() {
+            minp[k] = minp[k].min(*c);
+            maxp[k] = maxp[k].max(*c);
+        }
+        s0.extend_from_slice(&px.to_le_bytes());
+        s0.extend_from_slice(&py.to_le_bytes());
+        s0.extend_from_slice(&pz.to_le_bytes());
+        if let Some(nb) = nrm {
+            s0.extend_from_slice(&(-getf(nb, v * 3)).to_le_bytes());
+            s0.extend_from_slice(&getf(nb, v * 3 + 1).to_le_bytes());
+            s0.extend_from_slice(&getf(nb, v * 3 + 2).to_le_bytes());
+        } else {
+            s0.extend_from_slice(&[0u8; 12]);
+        }
+        if let Some(ub) = uv {
+            s1.extend_from_slice(&getf(ub, v * 2).to_le_bytes());
+            s1.extend_from_slice(&(1.0 - getf(ub, v * 2 + 1)).to_le_bytes());
+        }
+    }
+    let mut vertex_data = s0;
+    if has_uv {
+        while vertex_data.len() % 16 != 0 {
+            vertex_data.push(0);
+        }
+        vertex_data.extend_from_slice(&s1);
+    }
+
+    let idx_ai = prim["indices"].as_u64().ok_or_else(|| GltfMeshError::Structure("primitive has no indices".into()))? as usize;
+    let (ib, icount) = acc_bytes(idx_ai);
+    let icomp = accs[idx_ai]["componentType"].as_u64().unwrap();
+    let rd = |i: usize| -> u32 {
+        match icomp {
+            5121 => ib[i] as u32,
+            5123 => u16::from_le_bytes(ib[i * 2..i * 2 + 2].try_into().unwrap()) as u32,
+            5125 => u32::from_le_bytes(ib[i * 4..i * 4 + 4].try_into().unwrap()),
+            _ => 0,
+        }
+    };
+    let mut index_buffer = Vec::with_capacity(icount * 4);
+    let mut t = 0;
+    while t + 3 <= icount {
+        let (a, b, c) = (rd(t), rd(t + 1), rd(t + 2));
+        for x in [a, c, b] {
+            index_buffer.extend_from_slice(&x.to_le_bytes());
+        }
+        t += 3;
+    }
+
+    let aabb = MeshAabb {
+        center: [(minp[0] + maxp[0]) / 2.0, (minp[1] + maxp[1]) / 2.0, (minp[2] + maxp[2]) / 2.0],
+        extent: [(maxp[0] - minp[0]) / 2.0, (maxp[1] - minp[1]) / 2.0, (maxp[2] - minp[2]) / 2.0],
+    };
+    let mut channels = vec![MeshChannel::default(); 14];
+    channels[0] = MeshChannel { stream: 0, offset: 0, format: 0, dimension: 3 };
+    channels[1] = MeshChannel { stream: 0, offset: 12, format: 0, dimension: 3 };
+    if has_uv {
+        channels[4] = MeshChannel { stream: 1, offset: 0, format: 0, dimension: 2 };
+    }
+
+    Ok(UnityMeshObject {
+        name,
+        sub_meshes: vec![MeshSubMesh {
+            first_byte: 0,
+            index_count: icount as u32,
+            topology: 0,
+            base_vertex: 0,
+            first_vertex: 0,
+            vertex_count: vcount as u32,
+            local_aabb: aabb.clone(),
+        }],
+        root_bone_name_hash: 0,
+        mesh_compression: 0,
+        is_readable: 1,
+        keep_vertices: 0,
+        keep_indices: 0,
+        index_format: 1,
+        index_buffer,
+        vertex_count: vcount as u32,
+        channels,
+        vertex_data,
+        local_aabb: aabb,
+        mesh_usage_flags: if is_collider { MESH_USAGE_COLLIDER } else { 0 },
+        cooking_options: 30,
+        mesh_metrics: [1.0, 1.0],
+        stream_offset: 0,
+        stream_size: 0,
+        stream_path: String::new(),
+        lod_slope: 0.0,
+        lod_bias: 0.0,
+        lod_num_levels: 1,
+        lod_sub_meshes: vec![vec![MeshLodRange { index_start: 0, index_count: 0 }]],
+    })
+}
+
+/// True when any node referencing `mesh_idx` has a `_collider` name.
+fn collider_mesh_set(j: &J) -> std::collections::HashSet<usize> {
+    let mut set = std::collections::HashSet::new();
     if let Some(nodes) = j["nodes"].as_array() {
         for nd in nodes {
             if let (Some(mi), Some(nm)) = (nd["mesh"].as_u64(), nd["name"].as_str()) {
                 if nm.ends_with("_collider") {
-                    collider_mesh.insert(mi as usize);
+                    set.insert(mi as usize);
                 }
             }
         }
     }
+    set
+}
 
+/// Convert every (mesh × primitive) in a glb into a Unity `UnityMeshObject`.
+/// Flat list (no scene graph) — used by `verify-mesh-from-glb`.
+pub fn convert_glb_meshes(glb: &[u8]) -> Result<Vec<ConvertedMesh>, GltfMeshError> {
+    let (j, bin) = parse_glb(glb)?;
+    let collider = collider_mesh_set(&j);
+    let meshes = j["meshes"].as_array().ok_or_else(|| GltfMeshError::Structure("no meshes".into()))?;
     let mut out = Vec::new();
     for (mesh_idx, mesh) in meshes.iter().enumerate() {
+        let is_collider = collider.contains(&mesh_idx);
         let name = mesh["name"].as_str().unwrap_or("").to_string();
-        let is_collider = collider_mesh.contains(&mesh_idx);
-        let prims = mesh["primitives"].as_array().ok_or_else(|| GltfMeshError::Structure("no primitives".into()))?;
-        for prim in prims {
-            let at = &prim["attributes"];
-            let pos_ai = at["POSITION"].as_u64().ok_or_else(|| GltfMeshError::Structure("primitive has no POSITION".into()))? as usize;
-            let (pos, vcount) = acc_bytes(pos_ai);
-            let nrm = at["NORMAL"].as_u64().map(|ai| acc_bytes(ai as usize).0);
-            let uv = at["TEXCOORD_0"].as_u64().map(|ai| acc_bytes(ai as usize).0);
-            let has_uv = uv.is_some();
-
-            let mut s0 = Vec::with_capacity(vcount * 24);
-            let mut s1 = Vec::with_capacity(vcount * 8);
-            let mut minp = [f32::MAX; 3];
-            let mut maxp = [f32::MIN; 3];
-            for v in 0..vcount {
-                // negate X on position (handedness flip)
-                let px = -getf(pos, v * 3);
-                let py = getf(pos, v * 3 + 1);
-                let pz = getf(pos, v * 3 + 2);
-                for (k, c) in [px, py, pz].iter().enumerate() {
-                    minp[k] = minp[k].min(*c);
-                    maxp[k] = maxp[k].max(*c);
-                }
-                s0.extend_from_slice(&px.to_le_bytes());
-                s0.extend_from_slice(&py.to_le_bytes());
-                s0.extend_from_slice(&pz.to_le_bytes());
-                if let Some(nb) = nrm {
-                    // negate X on normal too
-                    s0.extend_from_slice(&(-getf(nb, v * 3)).to_le_bytes());
-                    s0.extend_from_slice(&getf(nb, v * 3 + 1).to_le_bytes());
-                    s0.extend_from_slice(&getf(nb, v * 3 + 2).to_le_bytes());
-                } else {
-                    s0.extend_from_slice(&[0u8; 12]);
-                }
-                if let Some(ub) = uv {
-                    s1.extend_from_slice(&getf(ub, v * 2).to_le_bytes());
-                    s1.extend_from_slice(&(1.0 - getf(ub, v * 2 + 1)).to_le_bytes());
-                }
-            }
-            let mut vertex_data = s0;
-            if has_uv {
-                while vertex_data.len() % 16 != 0 {
-                    vertex_data.push(0);
-                }
-                vertex_data.extend_from_slice(&s1);
-            }
-
-            // indices: widen to u32, reverse winding per triangle.
-            let idx_ai = prim["indices"].as_u64().ok_or_else(|| GltfMeshError::Structure("primitive has no indices".into()))? as usize;
-            let (ib, icount) = acc_bytes(idx_ai);
-            let icomp = accs[idx_ai]["componentType"].as_u64().unwrap();
-            let rd = |i: usize| -> u32 {
-                match icomp {
-                    5121 => ib[i] as u32,
-                    5123 => u16::from_le_bytes(ib[i * 2..i * 2 + 2].try_into().unwrap()) as u32,
-                    5125 => u32::from_le_bytes(ib[i * 4..i * 4 + 4].try_into().unwrap()),
-                    _ => 0,
-                }
-            };
-            let mut index_buffer = Vec::with_capacity(icount * 4);
-            let mut t = 0;
-            while t + 3 <= icount {
-                let (a, b, c) = (rd(t), rd(t + 1), rd(t + 2));
-                for x in [a, c, b] {
-                    index_buffer.extend_from_slice(&x.to_le_bytes());
-                }
-                t += 3;
-            }
-
-            let aabb = MeshAabb {
-                center: [(minp[0] + maxp[0]) / 2.0, (minp[1] + maxp[1]) / 2.0, (minp[2] + maxp[2]) / 2.0],
-                extent: [(maxp[0] - minp[0]) / 2.0, (maxp[1] - minp[1]) / 2.0, (maxp[2] - minp[2]) / 2.0],
-            };
-
-            let mut channels = vec![MeshChannel::default(); 14];
-            channels[0] = MeshChannel { stream: 0, offset: 0, format: 0, dimension: 3 };
-            channels[1] = MeshChannel { stream: 0, offset: 12, format: 0, dimension: 3 };
-            if has_uv {
-                channels[4] = MeshChannel { stream: 1, offset: 0, format: 0, dimension: 2 };
-            }
-
+        let nprim = mesh["primitives"].as_array().map(|a| a.len()).unwrap_or(0);
+        for prim_idx in 0..nprim {
             out.push(ConvertedMesh {
                 name: name.clone(),
                 is_collider,
-                mesh: UnityMeshObject {
-                    name: name.clone(),
-                    sub_meshes: vec![MeshSubMesh {
-                        first_byte: 0,
-                        index_count: icount as u32,
-                        topology: 0,
-                        base_vertex: 0,
-                        first_vertex: 0,
-                        vertex_count: vcount as u32,
-                        local_aabb: aabb.clone(),
-                    }],
-                    root_bone_name_hash: 0,
-                    mesh_compression: 0,
-                    is_readable: 1,
-                    keep_vertices: 0,
-                    keep_indices: 0,
-                    index_format: 1,
-                    index_buffer,
-                    vertex_count: vcount as u32,
-                    channels,
-                    vertex_data,
-                    local_aabb: aabb,
-                    mesh_usage_flags: if is_collider { MESH_USAGE_COLLIDER } else { 0 },
-                    cooking_options: 30,
-                    mesh_metrics: [1.0, 1.0],
-                    stream_offset: 0,
-                    stream_size: 0,
-                    stream_path: String::new(),
-                    lod_slope: 0.0,
-                    lod_bias: 0.0,
-                    lod_num_levels: 1,
-                    lod_sub_meshes: vec![vec![MeshLodRange { index_start: 0, index_count: 0 }]],
-                },
+                mesh: convert_primitive(&j, bin, mesh_idx, prim_idx, is_collider)?,
             });
         }
     }
     Ok(out)
+}
+
+// --------------------------------------------------------------------------
+// Scene graph
+// --------------------------------------------------------------------------
+
+/// One converted glb primitive within a scene node.
+#[derive(Debug, Clone)]
+pub struct ScenePrimitive {
+    pub mesh: UnityMeshObject,
+    /// glTF material index for this primitive (for material conversion).
+    pub material_index: usize,
+}
+
+/// One glb scene node that carries a mesh.
+#[derive(Debug, Clone)]
+pub struct SceneNode {
+    pub name: String,
+    pub local_position: [f32; 3],
+    pub local_rotation: [f32; 4],
+    pub local_scale: [f32; 3],
+    pub is_collider: bool,
+    pub primitives: Vec<ScenePrimitive>,
+}
+
+/// The converted scene graph for one glb.
+#[derive(Debug, Clone)]
+pub struct GlbScene {
+    pub nodes: Vec<SceneNode>,
+    /// Total primitive count across all nodes (drives the single-vs-root
+    /// GameObject layout).
+    pub total_primitives: usize,
+}
+
+/// Default node TRS (identity).
+fn node_trs(nd: &J) -> ([f32; 3], [f32; 4], [f32; 3]) {
+    let v3 = |key: &str, def: [f32; 3]| -> [f32; 3] {
+        nd[key].as_array().map(|a| [
+            a[0].as_f64().unwrap_or(def[0] as f64) as f32,
+            a[1].as_f64().unwrap_or(def[1] as f64) as f32,
+            a[2].as_f64().unwrap_or(def[2] as f64) as f32,
+        ]).unwrap_or(def)
+    };
+    let rot = nd["rotation"].as_array().map(|a| [
+        a[0].as_f64().unwrap_or(0.0) as f32,
+        a[1].as_f64().unwrap_or(0.0) as f32,
+        a[2].as_f64().unwrap_or(0.0) as f32,
+        a[3].as_f64().unwrap_or(1.0) as f32,
+    ]).unwrap_or([0.0, 0.0, 0.0, 1.0]);
+    (v3("translation", [0.0; 3]), rot, v3("scale", [1.0, 1.0, 1.0]))
+}
+
+/// Walk a glb's nodes and convert each mesh-bearing node into a `SceneNode`
+/// with its primitives' Unity meshes. Nodes without meshes are skipped
+/// (DCL glbs are effectively flat under the scene root).
+pub fn convert_glb_scene(glb: &[u8]) -> Result<GlbScene, GltfMeshError> {
+    let (j, bin) = parse_glb(glb)?;
+    let mut nodes = Vec::new();
+    let mut total = 0usize;
+    if let Some(gnodes) = j["nodes"].as_array() {
+        for nd in gnodes {
+            let Some(mesh_idx) = nd["mesh"].as_u64().map(|x| x as usize) else { continue };
+            let name = nd["name"].as_str().unwrap_or("").to_string();
+            let is_collider = name.ends_with("_collider");
+            let (tp, tr, ts) = node_trs(nd);
+            let nprim = j["meshes"][mesh_idx]["primitives"].as_array().map(|a| a.len()).unwrap_or(0);
+            let mut prims = Vec::with_capacity(nprim);
+            for prim_idx in 0..nprim {
+                let mesh = convert_primitive(&j, bin, mesh_idx, prim_idx, is_collider)?;
+                let material_index = j["meshes"][mesh_idx]["primitives"][prim_idx]["material"].as_u64().unwrap_or(0) as usize;
+                prims.push(ScenePrimitive { mesh, material_index });
+                total += 1;
+            }
+            nodes.push(SceneNode {
+                name,
+                local_position: tp,
+                local_rotation: tr,
+                local_scale: ts,
+                is_collider,
+                primitives: prims,
+            });
+        }
+    }
+    Ok(GlbScene { nodes, total_primitives: total })
 }

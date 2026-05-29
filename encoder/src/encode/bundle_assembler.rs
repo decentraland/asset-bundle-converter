@@ -40,6 +40,7 @@ pub const CLASS_TEXTURE2D: i32 = 28;
 pub const CLASS_MESHFILTER: i32 = 33;
 pub const CLASS_MESH: i32 = 43;
 pub const CLASS_TEXTASSET: i32 = 49;
+pub const CLASS_MESHCOLLIDER: i32 = 64;
 pub const CLASS_ASSETBUNDLE: i32 = 142;
 
 // Conventional path IDs for the assembled objects.
@@ -294,6 +295,213 @@ pub fn assemble_glb_bundle(
         path: input.shader_cab_path.to_string(),
     }];
 
+    assemble_unityfs(db, target, unity_version, input.bundle_name, objects, &externals)
+}
+
+// ===========================================================================
+// Full glb scene graph
+// ===========================================================================
+
+use crate::encode::class_writers::{build_mesh_collider_value, UnityMeshCollider};
+use crate::encode::gltf_mesh::GlbScene;
+
+/// Inputs for assembling a glb's full GameObject graph.
+pub struct GlbGraphInput<'a> {
+    pub bundle_name: &'a str,
+    /// Entity-root GameObject name (the glb hash).
+    pub root_name: &'a str,
+    pub content_filename: &'a str,
+    pub scene: &'a GlbScene,
+    /// Materials by glTF material index (shader PPtr already set by
+    /// `convert_glb_material`). Visible primitives reference these.
+    pub materials: &'a [UnityMaterial],
+    pub shader_cab_path: &'a str,
+    pub dependencies: &'a [String],
+    pub metadata_timestamp: i64,
+}
+
+/// Deferred transform spec — built after all children are known.
+struct TfSpec {
+    id: i64,
+    game_object: i64,
+    father: i64, // 0 = none
+    position: [f32; 3],
+    rotation: [f32; 4],
+    scale: [f32; 3],
+}
+
+/// Assemble the full glb scene: an entity-root GameObject + per-node child
+/// GameObjects (prim 0 on the node GO, prims 1..N as `{mesh}_{i}` children),
+/// MeshRenderer for visible meshes and MeshCollider for `_collider` nodes,
+/// one Mesh per primitive, one Material per visible primitive, the DCL/Scene
+/// shader external, metadata.json, and the AssetBundle root.
+///
+/// A single-primitive glb collapses to one GameObject (the root carries the
+/// mesh components directly), matching Unity. Internally consistent + parses
+/// back; uses encoder-local path-IDs (not byte-identical to Unity).
+///
+/// NOT handled yet: in-bundle Texture2D + material texture PPtr wiring
+/// (textured materials render untextured), and non-opaque alpha modes.
+pub fn assemble_glb_graph(
+    db: &TypeTreeDb,
+    target: BuildTarget,
+    unity_version: &str,
+    input: &GlbGraphInput,
+) -> Result<Vec<u8>, SerializeError> {
+    let here = |id: i64| PPtr { file_id: 0, path_id: id };
+    let mut next: i64 = 2; // 1 reserved for AssetBundle
+    let mut id = || {
+        let v = next;
+        next += 1;
+        v
+    };
+
+    let mut objects: Vec<PreparedObject> = Vec::new();
+    let mut preload: Vec<PPtr> = Vec::new();
+    let mut tfs: Vec<TfSpec> = Vec::new();
+    let mut tf_children: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
+
+    let default_material = UnityMaterial::default();
+    let material_for = |idx: usize| -> &UnityMaterial {
+        input.materials.get(idx).unwrap_or(&default_material)
+    };
+
+    // Emit the per-primitive components (MeshFilter + Mesh + renderer/collider)
+    // for a GameObject `go`, returning the component PPtr list (sans Transform,
+    // which is prepended by the caller).
+    let mut emit_prim = |go: i64,
+                         prim: &crate::encode::gltf_mesh::ScenePrimitive,
+                         is_collider: bool,
+                         objects: &mut Vec<PreparedObject>,
+                         preload: &mut Vec<PPtr>,
+                         id: &mut dyn FnMut() -> i64|
+     -> Result<Vec<PPtr>, SerializeError> {
+        let mesh_id = id();
+        objects.push(PreparedObject { class_id: CLASS_MESH, path_id: mesh_id, data: serialize_class(db, CLASS_MESH, &build_mesh_value(&prim.mesh))? });
+        preload.push(here(mesh_id));
+        let mf_id = id();
+        objects.push(PreparedObject {
+            class_id: CLASS_MESHFILTER,
+            path_id: mf_id,
+            data: serialize_class(db, CLASS_MESHFILTER, &build_mesh_filter_value(&UnityMeshFilter { game_object: here(go), mesh: here(mesh_id) }))?,
+        });
+        let rc_id = id();
+        if is_collider {
+            objects.push(PreparedObject {
+                class_id: CLASS_MESHCOLLIDER,
+                path_id: rc_id,
+                data: serialize_class(db, CLASS_MESHCOLLIDER, &build_mesh_collider_value(&UnityMeshCollider { game_object: here(go), mesh: here(mesh_id) }))?,
+            });
+        } else {
+            let mat_id = id();
+            let mut material = material_for(prim.material_index).clone();
+            material.shader = PPtr { file_id: 1, path_id: crate::encode::gltf_material::DCL_SCENE_SHADER_PATH_ID };
+            objects.push(PreparedObject { class_id: CLASS_MATERIAL, path_id: mat_id, data: serialize_class(db, CLASS_MATERIAL, &build_material_value(&material))? });
+            preload.push(here(mat_id));
+            let mr = UnityMeshRenderer {
+                game_object: here(go),
+                enabled: 1,
+                cast_shadows: 1,
+                receive_shadows: 1,
+                dynamic_occludee: 1,
+                lightmap_index: 0xFFFF,
+                lightmap_index_dynamic: 0xFFFF,
+                materials: vec![here(mat_id)],
+                ..Default::default()
+            };
+            objects.push(PreparedObject { class_id: CLASS_MESHRENDERER, path_id: rc_id, data: serialize_class(db, CLASS_MESHRENDERER, &build_mesh_renderer_value(&mr))? });
+        }
+        Ok(vec![here(mf_id), here(rc_id)])
+    };
+
+    let identity = ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0]);
+
+    if input.scene.total_primitives == 1 {
+        // Collapsed: the single primitive's GameObject IS the entity root.
+        let node = &input.scene.nodes[0];
+        let prim = &node.primitives[0];
+        let root_go = id();
+        let root_tf = id();
+        let mut comps = vec![here(root_tf)];
+        comps.extend(emit_prim(root_go, prim, node.is_collider, &mut objects, &mut preload, &mut id)?);
+        objects.push(PreparedObject { class_id: CLASS_GAMEOBJECT, path_id: root_go, data: serialize_class(db, CLASS_GAMEOBJECT, &build_game_object_value(&UnityGameObject { name: input.root_name.to_string(), components: comps, layer: 0, tag: 0, is_active: true }))? });
+        preload.push(here(root_go));
+        tfs.push(TfSpec { id: root_tf, game_object: root_go, father: 0, position: node.local_position, rotation: node.local_rotation, scale: node.local_scale });
+    } else {
+        // Entity root (Transform only) + per-node children.
+        let root_go = id();
+        let root_tf = id();
+        for node in &input.scene.nodes {
+            // prim 0 attaches to the node GameObject (child of root); prims
+            // 1..N become child GameObjects parented to the node's transform.
+            let mut node_tf_id = 0i64;
+            for (i, prim) in node.primitives.iter().enumerate() {
+                let go = id();
+                let tf = id();
+                let mut comps = vec![here(tf)];
+                comps.extend(emit_prim(go, prim, node.is_collider, &mut objects, &mut preload, &mut id)?);
+                let name = if i == 0 { node.name.clone() } else { format!("{}_{}", prim.mesh.name, i) };
+                objects.push(PreparedObject { class_id: CLASS_GAMEOBJECT, path_id: go, data: serialize_class(db, CLASS_GAMEOBJECT, &build_game_object_value(&UnityGameObject { name, components: comps, layer: 0, tag: 0, is_active: true }))? });
+                preload.push(here(go));
+                let (father, trs) = if i == 0 {
+                    node_tf_id = tf;
+                    tf_children.entry(root_tf).or_default().push(tf);
+                    (root_tf, (node.local_position, node.local_rotation, node.local_scale))
+                } else {
+                    tf_children.entry(node_tf_id).or_default().push(tf);
+                    (node_tf_id, identity)
+                };
+                tfs.push(TfSpec { id: tf, game_object: go, father, position: trs.0, rotation: trs.1, scale: trs.2 });
+            }
+        }
+        let root_comps = vec![here(root_tf)];
+        objects.push(PreparedObject { class_id: CLASS_GAMEOBJECT, path_id: root_go, data: serialize_class(db, CLASS_GAMEOBJECT, &build_game_object_value(&UnityGameObject { name: input.root_name.to_string(), components: root_comps, layer: 0, tag: 0, is_active: true }))? });
+        preload.push(here(root_go));
+        tfs.push(TfSpec { id: root_tf, game_object: root_go, father: 0, position: identity.0, rotation: identity.1, scale: identity.2 });
+    }
+
+    // Build all transforms now that children are known.
+    for tf in &tfs {
+        let children: Vec<PPtr> = tf_children.get(&tf.id).map(|c| c.iter().map(|&id| here(id)).collect()).unwrap_or_default();
+        let t = UnityTransform {
+            game_object: here(tf.game_object),
+            local_rotation: tf.rotation,
+            local_position: tf.position,
+            local_scale: tf.scale,
+            children,
+            father: if tf.father == 0 { PPtr::default() } else { here(tf.father) },
+        };
+        objects.push(PreparedObject { class_id: CLASS_TRANSFORM, path_id: tf.id, data: serialize_class(db, CLASS_TRANSFORM, &build_transform_value(&t))? });
+    }
+
+    // metadata.json TextAsset + AssetBundle root.
+    let meta_id = id();
+    let meta = metadata_json("7.0", input.metadata_timestamp, input.dependencies, input.content_filename);
+    objects.push(PreparedObject { class_id: CLASS_TEXTASSET, path_id: meta_id, data: serialize_class(db, CLASS_TEXTASSET, &build_text_asset_value("metadata", &meta))? });
+
+    // The entity root GameObject is the first GameObject emitted (path_id 2).
+    let root_go_id = 2i64;
+    let mut preload_table = preload.clone();
+    preload_table.push(here(meta_id));
+    let ab = UnityAssetBundle {
+        name: input.bundle_name.to_string(),
+        preload_table,
+        container: vec![
+            AssetBundleEntry { asset_path: input.content_filename.to_string(), preload_index: 0, preload_size: preload.len() as i32, asset_pptr: here(root_go_id) },
+            AssetBundleEntry { asset_path: "metadata.json".to_string(), preload_index: preload.len() as i32, preload_size: 1, asset_pptr: here(meta_id) },
+        ],
+        main_asset: AssetInfo::default(),
+        runtime_compatibility: 1,
+        asset_bundle_name: input.bundle_name.to_string(),
+        dependencies: vec![],
+        is_streamed_scene: false,
+        explicit_data_layout: 1,
+        path_flags: 0,
+        scene_hashes: vec![],
+    };
+    objects.push(PreparedObject { class_id: CLASS_ASSETBUNDLE, path_id: PATH_ID_ASSETBUNDLE, data: serialize_class(db, CLASS_ASSETBUNDLE, &build_asset_bundle_value(&ab))? });
+
+    let externals = [ExternalEntry { guid: [0u8; 16], type_id: 0, path: input.shader_cab_path.to_string() }];
     assemble_unityfs(db, target, unity_version, input.bundle_name, objects, &externals)
 }
 

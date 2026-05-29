@@ -770,6 +770,36 @@ pub fn build_mesh_value(m: &UnityMeshObject) -> Value {
 // Helpers
 // ===========================================================================
 
+// ===========================================================================
+// MeshCollider (class 64)
+// ===========================================================================
+//
+// 64-byte object, 11 root fields (verified via dump-fields against a real
+// v49 collider). Used by `_collider` meshes instead of MeshRenderer. Field
+// values from a real object: m_Material null, include/exclude layers 0,
+// m_Enabled=1, m_Convex=0, m_CookingOptions=30, m_Mesh → the collider mesh.
+#[derive(Debug, Default, Clone)]
+pub struct UnityMeshCollider {
+    pub game_object: PPtr,
+    pub mesh: PPtr,
+}
+
+pub fn build_mesh_collider_value(mc: &UnityMeshCollider) -> Value {
+    Value::Seq(vec![
+        pptr_value(&mc.game_object),          // 0: m_GameObject
+        pptr_value(&PPtr::default()),         // 1: m_Material (PhysicsMaterial, null)
+        Value::Seq(vec![Value::U32(0)]),      // 2: m_IncludeLayers (BitField)
+        Value::Seq(vec![Value::U32(0)]),      // 3: m_ExcludeLayers (BitField)
+        Value::I32(0),                        // 4: m_LayerOverridePriority
+        Value::U8(0),                         // 5: m_IsTrigger
+        Value::U8(0),                         // 6: m_ProvidesContacts
+        Value::U8(1),                         // 7: m_Enabled
+        Value::U8(0),                         // 8: m_Convex
+        Value::I32(30),                       // 9: m_CookingOptions
+        pptr_value(&mc.mesh),                 // 10: m_Mesh
+    ])
+}
+
 /// Convert a PPtr (file_id + path_id) into the Value::Seq the
 /// TypeTree-driven writer expects.
 fn pptr_value(p: &PPtr) -> Value {

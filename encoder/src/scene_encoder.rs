@@ -520,65 +520,53 @@ fn encode_glb_bundle(
     digest: &str,
     dep_cids: &[String],
 ) -> Result<Bundle, EncodeAssetError> {
-    use crate::encode::bundle_assembler::{assemble_glb_bundle, GlbBundleInput};
-    use crate::encode::gltf_material::{convert_glb_material, MaterialTextures, DCL_SCENE_SHADER_PATH_ID};
-    use crate::encode::gltf_mesh::convert_glb_meshes;
+    use crate::encode::bundle_assembler::{assemble_glb_graph, GlbGraphInput};
+    use crate::encode::gltf_material::{convert_glb_material, MaterialTextures};
+    use crate::encode::gltf_mesh::convert_glb_scene;
 
     let partial = |reason: &str, message: String| EncodeAssetError::PartialFailure {
         reason: reason.to_string(),
         message,
     };
 
-    let meshes = convert_glb_meshes(glb_bytes)
-        .map_err(|e| partial("glb_mesh_convert", format!("{filename}: {e}")))?;
-
-    // Phase-1 guard: only single visible-mesh glbs assemble for now.
-    if meshes.len() != 1 || meshes[0].is_collider {
-        return Err(partial(
-            "glb_multi_object_unimplemented",
-            format!(
-                "{filename}: {} mesh-primitive(s){}; only single visible-mesh glbs assemble in phase 1",
-                meshes.len(),
-                if meshes.first().map(|m| m.is_collider).unwrap_or(false) { " (collider)" } else { "" }
-            ),
-        ));
+    let scene = convert_glb_scene(glb_bytes)
+        .map_err(|e| partial("glb_scene_convert", format!("{filename}: {e}")))?;
+    if scene.total_primitives == 0 {
+        return Err(partial("glb_no_meshes", format!("{filename}: no mesh primitives to encode")));
     }
-    let cm = &meshes[0];
 
     let cab = shader_cab_path(build_target).ok_or_else(|| {
-        partial(
-            "glb_shader_cab_missing",
-            format!("no shader CAB path for {build_target:?} (Windows-only in phase 1)"),
-        )
+        partial("glb_shader_cab_missing", format!("no shader CAB path for {build_target:?} (Windows-only so far)"))
     })?;
 
-    // Material for the primitive (default material index 0).
+    // Convert all glTF materials (indexed by glTF material index).
     let jlen = u32::from_le_bytes(glb_bytes[12..16].try_into().unwrap()) as usize;
     let j: serde_json::Value = serde_json::from_slice(&glb_bytes[20..20 + jlen])
         .map_err(|e| partial("glb_json", format!("{filename}: {e}")))?;
-    let mat_idx = j["meshes"][0]["primitives"][0]["material"].as_u64().unwrap_or(0) as usize;
-    let material = convert_glb_material(&j, mat_idx, &MaterialTextures::default());
+    let materials: Vec<_> = j["materials"]
+        .as_array()
+        .map(|a| (0..a.len()).map(|i| convert_glb_material(&j, i, &MaterialTextures::default())).collect())
+        .unwrap_or_default();
 
     let suffix = build_target.filename_suffix();
     let bundle_name = format!("{hash}_{digest}{suffix}");
 
-    let unityfs_bytes = assemble_glb_bundle(
+    let unityfs_bytes = assemble_glb_graph(
         type_tree_db,
         build_target,
         &type_tree_db.unity_version,
-        &GlbBundleInput {
+        &GlbGraphInput {
             bundle_name: &bundle_name,
+            root_name: hash,
             content_filename: filename,
-            game_object_name: &cm.name,
-            mesh: &cm.mesh,
-            material: &material,
+            scene: &scene,
+            materials: &materials,
             shader_cab_path: cab,
-            shader_path_id: DCL_SCENE_SHADER_PATH_ID,
             dependencies: dep_cids,
             metadata_timestamp: 0,
         },
     )
-    .map_err(|e| EncodeAssetError::Fatal(EncoderError::Internal(format!("assemble_glb_bundle {hash}: {e}"))))?;
+    .map_err(|e| EncodeAssetError::Fatal(EncoderError::Internal(format!("assemble_glb_graph {hash}: {e}"))))?;
 
     Ok(Bundle {
         source_hash: hash.to_string(),
