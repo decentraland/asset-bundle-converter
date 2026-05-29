@@ -491,8 +491,8 @@ fn shader_cab_path(target: BuildTarget) -> Option<&'static str> {
     // The shader bundle's CAB differs per platform (different StreamingAssets
     // shader bundle build); the Material's m_Shader path_id is identical
     // across platforms (0x6a1984f5061ced9d). Both verified constant across
-    // the downloaded v49 corpus via parse_externals. WebGL has no v49 bundles
-    // yet (conversion hasn't run for it), so it returns None until one exists.
+    // the downloaded v49 corpus via parse_externals. WebGL is out of scope
+    // (not a supported target) — it returns None → PartialFailure → Unity.
     match target {
         BuildTarget::Windows => {
             Some("archive:/CAB-51fbd4c9d0fb3e603fd599ac9f5d01e1/CAB-51fbd4c9d0fb3e603fd599ac9f5d01e1")
