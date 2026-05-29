@@ -5,3 +5,7 @@ coverage
 
 .env
 package-lock.json
+
+# Local debugging-only artifacts — never commit (kept locally for ad-hoc ops)
+src/delete-canonical-assets.ts
+entity-ids.txt
