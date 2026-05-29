@@ -343,31 +343,38 @@ pub fn write_bundle(opts: UnityFsWriteOptions<'_>) -> Result<Vec<u8>, SerializeE
     // Remaining header fields after the prefix: i64 total_size, u32
     // bi_compressed_size, u32 bi_uncompressed_size, u32 flags.
     let header_total_size = header_prefix_size + 8 + 4 + 4 + 4;
-    let total_file_size: i64 =
-        (header_total_size + bi_compressed.len() + compressed_data.len()) as i64;
 
-    // 5. Flag bits: BlockInfoAndDirectory is LZ4-compressed (FLAG_BLOCKINFO_COMPRESSED),
-    // compression type for the data is LZ4 (low 6 bits = COMPRESSION_LZ4).
-    // We deliberately do NOT set FLAG_BLOCKINFO_AT_END — Unity's reader
-    // accepts both layouts; placing BlockInfo before the data is what
-    // some Unity writers default to and simplifies our seek math.
-    // Writer flags: LZ4 compression on both BlockInfo and data, with
-    // the modern combined BlockInfo+Directory layout. We don't set
-    // BLOCKS_INFO_AT_THE_END or BLOCK_INFO_NEED_PADDING_AT_START — both
-    // are optional per the loader, and starting simple keeps the
-    // writer's seek math straightforward. Real Unity 2022.3.x bundles
-    // also set those bits; our reader handles both layouts.
-    let flags: u32 = COMPRESSION_LZ4 | FLAG_BLOCKS_AND_DIRECTORY_INFO_COMBINED;
+    // 5. Flags + layout. For format version >= 7 (we emit 8), Unity's reader
+    // ALWAYS 16-byte aligns the BlockInfo after the header (AssetStudio /
+    // UnityPy: `if version >= 7: align_stream(16)`), regardless of any flag.
+    // We additionally set BLOCK_INFO_NEED_PADDING_AT_START (0x200) and
+    // 16-align the data section after the BlockInfo — exactly what real
+    // v49 bundles do (flags 0x243). Earlier we emitted neither padding nor
+    // 0x200; our own (lenient) reader round-tripped that, but UnityPy/Unity
+    // align by version and read from the wrong offset → "corrupt LZ4". This
+    // is the interop fix an independent reader (UnityPy) surfaced.
+    let flags: u32 =
+        COMPRESSION_LZ4 | FLAG_BLOCKS_AND_DIRECTORY_INFO_COMBINED | FLAG_BLOCK_INFO_NEED_PADDING_AT_START;
     debug_assert!(flags & COMPRESSION_TYPE_MASK == COMPRESSION_LZ4);
 
-    // 6. Assemble.
-    let mut out = Vec::with_capacity(header_total_size + bi_compressed.len() + compressed_data.len());
+    let align16 = |n: usize| (n + 15) & !15;
+    let bi_start = align16(header_total_size);
+    let pad1 = bi_start - header_total_size;
+    let bi_end = bi_start + bi_compressed.len();
+    let data_start = align16(bi_end);
+    let pad2 = data_start - bi_end;
+    let total_file_size: i64 = (data_start + compressed_data.len()) as i64;
+
+    // 6. Assemble: header → pad → BlockInfo → pad → data.
+    let mut out = Vec::with_capacity(total_file_size as usize);
     write_header_prefix(&mut out, opts.unity_revision)?;
     write_i64_be(&mut out, total_file_size)?;
     write_u32_be(&mut out, bi_compressed.len() as u32)?;
     write_u32_be(&mut out, bi_uncompressed.len() as u32)?;
     write_u32_be(&mut out, flags)?;
+    out.extend(std::iter::repeat(0u8).take(pad1));
     out.extend_from_slice(&bi_compressed);
+    out.extend(std::iter::repeat(0u8).take(pad2));
     out.extend_from_slice(&compressed_data);
 
     Ok(out)
