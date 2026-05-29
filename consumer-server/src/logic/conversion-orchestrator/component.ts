@@ -17,6 +17,7 @@ type Components = Pick<
   | 'publisher'
   | 'catalyst'
   | 'unityRunner'
+  | 'sceneConverter'
   | 'scenes'
 >
 

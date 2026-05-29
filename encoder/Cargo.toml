@@ -1,0 +1,78 @@
+[package]
+name = "dcl-asset-bundle-encoder"
+version = "0.0.1"
+edition = "2021"
+license = "Apache-2.0"
+description = "Standalone Decentraland Unity AssetBundle encoder (replaces per-scene Unity spawns)"
+publish = false
+
+[lib]
+# `cdylib` for napi-rs (Node native module); `rlib` so binaries under
+# src/bin/ (the extract-typetrees fixture extractor) can link against
+# the encoder's modules. The napi-rs build only consumes the cdylib.
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Default build: Node native module (cdylib uses napi-rs bindings).
+default = ["napi-bindings"]
+# Gate the napi-rs surface behind a feature so the lib stays linkable
+# from src/bin/ binaries (extract-typetrees) without dragging in napi's
+# Node-host-only symbols. `cargo build --bin <name> --no-default-features`
+# produces a binary that uses the encoder modules as plain Rust.
+napi-bindings = ["dep:napi", "dep:napi-derive"]
+
+[dependencies]
+# napi-rs: Node native module bindings. Optional so the lib can build
+# without the Node host symbols when targeting pure-Rust binaries.
+napi = { version = "2.16", default-features = false, features = ["napi8", "async", "tokio_rt", "serde-json"], optional = true }
+napi-derive = { version = "2.16", optional = true }
+
+# Async runtime — multi-thread for parallel fetches + spawn_blocking for CPU work
+tokio = { version = "1.39", features = ["rt-multi-thread", "macros", "sync", "time", "fs"] }
+
+# HTTP client mirroring the policy in consumer-server/src/logic/asset-reuse.ts:460-838.
+# rustls-tls keeps the build openssl-free across Linux/Mac/Windows for parity with the
+# napi-rs prebuild targets.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "gzip"] }
+url = "2.5"
+httpdate = "1.0"
+
+# Byte plumbing
+bytes = "1.7"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+
+# Raw LZ4 block compression — what Unity's ChunkBasedCompression uses. We
+# explicitly want the block API (not the .lz4 frame format) so the bytes
+# we produce match Unity's BlockInfo entries exactly. lz4_flex is pure-
+# Rust and active; chosen over `lz4` (libffi-based) to keep the cdylib
+# self-contained across cross-compile targets.
+lz4_flex = { version = "0.11", default-features = false, features = ["safe-encode", "safe-decode", "std"] }
+
+# PNG / JPEG decoding for the texture writer. Default features include
+# every format the crate knows; we narrow to PNG + JPEG since those are
+# the formats Decentraland scenes carry. Pure-Rust, no system deps.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+
+# Misc
+rand = "0.8"
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+
+[build-dependencies]
+napi-build = "2.1"
+
+[dev-dependencies]
+tokio = { version = "1.39", features = ["macros", "rt", "test-util"] }
+# wiremock for catalyst_client policy tests (matches the spec in asset-reuse.ts)
+wiremock = "0.6"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+# Encoder is CPU-bound on mesh / texture / serialization; abort-on-panic shrinks
+# the binary and avoids cross-FFI unwinding surprises (napi-rs catches at boundary).
+panic = "abort"
+strip = "symbols"

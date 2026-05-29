@@ -15,9 +15,11 @@ import { SentryComponent } from './adapters/sentry'
 import { IFilesystemComponent } from './adapters/filesystem'
 import { ICatalystComponent } from './adapters/catalyst'
 import { IUnityRunnerComponent } from './adapters/unity-runner'
+import { IAssetBundleEncoderComponent } from './adapters/asset-bundle-encoder'
 import { ICacheStorageComponent } from '@dcl/core-commons'
 import { IConversionOrchestratorComponent } from './logic/conversion-orchestrator'
 import { IScenesComponent } from './logic/scenes'
+import { ISceneConverterComponent } from './logic/scene-converter'
 import { AssetBundleConversionFinishedEvent, AssetBundleConversionManuallyQueuedEvent } from '@dcl/schemas'
 
 export type GlobalContext = {
@@ -40,6 +42,8 @@ export type BaseComponents = {
   filesystem: IFilesystemComponent
   catalyst: ICatalystComponent
   unityRunner: IUnityRunnerComponent
+  assetBundleEncoder: IAssetBundleEncoderComponent
+  sceneConverter: ISceneConverterComponent
   redis: ICacheStorageComponent
   scenes: IScenesComponent
   conversionOrchestrator: IConversionOrchestratorComponent

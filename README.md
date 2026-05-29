@@ -162,6 +162,18 @@ NOTICE: Please do not use `latest` as tag for the "Manual deploy", the pipeline 
 This repository is protected with a standard Apache 2 license. See the terms and conditions in
 the [LICENSE](https://github.com/decentraland/unity-renderer/blob/master/LICENSE) file.
 
+### Standalone encoder — licensing review required
+
+The experimental `encoder/` crate (a Unity-free AssetBundle encoder) carries
+additional licensing considerations because its file-format knowledge was
+reverse-engineered with reference to external projects (notably **AssetRipper**,
+which is **GPL-3.0**) and it vendors TypeTree fixtures extracted from
+Unity-built bundles. These are documented in
+[`encoder/README.md`](encoder/README.md#️-legal--licensing-considerations) and
+**must be reviewed by counsel before any public release or distribution of that
+crate.** The downloaded test corpus is third-party Decentraland content and is
+kept out of version control.
+
 ## AI Agent Context
 
 For detailed AI Agent context, see [docs/ai-agent-context.md](docs/ai-agent-context.md).

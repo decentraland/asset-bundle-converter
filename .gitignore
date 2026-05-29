@@ -2,6 +2,11 @@
 #
 # Get latest from https://github.com/github/gitignore/blob/master/Unity.gitignore
 #
+
+# Stray root-level node tooling artifacts (the real package lives in consumer-server/ and encoder/)
+/node_modules/
+/yarn.lock
+
 /[Ll]ibrary/
 /[Tt]emp/
 /[Oo]bj/

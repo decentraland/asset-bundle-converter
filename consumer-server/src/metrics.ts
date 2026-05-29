@@ -98,6 +98,27 @@ export const metricDeclarations = {
     help: 'Counter of triage jobs that ran Unity inline on the triage pod because Conversion-queue publish failed. Pair with conversion_queue_publish_errors_total to confirm fallback coverage.',
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target']
+  },
+  ab_converter_engine_used_total: {
+    help: 'Counter of which engine processed a scene-converter request. engine ∈ {unity, encoder, encoder-fallback-unity, unity-unsupported-target, unity-missing-inputs}. During rollout: watch for non-zero encoder-fallback-unity (encoder threw but Unity recovered) and the two unity-* fallback reasons (encoder enabled but not selected — usually a misconfigured pod).',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['engine']
+  },
+  ab_converter_encoder_errors_total: {
+    help: 'Counter of encoder errors that rejected the encode() promise, labelled by error code from EncoderError. code ∈ {TARGET_MISMATCH, INVALID_BAKE, NOT_STARTED, MISSING_DEPS_DIGEST, OUT_OF_MEMORY, INTERNAL, UNKNOWN}. INTERNAL is the only code that triggers Unity fallback when ENCODER_FALLBACK_TO_UNITY=true.',
+    type: IMetricsComponent.CounterType,
+    labelNames: ['build_target', 'code']
+  },
+  ab_converter_encoder_partial_failures_total: {
+    help: "Counter of per-asset failures the encoder tolerated within a scene (broken glb, missing dep, etc.). Mirrors Unity's per-glb skip semantics but reported as a counter to match the existing taxonomy.",
+    type: IMetricsComponent.CounterType,
+    labelNames: ['build_target', 'ab_version']
+  },
+  ab_converter_encoder_wall_seconds: {
+    help: 'Histogram of encoder convert() wall time per scene. Compare against the implicit Unity-spawn duration to track latency wins during rollout.',
+    type: IMetricsComponent.HistogramType,
+    labelNames: ['build_target', 'ab_version'],
+    buckets: [0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600]
   }
 }
 

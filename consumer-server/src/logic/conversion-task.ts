@@ -8,7 +8,7 @@ import { AppComponents } from '../types'
 import * as fs from 'fs'
 import * as path from 'path'
 import { hasContentChange } from './has-content-changed-task'
-import { getUnityBuildTarget } from '../utils'
+import { getUnityBuildTarget, normalizeContentsBaseUrl } from '../utils'
 import { AssetCacheResult, findMetadataOnlyHashes, SkippedAsset } from './asset-reuse'
 import { Manifest } from './scenes'
 
@@ -430,7 +430,7 @@ export async function executeLODConversion(
 export async function executeConversion(
   components: Pick<
     AppComponents,
-    'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry' | 'catalyst' | 'unityRunner' | 'scenes'
+    'logs' | 'metrics' | 'config' | 'cdnS3' | 'sentry' | 'catalyst' | 'unityRunner' | 'sceneConverter' | 'scenes'
   >,
   entityId: string,
   contentServerUrl: string,
@@ -679,7 +679,16 @@ export async function executeConversion(
   let exitCode
   try {
     if (hasContentChanged) {
-      exitCode = await components.unityRunner.runConversion({
+      // Route through sceneConverter rather than unityRunner directly.
+      // sceneConverter inspects ENCODER_ENABLED and dispatches to either
+      // the Rust encoder or the Unity runner, honouring
+      // ENCODER_FALLBACK_TO_UNITY during rollout. The encoder-only
+      // fields (catalystBaseUrl, contentMap, shaderType) are harmless on
+      // the Unity path — the Unity runner ignores them.
+      //
+      // LOD conversion is NOT routed here — see executeLODConversion above,
+      // which still calls components.unityRunner.runLodsConversion directly.
+      const convertResult = await components.sceneConverter.convert({
         contentServerUrl,
         entityId,
         entityType,
@@ -693,8 +702,21 @@ export async function executeConversion(
         doISS: doISS,
         cachedHashes: useAssetReuse && cacheResult ? cacheResult.unitySkippableHashes : undefined,
         skippedHashes: unityDropHashes.size > 0 ? [...unityDropHashes] : undefined,
-        depsDigestByHash
+        depsDigestByHash,
+        // Encoder-only fields. The catalyst URL is normalised so the
+        // Rust client can append `{hash}` directly. contentMap defaults
+        // to empty when the catalyst was unreachable (encoder path will
+        // route to Unity via the missing-inputs guard).
+        catalystBaseUrl: normalizeContentsBaseUrl(contentServerUrl),
+        contentMap: entity?.content ?? [],
+        shaderType: 'dcl'
       })
+      exitCode = convertResult.exitCode
+      logger.info('Conversion engine selected', {
+        ...defaultLoggerMetadata,
+        engine: convertResult.engine,
+        partialFailures: convertResult.partialFailures
+      } as any)
     } else {
       exitCode = 0
     }

@@ -19,6 +19,8 @@ import { createSnsComponent } from './adapters/sns'
 import { createFilesystemComponent } from './adapters/filesystem'
 import { createCatalystComponent } from './adapters/catalyst'
 import { createUnityRunnerComponent } from './adapters/unity-runner'
+import { createAssetBundleEncoderComponent } from './adapters/asset-bundle-encoder'
+import { createSceneConverter } from './logic/scene-converter'
 import { createRedisComponent } from '@dcl/redis-component'
 import { createInMemoryCacheComponent } from '@dcl/memory-cache-component'
 import { ICacheStorageComponent } from '@dcl/core-commons'
@@ -112,6 +114,32 @@ export async function initComponents(): Promise<AppComponents> {
   const catalyst = await createCatalystComponent({ fetch })
   const unityRunner = await createUnityRunnerComponent({ logs, metrics })
 
+  // Asset-bundle encoder (Rust + napi-rs). Loads bake artifacts from S3 at
+  // start() — failure crashes the pod, mirroring how a misconfigured Unity
+  // install would. ENCODER_ENABLED on the scene-converter side gates
+  // whether this engine is actually selected for traffic.
+  const assetBundleEncoder = await createAssetBundleEncoderComponent({
+    config,
+    logs,
+    metrics,
+    cdnS3
+  })
+
+  // Scene-converter: routes between Unity and the encoder. Reads the
+  // ENCODER_ENABLED / ENCODER_FALLBACK_TO_UNITY flags at construction.
+  // conversion-task.ts calls components.sceneConverter.convert() instead
+  // of unityRunner.runConversion() directly; LOD conversion still calls
+  // unityRunner.runLodsConversion() directly (encoder doesn't handle LODs
+  // in v1).
+  const sceneConverter = await createSceneConverter({
+    config,
+    logs,
+    metrics,
+    unityRunner,
+    assetBundleEncoder,
+    sentry
+  })
+
   // Cache component for the asset probe layer (see logic/asset-reuse.ts).
   // Prefers Redis when REDIS_URL is configured so probe hits are shared across
   // pods; falls back to an in-process LRU when unset (local dev, pre-rollout)
@@ -138,6 +166,7 @@ export async function initComponents(): Promise<AppComponents> {
     publisher,
     catalyst,
     unityRunner,
+    sceneConverter,
     scenes
   })
 
@@ -157,6 +186,8 @@ export async function initComponents(): Promise<AppComponents> {
     filesystem,
     catalyst,
     unityRunner,
+    assetBundleEncoder,
+    sceneConverter,
     redis,
     scenes,
     conversionOrchestrator
