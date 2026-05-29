@@ -16,8 +16,10 @@
 //! but the loader only requires internal consistency.
 
 use crate::encode::class_writers::{
-    build_asset_bundle_value, build_text_asset_value, AssetBundleEntry, AssetInfo, PPtr,
-    UnityAssetBundle,
+    build_asset_bundle_value, build_game_object_value, build_material_value, build_mesh_filter_value,
+    build_mesh_renderer_value, build_mesh_value, build_text_asset_value, build_transform_value,
+    AssetBundleEntry, AssetInfo, PPtr, UnityAssetBundle, UnityGameObject, UnityMaterial,
+    UnityMeshFilter, UnityMeshObject, UnityMeshRenderer, UnityTransform,
 };
 use crate::encode::serialized_file::{
     unity_target_id_for, write_serialized_file, ExternalEntry, ObjectEntry, SerializedFileInput,
@@ -31,7 +33,12 @@ use crate::encode::SerializeError;
 use crate::types::BuildTarget;
 
 pub const CLASS_GAMEOBJECT: i32 = 1;
+pub const CLASS_TRANSFORM: i32 = 4;
+pub const CLASS_MATERIAL: i32 = 21;
+pub const CLASS_MESHRENDERER: i32 = 23;
 pub const CLASS_TEXTURE2D: i32 = 28;
+pub const CLASS_MESHFILTER: i32 = 33;
+pub const CLASS_MESH: i32 = 43;
 pub const CLASS_TEXTASSET: i32 = 49;
 pub const CLASS_ASSETBUNDLE: i32 = 142;
 
@@ -128,6 +135,168 @@ pub fn assemble_texture_bundle(
     assemble_unityfs(db, target, unity_version, bundle_name, objects, &[])
 }
 
+/// Inputs for assembling a glb bundle's component graph. The mesh and
+/// material are the byte-proven serialized forms; the semantic
+/// glTF→{UnityMeshObject,UnityMaterial} conversion lives upstream and is
+/// the render-gated piece (this layer is structurally verifiable).
+pub struct GlbBundleInput<'a> {
+    pub bundle_name: &'a str,
+    /// Asset-path key for m_Container (Unity uses the glb content path).
+    pub content_filename: &'a str,
+    pub game_object_name: &'a str,
+    pub mesh: &'a UnityMeshObject,
+    pub material: &'a UnityMaterial,
+    /// The DCL/Scene shader external (CAB path + the Material's m_Shader
+    /// path_id). Verified constant across v49 bundles; see CLAUDE.md.
+    pub shader_cab_path: &'a str,
+    pub shader_path_id: i64,
+    /// Per-glb dependency CIDs for metadata.json (textures/buffers).
+    pub dependencies: &'a [String],
+    pub metadata_timestamp: i64,
+}
+
+// Path-ID layout for the assembled glb graph. Internal + arbitrary; only
+// internal consistency (PPtrs ↔ object table) matters to the loader.
+const GLB_PATH_ASSETBUNDLE: i64 = 1;
+const GLB_PATH_GAMEOBJECT: i64 = 2;
+const GLB_PATH_TRANSFORM: i64 = 3;
+const GLB_PATH_MESHFILTER: i64 = 4;
+const GLB_PATH_MESHRENDERER: i64 = 5;
+const GLB_PATH_MESH: i64 = 6;
+const GLB_PATH_MATERIAL: i64 = 7;
+const GLB_PATH_METADATA: i64 = 8;
+
+/// file_id=1 → externals[0] (the shader bundle); file_id=0 → this file.
+const FILE_ID_SHADER_EXTERNAL: i32 = 1;
+
+/// Assemble a complete glb bundle: GameObject + Transform + MeshFilter +
+/// MeshRenderer + Mesh + Material + metadata.json + AssetBundle, with the
+/// DCL/Scene shader registered as a SerializedFile external. The emitted
+/// bundle is structurally self-consistent (parses back through our reader)
+/// — NOT byte-equal to Unity's output (path-IDs / object order differ).
+/// Rendering correctness is gated on the Explorer-load spike.
+pub fn assemble_glb_bundle(
+    db: &TypeTreeDb,
+    target: BuildTarget,
+    unity_version: &str,
+    input: &GlbBundleInput,
+) -> Result<Vec<u8>, SerializeError> {
+    let here = |path_id: i64| PPtr { file_id: 0, path_id };
+
+    // GameObject — owns Transform + MeshFilter + MeshRenderer.
+    let go = UnityGameObject {
+        name: input.game_object_name.to_string(),
+        components: vec![
+            here(GLB_PATH_TRANSFORM),
+            here(GLB_PATH_MESHFILTER),
+            here(GLB_PATH_MESHRENDERER),
+        ],
+        layer: 0,
+        tag: 0,
+        is_active: true,
+    };
+    let go_bytes = serialize_class(db, CLASS_GAMEOBJECT, &build_game_object_value(&go))?;
+
+    // Transform — identity local transform, parented to no one.
+    let tr = UnityTransform {
+        game_object: here(GLB_PATH_GAMEOBJECT),
+        local_rotation: [0.0, 0.0, 0.0, 1.0],
+        local_position: [0.0, 0.0, 0.0],
+        local_scale: [1.0, 1.0, 1.0],
+        children: vec![],
+        father: PPtr::default(),
+    };
+    let tr_bytes = serialize_class(db, CLASS_TRANSFORM, &build_transform_value(&tr))?;
+
+    // MeshFilter — links the GameObject to the Mesh.
+    let mf = UnityMeshFilter {
+        game_object: here(GLB_PATH_GAMEOBJECT),
+        mesh: here(GLB_PATH_MESH),
+    };
+    let mf_bytes = serialize_class(db, CLASS_MESHFILTER, &build_mesh_filter_value(&mf))?;
+
+    // MeshRenderer — static-mesh defaults; m_Materials = [Material].
+    let mr = UnityMeshRenderer {
+        game_object: here(GLB_PATH_GAMEOBJECT),
+        enabled: 1,
+        cast_shadows: 1,
+        receive_shadows: 1,
+        dynamic_occludee: 1,
+        lightmap_index: 0xFFFF,
+        lightmap_index_dynamic: 0xFFFF,
+        materials: vec![here(GLB_PATH_MATERIAL)],
+        ..Default::default()
+    };
+    let mr_bytes = serialize_class(db, CLASS_MESHRENDERER, &build_mesh_renderer_value(&mr))?;
+
+    // Mesh + Material (byte-proven serialized forms). The Material's
+    // m_Shader is forced to reference the external shader bundle.
+    let mesh_bytes = serialize_class(db, CLASS_MESH, &build_mesh_value(input.mesh))?;
+    let mut material = input.material.clone();
+    material.shader = PPtr { file_id: FILE_ID_SHADER_EXTERNAL, path_id: input.shader_path_id };
+    let mat_bytes = serialize_class(db, CLASS_MATERIAL, &build_material_value(&material))?;
+
+    // metadata.json TextAsset (per-glb dep CID list; mainAsset = GameObject path).
+    let meta = metadata_json("7.0", input.metadata_timestamp, input.dependencies, input.content_filename);
+    let meta_bytes = serialize_class(db, CLASS_TEXTASSET, &build_text_asset_value("metadata", &meta))?;
+
+    // AssetBundle root — main asset is the GameObject prefab.
+    let ab = UnityAssetBundle {
+        name: input.bundle_name.to_string(),
+        preload_table: vec![
+            here(GLB_PATH_GAMEOBJECT),
+            here(GLB_PATH_TRANSFORM),
+            here(GLB_PATH_MESHFILTER),
+            here(GLB_PATH_MESHRENDERER),
+            here(GLB_PATH_MESH),
+            here(GLB_PATH_MATERIAL),
+            here(GLB_PATH_METADATA),
+        ],
+        container: vec![
+            AssetBundleEntry {
+                asset_path: input.content_filename.to_string(),
+                preload_index: 0,
+                preload_size: 6,
+                asset_pptr: here(GLB_PATH_GAMEOBJECT),
+            },
+            AssetBundleEntry {
+                asset_path: "metadata.json".to_string(),
+                preload_index: 6,
+                preload_size: 1,
+                asset_pptr: here(GLB_PATH_METADATA),
+            },
+        ],
+        main_asset: AssetInfo::default(),
+        runtime_compatibility: 1,
+        asset_bundle_name: input.bundle_name.to_string(),
+        dependencies: vec![],
+        is_streamed_scene: false,
+        explicit_data_layout: 1,
+        path_flags: 0,
+        scene_hashes: vec![],
+    };
+    let ab_bytes = serialize_class(db, CLASS_ASSETBUNDLE, &build_asset_bundle_value(&ab))?;
+
+    let objects = vec![
+        PreparedObject { class_id: CLASS_GAMEOBJECT, path_id: GLB_PATH_GAMEOBJECT, data: go_bytes },
+        PreparedObject { class_id: CLASS_TRANSFORM, path_id: GLB_PATH_TRANSFORM, data: tr_bytes },
+        PreparedObject { class_id: CLASS_MESHFILTER, path_id: GLB_PATH_MESHFILTER, data: mf_bytes },
+        PreparedObject { class_id: CLASS_MESHRENDERER, path_id: GLB_PATH_MESHRENDERER, data: mr_bytes },
+        PreparedObject { class_id: CLASS_MESH, path_id: GLB_PATH_MESH, data: mesh_bytes },
+        PreparedObject { class_id: CLASS_MATERIAL, path_id: GLB_PATH_MATERIAL, data: mat_bytes },
+        PreparedObject { class_id: CLASS_TEXTASSET, path_id: GLB_PATH_METADATA, data: meta_bytes },
+        PreparedObject { class_id: CLASS_ASSETBUNDLE, path_id: GLB_PATH_ASSETBUNDLE, data: ab_bytes },
+    ];
+
+    let externals = [ExternalEntry {
+        guid: [0u8; 16],
+        type_id: 0,
+        path: input.shader_cab_path.to_string(),
+    }];
+
+    assemble_unityfs(db, target, unity_version, input.bundle_name, objects, &externals)
+}
+
 /// Serialize one class's Value through its TypeTree from the db.
 fn serialize_class(db: &TypeTreeDb, class_id: i32, value: &Value) -> Result<Vec<u8>, SerializeError> {
     let nodes = db.get(class_id).ok_or_else(|| {
@@ -219,6 +388,97 @@ mod tests {
         img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
             .unwrap();
         buf
+    }
+
+    fn load_full_glb_db() -> Option<TypeTreeDb> {
+        let db = crate::encode::type_tree_db::load_fixture_with_class(CLASS_MESH)?;
+        for c in [
+            CLASS_GAMEOBJECT, CLASS_TRANSFORM, CLASS_MATERIAL, CLASS_MESHRENDERER,
+            CLASS_MESHFILTER, CLASS_MESH, CLASS_TEXTASSET, CLASS_ASSETBUNDLE,
+        ] {
+            db.get(c)?;
+        }
+        Some(db)
+    }
+
+    #[test]
+    fn assembled_glb_bundle_parses_back_with_shader_external() {
+        use crate::encode::class_writers::{
+            MeshAabb, MeshChannel, MeshLodRange, MeshSubMesh, UnityMaterial, UnityMeshObject,
+        };
+        let Some(db) = load_full_glb_db() else {
+            eprintln!("skipping: no fixture with all 8 glb classes");
+            return;
+        };
+
+        let aabb = MeshAabb { center: [0.0; 3], extent: [1.0; 3] };
+        let mesh = UnityMeshObject {
+            name: "Cube".into(),
+            sub_meshes: vec![MeshSubMesh {
+                index_count: 6,
+                vertex_count: 4,
+                local_aabb: aabb.clone(),
+                ..Default::default()
+            }],
+            mesh_compression: 0,
+            is_readable: 1,
+            index_format: 1,
+            index_buffer: vec![0u8; 24],
+            vertex_count: 4,
+            channels: vec![MeshChannel::default(); 14],
+            vertex_data: vec![0u8; 128],
+            local_aabb: aabb,
+            cooking_options: 30,
+            mesh_metrics: [1.0, 1.0],
+            lod_num_levels: 1,
+            lod_sub_meshes: vec![vec![MeshLodRange { index_start: 0, index_count: 0 }]],
+            ..Default::default()
+        };
+        let material = UnityMaterial {
+            name: "DCL_Scene".into(),
+            lightmap_flags: 4,
+            custom_render_queue: -1,
+            ..Default::default()
+        };
+        let cab = "archive:/CAB-51fbd4c9d0fb3e603fd599ac9f5d01e1/CAB-51fbd4c9d0fb3e603fd599ac9f5d01e1";
+
+        let bundle = assemble_glb_bundle(
+            &db,
+            BuildTarget::Windows,
+            &db.unity_version,
+            &GlbBundleInput {
+                bundle_name: "abc_def_windows",
+                content_filename: "abc.glb",
+                game_object_name: "Cube",
+                mesh: &mesh,
+                material: &material,
+                shader_cab_path: cab,
+                shader_path_id: 0x6a1984f5061ced9d,
+                dependencies: &["bafkreitexturecid".into()],
+                metadata_timestamp: 0,
+            },
+        )
+        .unwrap();
+
+        let parsed = crate::encode::unityfs_writer::parse_bundle(&bundle).unwrap();
+        let sf_node = parsed.directory.iter().find(|n| !n.path.ends_with(".resS")).unwrap();
+        let sf = &parsed.data_payload_uncompressed
+            [sf_node.offset as usize..(sf_node.offset + sf_node.size) as usize];
+
+        // All 8 classes present.
+        let pf = crate::encode::serialized_file_reader::parse_serialized_file(sf).unwrap();
+        let class_ids: Vec<i32> = pf.types.iter().map(|t| t.class_id).collect();
+        for c in [
+            CLASS_GAMEOBJECT, CLASS_TRANSFORM, CLASS_MATERIAL, CLASS_MESHRENDERER,
+            CLASS_MESHFILTER, CLASS_MESH, CLASS_TEXTASSET, CLASS_ASSETBUNDLE,
+        ] {
+            assert!(class_ids.contains(&c), "class {c} present");
+        }
+
+        // The shader external is registered and resolvable as externals[0].
+        let externals = crate::encode::serialized_file_reader::parse_externals(sf).unwrap();
+        assert_eq!(externals.len(), 1, "one external (the shader bundle)");
+        assert_eq!(externals[0].path, cab, "shader CAB path preserved");
     }
 
     #[test]

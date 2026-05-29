@@ -360,10 +360,17 @@ fn write_metadata_with_layouts(
     // (object table is the only metadata section with internal
     // alignment).
     write_i32_le(out, input.objects.len() as i32)?;
-    let mut written_in_section = 4usize; // count includes the i32 above
     for (obj, layout) in input.objects.iter().zip(layouts.iter()) {
-        align_to(out, &mut written_in_section, 4)?;
-        let start_len = out.len();
+        // Unity 4-byte aligns each object entry by ABSOLUTE file position.
+        // The 48-byte header is 4-aligned, so aligning by the metadata
+        // buffer's own length (`out.len()`) is equivalent. Earlier this
+        // used a section-relative counter starting at the object-count
+        // i32; that diverges from absolute alignment whenever the type
+        // table ends at a non-4-aligned offset (e.g. the glb's larger
+        // type set), producing an object table our own externals parser
+        // — and real Unity's reader — would mis-walk.
+        let pad = (4 - (out.len() % 4)) % 4;
+        out.extend(std::iter::repeat(0u8).take(pad));
         write_i64_le(out, obj.path_id)?;
         write_i64_le(out, layout.byte_start as i64)?;
         // byte_size is u32 LE — the entire metadata section is LE per
@@ -372,7 +379,6 @@ fn write_metadata_with_layouts(
         // verify-texture-bundle harness.
         write_i32_le(out, layout.byte_size as i32)?;
         write_i32_le(out, obj.type_index)?;
-        written_in_section += out.len() - start_len;
     }
 
     // Script types — none.
