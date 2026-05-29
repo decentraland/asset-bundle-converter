@@ -25,7 +25,7 @@ use crate::encode::serialized_file::{
     unity_target_id_for, write_serialized_file, ExternalEntry, ObjectEntry, SerializedFileInput,
     TypeEntry,
 };
-use crate::encode::texture_writer::{decode_to_texture2d, serialize_texture2d};
+use crate::encode::texture_writer::{decode_to_texture2d, serialize_texture2d, serialize_texture2d_streamed, TextureStream};
 use crate::encode::type_tree::{TypeTreeWriter, Value};
 use crate::encode::type_tree_db::TypeTreeDb;
 use crate::encode::unityfs_writer::{write_bundle, DirectoryNode, UnityFsWriteOptions};
@@ -133,7 +133,7 @@ pub fn assemble_texture_bundle(
         PreparedObject { class_id: CLASS_ASSETBUNDLE, path_id: PATH_ID_ASSETBUNDLE, data: ab_bytes },
     ];
 
-    assemble_unityfs(db, target, unity_version, bundle_name, objects, &[])
+    assemble_unityfs(db, target, unity_version, bundle_name, objects, &[], None, None)
 }
 
 /// Inputs for assembling a glb bundle's component graph. The mesh and
@@ -295,7 +295,7 @@ pub fn assemble_glb_bundle(
         path: input.shader_cab_path.to_string(),
     }];
 
-    assemble_unityfs(db, target, unity_version, input.bundle_name, objects, &externals)
+    assemble_unityfs(db, target, unity_version, input.bundle_name, objects, &externals, None, None)
 }
 
 // ===========================================================================
@@ -372,10 +372,19 @@ pub fn assemble_glb_graph(
     };
 
     // Emit one in-bundle Texture2D per base-color image referenced by a
-    // VISIBLE primitive's material, and map image index → its PPtr. Decode
-    // failures skip the texture (material stays untextured) rather than fail.
-    // Textures are RGBA32 (uncompressed) — loadable, but not byte-identical
-    // to Unity's BC7 output.
+    // VISIBLE primitive's material, with pixels STREAMED into a `.resS`
+    // sidecar via m_StreamData (matching production's structure: a tiny
+    // Texture2D object + a resource node). Decode failures skip the texture
+    // (material stays untextured) rather than fail. Pixels are RGBA32
+    // (uncompressed) — loadable, but not byte-identical to Unity's BC7.
+    //
+    // The `.resS` path embeds the SF's CAB name, so the CAB is derived
+    // deterministically from the bundle name (not the SF content hash) to
+    // avoid the circular dependency.
+    let cab = cab_name_for(input.bundle_name);
+    let ress_path = format!("archive:/{cab}/{cab}.resS");
+    let mut ress: Vec<u8> = Vec::new();
+
     let mut used_images: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
     for node in &input.scene.nodes {
         if node.is_collider {
@@ -391,7 +400,10 @@ pub fn assemble_glb_graph(
     for img in used_images {
         let Some(png) = input.images.get(&img) else { continue };
         let Ok(tex) = decode_to_texture2d(&format!("texture_{img}"), png) else { continue };
-        let Ok(bytes) = serialize_texture2d(&tex, db) else { continue };
+        let offset = ress.len() as u64;
+        let stream = TextureStream { offset, path: &ress_path };
+        let Ok(bytes) = serialize_texture2d_streamed(&tex, db, &stream) else { continue };
+        ress.extend_from_slice(&tex.image_data);
         let tid = id();
         objects.push(PreparedObject { class_id: CLASS_TEXTURE2D, path_id: tid, data: bytes });
         preload.push(here(tid));
@@ -544,7 +556,8 @@ pub fn assemble_glb_graph(
     objects.push(PreparedObject { class_id: CLASS_ASSETBUNDLE, path_id: PATH_ID_ASSETBUNDLE, data: serialize_class(db, CLASS_ASSETBUNDLE, &build_asset_bundle_value(&ab))? });
 
     let externals = [ExternalEntry { guid: [0u8; 16], type_id: 0, path: input.shader_cab_path.to_string() }];
-    assemble_unityfs(db, target, unity_version, input.bundle_name, objects, &externals)
+    let ress_opt = if ress.is_empty() { None } else { Some(ress) };
+    assemble_unityfs(db, target, unity_version, input.bundle_name, objects, &externals, Some(&cab), ress_opt)
 }
 
 /// Serialize one class's Value through its TypeTree from the db.
@@ -566,6 +579,8 @@ fn assemble_unityfs(
     bundle_name: &str,
     objects: Vec<PreparedObject>,
     externals: &[ExternalEntry],
+    cab_name: Option<&str>,
+    ress: Option<Vec<u8>>,
 ) -> Result<Vec<u8>, SerializeError> {
     // Build the type table: one entry per distinct class, carrying the
     // class's embedded TypeTree blob + old_type_hash from the fixture.
@@ -606,10 +621,35 @@ fn assemble_unityfs(
     })?;
 
     let _ = bundle_name; // reserved for CAB naming if we diverge from the hash
-    write_bundle(UnityFsWriteOptions {
-        unity_revision: unity_version,
-        nodes: vec![DirectoryNode::serialized_file(sf_bytes)],
-    })
+    let mut nodes = match cab_name {
+        Some(cab) => vec![DirectoryNode::serialized_file_named(cab.to_string(), sf_bytes)],
+        None => vec![DirectoryNode::serialized_file(sf_bytes)],
+    };
+    if let Some(r) = ress {
+        // .resS is named after the SF's CAB. cab_name is required when ress
+        // is present (streamed textures need the path before SF bytes exist).
+        let cab = cab_name.expect("ress requires an explicit cab_name");
+        nodes.push(DirectoryNode::resource(format!("{cab}.resS"), r));
+    }
+    write_bundle(UnityFsWriteOptions { unity_revision: unity_version, nodes })
+}
+
+/// Deterministic 32-hex CAB name from a seed (e.g. the bundle name), so the
+/// `.resS` path can reference it before the SerializedFile bytes exist.
+pub fn cab_name_for(seed: &str) -> String {
+    // Two FNV-1a 64 passes (plain + salted) → 128-bit, 32 hex, matching
+    // Unity's CAB-name width. Value is informational; only stability matters.
+    let fnv = |salt: u8| -> u64 {
+        let mut h: u64 = 0xcbf29ce484222325;
+        h ^= salt as u64;
+        h = h.wrapping_mul(0x100000001b3);
+        for &b in seed.as_bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
+        h
+    };
+    format!("CAB-{:016x}{:016x}", fnv(0), fnv(1))
 }
 
 #[cfg(test)]

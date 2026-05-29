@@ -141,6 +141,19 @@ impl DirectoryNode {
             payload,
         }
     }
+
+    /// SerializedFile node with a caller-chosen CAB name. Used when a
+    /// `.resS` sidecar must reference the SF's CAB name before the SF bytes
+    /// exist (the name would otherwise be a content-hash → circular).
+    pub fn serialized_file_named(cab_name: String, payload: Vec<u8>) -> Self {
+        Self { path: cab_name, flags: NODE_FLAG_SERIALIZED_FILE, payload }
+    }
+
+    /// A raw resource node (e.g. a `.resS` streamed-texture sidecar). No
+    /// SerializedFile flag — Unity treats it as opaque resource bytes.
+    pub fn resource(name: String, payload: Vec<u8>) -> Self {
+        Self { path: name, flags: 0, payload }
+    }
 }
 
 pub struct UnityFsWriteOptions<'a> {

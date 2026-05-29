@@ -125,9 +125,48 @@ pub fn serialize_texture2d(
     tex: &UnityTexture2D,
     db: &TypeTreeDb,
 ) -> Result<Vec<u8>, SerializeError> {
+    serialize_texture2d_impl(tex, db, None)
+}
+
+/// A streamed reference to texture pixels living in a `.resS` sidecar.
+pub struct TextureStream<'a> {
+    /// Byte offset of this texture's pixels within the `.resS`.
+    pub offset: u64,
+    /// `archive:/CAB-<x>/CAB-<x>.resS` — the m_StreamData path.
+    pub path: &'a str,
+}
+
+/// Streamed variant: the pixel bytes are NOT inline — `image data` is empty
+/// and `m_StreamData` points at the `.resS` sidecar. Matches the structure
+/// real Unity texture bundles use (tiny Texture2D object + streamed pixels).
+/// The caller is responsible for placing `tex.image_data` into the `.resS`
+/// payload at `stream.offset`.
+pub fn serialize_texture2d_streamed(
+    tex: &UnityTexture2D,
+    db: &TypeTreeDb,
+    stream: &TextureStream<'_>,
+) -> Result<Vec<u8>, SerializeError> {
+    serialize_texture2d_impl(tex, db, Some(stream))
+}
+
+fn serialize_texture2d_impl(
+    tex: &UnityTexture2D,
+    db: &TypeTreeDb,
+    stream: Option<&TextureStream<'_>>,
+) -> Result<Vec<u8>, SerializeError> {
     let nodes = db
         .get(28)
         .ok_or_else(|| SerializeError::Format("Texture2D (class 28) missing from fixture".into()))?;
+
+    // Streamed: image data array empty, pixels described by m_StreamData.
+    // Inline: image data carries the bytes, m_StreamData is empty.
+    let (image_field, stream_field) = match stream {
+        Some(s) => (
+            typeless_data(&[]),
+            streaming_info(s.offset, tex.image_data.len() as u32, s.path),
+        ),
+        None => (typeless_data(&tex.image_data), streaming_info_inline()),
+    };
 
     let value = Value::Seq(vec![
         string_value(&tex.name),                   // 0:  m_Name
@@ -150,8 +189,8 @@ pub fn serialize_texture2d(
         Value::I32(0),                             // 17: m_LightmapFormat
         Value::I32(tex.color_space),               // 18: m_ColorSpace
         typeless_data(&[]),                        // 19: m_PlatformBlob (empty)
-        typeless_data(&tex.image_data),            // 20: image data
-        streaming_info_inline(),                   // 21: m_StreamData (inline)
+        image_field,                               // 20: image data
+        stream_field,                              // 21: m_StreamData
     ]);
 
     // Fail loudly on Unity-version field drift rather than emitting a
@@ -206,10 +245,15 @@ fn typeless_data(bytes: &[u8]) -> Value {
 /// StreamingInfo struct for inline (non-streamed) textures: offset=0,
 /// size=0, path="".
 fn streaming_info_inline() -> Value {
+    streaming_info(0, 0, "")
+}
+
+/// StreamingInfo struct (offset, size, path).
+fn streaming_info(offset: u64, size: u32, path: &str) -> Value {
     Value::Seq(vec![
-        Value::U64(0),         // offset
-        Value::U32(0),         // size
-        string_value(""),      // path
+        Value::U64(offset),
+        Value::U32(size),
+        string_value(path),
     ])
 }
 
