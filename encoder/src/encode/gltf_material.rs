@@ -76,6 +76,19 @@ pub fn convert_glb_material(gltf: &J, index: usize, textures: &MaterialTextures)
     let double_sided = m["doubleSided"].as_bool().unwrap_or(false);
     let cull = if double_sided { 0.0 } else { 2.0 };
 
+    // Alpha mode → DCL/Scene blend state + render queue + RenderType tag.
+    // Values verified against production BLEND/MASK materials via deep-diff:
+    //   OPAQUE: Surface 0, Src 1, Dst 0, ZWrite 1, AlphaClip 0, Cutoff 0, q 2000
+    //   BLEND : Surface 1, Src 5, Dst 10, ZWrite 0, AlphaClip 0, Cutoff 0, q 3000
+    //   MASK  : Surface 1, Src 1, Dst 0, ZWrite 1, AlphaClip 1, Cutoff=cut, q 2450
+    let alpha_cutoff = m["alphaCutoff"].as_f64().unwrap_or(0.5) as f32;
+    let (surface, src_blend, dst_blend, zwrite, alpha_clip, cutoff, render_queue, render_type) =
+        match m["alphaMode"].as_str().unwrap_or("OPAQUE") {
+            "BLEND" => (1.0, 5.0, 10.0, 0.0, 0.0, 0.0, 3000, "Transparent"),
+            "MASK" => (1.0, 1.0, 0.0, 1.0, 1.0, alpha_cutoff, 2450, "TransparentCutout"),
+            _ => (0.0, 1.0, 0.0, 1.0, 0.0, 0.0, OPAQUE_RENDER_QUEUE, "Opaque"),
+        };
+
     let tex = |t: &Option<PPtr>| TexEnv {
         texture: t.clone().unwrap_or_default(),
         scale: [1.0, 1.0],
@@ -94,13 +107,13 @@ pub fn convert_glb_material(gltf: &J, index: usize, textures: &MaterialTextures)
 
     let f = |n: &str, v: f32| (n.to_string(), v);
     let float_props = vec![
-        f("_AlphaClip", 0.0), f("_AlphaToMask", 0.0), f("_Blend", 0.0), f("_BlendModePreserveSpecular", 1.0),
-        f("_BlendOp", 0.0), f("_BlendOpAlpha", 0.0), f("_BumpScale", 1.0), f("_Cull", cull), f("_Cutoff", 0.0),
-        f("_DstBlend", 0.0), f("_DstBlendAlpha", 0.0), f("_EnvironmentReflections", 1.0), f("_GlossMapScale", 0.0),
+        f("_AlphaClip", alpha_clip), f("_AlphaToMask", 0.0), f("_Blend", 0.0), f("_BlendModePreserveSpecular", 1.0),
+        f("_BlendOp", 0.0), f("_BlendOpAlpha", 0.0), f("_BumpScale", 1.0), f("_Cull", cull), f("_Cutoff", cutoff),
+        f("_DstBlend", dst_blend), f("_DstBlendAlpha", 0.0), f("_EnvironmentReflections", 1.0), f("_GlossMapScale", 0.0),
         f("_Glossiness", 0.0), f("_GlossyReflections", 0.0), f("_Metallic", metallic), f("_OcclusionStrength", 1.0),
         f("_Parallax", 0.005), f("_QueueOffset", 0.0), f("_ReceiveShadows", 1.0), f("_Smoothness", smoothness),
-        f("_SmoothnessTextureChannel", 0.0), f("_SpecularHighlights", 1.0), f("_SrcBlend", 1.0), f("_SrcBlendAlpha", 1.0),
-        f("_Surface", 0.0), f("_WorkflowMode", 1.0), f("_ZWrite", 1.0),
+        f("_SmoothnessTextureChannel", 0.0), f("_SpecularHighlights", 1.0), f("_SrcBlend", src_blend), f("_SrcBlendAlpha", 1.0),
+        f("_Surface", surface), f("_WorkflowMode", 1.0), f("_ZWrite", zwrite),
     ];
 
     // Large clip sentinels (≈±2^31) and the spec-color default are exact
@@ -129,8 +142,8 @@ pub fn convert_glb_material(gltf: &J, index: usize, textures: &MaterialTextures)
         lightmap_flags: 4,
         enable_instancing_variants: 0,
         double_sided_gi: if double_sided { 1 } else { 0 },
-        custom_render_queue: OPAQUE_RENDER_QUEUE,
-        string_tag_map: vec![("RenderType".into(), "Opaque".into())],
+        custom_render_queue: render_queue,
+        string_tag_map: vec![("RenderType".into(), render_type.into())],
         disabled_shader_passes: vec![],
         tex_envs,
         int_props: vec![],
