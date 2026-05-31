@@ -566,12 +566,88 @@ fn emit_glb_node(
 ///
 /// NOT handled yet: in-bundle Texture2D + material texture PPtr wiring
 /// (textured materials render untextured), and non-opaque alpha modes.
+/// The TypeTree classes a given scene will emit, so the assembler can verify
+/// fixture coverage up front (see the pre-flight check in `assemble_glb_graph`).
+fn required_classes(input: &GlbGraphInput) -> Vec<i32> {
+    use crate::types::AnimationMethod;
+    // Always emitted: GameObject, Transform, the DCL_Scene default Material,
+    // metadata.json TextAsset, the AssetBundle root.
+    let mut req = vec![CLASS_GAMEOBJECT, CLASS_TRANSFORM, CLASS_MATERIAL, CLASS_TEXTASSET, CLASS_ASSETBUNDLE];
+
+    fn walk(nodes: &[SceneNode], any_prim: &mut bool, any_visible: &mut bool, any_skinned: &mut bool, any_collider: &mut bool) {
+        for n in nodes {
+            if !n.primitives.is_empty() {
+                *any_prim = true;
+                if n.skin.is_some() && !n.is_collider {
+                    *any_skinned = true;
+                } else if n.is_collider {
+                    // Non-skinned collider → MeshCollider; skinned collider → mesh only.
+                    if n.skin.is_none() {
+                        *any_collider = true;
+                    }
+                } else {
+                    *any_visible = true;
+                }
+            }
+            walk(&n.children, any_prim, any_visible, any_skinned, any_collider);
+        }
+    }
+    let (mut any_prim, mut any_visible, mut any_skinned, mut any_collider) = (false, false, false, false);
+    walk(&input.scene.roots, &mut any_prim, &mut any_visible, &mut any_skinned, &mut any_collider);
+
+    if any_prim {
+        req.push(CLASS_MESH);
+    }
+    if any_visible {
+        req.push(CLASS_MESHFILTER);
+        req.push(CLASS_MESHRENDERER);
+    }
+    if any_skinned {
+        req.push(CLASS_SKINNEDMESHRENDERER);
+    }
+    if any_collider {
+        req.push(CLASS_MESHCOLLIDER);
+    }
+    if !input.images.is_empty() {
+        req.push(CLASS_TEXTURE2D);
+    }
+    if !input.scene.animation_names.is_empty() {
+        match input.animation_method {
+            AnimationMethod::Legacy => {
+                req.push(CLASS_ANIMATIONCLIP);
+                req.push(CLASS_ANIMATION);
+            }
+            AnimationMethod::Mecanim => {
+                req.push(CLASS_ANIMATIONCLIP);
+                req.push(CLASS_ANIMATORCONTROLLER);
+                req.push(CLASS_ANIMATOR);
+            }
+            AnimationMethod::None => {}
+        }
+    }
+    req
+}
+
 pub fn assemble_glb_graph(
     db: &TypeTreeDb,
     target: BuildTarget,
     unity_version: &str,
     input: &GlbGraphInput,
 ) -> Result<Vec<u8>, SerializeError> {
+    // Pre-flight: fail loudly if the TypeTree fixture lacks a class this scene
+    // needs. Without this, a deficient fixture (e.g. one regenerated from a
+    // plain scene, missing SkinnedMeshRenderer/Animator/etc.) would silently
+    // skip those objects AND leave dangling component PPtrs — a corrupt bundle.
+    // Erroring instead lets ENCODER_FALLBACK_TO_UNITY take over for that scene.
+    for class_id in required_classes(input) {
+        if db.get(class_id).is_none() {
+            return Err(SerializeError::Format(format!(
+                "TypeTree fixture missing class {class_id}, required by this scene \
+                 (regenerate the fixture to cover skinned/animated/emote classes)"
+            )));
+        }
+    }
+
     let mut next: i64 = 2; // 1 reserved for AssetBundle
     let mut objects: Vec<PreparedObject> = Vec::new();
     let mut preload: Vec<PPtr> = Vec::new();

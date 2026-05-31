@@ -46,48 +46,75 @@ DISCOVER_ONLY=1 TARGET="$TARGET" VERSIONS="$VERSIONS" \
   RANGE="${RANGE:-60}" STEP="${STEP:-3}" BATCH="${BATCH:-150}" \
   bash scripts/download-scenes.sh "$tmp/disc" >/dev/null 2>&1 || true
 
-scene_line="$(head -n1 "$tmp/disc/discovered.txt" 2>/dev/null || true)"
-if [ -z "$scene_line" ]; then
+if [ ! -s "$tmp/disc/discovered.txt" ]; then
   echo "[regen] ERROR: no $VERSIONS scene found in sweep. Widen RANGE or check connectivity." >&2
   exit 1
 fi
-ver="$(printf '%s' "$scene_line" | cut -f1)"
-id="$(printf '%s' "$scene_line" | cut -f2)"
-echo "[regen] using scene $ver $id"
 
-# Fetch the manifest and split bundle filenames into glb (3 underscore
-# segments: hash_digest_target) vs leaf (textures/buffers: hash_target).
-manifest="$(curl -fsS --max-time 30 --compressed -A "$UA" "$CDN/manifest/${id}_${TARGET}.json")"
-mapfile -t files < <(printf '%s' "$manifest" | jq -r '.files[]?' | grep -v '\.json$')
+# A single plain scene only covers the common classes (GameObject, Transform,
+# Material, MeshRenderer, MeshFilter, Mesh, Texture2D, TextAsset, AssetBundle).
+# The encoder ALSO emits MeshCollider (64), AnimationClip (74), Animation (111),
+# and SkinnedMeshRenderer (137) for collider/animated/skinned scenes — which
+# appear only in SOME scenes. So accumulate bundles across up to MAX_SCENES
+# discovered scenes until the scene-class set is covered. Animator (95) +
+# AnimatorController (91) come ONLY from EMOTE bundles, which are NOT in the
+# parcel grid — supply them via EXTRA_BUNDLE_URLS (space-separated CDN URLs).
+MAX_SCENES="${MAX_SCENES:-40}"
+NEED_SCENE_CLASSES="1 4 21 23 28 33 43 49 64 74 111 137 142"
 
-glb=""; leaf=""
-for f in "${files[@]}"; do
-  # 3-segment name (two underscores before the platform suffix) => glb.
-  segs="$(printf '%s' "$f" | awk -F_ '{print NF}')"
-  if [ "$segs" -ge 3 ] && [ -z "$glb" ]; then glb="$f"; fi
-  if [ "$segs" -lt 3 ] && [ -z "$leaf" ]; then leaf="$f"; fi
-  [ -n "$glb" ] && [ -n "$leaf" ] && break
-done
+# Build the extractor up front — the incremental coverage check below needs it.
+echo "[regen] building extract-typetrees…"
+cargo build --release --bin extract-typetrees --no-default-features >/dev/null 2>&1
 
 inputs=()
-for f in "$glb" "$leaf"; do
-  [ -z "$f" ] && continue
-  if curl -fsS --max-time 90 --compressed -A "$UA" -o "$tmp/$f" "$CDN/$ver/$id/$f"; then
-    inputs+=("$tmp/$f")
-    echo "[regen] downloaded $f ($(stat -f%z "$tmp/$f" 2>/dev/null || stat -c%s "$tmp/$f") bytes)"
+n_scenes=0
+while IFS=$'\t' read -r ver id _rest && [ "$n_scenes" -lt "$MAX_SCENES" ]; do
+  [ -z "$ver" ] || [ -z "$id" ] && continue
+  n_scenes=$((n_scenes + 1))
+  manifest="$(curl -fsS --max-time 30 --compressed -A "$UA" "$CDN/manifest/${id}_${TARGET}.json" 2>/dev/null || true)"
+  [ -z "$manifest" ] && continue
+  # Take every glb + the first leaf from this scene (more glbs → more chance of
+  # hitting collider/animated/skinned classes).
+  leaf_taken=""
+  while read -r f; do
+    [ -z "$f" ] && continue
+    segs="$(printf '%s' "$f" | awk -F_ '{print NF}')"
+    if [ "$segs" -lt 3 ]; then
+      [ -n "$leaf_taken" ] && continue
+      leaf_taken=1
+    fi
+    out="$tmp/${id}_${f}"
+    if curl -fsS --max-time 90 --compressed -A "$UA" -o "$out" "$CDN/$ver/$id/$f" 2>/dev/null; then
+      inputs+=("$out")
+    fi
+  done < <(printf '%s' "$manifest" | jq -r '.files[]?' | grep -v '\.json$')
+
+  # Stop early once the scene-class set is covered (cheap incremental check).
+  [ "${#inputs[@]}" -eq 0 ] && continue
+  have="$(target/release/extract-typetrees /dev/null "${inputs[@]}" 2>/dev/null | sed -nE 's/.*classes: \[(.*)\].*/\1/p' | tr -d ' ' | tr ',' ' ' || true)"
+  missing=""
+  for c in $NEED_SCENE_CLASSES; do printf '%s' " $have " | grep -q " $c " || missing="$missing $c"; done
+  [ -z "$missing" ] && { echo "[regen] scene-class set covered after $n_scenes scenes"; break; }
+done < "$tmp/disc/discovered.txt"
+
+# Operator-supplied EMOTE/extra bundles for classes the parcel grid can't yield.
+for url in ${EXTRA_BUNDLE_URLS:-}; do
+  out="$tmp/extra_$(printf '%s' "$url" | md5 2>/dev/null || printf '%s' "$url" | md5sum | cut -d' ' -f1)"
+  if curl -fsS --max-time 90 --compressed -A "$UA" -o "$out" "$url" 2>/dev/null; then
+    inputs+=("$out"); echo "[regen] +extra bundle $url"
+  else
+    echo "[regen] WARN: could not fetch EXTRA_BUNDLE_URL $url" >&2
   fi
 done
 
 if [ "${#inputs[@]}" -eq 0 ]; then
-  echo "[regen] ERROR: could not download any bundle for $id" >&2
+  echo "[regen] ERROR: could not download any bundle" >&2
   exit 1
 fi
+echo "[regen] collected ${#inputs[@]} bundles from $n_scenes scene(s)"
 
-# Build the extractor and run it over the inputs to read the Unity
-# revision (we name the fixture after it).
-echo "[regen] building extract-typetrees…"
-cargo build --release --bin extract-typetrees --no-default-features >/dev/null 2>&1
-
+# Run the extractor over all inputs to read the Unity revision (we name the
+# fixture after it) and produce the merged fixture.
 # First pass to a temp file so we can read the unity_version it reports,
 # then place at the version-named path.
 mkdir -p "$OUT"
@@ -101,3 +128,18 @@ final="$OUT/${uver}.bin"
 cp "$tmp_fixture" "$final"
 echo "[regen] wrote fixture → $final"
 echo "[regen] (gitignored; regenerate via this script — do not commit)"
+
+# Coverage check: the encoder pre-flights against the same class set and falls
+# back to Unity when a class is missing — so a deficient fixture silently routes
+# scenes to Unity. Surface it here instead. Animator/AnimatorController (91/95)
+# come only from emote bundles (EXTRA_BUNDLE_URLS); warn rather than fail since
+# scenes still work without them.
+have="$(printf '%s' "$log" | sed -nE 's/.*classes: \[(.*)\].*/\1/p' | tr -d ' ' | tr ',' ' ')"
+miss_scene=""; for c in $NEED_SCENE_CLASSES; do printf '%s' " $have " | grep -q " $c " || miss_scene="$miss_scene $c"; done
+miss_emote=""; for c in 91 95; do printf '%s' " $have " | grep -q " $c " || miss_emote="$miss_emote $c"; done
+[ -n "$miss_emote" ] && echo "[regen] WARN: missing emote classes ($miss_emote) — set EXTRA_BUNDLE_URLS to an emote bundle, or emote scenes will fall back to Unity." >&2
+if [ -n "$miss_scene" ]; then
+  echo "[regen] ERROR: fixture missing scene classes ($miss_scene). Raise MAX_SCENES/RANGE so discovery hits a collider/animated/skinned scene." >&2
+  exit 1
+fi
+echo "[regen] coverage OK: all scene classes present${miss_emote:+ (emote 91/95 absent — see warning)}"
