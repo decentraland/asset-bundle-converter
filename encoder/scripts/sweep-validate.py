@@ -110,7 +110,19 @@ def main():
             alpha_scenes += 1
             print(f"  [ALPHA] {h[:18]}: {alphas}")
         out = tempfile.mktemp(suffix=".ab")
-        r = subprocess.run([ENCODER, src, out, "windows", h], capture_output=True)
+        # In production the scene-converter passes the animation method (emote →
+        # Mecanim) from the entity type / `_emote.glb` filename, which this
+        # corpus harness doesn't have (bundles are keyed by content hash). Detect
+        # emote-ness from the production bundle itself (an Animator ⇒ Mecanim) so
+        # the encoder can be told, mirroring what the real pipeline supplies.
+        env = dict(os.environ)
+        try:
+            ph, _, _ = inspect(b)
+            if ph.get("Animator", 0) > 0:
+                env["EMOTE"] = "1"
+        except Exception:
+            pass
+        r = subprocess.run([ENCODER, src, out, "windows", h], capture_output=True, env=env)
         if r.returncode != 0:
             print(f"  [ENC-FAIL] {h[:18]}: {r.stderr.decode()[:80]}")
             continue

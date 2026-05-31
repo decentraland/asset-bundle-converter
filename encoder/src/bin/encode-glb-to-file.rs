@@ -47,6 +47,9 @@ fn run(glb_path: &str, out: &str, target: BuildTarget, cab: &str, root_name: &st
         bundle_name: "encoded_glb", root_name, content_filename: "asset.glb",
         scene: &scene, materials: &materials, material_images: &material_images, images: &image_bytes,
         shader_cab_path: cab, dependencies: &[], metadata_timestamp: 0,
+        animation_method: std::env::var("EMOTE").map(|v| v == "1").unwrap_or(false)
+            .then_some(dcl_asset_bundle_encoder::types::AnimationMethod::Mecanim)
+            .unwrap_or(dcl_asset_bundle_encoder::types::AnimationMethod::Legacy),
     }).map_err(|e| format!("{e}"))?;
     std::fs::write(out, &bundle).map_err(|e| e.to_string())?;
     eprintln!("[encode] {} prims, {} images -> {} ({} bytes)", scene.total_primitives(), image_bytes.len(), out, bundle.len());

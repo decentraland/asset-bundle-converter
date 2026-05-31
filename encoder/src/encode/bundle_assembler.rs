@@ -43,6 +43,8 @@ pub const CLASS_MESH: i32 = 43;
 pub const CLASS_TEXTASSET: i32 = 49;
 pub const CLASS_MESHCOLLIDER: i32 = 64;
 pub const CLASS_ANIMATIONCLIP: i32 = 74;
+pub const CLASS_ANIMATORCONTROLLER: i32 = 91;
+pub const CLASS_ANIMATOR: i32 = 95;
 pub const CLASS_ANIMATION: i32 = 111;
 pub const CLASS_SKINNEDMESHRENDERER: i32 = 137;
 pub const CLASS_ASSETBUNDLE: i32 = 142;
@@ -319,7 +321,8 @@ pub fn assemble_glb_bundle(
 // ===========================================================================
 
 use crate::encode::class_writers::{
-    build_animation_clip_value, build_animation_value, build_mesh_collider_value, UnityMeshCollider,
+    build_animation_clip_value, build_animation_value, build_animator_controller_value,
+    build_animator_value, build_mesh_collider_value, UnityMeshCollider,
 };
 use crate::encode::gltf_mesh::{GlbScene, SceneNode, ScenePrimitive};
 
@@ -343,6 +346,9 @@ pub struct GlbGraphInput<'a> {
     pub shader_cab_path: &'a str,
     pub dependencies: &'a [String],
     pub metadata_timestamp: i64,
+    /// Legacy (Animation) / Mecanim (Animator + AnimatorController) / None.
+    /// Mirrors Unity's GetAnimationMethod(isEmote, isWearable).
+    pub animation_method: crate::types::AnimationMethod,
 }
 
 /// Identity TRS (position, rotation quaternion, scale).
@@ -668,19 +674,38 @@ pub fn assemble_glb_graph(
         mid
     };
 
-    // Animations: one legacy AnimationClip per glTF animation + an Animation
-    // component (emitted after the graph) on the entity-root GameObject.
-    // Structural pass (empty curves; playback Explorer-gated). Skipped if the
-    // fixture lacks classes 74/111.
+    // Animations. Mirrors Unity's GetAnimationMethod:
+    //   Legacy  → one AnimationClip (m_Legacy=1) per glTF animation + an
+    //             Animation component on the entity-root.
+    //   Mecanim → one AnimationClip (m_Legacy=0) per animation + a single
+    //             AnimatorController + an Animator component on the entity-root.
+    //   None    → no clips, no component (wearables).
+    // Structural pass (empty curves; the AnimatorController has empty layers) —
+    // playback is Explorer-gated, same bar as the Legacy clips. Skipped if the
+    // fixture lacks the needed classes.
+    use crate::types::AnimationMethod;
+    let method = input.animation_method;
     let mut anim_clip_pptrs: Vec<PPtr> = Vec::new();
-    let mut anim_component_id: Option<i64> = None;
-    if !input.scene.animation_names.is_empty() {
-        if let (Some(clip_nodes), Some(_)) = (db.get(CLASS_ANIMATIONCLIP), db.get(CLASS_ANIMATION)) {
+    let mut anim_component_id: Option<i64> = None; // Animation (Legacy) or Animator (Mecanim)
+    let mut controller_id: Option<i64> = None; // AnimatorController (Mecanim only)
+    if method != AnimationMethod::None && !input.scene.animation_names.is_empty() {
+        let legacy = method == AnimationMethod::Legacy;
+        let component_class = if legacy { CLASS_ANIMATION } else { CLASS_ANIMATOR };
+        if let (Some(clip_nodes), Some(_)) = (db.get(CLASS_ANIMATIONCLIP), db.get(component_class)) {
             for name in &input.scene.animation_names {
                 let cid = alloc(&mut next);
-                objects.push(PreparedObject { class_id: CLASS_ANIMATIONCLIP, path_id: cid, data: serialize_class(db, CLASS_ANIMATIONCLIP, &build_animation_clip_value(clip_nodes, name))? });
+                objects.push(PreparedObject { class_id: CLASS_ANIMATIONCLIP, path_id: cid, data: serialize_class(db, CLASS_ANIMATIONCLIP, &build_animation_clip_value(clip_nodes, name, legacy))? });
                 preload.push(pp(cid));
                 anim_clip_pptrs.push(pp(cid));
+            }
+            if !legacy {
+                // AnimatorController has no GameObject ref → emit it now.
+                if let Some(ctrl_nodes) = db.get(CLASS_ANIMATORCONTROLLER) {
+                    let ctrl = alloc(&mut next);
+                    objects.push(PreparedObject { class_id: CLASS_ANIMATORCONTROLLER, path_id: ctrl, data: serialize_class(db, CLASS_ANIMATORCONTROLLER, &build_animator_controller_value(ctrl_nodes, "animatorController"))? });
+                    preload.push(pp(ctrl));
+                    controller_id = Some(ctrl);
+                }
             }
             anim_component_id = Some(alloc(&mut next));
         }
@@ -739,10 +764,19 @@ pub fn assemble_glb_graph(
         }
     }
 
-    // Animation component (now the root GameObject id is known).
+    // Animation/Animator component (now the root GameObject id is known).
     if let Some(aid) = anim_component_id {
-        let comp_nodes = db.get(CLASS_ANIMATION).expect("class 111 present (checked above)");
-        objects.push(PreparedObject { class_id: CLASS_ANIMATION, path_id: aid, data: serialize_class(db, CLASS_ANIMATION, &build_animation_value(comp_nodes, &pp(root_go_id), &anim_clip_pptrs))? });
+        let (class_id, data) = match controller_id {
+            Some(ctrl) => {
+                let nodes = db.get(CLASS_ANIMATOR).expect("class 95 present (checked above)");
+                (CLASS_ANIMATOR, serialize_class(db, CLASS_ANIMATOR, &build_animator_value(nodes, &pp(root_go_id), &pp(ctrl)))?)
+            }
+            None => {
+                let nodes = db.get(CLASS_ANIMATION).expect("class 111 present (checked above)");
+                (CLASS_ANIMATION, serialize_class(db, CLASS_ANIMATION, &build_animation_value(nodes, &pp(root_go_id), &anim_clip_pptrs))?)
+            }
+        };
+        objects.push(PreparedObject { class_id, path_id: aid, data });
         preload.push(pp(aid));
     }
 

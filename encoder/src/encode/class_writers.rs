@@ -856,7 +856,7 @@ fn set_field(nodes: &[TypeTreeNode], root: usize, seq: &mut [Value], field: &str
 
 /// Build a legacy AnimationClip value (named, empty curves) from the class-74
 /// TypeTree. `nodes` is the class's parsed TypeTree (root at index 0).
-pub fn build_animation_clip_value(nodes: &[TypeTreeNode], name: &str) -> Value {
+pub fn build_animation_clip_value(nodes: &[TypeTreeNode], name: &str, legacy: bool) -> Value {
     let mut v = default_value(nodes, 0);
     if let Value::Seq(f) = &mut v {
         // m_Name is root child [0] (Unity convention). The TypeTree's name
@@ -866,13 +866,51 @@ pub fn build_animation_clip_value(nodes: &[TypeTreeNode], name: &str) -> Value {
         if !f.is_empty() {
             f[0] = Value::String(name.to_string());
         }
-        set_field(nodes, 0, f, "m_Legacy", Value::U8(1));
+        // Legacy clips (Animation component) set m_Legacy=1; Mecanim clips
+        // (Animator) leave it 0.
+        set_field(nodes, 0, f, "m_Legacy", Value::U8(legacy as u8));
         set_field(nodes, 0, f, "m_UseHighQualityCurve", Value::U8(1));
         // m_SampleRate is a float leaf (4 bytes) — write 60.0's bit pattern.
         set_field(nodes, 0, f, "m_SampleRate", Value::U32(60.0f32.to_bits()));
         set_field(nodes, 0, f, "m_WrapMode", Value::U32(2));
     }
     v
+}
+
+/// Build an AnimatorController (class 91). Structurally valid (empty layers /
+/// parameters from `default_value`) with its name set — same "playback
+/// Explorer-gated" bar as the Legacy empty-curve clips. `nodes` is class 91.
+pub fn build_animator_controller_value(nodes: &[TypeTreeNode], name: &str) -> Value {
+    let mut v = default_value(nodes, 0);
+    if let Value::Seq(f) = &mut v {
+        if !f.is_empty() {
+            f[0] = Value::String(name.to_string()); // m_Name (root child 0)
+        }
+    }
+    v
+}
+
+/// Build an Animator component (class 95) on `game_object` referencing
+/// `controller`. 14 fields; values from a real v49 emote Animator (dump-fields):
+/// m_Enabled=1, m_HasTransformHierarchy=1, m_AllowConstantClipSamplingOptimization=1.
+pub fn build_animator_value(nodes: &[TypeTreeNode], game_object: &PPtr, controller: &PPtr) -> Value {
+    let _ = nodes;
+    Value::Seq(vec![
+        pptr_value(game_object),       // 0:  m_GameObject
+        Value::U8(1),                  // 1:  m_Enabled
+        pptr_value(&PPtr::default()),  // 2:  m_Avatar
+        pptr_value(controller),        // 3:  m_Controller
+        Value::I32(0),                 // 4:  m_CullingMode
+        Value::I32(0),                 // 5:  m_UpdateMode
+        Value::U8(0),                  // 6:  m_ApplyRootMotion
+        Value::U8(0),                  // 7:  m_LinearVelocityBlending
+        Value::U8(0),                  // 8:  m_StabilizeFeet
+        Value::U8(0),                  // 9:  m_AnimatePhysics
+        Value::U8(1),                  // 10: m_HasTransformHierarchy
+        Value::U8(1),                  // 11: m_AllowConstantClipSamplingOptimization
+        Value::U8(0),                  // 12: m_KeepAnimatorStateOnDisable
+        Value::U8(0),                  // 13: m_WriteDefaultValuesOnDisable
+    ])
 }
 
 /// Build an Animation component (class 111) referencing `clips`, attached to

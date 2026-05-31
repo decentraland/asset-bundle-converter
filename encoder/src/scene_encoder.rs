@@ -581,6 +581,15 @@ fn encode_glb_bundle(
             shader_cab_path: cab,
             dependencies: dep_cids,
             metadata_timestamp: 0,
+            // Unity's GetAnimationMethod: the `_emote.glb` filename → Mecanim
+            // (Utils.IsEmoteFileName). Entity-type-based emote/wearable
+            // detection (entityDTO.type) should be threaded from the
+            // scene-converter when available; filename covers the common case.
+            animation_method: if filename.to_lowercase().ends_with("_emote.glb") {
+                crate::types::AnimationMethod::Mecanim
+            } else {
+                crate::types::AnimationMethod::Legacy
+            },
         },
     )
     .map_err(|e| EncodeAssetError::Fatal(EncoderError::Internal(format!("assemble_glb_graph {hash}: {e}"))))?;

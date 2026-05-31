@@ -39,6 +39,7 @@ fn run(glb_path: &str, bundle_path: &str) -> Result<(), String> {
         bundle_name: "test_windows", root_name: "testhash", content_filename: "test.glb",
         scene: &scene, materials: &materials, material_images: &material_images, images: &image_bytes,
         shader_cab_path: CAB, dependencies: &[], metadata_timestamp: 0,
+        animation_method: dcl_asset_bundle_encoder::types::AnimationMethod::Legacy,
     }).map_err(|e| format!("{e}"))?;
     eprintln!("[encode] {} nodes, {} prims, {} textures -> {} bytes", scene.roots.len(), scene.total_primitives(), image_bytes.len(), bundle.len());
 

@@ -39,6 +39,32 @@ impl std::str::FromStr for BuildTarget {
     }
 }
 
+/// Mirrors the Unity converter's `AnimationMethod` (ClientSettings.cs) and
+/// the `GetAnimationMethod(isEmote, isWearable)` decision in
+/// AssetBundleConverter.cs:625 — emote → Mecanim (Animator + AnimatorController),
+/// wearable → None (no animation component), else Legacy (Animation + clips).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AnimationMethod {
+    #[default]
+    Legacy,
+    Mecanim,
+    None,
+}
+
+impl AnimationMethod {
+    /// The Unity rule: wearable → None, emote → Mecanim, else Legacy.
+    pub fn from_entity(is_emote: bool, is_wearable: bool) -> Self {
+        if is_wearable {
+            AnimationMethod::None
+        } else if is_emote {
+            AnimationMethod::Mecanim
+        } else {
+            AnimationMethod::Legacy
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ShaderType {
