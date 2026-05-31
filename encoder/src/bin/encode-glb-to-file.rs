@@ -16,20 +16,21 @@ const CAB_MAC: &str = "archive:/CAB-5ba4993b7ea166819a0af9aec5b25b8c/CAB-5ba4993
 fn main() -> ExitCode {
     let a: Vec<String> = std::env::args().collect();
     if a.len() < 3 {
-        eprintln!("usage: encode-glb-to-file <source.glb> <out.assetbundle> [windows|mac]");
+        eprintln!("usage: encode-glb-to-file <source.glb> <out.assetbundle> [windows|mac] [root_name]");
         return ExitCode::from(2);
     }
     let (target, cab) = match a.get(3).map(|s| s.as_str()) {
         Some("mac") => (BuildTarget::Mac, CAB_MAC),
         _ => (BuildTarget::Windows, CAB_WINDOWS),
     };
-    match run(&a[1], &a[2], target, cab) {
+    let root_name = a.get(4).cloned().unwrap_or_else(|| "encoded".to_string());
+    match run(&a[1], &a[2], target, cab, &root_name) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => { eprintln!("FAILED: {e}"); ExitCode::FAILURE }
     }
 }
 
-fn run(glb_path: &str, out: &str, target: BuildTarget, cab: &str) -> Result<(), String> {
+fn run(glb_path: &str, out: &str, target: BuildTarget, cab: &str, root_name: &str) -> Result<(), String> {
     let glb = std::fs::read(glb_path).map_err(|e| e.to_string())?;
     let scene = convert_glb_scene(&glb).map_err(|e| e.to_string())?;
     let jlen = u32::from_le_bytes(glb[12..16].try_into().unwrap()) as usize;
@@ -63,7 +64,7 @@ fn run(glb_path: &str, out: &str, target: BuildTarget, cab: &str) -> Result<(), 
 
     let db = dcl_asset_bundle_encoder::encode::type_tree_db::load_fixture_with_class(43).ok_or("no TypeTree fixture (run scripts/regenerate-fixtures.sh)")?;
     let bundle = assemble_glb_graph(&db, target, &db.unity_version, &GlbGraphInput {
-        bundle_name: "encoded_glb", root_name: "encoded", content_filename: "asset.glb",
+        bundle_name: "encoded_glb", root_name, content_filename: "asset.glb",
         scene: &scene, materials: &materials, base_color_image: &base_color_image, images: &image_bytes,
         shader_cab_path: cab, dependencies: &[], metadata_timestamp: 0,
     }).map_err(|e| format!("{e}"))?;

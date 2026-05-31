@@ -442,13 +442,29 @@ pub fn assemble_glb_graph(
         preload.push(here(mid));
         material_pptr.push(mid);
     }
-    // The +1 default DCL_Scene material (untextured; unreferenced orphan).
+    // The +1 default "DCL_Scene" material (untextured; unreferenced orphan).
+    // Uses the DCL/Scene shader's PRISTINE property defaults — white base
+    // color, metallic 0, smoothness 0.5, back-cull (2) — not values derived
+    // from a glb material (verified against production via deep-diff).
     let default_pptr = {
         let mut dm = input.materials.first().cloned().unwrap_or_default();
         dm.name = "DCL_Scene".to_string();
         dm.shader = PPtr { file_id: 1, path_id: crate::encode::gltf_material::DCL_SCENE_SHADER_PATH_ID };
         for (_, te) in dm.tex_envs.iter_mut() {
             te.texture = PPtr::default();
+        }
+        for (k, v) in dm.float_props.iter_mut() {
+            match k.as_str() {
+                "_Smoothness" => *v = 0.5,
+                "_Cull" => *v = 2.0,
+                "_Metallic" => *v = 0.0,
+                _ => {}
+            }
+        }
+        for (k, c) in dm.color_props.iter_mut() {
+            if k == "_BaseColor" {
+                *c = [1.0, 1.0, 1.0, 1.0];
+            }
         }
         let mid = id();
         objects.push(PreparedObject { class_id: CLASS_MATERIAL, path_id: mid, data: serialize_class(db, CLASS_MATERIAL, &build_material_value(&dm))? });

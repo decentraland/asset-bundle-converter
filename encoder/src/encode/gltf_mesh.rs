@@ -297,7 +297,16 @@ fn node_trs(nd: &J) -> ([f32; 3], [f32; 4], [f32; 3]) {
         a[2].as_f64().unwrap_or(0.0) as f32,
         a[3].as_f64().unwrap_or(1.0) as f32,
     ]).unwrap_or([0.0, 0.0, 0.0, 1.0]);
-    (v3("translation", [0.0; 3]), rot, v3("scale", [1.0, 1.0, 1.0]))
+    let t = v3("translation", [0.0; 3]);
+    let s = v3("scale", [1.0, 1.0, 1.0]);
+    // glTF (right-handed) → Unity (left-handed): the SAME negate-X handedness
+    // flip applied to vertices applies to node transforms. Verified by
+    // deep-diffing Transform values against production:
+    //   position → (-x, y, z) ; rotation quaternion → (x, -y, -z, w).
+    // Scale is unchanged. (Without this, objects render mislocated/rotated.)
+    let position = [-t[0], t[1], t[2]];
+    let rotation = [rot[0], -rot[1], -rot[2], rot[3]];
+    (position, rotation, s)
 }
 
 /// Walk a glb's nodes and convert each mesh-bearing node into a `SceneNode`
