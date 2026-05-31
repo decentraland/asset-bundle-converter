@@ -300,7 +300,7 @@ impl SceneEncoderInner {
             } else {
                 GltfFlavor::Gltf
             };
-            match extract_dep_cids(bytes, flavor, filename, &content_file_to_hash) {
+            match extract_dep_cids(bytes, flavor, filename, &content_file_to_hash, self.build_target.filename_suffix()) {
                 Ok(deps) => {
                     dep_cids_by_glb.insert(hash.clone(), deps);
                 }
@@ -689,6 +689,7 @@ fn extract_dep_cids(
     flavor: GltfFlavor,
     glb_filename: &str,
     content_file_to_hash: &HashMap<&str, &str>,
+    target_suffix: &str,
 ) -> Result<Vec<String>, String> {
     let uris = match parse_dep_uris(bytes, flavor) {
         Ok(u) => u,
@@ -706,7 +707,11 @@ fn extract_dep_cids(
             .map_err(|e| format!("URI resolve failed: {e}"))?;
         match content_file_to_hash.get(resolved.as_str()) {
             Some(cid) => {
-                deps.insert((*cid).to_string());
+                // Production's metadata.json deps are the dependency BUNDLE
+                // filenames (`{CID}_{target}`), not bare CIDs — that's the name
+                // the Explorer loads recursively. Verified against a real
+                // external-uri scene (haylvm: dep "bafkrei…_windows").
+                deps.insert(format!("{cid}{target_suffix}"));
             }
             None => {
                 // contentMap mismatch — see fn doc.
@@ -778,5 +783,24 @@ mod animation_method_tests {
     #[test]
     fn entity_type_is_case_insensitive() {
         assert_eq!(resolve_animation_method(Some("Emote"), "a.glb"), AnimationMethod::Mecanim);
+    }
+}
+
+#[cfg(test)]
+mod dep_cid_tests {
+    use super::extract_dep_cids;
+    use crate::encode::glb_parser::GltfFlavor;
+    use std::collections::HashMap;
+
+    #[test]
+    fn deps_are_bundle_filenames_with_target_suffix() {
+        // Production's metadata.json deps are `{CID}_{target}` (the dependency
+        // BUNDLE filename), not bare CIDs — verified against haylvm.
+        let json = br#"{"images":[{"uri":"tex.png"}],"buffers":[{"uri":"geo.bin"}]}"#;
+        let mut map: HashMap<&str, &str> = HashMap::new();
+        map.insert("tex.png", "bafkreitex");
+        map.insert("geo.bin", "bafkreibin");
+        let deps = extract_dep_cids(json, GltfFlavor::Gltf, "model.gltf", &map, "_windows").unwrap();
+        assert_eq!(deps, vec!["bafkreibin_windows".to_string(), "bafkreitex_windows".to_string()]);
     }
 }
