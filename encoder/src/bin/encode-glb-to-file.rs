@@ -69,6 +69,6 @@ fn run(glb_path: &str, out: &str, target: BuildTarget, cab: &str, root_name: &st
         shader_cab_path: cab, dependencies: &[], metadata_timestamp: 0,
     }).map_err(|e| format!("{e}"))?;
     std::fs::write(out, &bundle).map_err(|e| e.to_string())?;
-    eprintln!("[encode] {} prims, {} images -> {} ({} bytes)", scene.total_primitives, image_bytes.len(), out, bundle.len());
+    eprintln!("[encode] {} prims, {} images -> {} ({} bytes)", scene.total_primitives(), image_bytes.len(), out, bundle.len());
     Ok(())
 }

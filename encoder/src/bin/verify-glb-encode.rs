@@ -59,7 +59,7 @@ fn run(glb_path: &str, bundle_path: &str) -> Result<(), String> {
         scene: &scene, materials: &materials, base_color_image: &base_color_image, images: &image_bytes,
         shader_cab_path: CAB, dependencies: &[], metadata_timestamp: 0,
     }).map_err(|e| format!("{e}"))?;
-    eprintln!("[encode] {} nodes, {} prims, {} textures -> {} bytes", scene.nodes.len(), scene.total_primitives, image_bytes.len(), bundle.len());
+    eprintln!("[encode] {} nodes, {} prims, {} textures -> {} bytes", scene.roots.len(), scene.total_primitives(), image_bytes.len(), bundle.len());
 
     let (our_hist, our_meshes) = inspect(&bundle)?;
     let real = std::fs::read(bundle_path).map_err(|e| e.to_string())?;

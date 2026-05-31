@@ -582,7 +582,7 @@ fn encode_glb_bundle(
 
     let scene = convert_glb_scene(glb_bytes)
         .map_err(|e| partial("glb_scene_convert", format!("{filename}: {e}")))?;
-    if scene.total_primitives == 0 {
+    if scene.total_primitives() == 0 {
         return Err(partial("glb_no_meshes", format!("{filename}: no mesh primitives to encode")));
     }
 

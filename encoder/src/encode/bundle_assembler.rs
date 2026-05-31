@@ -307,7 +307,7 @@ pub fn assemble_glb_bundle(
 use crate::encode::class_writers::{
     build_animation_clip_value, build_animation_value, build_mesh_collider_value, UnityMeshCollider,
 };
-use crate::encode::gltf_mesh::GlbScene;
+use crate::encode::gltf_mesh::{GlbScene, SceneNode, ScenePrimitive};
 
 /// Inputs for assembling a glb's full GameObject graph.
 pub struct GlbGraphInput<'a> {
@@ -329,14 +329,145 @@ pub struct GlbGraphInput<'a> {
     pub metadata_timestamp: i64,
 }
 
-/// Deferred transform spec — built after all children are known.
-struct TfSpec {
-    id: i64,
-    game_object: i64,
-    father: i64, // 0 = none
-    position: [f32; 3],
-    rotation: [f32; 4],
-    scale: [f32; 3],
+/// Identity TRS (position, rotation quaternion, scale).
+const IDENTITY_TRS: ([f32; 3], [f32; 4], [f32; 3]) = ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0]);
+
+/// In-file PPtr.
+fn pp(path_id: i64) -> PPtr {
+    PPtr { file_id: 0, path_id }
+}
+
+/// Allocate the next path_id.
+fn alloc(next: &mut i64) -> i64 {
+    let v = *next;
+    *next += 1;
+    v
+}
+
+/// Collect (recursively) the base-color image indices referenced by VISIBLE
+/// primitives' materials across the scene tree.
+fn collect_used_images(roots: &[SceneNode], base_color_image: &[Option<usize>], out: &mut std::collections::BTreeSet<usize>) {
+    for node in roots {
+        if !node.is_collider {
+            for prim in &node.primitives {
+                if let Some(Some(img)) = base_color_image.get(prim.material_index) {
+                    out.insert(*img);
+                }
+            }
+        }
+        collect_used_images(&node.children, base_color_image, out);
+    }
+}
+
+/// Emit MeshFilter + Mesh + (MeshRenderer | MeshCollider) for `prim` on
+/// GameObject `go`. Returns [MeshFilter, renderer/collider] component PPtrs.
+#[allow(clippy::too_many_arguments)]
+fn emit_glb_prim(
+    db: &TypeTreeDb,
+    next: &mut i64,
+    objects: &mut Vec<PreparedObject>,
+    preload: &mut Vec<PPtr>,
+    material_pptr: &[i64],
+    default_pptr: i64,
+    go: i64,
+    prim: &ScenePrimitive,
+    is_collider: bool,
+) -> Result<Vec<PPtr>, SerializeError> {
+    let mesh_id = alloc(next);
+    objects.push(PreparedObject { class_id: CLASS_MESH, path_id: mesh_id, data: serialize_class(db, CLASS_MESH, &build_mesh_value(&prim.mesh))? });
+    preload.push(pp(mesh_id));
+    let mf_id = alloc(next);
+    objects.push(PreparedObject { class_id: CLASS_MESHFILTER, path_id: mf_id, data: serialize_class(db, CLASS_MESHFILTER, &build_mesh_filter_value(&UnityMeshFilter { game_object: pp(go), mesh: pp(mesh_id) }))? });
+    let rc_id = alloc(next);
+    if is_collider {
+        objects.push(PreparedObject { class_id: CLASS_MESHCOLLIDER, path_id: rc_id, data: serialize_class(db, CLASS_MESHCOLLIDER, &build_mesh_collider_value(&UnityMeshCollider { game_object: pp(go), mesh: pp(mesh_id) }))? });
+    } else {
+        let mat_id = material_pptr.get(prim.material_index).copied().unwrap_or(default_pptr);
+        let mr = UnityMeshRenderer {
+            game_object: pp(go),
+            enabled: 1,
+            cast_shadows: 1,
+            receive_shadows: 1,
+            dynamic_occludee: 1,
+            lightmap_index: 0xFFFF,
+            lightmap_index_dynamic: 0xFFFF,
+            materials: vec![pp(mat_id)],
+            ..Default::default()
+        };
+        objects.push(PreparedObject { class_id: CLASS_MESHRENDERER, path_id: rc_id, data: serialize_class(db, CLASS_MESHRENDERER, &build_mesh_renderer_value(&mr))? });
+    }
+    Ok(vec![pp(mf_id), pp(rc_id)])
+}
+
+/// Emit a Transform object.
+fn emit_glb_transform(
+    db: &TypeTreeDb,
+    objects: &mut Vec<PreparedObject>,
+    tf: i64,
+    go: i64,
+    father: i64,
+    trs: ([f32; 3], [f32; 4], [f32; 3]),
+    children: &[i64],
+) -> Result<(), SerializeError> {
+    let t = UnityTransform {
+        game_object: pp(go),
+        local_rotation: trs.1,
+        local_position: trs.0,
+        local_scale: trs.2,
+        children: children.iter().map(|&c| pp(c)).collect(),
+        father: if father == 0 { PPtr::default() } else { pp(father) },
+    };
+    objects.push(PreparedObject { class_id: CLASS_TRANSFORM, path_id: tf, data: serialize_class(db, CLASS_TRANSFORM, &build_transform_value(&t))? });
+    Ok(())
+}
+
+/// Recursively emit a scene node + its subtree, preserving parent/child
+/// nesting. Returns (GameObject id, Transform id). `name_override` renames
+/// the node (used to name the collapsed single scene-root after the entity
+/// hash); `extra` are extra component PPtrs (e.g. the Animation component).
+#[allow(clippy::too_many_arguments)]
+fn emit_glb_node(
+    node: &SceneNode,
+    father_tf: i64,
+    name_override: Option<&str>,
+    extra: &[PPtr],
+    db: &TypeTreeDb,
+    next: &mut i64,
+    objects: &mut Vec<PreparedObject>,
+    preload: &mut Vec<PPtr>,
+    material_pptr: &[i64],
+    default_pptr: i64,
+) -> Result<(i64, i64), SerializeError> {
+    let go = alloc(next);
+    let tf = alloc(next);
+    let mut comps = vec![pp(tf)];
+    if let Some(prim0) = node.primitives.first() {
+        comps.extend(emit_glb_prim(db, next, objects, preload, material_pptr, default_pptr, go, prim0, node.is_collider)?);
+    }
+    comps.extend_from_slice(extra);
+    let name = name_override.map(|s| s.to_string()).unwrap_or_else(|| node.name.clone());
+    objects.push(PreparedObject { class_id: CLASS_GAMEOBJECT, path_id: go, data: serialize_class(db, CLASS_GAMEOBJECT, &build_game_object_value(&UnityGameObject { name, components: comps, layer: 0, tag: 0, is_active: true }))? });
+    preload.push(pp(go));
+
+    let mut child_tfs: Vec<i64> = Vec::new();
+    // Extra primitives (1..N) → child GameObjects "{mesh}_{i}" under this node.
+    for (i, prim) in node.primitives.iter().enumerate().skip(1) {
+        let cgo = alloc(next);
+        let ctf = alloc(next);
+        let mut ccomps = vec![pp(ctf)];
+        ccomps.extend(emit_glb_prim(db, next, objects, preload, material_pptr, default_pptr, cgo, prim, node.is_collider)?);
+        objects.push(PreparedObject { class_id: CLASS_GAMEOBJECT, path_id: cgo, data: serialize_class(db, CLASS_GAMEOBJECT, &build_game_object_value(&UnityGameObject { name: format!("{}_{}", prim.mesh.name, i), components: ccomps, layer: 0, tag: 0, is_active: true }))? });
+        preload.push(pp(cgo));
+        emit_glb_transform(db, objects, ctf, cgo, tf, IDENTITY_TRS, &[])?;
+        child_tfs.push(ctf);
+    }
+    // Child nodes (recursive).
+    for child in &node.children {
+        let (_, ctf) = emit_glb_node(child, tf, None, &[], db, next, objects, preload, material_pptr, default_pptr)?;
+        child_tfs.push(ctf);
+    }
+    emit_glb_transform(db, objects, tf, go, father_tf, (node.local_position, node.local_rotation, node.local_scale), &child_tfs)?;
+    Ok((go, tf))
 }
 
 /// Assemble the full glb scene: an entity-root GameObject + per-node child
@@ -357,47 +488,20 @@ pub fn assemble_glb_graph(
     unity_version: &str,
     input: &GlbGraphInput,
 ) -> Result<Vec<u8>, SerializeError> {
-    let here = |id: i64| PPtr { file_id: 0, path_id: id };
     let mut next: i64 = 2; // 1 reserved for AssetBundle
-    let mut id = || {
-        let v = next;
-        next += 1;
-        v
-    };
-
     let mut objects: Vec<PreparedObject> = Vec::new();
     let mut preload: Vec<PPtr> = Vec::new();
-    let mut tfs: Vec<TfSpec> = Vec::new();
-    let mut tf_children: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
 
-    // Emit one in-bundle Texture2D per base-color image referenced by a
-    // VISIBLE primitive's material, with pixels STREAMED into a `.resS`
-    // sidecar via m_StreamData (matching production's structure: a tiny
-    // Texture2D object + a resource node). Decode failures skip the texture
-    // (material stays untextured) rather than fail. Pixels are RGBA32
-    // (uncompressed) — loadable, but not byte-identical to Unity's BC7.
-    //
-    // The `.resS` path embeds the SF's CAB name, so the CAB is derived
-    // deterministically from the bundle name (not the SF content hash) to
-    // avoid the circular dependency.
+    // Textures: 2× Texture2D per base-color image referenced by a VISIBLE
+    // primitive (one wired into _BaseMap, one unreferenced sibling), pixels
+    // STREAMED into a `.resS` sidecar. The CAB name is derived deterministically
+    // from the bundle name (not the SF content hash) so the `.resS` path can
+    // reference it without a circular dependency.
     let cab = cab_name_for(input.bundle_name);
     let ress_path = format!("archive:/{cab}/{cab}.resS");
     let mut ress: Vec<u8> = Vec::new();
-
     let mut used_images: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
-    for node in &input.scene.nodes {
-        if node.is_collider {
-            continue;
-        }
-        for prim in &node.primitives {
-            if let Some(Some(img)) = input.base_color_image.get(prim.material_index) {
-                used_images.insert(*img);
-            }
-        }
-    }
-    // Unity emits TWO Texture2D per referenced image (one wired into the
-    // material's _BaseMap, one unreferenced sibling). We reproduce the count;
-    // the first copy is the _BaseMap target.
+    collect_used_images(&input.scene.roots, input.base_color_image, &mut used_images);
     let mut img_pptr: std::collections::HashMap<usize, PPtr> = std::collections::HashMap::new();
     for img in used_images {
         let Some(png) = input.images.get(&img) else { continue };
@@ -407,46 +511,39 @@ pub fn assemble_glb_graph(
             let stream = TextureStream { offset, path: &ress_path };
             let Ok(bytes) = serialize_texture2d_streamed(&tex, db, &stream) else { continue };
             ress.extend_from_slice(&tex.image_data);
-            let tid = id();
+            let tid = alloc(&mut next);
             objects.push(PreparedObject { class_id: CLASS_TEXTURE2D, path_id: tid, data: bytes });
-            preload.push(here(tid));
+            preload.push(pp(tid));
             if copy == 0 {
-                img_pptr.insert(img, here(tid));
+                img_pptr.insert(img, pp(tid));
             }
         }
     }
 
-    // Pre-create one shared Material per glb material (wired to its base-color
-    // texture), plus one extra untextured "DCL_Scene" default — matching
-    // Unity's `materials = glb_materials + 1` count. Visible MeshRenderers
-    // reference the shared per-glb-material object; the default + any
-    // collider-only material objects are emitted but unreferenced.
-    let set_base_map = |m: &mut UnityMaterial, p: &PPtr| {
-        for (name, te) in m.tex_envs.iter_mut() {
-            if name == "_BaseMap" {
-                te.texture = p.clone();
-            }
-        }
-    };
+    // Materials: one shared Material per glb material (wired to its base-color
+    // texture) + one untextured "DCL_Scene" default (matches Unity's
+    // `materials = glb_materials + 1`).
     let mut material_pptr: Vec<i64> = Vec::with_capacity(input.materials.len());
     for (idx, base) in input.materials.iter().enumerate() {
         let mut material = base.clone();
         material.shader = PPtr { file_id: 1, path_id: crate::encode::gltf_material::DCL_SCENE_SHADER_PATH_ID };
         if let Some(Some(img)) = input.base_color_image.get(idx) {
-            if let Some(p) = img_pptr.get(img) {
-                set_base_map(&mut material, p);
+            if let Some(p) = img_pptr.get(img).cloned() {
+                for (name, te) in material.tex_envs.iter_mut() {
+                    if name == "_BaseMap" {
+                        te.texture = p.clone();
+                    }
+                }
             }
         }
-        let mid = id();
+        let mid = alloc(&mut next);
         objects.push(PreparedObject { class_id: CLASS_MATERIAL, path_id: mid, data: serialize_class(db, CLASS_MATERIAL, &build_material_value(&material))? });
-        preload.push(here(mid));
+        preload.push(pp(mid));
         material_pptr.push(mid);
     }
-    // The +1 default "DCL_Scene" material (untextured; unreferenced orphan).
-    // Uses the DCL/Scene shader's PRISTINE property defaults — white base
-    // color, metallic 0, smoothness 0.5, back-cull (2) — not values derived
-    // from a glb material (verified against production via deep-diff).
     let default_pptr = {
+        // Pristine DCL/Scene shader defaults (white, metallic 0, smoothness 0.5,
+        // back-cull 2) — verified against production via deep-diff.
         let mut dm = input.materials.first().cloned().unwrap_or_default();
         dm.name = "DCL_Scene".to_string();
         dm.shader = PPtr { file_id: 1, path_id: crate::encode::gltf_material::DCL_SCENE_SHADER_PATH_ID };
@@ -466,174 +563,75 @@ pub fn assemble_glb_graph(
                 *c = [1.0, 1.0, 1.0, 1.0];
             }
         }
-        let mid = id();
+        let mid = alloc(&mut next);
         objects.push(PreparedObject { class_id: CLASS_MATERIAL, path_id: mid, data: serialize_class(db, CLASS_MATERIAL, &build_material_value(&dm))? });
-        preload.push(here(mid));
+        preload.push(pp(mid));
         mid
     };
-    // Resolve a primitive's material to its shared object's path_id.
-    let material_id_for = |material_index: usize| -> i64 {
-        material_pptr.get(material_index).copied().unwrap_or(default_pptr)
-    };
-
-    // Emit the per-primitive components (MeshFilter + Mesh + renderer/collider)
-    // for a GameObject `go`, returning the component PPtr list (sans Transform,
-    // which is prepended by the caller).
-    let mut emit_prim = |go: i64,
-                         prim: &crate::encode::gltf_mesh::ScenePrimitive,
-                         is_collider: bool,
-                         objects: &mut Vec<PreparedObject>,
-                         preload: &mut Vec<PPtr>,
-                         id: &mut dyn FnMut() -> i64|
-     -> Result<Vec<PPtr>, SerializeError> {
-        let mesh_id = id();
-        objects.push(PreparedObject { class_id: CLASS_MESH, path_id: mesh_id, data: serialize_class(db, CLASS_MESH, &build_mesh_value(&prim.mesh))? });
-        preload.push(here(mesh_id));
-        let mf_id = id();
-        objects.push(PreparedObject {
-            class_id: CLASS_MESHFILTER,
-            path_id: mf_id,
-            data: serialize_class(db, CLASS_MESHFILTER, &build_mesh_filter_value(&UnityMeshFilter { game_object: here(go), mesh: here(mesh_id) }))?,
-        });
-        let rc_id = id();
-        if is_collider {
-            objects.push(PreparedObject {
-                class_id: CLASS_MESHCOLLIDER,
-                path_id: rc_id,
-                data: serialize_class(db, CLASS_MESHCOLLIDER, &build_mesh_collider_value(&UnityMeshCollider { game_object: here(go), mesh: here(mesh_id) }))?,
-            });
-        } else {
-            // Reference the shared per-glb-material object (pre-created above).
-            let mat_id = material_id_for(prim.material_index);
-            let mr = UnityMeshRenderer {
-                game_object: here(go),
-                enabled: 1,
-                cast_shadows: 1,
-                receive_shadows: 1,
-                dynamic_occludee: 1,
-                lightmap_index: 0xFFFF,
-                lightmap_index_dynamic: 0xFFFF,
-                materials: vec![here(mat_id)],
-                ..Default::default()
-            };
-            objects.push(PreparedObject { class_id: CLASS_MESHRENDERER, path_id: rc_id, data: serialize_class(db, CLASS_MESHRENDERER, &build_mesh_renderer_value(&mr))? });
-        }
-        Ok(vec![here(mf_id), here(rc_id)])
-    };
-
-    let identity = ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0]);
 
     // Animations: one legacy AnimationClip per glTF animation + an Animation
-    // component (emitted after the graph) on the root GameObject. Structural
-    // pass — clips have empty curves (the glTF-keyframe→curve conversion is
-    // playback work, Explorer-gated). Skipped if the fixture lacks 74/111.
+    // component (emitted after the graph) on the entity-root GameObject.
+    // Structural pass (empty curves; playback Explorer-gated). Skipped if the
+    // fixture lacks classes 74/111.
     let mut anim_clip_pptrs: Vec<PPtr> = Vec::new();
     let mut anim_component_id: Option<i64> = None;
     if !input.scene.animation_names.is_empty() {
         if let (Some(clip_nodes), Some(_)) = (db.get(CLASS_ANIMATIONCLIP), db.get(CLASS_ANIMATION)) {
             for name in &input.scene.animation_names {
-                let cid = id();
-                let data = serialize_class(db, CLASS_ANIMATIONCLIP, &build_animation_clip_value(clip_nodes, name))?;
-                objects.push(PreparedObject { class_id: CLASS_ANIMATIONCLIP, path_id: cid, data });
-                preload.push(here(cid));
-                anim_clip_pptrs.push(here(cid));
+                let cid = alloc(&mut next);
+                objects.push(PreparedObject { class_id: CLASS_ANIMATIONCLIP, path_id: cid, data: serialize_class(db, CLASS_ANIMATIONCLIP, &build_animation_clip_value(clip_nodes, name))? });
+                preload.push(pp(cid));
+                anim_clip_pptrs.push(pp(cid));
             }
-            anim_component_id = Some(id()); // reserved; object emitted after the graph
+            anim_component_id = Some(alloc(&mut next));
         }
     }
-    // The entity-root GameObject's path_id, captured below (NOT a fixed value —
-    // pre-created textures/materials/clips take earlier ids).
-    let mut root_go_id: i64 = 0;
+    let extra: Vec<PPtr> = anim_component_id.map(pp).into_iter().collect();
 
-    if input.scene.total_primitives == 1 {
-        // Collapsed: the single primitive's GameObject IS the entity root.
-        let node = &input.scene.nodes[0];
-        let prim = &node.primitives[0];
-        let root_go = id();
-        let root_tf = id();
-        let mut comps = vec![here(root_tf)];
-        comps.extend(emit_prim(root_go, prim, node.is_collider, &mut objects, &mut preload, &mut id)?);
-        if let Some(a) = anim_component_id {
-            comps.push(here(a));
-        }
-        objects.push(PreparedObject { class_id: CLASS_GAMEOBJECT, path_id: root_go, data: serialize_class(db, CLASS_GAMEOBJECT, &build_game_object_value(&UnityGameObject { name: input.root_name.to_string(), components: comps, layer: 0, tag: 0, is_active: true }))? });
-        preload.push(here(root_go));
-        root_go_id = root_go;
-        tfs.push(TfSpec { id: root_tf, game_object: root_go, father: 0, position: node.local_position, rotation: node.local_rotation, scale: node.local_scale });
+    // Emit the node tree. One scene root → that node IS the entity root
+    // (renamed to the hash); multiple → a synthetic hash-named root wraps them.
+    let root_go_id = if input.scene.roots.len() == 1 {
+        emit_glb_node(
+            &input.scene.roots[0], 0, Some(input.root_name), &extra,
+            db, &mut next, &mut objects, &mut preload, &material_pptr, default_pptr,
+        )?
+        .0
     } else {
-        // Entity root (Transform only) + per-node children.
-        let root_go = id();
-        let root_tf = id();
-        for node in &input.scene.nodes {
-            // prim 0 attaches to the node GameObject (child of root); prims
-            // 1..N become child GameObjects parented to the node's transform.
-            let mut node_tf_id = 0i64;
-            for (i, prim) in node.primitives.iter().enumerate() {
-                let go = id();
-                let tf = id();
-                let mut comps = vec![here(tf)];
-                comps.extend(emit_prim(go, prim, node.is_collider, &mut objects, &mut preload, &mut id)?);
-                let name = if i == 0 { node.name.clone() } else { format!("{}_{}", prim.mesh.name, i) };
-                objects.push(PreparedObject { class_id: CLASS_GAMEOBJECT, path_id: go, data: serialize_class(db, CLASS_GAMEOBJECT, &build_game_object_value(&UnityGameObject { name, components: comps, layer: 0, tag: 0, is_active: true }))? });
-                preload.push(here(go));
-                let (father, trs) = if i == 0 {
-                    node_tf_id = tf;
-                    tf_children.entry(root_tf).or_default().push(tf);
-                    (root_tf, (node.local_position, node.local_rotation, node.local_scale))
-                } else {
-                    tf_children.entry(node_tf_id).or_default().push(tf);
-                    (node_tf_id, identity)
-                };
-                tfs.push(TfSpec { id: tf, game_object: go, father, position: trs.0, rotation: trs.1, scale: trs.2 });
-            }
+        let go = alloc(&mut next);
+        let tf = alloc(&mut next);
+        let mut comps = vec![pp(tf)];
+        comps.extend_from_slice(&extra);
+        objects.push(PreparedObject { class_id: CLASS_GAMEOBJECT, path_id: go, data: serialize_class(db, CLASS_GAMEOBJECT, &build_game_object_value(&UnityGameObject { name: input.root_name.to_string(), components: comps, layer: 0, tag: 0, is_active: true }))? });
+        preload.push(pp(go));
+        let mut child_tfs = Vec::new();
+        for root in &input.scene.roots {
+            let (_, ctf) = emit_glb_node(root, tf, None, &[], db, &mut next, &mut objects, &mut preload, &material_pptr, default_pptr)?;
+            child_tfs.push(ctf);
         }
-        let mut root_comps = vec![here(root_tf)];
-        if let Some(a) = anim_component_id {
-            root_comps.push(here(a));
-        }
-        objects.push(PreparedObject { class_id: CLASS_GAMEOBJECT, path_id: root_go, data: serialize_class(db, CLASS_GAMEOBJECT, &build_game_object_value(&UnityGameObject { name: input.root_name.to_string(), components: root_comps, layer: 0, tag: 0, is_active: true }))? });
-        preload.push(here(root_go));
-        root_go_id = root_go;
-        tfs.push(TfSpec { id: root_tf, game_object: root_go, father: 0, position: identity.0, rotation: identity.1, scale: identity.2 });
-    }
+        emit_glb_transform(db, &mut objects, tf, go, 0, IDENTITY_TRS, &child_tfs)?;
+        go
+    };
 
-    // Emit the Animation component now that the root GameObject id is known.
+    // Animation component (now the root GameObject id is known).
     if let Some(aid) = anim_component_id {
         let comp_nodes = db.get(CLASS_ANIMATION).expect("class 111 present (checked above)");
-        let data = serialize_class(db, CLASS_ANIMATION, &build_animation_value(comp_nodes, &here(root_go_id), &anim_clip_pptrs))?;
-        objects.push(PreparedObject { class_id: CLASS_ANIMATION, path_id: aid, data });
-        preload.push(here(aid));
+        objects.push(PreparedObject { class_id: CLASS_ANIMATION, path_id: aid, data: serialize_class(db, CLASS_ANIMATION, &build_animation_value(comp_nodes, &pp(root_go_id), &anim_clip_pptrs))? });
+        preload.push(pp(aid));
     }
 
-    // Build all transforms now that children are known.
-    for tf in &tfs {
-        let children: Vec<PPtr> = tf_children.get(&tf.id).map(|c| c.iter().map(|&id| here(id)).collect()).unwrap_or_default();
-        let t = UnityTransform {
-            game_object: here(tf.game_object),
-            local_rotation: tf.rotation,
-            local_position: tf.position,
-            local_scale: tf.scale,
-            children,
-            father: if tf.father == 0 { PPtr::default() } else { here(tf.father) },
-        };
-        objects.push(PreparedObject { class_id: CLASS_TRANSFORM, path_id: tf.id, data: serialize_class(db, CLASS_TRANSFORM, &build_transform_value(&t))? });
-    }
-
-    // metadata.json TextAsset + AssetBundle root.
-    let meta_id = id();
+    // metadata.json TextAsset + AssetBundle root (mainAsset → entity root GO).
+    let preload_count = preload.len();
+    let meta_id = alloc(&mut next);
     let meta = metadata_json("7.0", input.metadata_timestamp, input.dependencies, input.content_filename);
     objects.push(PreparedObject { class_id: CLASS_TEXTASSET, path_id: meta_id, data: serialize_class(db, CLASS_TEXTASSET, &build_text_asset_value("metadata", &meta))? });
-
-    // mainAsset → the entity-root GameObject (captured above; pre-created
-    // textures/materials/clips mean it is NOT a fixed path_id).
     let mut preload_table = preload.clone();
-    preload_table.push(here(meta_id));
+    preload_table.push(pp(meta_id));
     let ab = UnityAssetBundle {
         name: input.bundle_name.to_string(),
         preload_table,
         container: vec![
-            AssetBundleEntry { asset_path: input.content_filename.to_string(), preload_index: 0, preload_size: preload.len() as i32, asset_pptr: here(root_go_id) },
-            AssetBundleEntry { asset_path: "metadata.json".to_string(), preload_index: preload.len() as i32, preload_size: 1, asset_pptr: here(meta_id) },
+            AssetBundleEntry { asset_path: input.content_filename.to_string(), preload_index: 0, preload_size: preload_count as i32, asset_pptr: pp(root_go_id) },
+            AssetBundleEntry { asset_path: "metadata.json".to_string(), preload_index: preload_count as i32, preload_size: 1, asset_pptr: pp(meta_id) },
         ],
         main_asset: AssetInfo::default(),
         runtime_compatibility: 1,

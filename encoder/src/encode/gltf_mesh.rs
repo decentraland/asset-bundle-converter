@@ -258,7 +258,8 @@ pub struct ScenePrimitive {
     pub material_index: usize,
 }
 
-/// One glb scene node that carries a mesh.
+/// One glb scene node (a tree node — may carry a mesh, children, or both;
+/// mesh-less group/leaf nodes are kept, matching Unity's hierarchy).
 #[derive(Debug, Clone)]
 pub struct SceneNode {
     pub name: String,
@@ -266,16 +267,16 @@ pub struct SceneNode {
     pub local_rotation: [f32; 4],
     pub local_scale: [f32; 3],
     pub is_collider: bool,
+    /// Empty for mesh-less nodes; one entry per glTF primitive otherwise.
     pub primitives: Vec<ScenePrimitive>,
+    pub children: Vec<SceneNode>,
 }
 
-/// The converted scene graph for one glb.
+/// The converted scene graph for one glb — the glТF scene-root nodes as a
+/// tree (each node may have children).
 #[derive(Debug, Clone)]
 pub struct GlbScene {
-    pub nodes: Vec<SceneNode>,
-    /// Total primitive count across all nodes (drives the single-vs-root
-    /// GameObject layout).
-    pub total_primitives: usize,
+    pub roots: Vec<SceneNode>,
     /// glTF animation names → one legacy AnimationClip each, plus an
     /// Animation component on the root GameObject (structural pass; curves
     /// are not converted yet — playback is Explorer-gated).
@@ -309,37 +310,87 @@ fn node_trs(nd: &J) -> ([f32; 3], [f32; 4], [f32; 3]) {
     (position, rotation, s)
 }
 
-/// Walk a glb's nodes and convert each mesh-bearing node into a `SceneNode`
-/// with its primitives' Unity meshes. Nodes without meshes are skipped
-/// (DCL glbs are effectively flat under the scene root).
-pub fn convert_glb_scene(glb: &[u8]) -> Result<GlbScene, GltfMeshError> {
-    let (j, bin) = parse_glb(glb)?;
-    let mut nodes = Vec::new();
-    let mut total = 0usize;
-    if let Some(gnodes) = j["nodes"].as_array() {
-        for nd in gnodes {
-            let Some(mesh_idx) = nd["mesh"].as_u64().map(|x| x as usize) else { continue };
-            let name = nd["name"].as_str().unwrap_or("").to_string();
-            let is_collider = name.ends_with("_collider");
-            let (tp, tr, ts) = node_trs(nd);
-            let nprim = j["meshes"][mesh_idx]["primitives"].as_array().map(|a| a.len()).unwrap_or(0);
-            let mut prims = Vec::with_capacity(nprim);
-            for prim_idx in 0..nprim {
-                let mesh = convert_primitive(&j, bin, mesh_idx, prim_idx, is_collider)?;
-                let material_index = j["meshes"][mesh_idx]["primitives"][prim_idx]["material"].as_u64().unwrap_or(0) as usize;
-                prims.push(ScenePrimitive { mesh, material_index });
-                total += 1;
-            }
-            nodes.push(SceneNode {
-                name,
-                local_position: tp,
-                local_rotation: tr,
-                local_scale: ts,
-                is_collider,
-                primitives: prims,
-            });
+/// Recursively convert glТF node `node_idx` (and its children) into a
+/// `SceneNode`. Mesh-less nodes get empty `primitives` but are still kept
+/// (Unity emits a GameObject for every node).
+fn build_scene_node(j: &J, bin: &[u8], nodes: &[J], node_idx: usize) -> Result<SceneNode, GltfMeshError> {
+    let nd = &nodes[node_idx];
+    let name = nd["name"].as_str().unwrap_or("").to_string();
+    let is_collider = name.ends_with("_collider");
+    let (tp, tr, ts) = node_trs(nd);
+
+    let mut primitives = Vec::new();
+    if let Some(mesh_idx) = nd["mesh"].as_u64().map(|x| x as usize) {
+        let nprim = j["meshes"][mesh_idx]["primitives"].as_array().map(|a| a.len()).unwrap_or(0);
+        for prim_idx in 0..nprim {
+            let mesh = convert_primitive(j, bin, mesh_idx, prim_idx, is_collider)?;
+            let material_index = j["meshes"][mesh_idx]["primitives"][prim_idx]["material"].as_u64().unwrap_or(0) as usize;
+            primitives.push(ScenePrimitive { mesh, material_index });
         }
     }
+
+    let mut children = Vec::new();
+    if let Some(kids) = nd["children"].as_array() {
+        for c in kids {
+            if let Some(ci) = c.as_u64() {
+                let ci = ci as usize;
+                if ci < nodes.len() {
+                    children.push(build_scene_node(j, bin, nodes, ci)?);
+                }
+            }
+        }
+    }
+
+    Ok(SceneNode {
+        name,
+        local_position: tp,
+        local_rotation: tr,
+        local_scale: ts,
+        is_collider,
+        primitives,
+        children,
+    })
+}
+
+/// Walk a glb's node tree from the scene roots, preserving the full
+/// hierarchy (parent groups + leaves, mesh-less or not). The scene roots are
+/// `scenes[scene].nodes`; if there's no `scenes` array, roots are the nodes
+/// not referenced as anyone's child.
+pub fn convert_glb_scene(glb: &[u8]) -> Result<GlbScene, GltfMeshError> {
+    let (j, bin) = parse_glb(glb)?;
+    let nodes = j["nodes"].as_array().cloned().unwrap_or_default();
+
+    let root_indices: Vec<usize> = if let Some(scenes) = j["scenes"].as_array() {
+        let scene_idx = j["scene"].as_u64().unwrap_or(0) as usize;
+        scenes
+            .get(scene_idx)
+            .and_then(|s| s["nodes"].as_array())
+            .map(|a| a.iter().filter_map(|n| n.as_u64().map(|x| x as usize)).collect())
+            .unwrap_or_default()
+    } else {
+        // No scenes: roots = nodes not referenced as a child of any node.
+        let mut is_child = vec![false; nodes.len()];
+        for nd in &nodes {
+            if let Some(kids) = nd["children"].as_array() {
+                for c in kids {
+                    if let Some(ci) = c.as_u64() {
+                        if (ci as usize) < is_child.len() {
+                            is_child[ci as usize] = true;
+                        }
+                    }
+                }
+            }
+        }
+        (0..nodes.len()).filter(|&i| !is_child[i]).collect()
+    };
+
+    let mut roots = Vec::with_capacity(root_indices.len());
+    for ri in root_indices {
+        if ri < nodes.len() {
+            roots.push(build_scene_node(&j, bin, &nodes, ri)?);
+        }
+    }
+
     let animation_names = j["animations"]
         .as_array()
         .map(|arr| {
@@ -350,5 +401,15 @@ pub fn convert_glb_scene(glb: &[u8]) -> Result<GlbScene, GltfMeshError> {
         })
         .unwrap_or_default();
 
-    Ok(GlbScene { nodes, total_primitives: total, animation_names })
+    Ok(GlbScene { roots, animation_names })
+}
+
+impl GlbScene {
+    /// Total primitive count across the whole node tree.
+    pub fn total_primitives(&self) -> usize {
+        fn count(n: &SceneNode) -> usize {
+            n.primitives.len() + n.children.iter().map(count).sum::<usize>()
+        }
+        self.roots.iter().map(count).sum()
+    }
 }
