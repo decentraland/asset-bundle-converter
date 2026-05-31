@@ -276,6 +276,10 @@ pub struct GlbScene {
     /// Total primitive count across all nodes (drives the single-vs-root
     /// GameObject layout).
     pub total_primitives: usize,
+    /// glTF animation names → one legacy AnimationClip each, plus an
+    /// Animation component on the root GameObject (structural pass; curves
+    /// are not converted yet — playback is Explorer-gated).
+    pub animation_names: Vec<String>,
 }
 
 /// Default node TRS (identity).
@@ -327,5 +331,15 @@ pub fn convert_glb_scene(glb: &[u8]) -> Result<GlbScene, GltfMeshError> {
             });
         }
     }
-    Ok(GlbScene { nodes, total_primitives: total })
+    let animation_names = j["animations"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .enumerate()
+                .map(|(i, a)| a["name"].as_str().map(|s| s.to_string()).unwrap_or_else(|| format!("anim_{i}")))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(GlbScene { nodes, total_primitives: total, animation_names })
 }

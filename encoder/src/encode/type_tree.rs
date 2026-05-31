@@ -795,6 +795,40 @@ impl<'a> TypeTreeReader<'a> {
     }
 }
 
+/// Build a structurally-valid default `Value` for the class rooted at
+/// `node_idx`, mirroring `TypeTreeReader::read_node`'s dispatch but emitting
+/// zeros/empties instead of reading bytes: leaves → zero of their byte_size,
+/// 1-byte arrays (string/TypelessData) → empty `Bytes`, other arrays → empty
+/// `Array`, structs → `Seq` of child defaults, with the same wrapper-descent.
+///
+/// Lets callers construct a valid object of a large class (e.g. AnimationClip
+/// with its 2140-byte ClipMuscleConstant) and override just the fields that
+/// matter, instead of hand-modeling every nested field.
+pub fn default_value(nodes: &[TypeTreeNode], node_idx: usize) -> Value {
+    let node = &nodes[node_idx];
+    // Wrapper descent (1-child node whose child is an Array).
+    if node.children.len() == 1 && nodes[node.children[0]].is_array {
+        return default_value(nodes, node.children[0]);
+    }
+    if node.children.is_empty() {
+        match node.byte_size.max(0) {
+            1 => Value::U8(0),
+            2 => Value::U16(0),
+            8 => Value::U64(0),
+            _ => Value::U32(0), // 4-byte (and a safe fallback)
+        }
+    } else if node.is_array {
+        let elem = &nodes[node.children[1]];
+        if elem.children.is_empty() && elem.byte_size == 1 {
+            Value::Bytes(vec![]) // empty string / TypelessData
+        } else {
+            Value::Array(vec![]) // empty array
+        }
+    } else {
+        Value::Seq(node.children.iter().map(|&k| default_value(nodes, k)).collect())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests — hand-built trees verify the walker. Real-Unity-TypeTree tests
 // land once a fixture binary is committed at

@@ -41,6 +41,8 @@ pub const CLASS_MESHFILTER: i32 = 33;
 pub const CLASS_MESH: i32 = 43;
 pub const CLASS_TEXTASSET: i32 = 49;
 pub const CLASS_MESHCOLLIDER: i32 = 64;
+pub const CLASS_ANIMATIONCLIP: i32 = 74;
+pub const CLASS_ANIMATION: i32 = 111;
 pub const CLASS_ASSETBUNDLE: i32 = 142;
 
 // Conventional path IDs for the assembled objects.
@@ -302,7 +304,9 @@ pub fn assemble_glb_bundle(
 // Full glb scene graph
 // ===========================================================================
 
-use crate::encode::class_writers::{build_mesh_collider_value, UnityMeshCollider};
+use crate::encode::class_writers::{
+    build_animation_clip_value, build_animation_value, build_mesh_collider_value, UnityMeshCollider,
+};
 use crate::encode::gltf_mesh::GlbScene;
 
 /// Inputs for assembling a glb's full GameObject graph.
@@ -503,6 +507,28 @@ pub fn assemble_glb_graph(
 
     let identity = ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0]);
 
+    // Animations: one legacy AnimationClip per glTF animation + an Animation
+    // component (emitted after the graph) on the root GameObject. Structural
+    // pass — clips have empty curves (the glTF-keyframe→curve conversion is
+    // playback work, Explorer-gated). Skipped if the fixture lacks 74/111.
+    let mut anim_clip_pptrs: Vec<PPtr> = Vec::new();
+    let mut anim_component_id: Option<i64> = None;
+    if !input.scene.animation_names.is_empty() {
+        if let (Some(clip_nodes), Some(_)) = (db.get(CLASS_ANIMATIONCLIP), db.get(CLASS_ANIMATION)) {
+            for name in &input.scene.animation_names {
+                let cid = id();
+                let data = serialize_class(db, CLASS_ANIMATIONCLIP, &build_animation_clip_value(clip_nodes, name))?;
+                objects.push(PreparedObject { class_id: CLASS_ANIMATIONCLIP, path_id: cid, data });
+                preload.push(here(cid));
+                anim_clip_pptrs.push(here(cid));
+            }
+            anim_component_id = Some(id()); // reserved; object emitted after the graph
+        }
+    }
+    // The entity-root GameObject's path_id, captured below (NOT a fixed value —
+    // pre-created textures/materials/clips take earlier ids).
+    let mut root_go_id: i64 = 0;
+
     if input.scene.total_primitives == 1 {
         // Collapsed: the single primitive's GameObject IS the entity root.
         let node = &input.scene.nodes[0];
@@ -511,8 +537,12 @@ pub fn assemble_glb_graph(
         let root_tf = id();
         let mut comps = vec![here(root_tf)];
         comps.extend(emit_prim(root_go, prim, node.is_collider, &mut objects, &mut preload, &mut id)?);
+        if let Some(a) = anim_component_id {
+            comps.push(here(a));
+        }
         objects.push(PreparedObject { class_id: CLASS_GAMEOBJECT, path_id: root_go, data: serialize_class(db, CLASS_GAMEOBJECT, &build_game_object_value(&UnityGameObject { name: input.root_name.to_string(), components: comps, layer: 0, tag: 0, is_active: true }))? });
         preload.push(here(root_go));
+        root_go_id = root_go;
         tfs.push(TfSpec { id: root_tf, game_object: root_go, father: 0, position: node.local_position, rotation: node.local_rotation, scale: node.local_scale });
     } else {
         // Entity root (Transform only) + per-node children.
@@ -541,10 +571,22 @@ pub fn assemble_glb_graph(
                 tfs.push(TfSpec { id: tf, game_object: go, father, position: trs.0, rotation: trs.1, scale: trs.2 });
             }
         }
-        let root_comps = vec![here(root_tf)];
+        let mut root_comps = vec![here(root_tf)];
+        if let Some(a) = anim_component_id {
+            root_comps.push(here(a));
+        }
         objects.push(PreparedObject { class_id: CLASS_GAMEOBJECT, path_id: root_go, data: serialize_class(db, CLASS_GAMEOBJECT, &build_game_object_value(&UnityGameObject { name: input.root_name.to_string(), components: root_comps, layer: 0, tag: 0, is_active: true }))? });
         preload.push(here(root_go));
+        root_go_id = root_go;
         tfs.push(TfSpec { id: root_tf, game_object: root_go, father: 0, position: identity.0, rotation: identity.1, scale: identity.2 });
+    }
+
+    // Emit the Animation component now that the root GameObject id is known.
+    if let Some(aid) = anim_component_id {
+        let comp_nodes = db.get(CLASS_ANIMATION).expect("class 111 present (checked above)");
+        let data = serialize_class(db, CLASS_ANIMATION, &build_animation_value(comp_nodes, &here(root_go_id), &anim_clip_pptrs))?;
+        objects.push(PreparedObject { class_id: CLASS_ANIMATION, path_id: aid, data });
+        preload.push(here(aid));
     }
 
     // Build all transforms now that children are known.
@@ -566,8 +608,8 @@ pub fn assemble_glb_graph(
     let meta = metadata_json("7.0", input.metadata_timestamp, input.dependencies, input.content_filename);
     objects.push(PreparedObject { class_id: CLASS_TEXTASSET, path_id: meta_id, data: serialize_class(db, CLASS_TEXTASSET, &build_text_asset_value("metadata", &meta))? });
 
-    // The entity root GameObject is the first GameObject emitted (path_id 2).
-    let root_go_id = 2i64;
+    // mainAsset → the entity-root GameObject (captured above; pre-created
+    // textures/materials/clips mean it is NOT a fixed path_id).
     let mut preload_table = preload.clone();
     preload_table.push(here(meta_id));
     let ab = UnityAssetBundle {

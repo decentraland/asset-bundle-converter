@@ -771,6 +771,77 @@ pub fn build_mesh_value(m: &UnityMeshObject) -> Value {
 // ===========================================================================
 
 // ===========================================================================
+// AnimationClip (class 74) + Animation (class 111) — structural pass
+// ===========================================================================
+//
+// AnimationClip is Unity's largest class graph (2348 B, with a 2140-byte
+// ClipMuscleConstant). Rather than hand-model every nested field, we start
+// from a TypeTree-driven default (`default_value`) and override the handful
+// that matter. This produces a valid, loadable LEGACY clip; the actual
+// glTF-keyframe → curve conversion (playback) is Explorer-gated and not done
+// here — curves stay empty for now.
+
+use crate::encode::type_tree::{default_value, TypeTreeNode};
+
+/// Override a struct field by node name (robust to field ordering).
+fn set_field(nodes: &[TypeTreeNode], root: usize, seq: &mut [Value], field: &str, val: Value) {
+    if let Some(pos) = nodes[root].children.iter().position(|&c| nodes[c].name == field) {
+        if pos < seq.len() {
+            seq[pos] = val;
+        }
+    }
+}
+
+/// Build a legacy AnimationClip value (named, empty curves) from the class-74
+/// TypeTree. `nodes` is the class's parsed TypeTree (root at index 0).
+pub fn build_animation_clip_value(nodes: &[TypeTreeNode], name: &str) -> Value {
+    let mut v = default_value(nodes, 0);
+    if let Value::Seq(f) = &mut v {
+        // m_Name is root child [0] (Unity convention). The TypeTree's name
+        // for it resolves via Unity's common-strings table, which our parser
+        // doesn't fully map (it shows up as "common@427"), so set by position
+        // rather than by name.
+        if !f.is_empty() {
+            f[0] = Value::String(name.to_string());
+        }
+        set_field(nodes, 0, f, "m_Legacy", Value::U8(1));
+        set_field(nodes, 0, f, "m_UseHighQualityCurve", Value::U8(1));
+        // m_SampleRate is a float leaf (4 bytes) — write 60.0's bit pattern.
+        set_field(nodes, 0, f, "m_SampleRate", Value::U32(60.0f32.to_bits()));
+        set_field(nodes, 0, f, "m_WrapMode", Value::U32(2));
+    }
+    v
+}
+
+/// Build an Animation component (class 111) referencing `clips`, attached to
+/// `game_object`. `nodes` is the class-111 TypeTree.
+pub fn build_animation_value(nodes: &[TypeTreeNode], game_object: &PPtr, clips: &[PPtr]) -> Value {
+    let mut v = default_value(nodes, 0);
+    if let Value::Seq(f) = &mut v {
+        // Class-111 root field order (verified via dump): [0] m_GameObject
+        // (PPtr), [1] m_Enabled, [2] m_Animation (PPtr), [3] m_Animations
+        // (Array<PPtr>). Their TypeTree names resolve through Unity's
+        // common-strings table (which our parser doesn't fully map), so set
+        // by position rather than by name.
+        if f.len() > 0 {
+            f[0] = pptr_value(game_object); // m_GameObject
+        }
+        if f.len() > 1 {
+            f[1] = Value::U8(1); // m_Enabled
+        }
+        if f.len() > 2 {
+            f[2] = clips.first().map(pptr_value).unwrap_or_else(|| pptr_value(&PPtr::default())); // m_Animation
+        }
+        if f.len() > 3 {
+            f[3] = Value::Array(clips.iter().map(pptr_value).collect()); // m_Animations
+        }
+        // m_PlayAutomatically resolves by name fine.
+        set_field(nodes, 0, f, "m_PlayAutomatically", Value::U8(1));
+    }
+    v
+}
+
+// ===========================================================================
 // MeshCollider (class 64)
 // ===========================================================================
 //
