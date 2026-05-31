@@ -604,9 +604,14 @@ pub fn assemble_glb_graph(
     }
     let extra: Vec<PPtr> = anim_component_id.map(pp).into_iter().collect();
 
-    // Emit the node tree. One scene root → that node IS the entity root
-    // (renamed to the hash); multiple → a synthetic hash-named root wraps them.
-    let root_go_id = if input.scene.roots.len() == 1 {
+    // Emit the node tree. One scene root with NO animations → that node IS the
+    // entity root (renamed to the hash). Multiple roots, OR any animation, → a
+    // synthetic hash-named root wraps the node(s) as children: animation curves
+    // (and skins) target nodes by their transform path, so collapsing the sole
+    // root into the entity-root would break that path. Confirmed against
+    // production: non-animated single-node scenes have 1 GameObject; the
+    // otherwise-identical animated ones keep the wrapper (2 GameObjects).
+    let root_go_id = if input.scene.roots.len() == 1 && input.scene.animation_names.is_empty() {
         emit_glb_node(
             &input.scene.roots[0], 0, Some(input.root_name), &extra,
             db, &mut next, &mut objects, &mut preload, &material_pptr, default_pptr,
