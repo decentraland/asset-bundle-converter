@@ -267,13 +267,27 @@ pub struct ScenePrimitive {
 #[derive(Debug, Clone)]
 pub struct SceneNode {
     pub name: String,
+    /// Source glТF node index — used to resolve skin joints to the joint
+    /// nodes' Transforms when wiring a SkinnedMeshRenderer's m_Bones.
+    pub node_index: usize,
     pub local_position: [f32; 3],
     pub local_rotation: [f32; 4],
     pub local_scale: [f32; 3],
     pub is_collider: bool,
+    /// Set when this node has a glТF `skin` → emit a SkinnedMeshRenderer
+    /// (class 137) instead of MeshFilter + MeshRenderer.
+    pub skin: Option<SkinInfo>,
     /// Empty for mesh-less nodes; one entry per glTF primitive otherwise.
     pub primitives: Vec<ScenePrimitive>,
     pub children: Vec<SceneNode>,
+}
+
+/// glТF skin resolved for a skinned node: the joint node indices (bone order)
+/// and the skeleton root node index (`skeleton`, or the first joint).
+#[derive(Debug, Clone)]
+pub struct SkinInfo {
+    pub joint_nodes: Vec<usize>,
+    pub root_node: usize,
 }
 
 /// The converted scene graph for one glb — the glТF scene-root nodes as a
@@ -326,6 +340,17 @@ fn build_scene_node(j: &J, bin: &[u8], nodes: &[J], node_idx: usize) -> Result<S
     let is_collider = name.to_lowercase().contains("_collider");
     let (tp, tr, ts) = node_trs(nd);
 
+    // Skin → SkinnedMeshRenderer. Resolve the skin's joint node indices
+    // (bone order) + skeleton root (or joints[0]).
+    let skin = nd["skin"].as_u64().and_then(|si| {
+        j["skins"].as_array().and_then(|skins| skins.get(si as usize)).map(|sk| {
+            let joint_nodes: Vec<usize> =
+                sk["joints"].as_array().map(|a| a.iter().filter_map(|x| x.as_u64().map(|v| v as usize)).collect()).unwrap_or_default();
+            let root_node = sk["skeleton"].as_u64().map(|v| v as usize).or_else(|| joint_nodes.first().copied()).unwrap_or(node_idx);
+            SkinInfo { joint_nodes, root_node }
+        })
+    });
+
     let mut primitives = Vec::new();
     if let Some(mesh_idx) = nd["mesh"].as_u64().map(|x| x as usize) {
         let nprim = j["meshes"][mesh_idx]["primitives"].as_array().map(|a| a.len()).unwrap_or(0);
@@ -350,10 +375,12 @@ fn build_scene_node(j: &J, bin: &[u8], nodes: &[J], node_idx: usize) -> Result<S
 
     Ok(SceneNode {
         name,
+        node_index: node_idx,
         local_position: tp,
         local_rotation: tr,
         local_scale: ts,
         is_collider,
+        skin,
         primitives,
         children,
     })

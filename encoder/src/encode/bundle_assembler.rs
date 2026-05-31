@@ -17,9 +17,10 @@
 
 use crate::encode::class_writers::{
     build_asset_bundle_value, build_game_object_value, build_material_value, build_mesh_filter_value,
-    build_mesh_renderer_value, build_mesh_value, build_text_asset_value, build_transform_value,
-    AssetBundleEntry, AssetInfo, PPtr, UnityAssetBundle, UnityGameObject, UnityMaterial,
-    UnityMeshFilter, UnityMeshObject, UnityMeshRenderer, UnityTransform,
+    build_mesh_renderer_value, build_mesh_value, build_skinned_mesh_renderer_value, build_text_asset_value,
+    build_transform_value, AssetBundleEntry, AssetInfo, PPtr, UnityAssetBundle, UnityGameObject,
+    UnityMaterial, UnityMeshFilter, UnityMeshObject, UnityMeshRenderer, UnitySkinnedMeshRenderer,
+    UnityTransform,
 };
 use crate::encode::serialized_file::{
     unity_target_id_for, write_serialized_file, ExternalEntry, ObjectEntry, SerializedFileInput,
@@ -43,7 +44,20 @@ pub const CLASS_TEXTASSET: i32 = 49;
 pub const CLASS_MESHCOLLIDER: i32 = 64;
 pub const CLASS_ANIMATIONCLIP: i32 = 74;
 pub const CLASS_ANIMATION: i32 = 111;
+pub const CLASS_SKINNEDMESHRENDERER: i32 = 137;
 pub const CLASS_ASSETBUNDLE: i32 = 142;
+
+/// A SkinnedMeshRenderer whose object bytes are built AFTER the node tree is
+/// walked — its m_Bones / m_RootBone point at joint Transforms whose path-IDs
+/// aren't all known until every node has been emitted (node_index → tf map).
+struct PendingSmr {
+    smr_id: i64,
+    go_id: i64,
+    mesh_id: i64,
+    material_index: usize,
+    joints: Vec<usize>,
+    root: usize,
+}
 
 // Conventional path IDs for the assembled objects.
 const PATH_ID_ASSETBUNDLE: i64 = 1;
@@ -380,19 +394,7 @@ fn emit_glb_prim(
     is_collider: bool,
     mesh_cache: &mut std::collections::HashMap<(usize, usize, bool), i64>,
 ) -> Result<Vec<PPtr>, SerializeError> {
-    // Dedup: nodes referencing the same glТF (mesh, primitive) with the same
-    // collider usage share one Mesh object, as production does. Collider usage
-    // is part of the key because it sets m_MeshUsageFlags.
-    let key = (prim.mesh_index, prim.prim_index, is_collider);
-    let mesh_id = if let Some(&id) = mesh_cache.get(&key) {
-        id
-    } else {
-        let id = alloc(next);
-        objects.push(PreparedObject { class_id: CLASS_MESH, path_id: id, data: serialize_class(db, CLASS_MESH, &build_mesh_value(&prim.mesh))? });
-        preload.push(pp(id));
-        mesh_cache.insert(key, id);
-        id
-    };
+    let mesh_id = cached_mesh_id(db, next, objects, preload, prim, is_collider, mesh_cache)?;
     let mf_id = alloc(next);
     objects.push(PreparedObject { class_id: CLASS_MESHFILTER, path_id: mf_id, data: serialize_class(db, CLASS_MESHFILTER, &build_mesh_filter_value(&UnityMeshFilter { game_object: pp(go), mesh: pp(mesh_id) }))? });
     let rc_id = alloc(next);
@@ -414,6 +416,30 @@ fn emit_glb_prim(
         objects.push(PreparedObject { class_id: CLASS_MESHRENDERER, path_id: rc_id, data: serialize_class(db, CLASS_MESHRENDERER, &build_mesh_renderer_value(&mr))? });
     }
     Ok(vec![pp(mf_id), pp(rc_id)])
+}
+
+/// Get or create the Mesh object for a primitive. Dedup: nodes referencing
+/// the same glТF (mesh, primitive) with the same collider usage share one Mesh
+/// object, as production does (collider usage is in the key — it sets
+/// m_MeshUsageFlags).
+fn cached_mesh_id(
+    db: &TypeTreeDb,
+    next: &mut i64,
+    objects: &mut Vec<PreparedObject>,
+    preload: &mut Vec<PPtr>,
+    prim: &ScenePrimitive,
+    is_collider: bool,
+    mesh_cache: &mut std::collections::HashMap<(usize, usize, bool), i64>,
+) -> Result<i64, SerializeError> {
+    let key = (prim.mesh_index, prim.prim_index, is_collider);
+    if let Some(&id) = mesh_cache.get(&key) {
+        return Ok(id);
+    }
+    let id = alloc(next);
+    objects.push(PreparedObject { class_id: CLASS_MESH, path_id: id, data: serialize_class(db, CLASS_MESH, &build_mesh_value(&prim.mesh))? });
+    preload.push(pp(id));
+    mesh_cache.insert(key, id);
+    Ok(id)
 }
 
 /// Emit a Transform object.
@@ -455,12 +481,33 @@ fn emit_glb_node(
     material_pptr: &[i64],
     default_pptr: i64,
     mesh_cache: &mut std::collections::HashMap<(usize, usize, bool), i64>,
+    node_tf: &mut std::collections::HashMap<usize, i64>,
+    pending_smr: &mut Vec<PendingSmr>,
 ) -> Result<(i64, i64), SerializeError> {
     let go = alloc(next);
     let tf = alloc(next);
+    node_tf.insert(node.node_index, tf);
     let mut comps = vec![pp(tf)];
+    // Primitive 0 → components on this node's GameObject. A skinned node emits
+    // a SkinnedMeshRenderer (built later, once all joint tf-ids are known)
+    // instead of MeshFilter + MeshRenderer.
     if let Some(prim0) = node.primitives.first() {
-        comps.extend(emit_glb_prim(db, next, objects, preload, material_pptr, default_pptr, go, prim0, node.is_collider, mesh_cache)?);
+        match &node.skin {
+            // Skinned `_collider` node → no SkinnedMeshRenderer / MeshCollider
+            // component, but production still emits its Mesh object.
+            Some(_) if node.is_collider => {
+                cached_mesh_id(db, next, objects, preload, prim0, true, mesh_cache)?;
+            }
+            Some(skin) => {
+                let mesh_id = cached_mesh_id(db, next, objects, preload, prim0, false, mesh_cache)?;
+                let smr_id = alloc(next);
+                comps.push(pp(smr_id));
+                pending_smr.push(PendingSmr { smr_id, go_id: go, mesh_id, material_index: prim0.material_index, joints: skin.joint_nodes.clone(), root: skin.root_node });
+            }
+            None => {
+                comps.extend(emit_glb_prim(db, next, objects, preload, material_pptr, default_pptr, go, prim0, node.is_collider, mesh_cache)?);
+            }
+        }
     }
     comps.extend_from_slice(extra);
     let name = name_override.map(|s| s.to_string()).unwrap_or_else(|| node.name.clone());
@@ -473,7 +520,20 @@ fn emit_glb_node(
         let cgo = alloc(next);
         let ctf = alloc(next);
         let mut ccomps = vec![pp(ctf)];
-        ccomps.extend(emit_glb_prim(db, next, objects, preload, material_pptr, default_pptr, cgo, prim, node.is_collider, mesh_cache)?);
+        match &node.skin {
+            Some(_) if node.is_collider => {
+                cached_mesh_id(db, next, objects, preload, prim, true, mesh_cache)?;
+            }
+            Some(skin) => {
+                let mesh_id = cached_mesh_id(db, next, objects, preload, prim, false, mesh_cache)?;
+                let smr_id = alloc(next);
+                ccomps.push(pp(smr_id));
+                pending_smr.push(PendingSmr { smr_id, go_id: cgo, mesh_id, material_index: prim.material_index, joints: skin.joint_nodes.clone(), root: skin.root_node });
+            }
+            None => {
+                ccomps.extend(emit_glb_prim(db, next, objects, preload, material_pptr, default_pptr, cgo, prim, node.is_collider, mesh_cache)?);
+            }
+        }
         objects.push(PreparedObject { class_id: CLASS_GAMEOBJECT, path_id: cgo, data: serialize_class(db, CLASS_GAMEOBJECT, &build_game_object_value(&UnityGameObject { name: format!("{}_{}", prim.mesh.name, i), components: ccomps, layer: 0, tag: 0, is_active: true }))? });
         preload.push(pp(cgo));
         emit_glb_transform(db, objects, ctf, cgo, tf, IDENTITY_TRS, &[])?;
@@ -481,7 +541,7 @@ fn emit_glb_node(
     }
     // Child nodes (recursive).
     for child in &node.children {
-        let (_, ctf) = emit_glb_node(child, tf, None, &[], db, next, objects, preload, material_pptr, default_pptr, mesh_cache)?;
+        let (_, ctf) = emit_glb_node(child, tf, None, &[], db, next, objects, preload, material_pptr, default_pptr, mesh_cache, node_tf, pending_smr)?;
         child_tfs.push(ctf);
     }
     emit_glb_transform(db, objects, tf, go, father_tf, (node.local_position, node.local_rotation, node.local_scale), &child_tfs)?;
@@ -627,6 +687,8 @@ pub fn assemble_glb_graph(
     }
     let extra: Vec<PPtr> = anim_component_id.map(pp).into_iter().collect();
     let mut mesh_cache: std::collections::HashMap<(usize, usize, bool), i64> = std::collections::HashMap::new();
+    let mut node_tf: std::collections::HashMap<usize, i64> = std::collections::HashMap::new();
+    let mut pending_smr: Vec<PendingSmr> = Vec::new();
 
     // Emit the node tree. One scene root with NO animations → that node IS the
     // entity root (renamed to the hash). Multiple roots, OR any animation, → a
@@ -638,7 +700,7 @@ pub fn assemble_glb_graph(
     let root_go_id = if input.scene.roots.len() == 1 && input.scene.animation_names.is_empty() {
         emit_glb_node(
             &input.scene.roots[0], 0, Some(input.root_name), &extra,
-            db, &mut next, &mut objects, &mut preload, &material_pptr, default_pptr, &mut mesh_cache,
+            db, &mut next, &mut objects, &mut preload, &material_pptr, default_pptr, &mut mesh_cache, &mut node_tf, &mut pending_smr,
         )?
         .0
     } else {
@@ -650,12 +712,32 @@ pub fn assemble_glb_graph(
         preload.push(pp(go));
         let mut child_tfs = Vec::new();
         for root in &input.scene.roots {
-            let (_, ctf) = emit_glb_node(root, tf, None, &[], db, &mut next, &mut objects, &mut preload, &material_pptr, default_pptr, &mut mesh_cache)?;
+            let (_, ctf) = emit_glb_node(root, tf, None, &[], db, &mut next, &mut objects, &mut preload, &material_pptr, default_pptr, &mut mesh_cache, &mut node_tf, &mut pending_smr)?;
             child_tfs.push(ctf);
         }
         emit_glb_transform(db, &mut objects, tf, go, 0, IDENTITY_TRS, &child_tfs)?;
         go
     };
+
+    // SkinnedMeshRenderers (now every node's Transform id is known). m_Bones
+    // resolve the skin's joint node indices to their joint Transforms;
+    // m_RootBone the skeleton root. Built only if the fixture covers class 137.
+    if !pending_smr.is_empty() && db.get(CLASS_SKINNEDMESHRENDERER).is_some() {
+        for p in &pending_smr {
+            let bones: Vec<PPtr> = p.joints.iter().filter_map(|j| node_tf.get(j).map(|&tf| pp(tf))).collect();
+            let root_bone = node_tf.get(&p.root).map(|&tf| pp(tf)).unwrap_or_default();
+            let mat = material_pptr.get(p.material_index).copied().unwrap_or(default_pptr);
+            let smr = UnitySkinnedMeshRenderer {
+                game_object: pp(p.go_id),
+                materials: vec![pp(mat)],
+                mesh: pp(p.mesh_id),
+                bones,
+                root_bone,
+            };
+            objects.push(PreparedObject { class_id: CLASS_SKINNEDMESHRENDERER, path_id: p.smr_id, data: serialize_class(db, CLASS_SKINNEDMESHRENDERER, &build_skinned_mesh_renderer_value(&smr))? });
+            preload.push(pp(p.smr_id));
+        }
+    }
 
     // Animation component (now the root GameObject id is known).
     if let Some(aid) = anim_component_id {

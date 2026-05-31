@@ -374,6 +374,68 @@ pub fn build_mesh_renderer_value(m: &UnityMeshRenderer) -> Value {
     ])
 }
 
+/// SkinnedMeshRenderer (class 137). Fields 0..29 mirror MeshRenderer (same
+/// render-flag layout); 30..38 are skinned-specific. Constant values are taken
+/// from a real v49 SkinnedMeshRenderer (dump-fields): RayTracingMode=3,
+/// RTAccelFlags=1, SmallMeshCulling=1, ForceMeshLod=-1, RenderingLayerMask=1,
+/// Quality=0, UpdateWhenOffscreen=1, AABB=0 with DirtyAABB=1 (recomputed at
+/// load). m_Bones point at the skin's joint Transforms; m_RootBone at the
+/// skeleton root.
+#[derive(Debug, Clone, Default)]
+pub struct UnitySkinnedMeshRenderer {
+    pub game_object: PPtr,
+    pub materials: Vec<PPtr>,
+    pub mesh: PPtr,
+    pub bones: Vec<PPtr>,
+    pub root_bone: PPtr,
+}
+
+pub fn build_skinned_mesh_renderer_value(s: &UnitySkinnedMeshRenderer) -> Value {
+    let v4 = |a: f32, b: f32, c: f32, d: f32| Value::Seq(vec![Value::F32(a), Value::F32(b), Value::F32(c), Value::F32(d)]);
+    let v3 = || Value::Seq(vec![Value::F32(0.0), Value::F32(0.0), Value::F32(0.0)]);
+    Value::Seq(vec![
+        pptr_value(&s.game_object),                              // 0:  m_GameObject
+        Value::U8(1),                                            // 1:  m_Enabled
+        Value::U8(1),                                            // 2:  m_CastShadows
+        Value::U8(1),                                            // 3:  m_ReceiveShadows
+        Value::U8(1),                                            // 4:  m_DynamicOccludee
+        Value::U8(0),                                            // 5:  m_StaticShadowCaster
+        Value::U8(1),                                            // 6:  m_MotionVectors
+        Value::U8(1),                                            // 7:  m_LightProbeUsage
+        Value::U8(1),                                            // 8:  m_ReflectionProbeUsage
+        Value::U8(3),                                            // 9:  m_RayTracingMode
+        Value::U8(0),                                            // 10: m_RayTraceProcedural
+        Value::U8(0),                                            // 11: m_RayTracingAccelStructBuildFlagsOverride
+        Value::U8(1),                                            // 12: m_RayTracingAccelStructBuildFlags
+        Value::U8(1),                                            // 13: m_SmallMeshCulling
+        Value::I16(-1),                                          // 14: m_ForceMeshLod
+        Value::F32(0.0),                                         // 15: m_MeshLodSelectionBias
+        Value::U32(1),                                           // 16: m_RenderingLayerMask
+        Value::I32(0),                                           // 17: m_RendererPriority
+        Value::U16(0xFFFF),                                      // 18: m_LightmapIndex
+        Value::U16(0xFFFF),                                      // 19: m_LightmapIndexDynamic
+        v4(1.0, 1.0, 0.0, 0.0),                                  // 20: m_LightmapTilingOffset
+        v4(1.0, 1.0, 0.0, 0.0),                                  // 21: m_LightmapTilingOffsetDynamic
+        Value::Array(s.materials.iter().map(pptr_value).collect()), // 22: m_Materials
+        Value::Seq(vec![Value::U16(0), Value::U16(0)]),         // 23: m_StaticBatchInfo
+        pptr_value(&PPtr::default()),                            // 24: m_StaticBatchRoot
+        pptr_value(&PPtr::default()),                            // 25: m_ProbeAnchor
+        pptr_value(&PPtr::default()),                            // 26: m_LightProbeVolumeOverride
+        Value::I32(0),                                           // 27: m_SortingLayerID
+        Value::I16(0),                                           // 28: m_SortingLayer
+        Value::I16(0),                                           // 29: m_SortingOrder
+        Value::I32(0),                                           // 30: m_Quality
+        Value::U8(1),                                            // 31: m_UpdateWhenOffscreen
+        Value::U8(1),                                            // 32: m_SkinnedMotionVectors
+        pptr_value(&s.mesh),                                     // 33: m_Mesh
+        Value::Array(s.bones.iter().map(pptr_value).collect()),  // 34: m_Bones
+        Value::Array(vec![]),                                    // 35: m_BlendShapeWeights
+        pptr_value(&s.root_bone),                                // 36: m_RootBone
+        Value::Seq(vec![v3(), v3()]),                            // 37: m_AABB (center, extent)
+        Value::U8(1),                                            // 38: m_DirtyAABB
+    ])
+}
+
 // ===========================================================================
 // Material (class 21)
 // ===========================================================================
