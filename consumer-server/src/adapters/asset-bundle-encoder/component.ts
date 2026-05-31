@@ -29,6 +29,7 @@ type NativeEncoderHandle = {
   buildTarget(): string
   encode(input: {
     entityId: string
+    entityType?: string
     shaderType: 'dcl' | 'gltfast'
     catalystBaseUrl: string
     contentMap: ReadonlyArray<{ file: string; hash: string }>
@@ -193,6 +194,7 @@ export async function createAssetBundleEncoderComponent(
     try {
       result = await native.encode({
         entityId: options.entityId,
+        entityType: options.entityType,
         shaderType: options.shaderType,
         catalystBaseUrl: options.catalystBaseUrl,
         contentMap: options.contentMap,

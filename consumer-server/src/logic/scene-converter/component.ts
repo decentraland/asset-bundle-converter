@@ -77,6 +77,7 @@ export async function createSceneConverter(
       const result = await assetBundleEncoder.convert({
         outDirectory: options.outDirectory,
         entityId: options.entityId,
+        entityType: options.entityType,
         buildTarget: encoderTarget,
         catalystBaseUrl: options.catalystBaseUrl,
         contentMap: options.contentMap,

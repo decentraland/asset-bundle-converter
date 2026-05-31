@@ -20,6 +20,12 @@ export type EncoderConvertOptions = {
 
   entityId: string
 
+  /** Entity DTO type ("scene" | "emote" | "wearable" | …). Drives the
+   * encoder's animation method (emote → Mecanim Animator/AnimatorController,
+   * wearable → none, else legacy Animation), mirroring Unity's
+   * GetAnimationMethod. Optional — absent is treated as a plain scene. */
+  entityType?: string
+
   /** Must match the pod's BUILD_TARGET. Mismatches are rejected with
    * TARGET_MISMATCH rather than silently re-encoding for the wrong
    * platform. */

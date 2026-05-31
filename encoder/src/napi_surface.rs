@@ -59,6 +59,10 @@ pub struct NapiBakeArtifacts {
 #[napi(object)]
 pub struct NapiSceneInput {
     pub entity_id: String,
+    /// Entity DTO type ("scene" | "emote" | "wearable" | …). Drives the
+    /// animation method (emote → Mecanim, wearable → None, else Legacy),
+    /// alongside the `_emote.glb` filename rule. Optional — absent → scene.
+    pub entity_type: Option<String>,
     /// "dcl" | "gltfast"
     pub shader_type: String,
     /// Already trailing-slashed catalyst contents URL
@@ -137,6 +141,7 @@ impl Encoder {
 
         let scene_input = scene_encoder::SceneInput {
             entity_id: input.entity_id,
+            entity_type: input.entity_type,
             shader_type: input
                 .shader_type
                 .parse()

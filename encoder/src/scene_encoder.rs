@@ -38,6 +38,10 @@ use crate::types::{BuildTarget, ShaderManifest, ShaderType};
 #[serde(rename_all = "camelCase")]
 pub struct SceneInput {
     pub entity_id: String,
+    /// Entity DTO type (e.g. "scene", "emote", "wearable"), if known. Drives
+    /// the animation method alongside the `_emote.glb` filename rule — see
+    /// `resolve_animation_method`. None → treated as a plain scene (Legacy).
+    pub entity_type: Option<String>,
     pub shader_type: ShaderType,
     pub catalyst_base_url: String,
     pub content_map: Vec<ContentEntry>,
@@ -45,6 +49,17 @@ pub struct SceneInput {
     pub cached_hashes: Vec<String>,
     pub skipped_hashes: Vec<String>,
     pub failure_tolerance: f64,
+}
+
+/// Mirror Unity's `GetAnimationMethod` (AssetBundleConverter.cs:296-300,625):
+/// isEmote = entity type contains "emote" OR the glb filename ends `_emote.glb`
+/// (Utils.IsEmoteFileName); isWearable = entity type contains "wearable".
+/// emote → Mecanim, wearable → None, else Legacy.
+pub fn resolve_animation_method(entity_type: Option<&str>, filename: &str) -> crate::types::AnimationMethod {
+    let ty = entity_type.map(|t| t.to_lowercase()).unwrap_or_default();
+    let is_emote = ty.contains("emote") || filename.to_lowercase().ends_with("_emote.glb");
+    let is_wearable = ty.contains("wearable");
+    crate::types::AnimationMethod::from_entity(is_emote, is_wearable)
 }
 
 #[derive(Debug, Deserialize)]
@@ -344,6 +359,7 @@ impl SceneEncoderInner {
                 .get(hash)
                 .cloned()
                 .unwrap_or_default();
+            let animation_method = resolve_animation_method(input.entity_type.as_deref(), filename);
             match encode_glb_bundle(
                 &self.type_tree_db,
                 self.build_target,
@@ -352,6 +368,7 @@ impl SceneEncoderInner {
                 bytes,
                 &digest,
                 &dep_cids,
+                animation_method,
             ) {
                 Ok(bundle) => {
                     bundles.push(bundle);
@@ -527,6 +544,7 @@ fn encode_glb_bundle(
     glb_bytes: &Bytes,
     digest: &str,
     dep_cids: &[String],
+    animation_method: crate::types::AnimationMethod,
 ) -> Result<Bundle, EncodeAssetError> {
     use crate::encode::bundle_assembler::{assemble_glb_graph, GlbGraphInput};
     use crate::encode::gltf_material::{convert_glb_material, MaterialTextures};
@@ -581,15 +599,9 @@ fn encode_glb_bundle(
             shader_cab_path: cab,
             dependencies: dep_cids,
             metadata_timestamp: 0,
-            // Unity's GetAnimationMethod: the `_emote.glb` filename → Mecanim
-            // (Utils.IsEmoteFileName). Entity-type-based emote/wearable
-            // detection (entityDTO.type) should be threaded from the
-            // scene-converter when available; filename covers the common case.
-            animation_method: if filename.to_lowercase().ends_with("_emote.glb") {
-                crate::types::AnimationMethod::Mecanim
-            } else {
-                crate::types::AnimationMethod::Legacy
-            },
+            // Resolved by the caller from entity type + filename (Unity's
+            // GetAnimationMethod): emote → Mecanim, wearable → None, else Legacy.
+            animation_method,
         },
     )
     .map_err(|e| EncodeAssetError::Fatal(EncoderError::Internal(format!("assemble_glb_graph {hash}: {e}"))))?;
@@ -729,4 +741,42 @@ fn serialize_unityfs_container() {
     // Verify against a Unity-built fixture during phase 0 — produce a
     // byte-equivalent (modulo timestamps) bundle from the same input.
     // --------------------------------------------------------------------
+}
+
+#[cfg(test)]
+mod animation_method_tests {
+    use super::resolve_animation_method;
+    use crate::types::AnimationMethod;
+
+    #[test]
+    fn plain_scene_glb_is_legacy() {
+        assert_eq!(resolve_animation_method(Some("scene"), "model.glb"), AnimationMethod::Legacy);
+    }
+
+    #[test]
+    fn no_entity_type_defaults_to_legacy() {
+        assert_eq!(resolve_animation_method(None, "model.glb"), AnimationMethod::Legacy);
+    }
+
+    #[test]
+    fn emote_entity_type_is_mecanim() {
+        assert_eq!(resolve_animation_method(Some("emote"), "anything.glb"), AnimationMethod::Mecanim);
+    }
+
+    #[test]
+    fn emote_filename_is_mecanim_even_for_scene_type() {
+        // Utils.IsEmoteFileName: the `_emote.glb` suffix alone triggers Mecanim.
+        assert_eq!(resolve_animation_method(Some("scene"), "dance_emote.glb"), AnimationMethod::Mecanim);
+    }
+
+    #[test]
+    fn wearable_is_none_overriding_emote_filename() {
+        // GetAnimationMethod checks isWearable first → None.
+        assert_eq!(resolve_animation_method(Some("wearable"), "x_emote.glb"), AnimationMethod::None);
+    }
+
+    #[test]
+    fn entity_type_is_case_insensitive() {
+        assert_eq!(resolve_animation_method(Some("Emote"), "a.glb"), AnimationMethod::Mecanim);
+    }
 }
