@@ -265,15 +265,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn decodes_png_to_rgba32() {
+    fn decodes_png_to_bc7_with_mips() {
         // 2x2 red PNG — minimum reproducible source.
         let png_bytes = generate_test_png(2, 2);
         let tex = decode_to_texture2d("test", &png_bytes).unwrap();
         assert_eq!(tex.width, 2);
         assert_eq!(tex.height, 2);
-        assert_eq!(tex.texture_format, TEXTURE_FORMAT_RGBA32);
-        // 2x2 RGBA = 16 bytes
-        assert_eq!(tex.image_data.len(), 16);
+        assert_eq!(tex.texture_format, TEXTURE_FORMAT_BC7);
+        // 2x2 → mip levels 2x2, 1x1 = 2 levels; each pads to a 4x4 BC7
+        // block (16 bytes), so 32 bytes total.
+        assert_eq!(tex.mip_count, 2);
+        assert_eq!(tex.image_data.len(), 32);
     }
 
     #[test]
