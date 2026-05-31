@@ -48,40 +48,43 @@ pub struct UnityTexture2D {
 }
 
 /// The standard "RGBA32" TextureFormat value Unity uses (no
-/// compression, 4 bytes/pixel). Used by the writer when the caller
-/// hasn't picked a compressed format.
+/// compression, 4 bytes/pixel).
 pub const TEXTURE_FORMAT_RGBA32: i32 = 4;
+
+/// "BC7" TextureFormat — GPU-compressed, 1 byte/texel. What production DCL
+/// texture bundles use.
+pub const TEXTURE_FORMAT_BC7: i32 = 25;
 
 /// `TextureDimension::Tex2D` per UnityEngine.Rendering.TextureDimension.
 pub const TEXTURE_DIMENSION_2D: i32 = 2;
 
-/// Decode PNG / JPEG bytes into a UnityTexture2D in RGBA32 format.
-///
-/// Width/height come from the source image. mip_count is 1 (no mip
-/// chain generated). color_space = sRGB. image_data is tight RGBA8.
+/// Decode PNG / JPEG bytes into a UnityTexture2D in **BC7** format with a
+/// full mip chain — matching production (`m_TextureFormat=25`, `m_MipCount`
+/// = full chain, `m_CompleteImageSize` = BC7+mips byte total). The BC7 is a
+/// pure-Rust mode-6 encode (see `encode::bc7`); lower quality than an ISPC
+/// encoder but a valid, decodable BC7 stream with byte sizes identical to
+/// Unity's. color_space = sRGB.
 pub fn decode_to_texture2d(name: &str, bytes: &[u8]) -> Result<UnityTexture2D, SerializeError> {
     let img = image::load_from_memory(bytes)
         .map_err(|e| SerializeError::Format(format!("image decode failed: {e}")))?;
     let rgba = img.to_rgba8();
     let width = rgba.width();
     let height = rgba.height();
-    // Sanity-cap: reject pathologically large textures up front. Unity
-    // imposes its own per-platform caps; 4096² (= 64 MiB at RGBA32) is
-    // well above what scene assets need.
     const MAX_DIM: u32 = 4096;
     if width > MAX_DIM || height > MAX_DIM {
         return Err(SerializeError::Format(format!(
             "texture {width}x{height} exceeds {MAX_DIM}² cap"
         )));
     }
+    let (bc7, mip_count) = crate::encode::bc7::compress_with_mips(rgba.as_raw(), width, height);
     Ok(UnityTexture2D {
         name: name.to_string(),
         width,
         height,
-        texture_format: TEXTURE_FORMAT_RGBA32,
-        mip_count: 1,
+        texture_format: TEXTURE_FORMAT_BC7,
+        mip_count,
         color_space: 1, // sRGB
-        image_data: rgba.into_raw(),
+        image_data: bc7,
     })
 }
 

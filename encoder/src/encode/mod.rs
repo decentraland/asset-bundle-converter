@@ -18,6 +18,7 @@
 //! TypeTreeGenerator dump, AssetRipper / UnityPy decompilation of a
 //! reference bundle).
 
+pub mod bc7;
 pub mod bundle_assembler;
 pub mod class_writers;
 pub mod glb_parser;
