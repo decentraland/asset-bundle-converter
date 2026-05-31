@@ -319,10 +319,12 @@ pub struct GlbGraphInput<'a> {
     /// Materials by glTF material index (shader PPtr already set by
     /// `convert_glb_material`). Visible primitives reference these.
     pub materials: &'a [UnityMaterial],
-    /// glTF material index → its base-color image index (None = untextured).
-    pub base_color_image: &'a [Option<usize>],
+    /// glTF material index → its per-slot image indices (base / metallic-
+    /// roughness / normal / emissive / occlusion).
+    pub material_images: &'a [crate::encode::gltf_material::MaterialImageRefs],
     /// Image index → decoded PNG/JPG bytes (embedded glb images). Each
-    /// referenced image becomes one in-bundle Texture2D wired into `_BaseMap`.
+    /// referenced image becomes in-bundle Texture2D(s) wired into the right
+    /// material channel.
     pub images: &'a std::collections::HashMap<usize, Vec<u8>>,
     pub shader_cab_path: &'a str,
     pub dependencies: &'a [String],
@@ -344,18 +346,22 @@ fn alloc(next: &mut i64) -> i64 {
     v
 }
 
-/// Collect (recursively) the base-color image indices referenced by VISIBLE
+/// Collect (recursively) every texture-slot image referenced by VISIBLE
 /// primitives' materials across the scene tree.
-fn collect_used_images(roots: &[SceneNode], base_color_image: &[Option<usize>], out: &mut std::collections::BTreeSet<usize>) {
+fn collect_used_images(
+    roots: &[SceneNode],
+    material_images: &[crate::encode::gltf_material::MaterialImageRefs],
+    out: &mut std::collections::BTreeSet<usize>,
+) {
     for node in roots {
         if !node.is_collider {
             for prim in &node.primitives {
-                if let Some(Some(img)) = base_color_image.get(prim.material_index) {
-                    out.insert(*img);
+                if let Some(refs) = material_images.get(prim.material_index) {
+                    out.extend(refs.images());
                 }
             }
         }
-        collect_used_images(&node.children, base_color_image, out);
+        collect_used_images(&node.children, material_images, out);
     }
 }
 
@@ -501,7 +507,7 @@ pub fn assemble_glb_graph(
     let ress_path = format!("archive:/{cab}/{cab}.resS");
     let mut ress: Vec<u8> = Vec::new();
     let mut used_images: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
-    collect_used_images(&input.scene.roots, input.base_color_image, &mut used_images);
+    collect_used_images(&input.scene.roots, input.material_images, &mut used_images);
     let mut img_pptr: std::collections::HashMap<usize, PPtr> = std::collections::HashMap::new();
     for img in used_images {
         let Some(png) = input.images.get(&img) else { continue };
@@ -527,11 +533,21 @@ pub fn assemble_glb_graph(
     for (idx, base) in input.materials.iter().enumerate() {
         let mut material = base.clone();
         material.shader = PPtr { file_id: 1, path_id: crate::encode::gltf_material::DCL_SCENE_SHADER_PATH_ID };
-        if let Some(Some(img)) = input.base_color_image.get(idx) {
-            if let Some(p) = img_pptr.get(img).cloned() {
-                for (name, te) in material.tex_envs.iter_mut() {
-                    if name == "_BaseMap" {
-                        te.texture = p.clone();
+        // Wire each used texture slot to its in-bundle Texture2D.
+        if let Some(refs) = input.material_images.get(idx) {
+            let slots = [
+                ("_BaseMap", refs.base),
+                ("_MetallicGlossMap", refs.metallic_rough),
+                ("_BumpMap", refs.normal),
+                ("_EmissionMap", refs.emissive),
+                ("_OcclusionMap", refs.occlusion),
+            ];
+            for (chan, img) in slots {
+                if let Some(p) = img.and_then(|i| img_pptr.get(&i)).cloned() {
+                    for (name, te) in material.tex_envs.iter_mut() {
+                        if name == chan {
+                            te.texture = p.clone();
+                        }
                     }
                 }
             }

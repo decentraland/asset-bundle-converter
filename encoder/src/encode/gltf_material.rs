@@ -164,3 +164,78 @@ pub struct MaterialTextures {
     pub metallic_gloss_map: Option<PPtr>,
     pub occlusion_map: Option<PPtr>,
 }
+
+/// Per-material glТF image indices, one per texture slot (None = unused).
+/// Unity emits a Texture2D for each used slot, wired to the material channel:
+/// base→_BaseMap, metallicRoughness→_MetallicGlossMap, normal→_BumpMap,
+/// emissive→_EmissionMap, occlusion→_OcclusionMap.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct MaterialImageRefs {
+    pub base: Option<usize>,
+    pub metallic_rough: Option<usize>,
+    pub normal: Option<usize>,
+    pub emissive: Option<usize>,
+    pub occlusion: Option<usize>,
+}
+
+impl MaterialImageRefs {
+    /// All used image indices across the slots.
+    pub fn images(&self) -> impl Iterator<Item = usize> + '_ {
+        [self.base, self.metallic_rough, self.normal, self.emissive, self.occlusion]
+            .into_iter()
+            .flatten()
+    }
+}
+
+/// Resolve, for each glТF material, the image index referenced by each
+/// texture slot, and pull the EMBEDDED image bytes (bufferView-backed) for
+/// every referenced image. External-uri images are skipped (handled as
+/// separate bundles). `gltf` is the parsed glТF JSON; `glb` the whole glb.
+pub fn extract_material_images(
+    gltf: &J,
+    glb: &[u8],
+) -> (Vec<MaterialImageRefs>, std::collections::HashMap<usize, Vec<u8>>) {
+    let jlen = u32::from_le_bytes(glb[12..16].try_into().unwrap()) as usize;
+    let bin = glb.get(20 + jlen + 8..).unwrap_or(&[]);
+    let textures = gltf["textures"].as_array();
+    let images = gltf["images"].as_array();
+    let bvs = gltf["bufferViews"].as_array();
+
+    let src_of = |tex_ref: &J| -> Option<usize> {
+        tex_ref["index"]
+            .as_u64()
+            .and_then(|ti| textures.and_then(|t| t.get(ti as usize)))
+            .and_then(|tx| tx["source"].as_u64())
+            .map(|s| s as usize)
+    };
+
+    let mut refs = Vec::new();
+    let mut bytes: std::collections::HashMap<usize, Vec<u8>> = std::collections::HashMap::new();
+    if let Some(mats) = gltf["materials"].as_array() {
+        for m in mats {
+            let pbr = &m["pbrMetallicRoughness"];
+            let r = MaterialImageRefs {
+                base: src_of(&pbr["baseColorTexture"]),
+                metallic_rough: src_of(&pbr["metallicRoughnessTexture"]),
+                normal: src_of(&m["normalTexture"]),
+                emissive: src_of(&m["emissiveTexture"]),
+                occlusion: src_of(&m["occlusionTexture"]),
+            };
+            for img in r.images() {
+                if let std::collections::hash_map::Entry::Vacant(e) = bytes.entry(img) {
+                    if let Some(bv) = images.and_then(|im| im.get(img)).and_then(|im| im["bufferView"].as_u64()) {
+                        if let Some(b) = bvs.and_then(|a| a.get(bv as usize)) {
+                            let o = b["byteOffset"].as_u64().unwrap_or(0) as usize;
+                            let l = b["byteLength"].as_u64().unwrap_or(0) as usize;
+                            if let Some(s) = bin.get(o..o + l) {
+                                e.insert(s.to_vec());
+                            }
+                        }
+                    }
+                }
+            }
+            refs.push(r);
+        }
+    }
+    (refs, bytes)
+}

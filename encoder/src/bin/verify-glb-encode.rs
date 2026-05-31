@@ -30,33 +30,14 @@ fn run(glb_path: &str, bundle_path: &str) -> Result<(), String> {
     let j: serde_json::Value = serde_json::from_slice(&glb[20..20 + jlen]).map_err(|e| e.to_string())?;
     let materials: Vec<_> = j["materials"].as_array().map(|a| (0..a.len()).map(|i| convert_glb_material(&j, i, &MaterialTextures::default())).collect()).unwrap_or_default();
 
-    // base-color image index per material + embedded image bytes.
-    let bin = &glb[20 + jlen + 8..];
-    let textures = j["textures"].as_array();
-    let images = j["images"].as_array();
-    let bvs = j["bufferViews"].as_array();
-    let mut base_color_image = Vec::new();
-    let mut image_bytes: HashMap<usize, Vec<u8>> = HashMap::new();
-    if let Some(mats) = j["materials"].as_array() {
-        for m in mats {
-            let img = m["pbrMetallicRoughness"]["baseColorTexture"]["index"].as_u64()
-                .and_then(|ti| textures.and_then(|t| t.get(ti as usize))).and_then(|tx| tx["source"].as_u64()).map(|s| s as usize);
-            base_color_image.push(img);
-            if let Some(i) = img {
-                if let Some(bv) = images.and_then(|im| im.get(i)).and_then(|im| im["bufferView"].as_u64()) {
-                    if let Some(b) = bvs.and_then(|a| a.get(bv as usize)) {
-                        let o = b["byteOffset"].as_u64().unwrap_or(0) as usize; let l = b["byteLength"].as_u64().unwrap_or(0) as usize;
-                        if let Some(s) = bin.get(o..o + l) { image_bytes.insert(i, s.to_vec()); }
-                    }
-                }
-            }
-        }
-    }
+    // per-material per-slot image indices + embedded image bytes.
+    let (material_images, image_bytes) =
+        dcl_asset_bundle_encoder::encode::gltf_material::extract_material_images(&j, &glb);
 
     let db = dcl_asset_bundle_encoder::encode::type_tree_db::load_fixture_with_class(43).ok_or("no fixture")?;
     let bundle = assemble_glb_graph(&db, BuildTarget::Windows, &db.unity_version, &GlbGraphInput {
         bundle_name: "test_windows", root_name: "testhash", content_filename: "test.glb",
-        scene: &scene, materials: &materials, base_color_image: &base_color_image, images: &image_bytes,
+        scene: &scene, materials: &materials, material_images: &material_images, images: &image_bytes,
         shader_cab_path: CAB, dependencies: &[], metadata_timestamp: 0,
     }).map_err(|e| format!("{e}"))?;
     eprintln!("[encode] {} nodes, {} prims, {} textures -> {} bytes", scene.roots.len(), scene.total_primitives(), image_bytes.len(), bundle.len());

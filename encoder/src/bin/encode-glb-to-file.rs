@@ -39,33 +39,13 @@ fn run(glb_path: &str, out: &str, target: BuildTarget, cab: &str, root_name: &st
         .map(|arr| (0..arr.len()).map(|i| convert_glb_material(&j, i, &MaterialTextures::default())).collect())
         .unwrap_or_default();
 
-    // embedded base-color images
-    let bin = &glb[20 + jlen + 8..];
-    let textures = j["textures"].as_array();
-    let images = j["images"].as_array();
-    let bvs = j["bufferViews"].as_array();
-    let mut base_color_image = Vec::new();
-    let mut image_bytes: std::collections::HashMap<usize, Vec<u8>> = std::collections::HashMap::new();
-    if let Some(mats) = j["materials"].as_array() {
-        for m in mats {
-            let img = m["pbrMetallicRoughness"]["baseColorTexture"]["index"].as_u64()
-                .and_then(|ti| textures.and_then(|t| t.get(ti as usize))).and_then(|tx| tx["source"].as_u64()).map(|s| s as usize);
-            base_color_image.push(img);
-            if let Some(i) = img {
-                if let Some(bv) = images.and_then(|im| im.get(i)).and_then(|im| im["bufferView"].as_u64()) {
-                    if let Some(b) = bvs.and_then(|x| x.get(bv as usize)) {
-                        let o = b["byteOffset"].as_u64().unwrap_or(0) as usize; let l = b["byteLength"].as_u64().unwrap_or(0) as usize;
-                        if let Some(s) = bin.get(o..o + l) { image_bytes.insert(i, s.to_vec()); }
-                    }
-                }
-            }
-        }
-    }
+    let (material_images, image_bytes) =
+        dcl_asset_bundle_encoder::encode::gltf_material::extract_material_images(&j, &glb);
 
     let db = dcl_asset_bundle_encoder::encode::type_tree_db::load_fixture_with_class(43).ok_or("no TypeTree fixture (run scripts/regenerate-fixtures.sh)")?;
     let bundle = assemble_glb_graph(&db, target, &db.unity_version, &GlbGraphInput {
         bundle_name: "encoded_glb", root_name, content_filename: "asset.glb",
-        scene: &scene, materials: &materials, base_color_image: &base_color_image, images: &image_bytes,
+        scene: &scene, materials: &materials, material_images: &material_images, images: &image_bytes,
         shader_cab_path: cab, dependencies: &[], metadata_timestamp: 0,
     }).map_err(|e| format!("{e}"))?;
     std::fs::write(out, &bundle).map_err(|e| e.to_string())?;
