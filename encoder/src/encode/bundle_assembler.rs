@@ -25,7 +25,7 @@ use crate::encode::serialized_file::{
     unity_target_id_for, write_serialized_file, ExternalEntry, ObjectEntry, SerializedFileInput,
     TypeEntry,
 };
-use crate::encode::texture_writer::{decode_to_texture2d, serialize_texture2d, serialize_texture2d_streamed, TextureStream};
+use crate::encode::texture_writer::{decode_to_texture2d, decode_to_texture2d_argb32, serialize_texture2d, serialize_texture2d_streamed, TextureStream};
 use crate::encode::type_tree::{TypeTreeWriter, Value};
 use crate::encode::type_tree_db::TypeTreeDb;
 use crate::encode::unityfs_writer::{write_bundle, DirectoryNode, UnityFsWriteOptions};
@@ -506,13 +506,24 @@ pub fn assemble_glb_graph(
     let cab = cab_name_for(input.bundle_name);
     let ress_path = format!("archive:/{cab}/{cab}.resS");
     let mut ress: Vec<u8> = Vec::new();
-    let mut used_images: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
-    collect_used_images(&input.scene.roots, input.material_images, &mut used_images);
+    // A Texture2D (×2) per image present in the glТF, in index order — matches
+    // production, which emits one per image regardless of material usage.
+    let mut all_images: Vec<usize> = input.images.keys().copied().collect();
+    all_images.sort_unstable();
     let mut img_pptr: std::collections::HashMap<usize, PPtr> = std::collections::HashMap::new();
-    for img in used_images {
+    for img in all_images {
         let Some(png) = input.images.get(&img) else { continue };
-        let Ok(tex) = decode_to_texture2d(&format!("image_{img}"), png) else { continue };
-        for copy in 0..2 {
+        let name = format!("image_{img}");
+        // Production emits two Texture2D per image: an ARGB32 full-resolution
+        // single-mip copy + a BC7 downscaled full-mip copy (order varies per
+        // scene; we emit ARGB32 then BC7). BC7 bytes can't byte-match Unity's
+        // encoder, but format/dims/mips follow the production model.
+        let variants = [
+            decode_to_texture2d_argb32(&name, png),
+            decode_to_texture2d(&name, png),
+        ];
+        for (copy, variant) in variants.into_iter().enumerate() {
+            let Ok(tex) = variant else { continue };
             let offset = ress.len() as u64;
             let stream = TextureStream { offset, path: &ress_path };
             let Ok(bytes) = serialize_texture2d_streamed(&tex, db, &stream) else { continue };

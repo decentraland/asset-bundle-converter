@@ -67,24 +67,89 @@ pub const TEXTURE_DIMENSION_2D: i32 = 2;
 pub fn decode_to_texture2d(name: &str, bytes: &[u8]) -> Result<UnityTexture2D, SerializeError> {
     let img = image::load_from_memory(bytes)
         .map_err(|e| SerializeError::Format(format!("image decode failed: {e}")))?;
-    let rgba = img.to_rgba8();
-    let width = rgba.width();
-    let height = rgba.height();
-    const MAX_DIM: u32 = 4096;
-    if width > MAX_DIM || height > MAX_DIM {
-        return Err(SerializeError::Format(format!(
-            "texture {width}x{height} exceeds {MAX_DIM}² cap"
-        )));
-    }
-    let (bc7, mip_count) = crate::encode::bc7::compress_with_mips(rgba.as_raw(), width, height);
+    let rgba0 = img.to_rgba8();
+    // BC7 (compressed) copy: downscale so max dim ≤ 1024, each axis to nearest
+    // power-of-two, then BC7 + full mips. Matches production's compressed
+    // variant (8192×4096→1024×512, 640²→512², etc).
+    let (fw, fh) = fit(rgba0.width(), rgba0.height(), MAX_BC7_DIM);
+    let (w, h) = (nearest_pow2(fw).max(4), nearest_pow2(fh).max(4));
+    let rgba = if (w, h) != (rgba0.width(), rgba0.height()) {
+        image::imageops::resize(&rgba0, w, h, image::imageops::FilterType::Triangle)
+    } else {
+        rgba0
+    };
+    let (bc7, mip_count) = crate::encode::bc7::compress_with_mips(rgba.as_raw(), w, h);
     Ok(UnityTexture2D {
         name: name.to_string(),
-        width,
-        height,
+        width: w,
+        height: h,
         texture_format: TEXTURE_FORMAT_BC7,
         mip_count,
         color_space: 1, // sRGB
         image_data: bc7,
+    })
+}
+
+/// ARGB32 TextureFormat (byte order A,R,G,B) — production's full-resolution,
+/// single-mip companion to the BC7 copy.
+pub const TEXTURE_FORMAT_ARGB32: i32 = 5;
+
+/// Largest dimension kept for the ARGB32 full-res copy. Production keeps the
+/// true source size (e.g. 8192×4096 = 134 MiB); we cap to keep bundles sane —
+/// a deviation only on textures larger than this (rare).
+const MAX_ARGB_DIM: u32 = 2048;
+/// Compressed-copy dimension cap (production downscales BC7 to ≤1024).
+const MAX_BC7_DIM: u32 = 1024;
+
+/// Nearest power-of-two to `n` (linear distance; ties → lower).
+fn nearest_pow2(n: u32) -> u32 {
+    if n <= 1 {
+        return 1;
+    }
+    let lo = 1u32 << (31 - n.leading_zeros());
+    let hi = lo << 1;
+    if n - lo <= hi - n {
+        lo
+    } else {
+        hi
+    }
+}
+
+/// Uniformly scale (w,h) so the larger axis ≤ `max_dim`; smaller stays as-is.
+fn fit(w: u32, h: u32, max_dim: u32) -> (u32, u32) {
+    let m = w.max(h);
+    if m <= max_dim {
+        (w, h)
+    } else {
+        let s = max_dim as f32 / m as f32;
+        (((w as f32 * s).round() as u32).max(1), ((h as f32 * s).round() as u32).max(1))
+    }
+}
+
+/// Decode into the ARGB32 (fmt 5), full-resolution, single-mip copy that
+/// production emits alongside the BC7 one. Pixels stored A,R,G,B.
+pub fn decode_to_texture2d_argb32(name: &str, bytes: &[u8]) -> Result<UnityTexture2D, SerializeError> {
+    let img = image::load_from_memory(bytes)
+        .map_err(|e| SerializeError::Format(format!("image decode failed: {e}")))?;
+    let mut rgba = img.to_rgba8();
+    let (w0, h0) = (rgba.width(), rgba.height());
+    let (w, h) = fit(w0, h0, MAX_ARGB_DIM);
+    if (w, h) != (w0, h0) {
+        rgba = image::imageops::resize(&rgba, w, h, image::imageops::FilterType::Triangle);
+    }
+    let mut data = Vec::with_capacity((w * h * 4) as usize);
+    for px in rgba.pixels() {
+        let [r, g, b, a] = px.0;
+        data.extend_from_slice(&[a, r, g, b]);
+    }
+    Ok(UnityTexture2D {
+        name: name.to_string(),
+        width: w,
+        height: h,
+        texture_format: TEXTURE_FORMAT_ARGB32,
+        mip_count: 1,
+        color_space: 1, // sRGB
+        image_data: data,
     })
 }
 

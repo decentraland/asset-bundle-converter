@@ -209,32 +209,37 @@ pub fn extract_material_images(
             .map(|s| s as usize)
     };
 
+    // Per-material slot resolution (texture index → source image) for wiring.
     let mut refs = Vec::new();
-    let mut bytes: std::collections::HashMap<usize, Vec<u8>> = std::collections::HashMap::new();
     if let Some(mats) = gltf["materials"].as_array() {
         for m in mats {
             let pbr = &m["pbrMetallicRoughness"];
-            let r = MaterialImageRefs {
+            refs.push(MaterialImageRefs {
                 base: src_of(&pbr["baseColorTexture"]),
                 metallic_rough: src_of(&pbr["metallicRoughnessTexture"]),
                 normal: src_of(&m["normalTexture"]),
                 emissive: src_of(&m["emissiveTexture"]),
                 occlusion: src_of(&m["occlusionTexture"]),
-            };
-            for img in r.images() {
-                if let std::collections::hash_map::Entry::Vacant(e) = bytes.entry(img) {
-                    if let Some(bv) = images.and_then(|im| im.get(img)).and_then(|im| im["bufferView"].as_u64()) {
-                        if let Some(b) = bvs.and_then(|a| a.get(bv as usize)) {
-                            let o = b["byteOffset"].as_u64().unwrap_or(0) as usize;
-                            let l = b["byteLength"].as_u64().unwrap_or(0) as usize;
-                            if let Some(s) = bin.get(o..o + l) {
-                                e.insert(s.to_vec());
-                            }
-                        }
+            });
+        }
+    }
+
+    // Bytes for EVERY image in the glТF (bufferView-backed), not just
+    // material-referenced ones: GLTFast imports the whole images array as
+    // Texture2D assets, and production emits a Texture2D (×2) per image
+    // regardless of whether a material slot references it.
+    let mut bytes: std::collections::HashMap<usize, Vec<u8>> = std::collections::HashMap::new();
+    if let Some(imgs) = images {
+        for (i, im) in imgs.iter().enumerate() {
+            if let Some(bv) = im["bufferView"].as_u64() {
+                if let Some(b) = bvs.and_then(|a| a.get(bv as usize)) {
+                    let o = b["byteOffset"].as_u64().unwrap_or(0) as usize;
+                    let l = b["byteLength"].as_u64().unwrap_or(0) as usize;
+                    if let Some(s) = bin.get(o..o + l) {
+                        bytes.insert(i, s.to_vec());
                     }
                 }
             }
-            refs.push(r);
         }
     }
     (refs, bytes)
