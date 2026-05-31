@@ -1098,6 +1098,35 @@ mod tests {
     }
 
     #[test]
+    fn animation_method_drives_required_classes() {
+        use crate::encode::gltf_material::MaterialImageRefs;
+        use crate::encode::gltf_mesh::GlbScene;
+        use crate::types::AnimationMethod;
+        let scene = GlbScene { roots: vec![], animation_names: vec!["dance".into()] };
+        let mats: Vec<UnityMaterial> = vec![];
+        let imgs: Vec<MaterialImageRefs> = vec![];
+        let images = std::collections::HashMap::new();
+        let mk = |m| GlbGraphInput {
+            bundle_name: "b", root_name: "r", content_filename: "a.glb",
+            scene: &scene, materials: &mats, material_images: &imgs, images: &images,
+            shader_cab_path: "cab", dependencies: &[], metadata_timestamp: 0, animation_method: m,
+        };
+        let legacy = required_classes(&mk(AnimationMethod::Legacy));
+        assert!(legacy.contains(&CLASS_ANIMATION) && legacy.contains(&CLASS_ANIMATIONCLIP));
+        assert!(!legacy.contains(&CLASS_ANIMATOR) && !legacy.contains(&CLASS_ANIMATORCONTROLLER));
+
+        let mecanim = required_classes(&mk(AnimationMethod::Mecanim));
+        assert!(mecanim.contains(&CLASS_ANIMATOR) && mecanim.contains(&CLASS_ANIMATORCONTROLLER) && mecanim.contains(&CLASS_ANIMATIONCLIP));
+        assert!(!mecanim.contains(&CLASS_ANIMATION));
+
+        // Wearable / None → no animation classes at all.
+        let none = required_classes(&mk(AnimationMethod::None));
+        for c in [CLASS_ANIMATION, CLASS_ANIMATOR, CLASS_ANIMATORCONTROLLER, CLASS_ANIMATIONCLIP] {
+            assert!(!none.contains(&c), "None must not require class {c}");
+        }
+    }
+
+    #[test]
     fn assembled_texture_bundle_parses_back() {
         let Some(db) = load_glb_db() else {
             eprintln!("skipping: no fixture with all 3 classes");
