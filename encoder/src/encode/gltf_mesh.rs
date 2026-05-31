@@ -215,7 +215,7 @@ fn collider_mesh_set(j: &J) -> std::collections::HashSet<usize> {
     if let Some(nodes) = j["nodes"].as_array() {
         for nd in nodes {
             if let (Some(mi), Some(nm)) = (nd["mesh"].as_u64(), nd["name"].as_str()) {
-                if nm.ends_with("_collider") {
+                if nm.to_lowercase().contains("_collider") {
                     set.insert(mi as usize);
                 }
             }
@@ -316,7 +316,10 @@ fn node_trs(nd: &J) -> ([f32; 3], [f32; 4], [f32; 3]) {
 fn build_scene_node(j: &J, bin: &[u8], nodes: &[J], node_idx: usize) -> Result<SceneNode, GltfMeshError> {
     let nd = &nodes[node_idx];
     let name = nd["name"].as_str().unwrap_or("").to_string();
-    let is_collider = name.ends_with("_collider");
+    // DCL collider convention (Utils.cs:634): case-insensitive substring, not
+    // a suffix — matches `Model_Collider`, `corner_01_collider.001` (Blender
+    // numeric suffix), `Glass_Walls_colliders` (plural).
+    let is_collider = name.to_lowercase().contains("_collider");
     let (tp, tr, ts) = node_trs(nd);
 
     let mut primitives = Vec::new();
