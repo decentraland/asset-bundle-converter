@@ -378,10 +378,21 @@ fn emit_glb_prim(
     go: i64,
     prim: &ScenePrimitive,
     is_collider: bool,
+    mesh_cache: &mut std::collections::HashMap<(usize, usize, bool), i64>,
 ) -> Result<Vec<PPtr>, SerializeError> {
-    let mesh_id = alloc(next);
-    objects.push(PreparedObject { class_id: CLASS_MESH, path_id: mesh_id, data: serialize_class(db, CLASS_MESH, &build_mesh_value(&prim.mesh))? });
-    preload.push(pp(mesh_id));
+    // Dedup: nodes referencing the same glТF (mesh, primitive) with the same
+    // collider usage share one Mesh object, as production does. Collider usage
+    // is part of the key because it sets m_MeshUsageFlags.
+    let key = (prim.mesh_index, prim.prim_index, is_collider);
+    let mesh_id = if let Some(&id) = mesh_cache.get(&key) {
+        id
+    } else {
+        let id = alloc(next);
+        objects.push(PreparedObject { class_id: CLASS_MESH, path_id: id, data: serialize_class(db, CLASS_MESH, &build_mesh_value(&prim.mesh))? });
+        preload.push(pp(id));
+        mesh_cache.insert(key, id);
+        id
+    };
     let mf_id = alloc(next);
     objects.push(PreparedObject { class_id: CLASS_MESHFILTER, path_id: mf_id, data: serialize_class(db, CLASS_MESHFILTER, &build_mesh_filter_value(&UnityMeshFilter { game_object: pp(go), mesh: pp(mesh_id) }))? });
     let rc_id = alloc(next);
@@ -443,12 +454,13 @@ fn emit_glb_node(
     preload: &mut Vec<PPtr>,
     material_pptr: &[i64],
     default_pptr: i64,
+    mesh_cache: &mut std::collections::HashMap<(usize, usize, bool), i64>,
 ) -> Result<(i64, i64), SerializeError> {
     let go = alloc(next);
     let tf = alloc(next);
     let mut comps = vec![pp(tf)];
     if let Some(prim0) = node.primitives.first() {
-        comps.extend(emit_glb_prim(db, next, objects, preload, material_pptr, default_pptr, go, prim0, node.is_collider)?);
+        comps.extend(emit_glb_prim(db, next, objects, preload, material_pptr, default_pptr, go, prim0, node.is_collider, mesh_cache)?);
     }
     comps.extend_from_slice(extra);
     let name = name_override.map(|s| s.to_string()).unwrap_or_else(|| node.name.clone());
@@ -461,7 +473,7 @@ fn emit_glb_node(
         let cgo = alloc(next);
         let ctf = alloc(next);
         let mut ccomps = vec![pp(ctf)];
-        ccomps.extend(emit_glb_prim(db, next, objects, preload, material_pptr, default_pptr, cgo, prim, node.is_collider)?);
+        ccomps.extend(emit_glb_prim(db, next, objects, preload, material_pptr, default_pptr, cgo, prim, node.is_collider, mesh_cache)?);
         objects.push(PreparedObject { class_id: CLASS_GAMEOBJECT, path_id: cgo, data: serialize_class(db, CLASS_GAMEOBJECT, &build_game_object_value(&UnityGameObject { name: format!("{}_{}", prim.mesh.name, i), components: ccomps, layer: 0, tag: 0, is_active: true }))? });
         preload.push(pp(cgo));
         emit_glb_transform(db, objects, ctf, cgo, tf, IDENTITY_TRS, &[])?;
@@ -469,7 +481,7 @@ fn emit_glb_node(
     }
     // Child nodes (recursive).
     for child in &node.children {
-        let (_, ctf) = emit_glb_node(child, tf, None, &[], db, next, objects, preload, material_pptr, default_pptr)?;
+        let (_, ctf) = emit_glb_node(child, tf, None, &[], db, next, objects, preload, material_pptr, default_pptr, mesh_cache)?;
         child_tfs.push(ctf);
     }
     emit_glb_transform(db, objects, tf, go, father_tf, (node.local_position, node.local_rotation, node.local_scale), &child_tfs)?;
@@ -614,6 +626,7 @@ pub fn assemble_glb_graph(
         }
     }
     let extra: Vec<PPtr> = anim_component_id.map(pp).into_iter().collect();
+    let mut mesh_cache: std::collections::HashMap<(usize, usize, bool), i64> = std::collections::HashMap::new();
 
     // Emit the node tree. One scene root with NO animations → that node IS the
     // entity root (renamed to the hash). Multiple roots, OR any animation, → a
@@ -625,7 +638,7 @@ pub fn assemble_glb_graph(
     let root_go_id = if input.scene.roots.len() == 1 && input.scene.animation_names.is_empty() {
         emit_glb_node(
             &input.scene.roots[0], 0, Some(input.root_name), &extra,
-            db, &mut next, &mut objects, &mut preload, &material_pptr, default_pptr,
+            db, &mut next, &mut objects, &mut preload, &material_pptr, default_pptr, &mut mesh_cache,
         )?
         .0
     } else {
@@ -637,7 +650,7 @@ pub fn assemble_glb_graph(
         preload.push(pp(go));
         let mut child_tfs = Vec::new();
         for root in &input.scene.roots {
-            let (_, ctf) = emit_glb_node(root, tf, None, &[], db, &mut next, &mut objects, &mut preload, &material_pptr, default_pptr)?;
+            let (_, ctf) = emit_glb_node(root, tf, None, &[], db, &mut next, &mut objects, &mut preload, &material_pptr, default_pptr, &mut mesh_cache)?;
             child_tfs.push(ctf);
         }
         emit_glb_transform(db, &mut objects, tf, go, 0, IDENTITY_TRS, &child_tfs)?;

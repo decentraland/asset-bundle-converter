@@ -256,6 +256,10 @@ pub struct ScenePrimitive {
     pub mesh: UnityMeshObject,
     /// glTF material index for this primitive (for material conversion).
     pub material_index: usize,
+    /// Source glТF (mesh, primitive) — dedup key so nodes sharing a glb mesh
+    /// reference one Mesh object (production deduplicates; we did not).
+    pub mesh_index: usize,
+    pub prim_index: usize,
 }
 
 /// One glb scene node (a tree node — may carry a mesh, children, or both;
@@ -328,7 +332,7 @@ fn build_scene_node(j: &J, bin: &[u8], nodes: &[J], node_idx: usize) -> Result<S
         for prim_idx in 0..nprim {
             let mesh = convert_primitive(j, bin, mesh_idx, prim_idx, is_collider)?;
             let material_index = j["meshes"][mesh_idx]["primitives"][prim_idx]["material"].as_u64().unwrap_or(0) as usize;
-            primitives.push(ScenePrimitive { mesh, material_index });
+            primitives.push(ScenePrimitive { mesh, material_index, mesh_index: mesh_idx, prim_index: prim_idx });
         }
     }
 
