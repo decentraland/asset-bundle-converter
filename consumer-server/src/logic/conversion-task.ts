@@ -314,13 +314,19 @@ async function runLodConversionViaEncoder(
 ): Promise<void> {
   const logger = components.logs.getLogger('ExecuteConversion')
 
+  // Bound every network read so a hung catalyst/CDN can't park this worker (and
+  // its in-flight SQS message) indefinitely — mirrors the catalyst client's 30 s
+  // timeout. The body cap mirrors the catalyst client's 256 MiB download guard.
+  const LOD_FETCH_TIMEOUT_MS = 30_000
+  const MAX_LOD_FBX_BYTES = 256 * 1024 * 1024
+
   // Scene parcels drive the LOD material clipping planes (_PlaneClipping /
   // _VerticalClipping), mirroring the Unity converter's GetParcel. Best-effort:
   // on any failure, fall back to no parcels (no clipping) rather than failing
   // the conversion — the bundle is still valid, just without boundary clipping.
   let parcels: string[] = []
   try {
-    const entity = await components.catalyst.getActiveEntity(entityId, contentServerUrl)
+    const entity = await components.catalyst.getActiveEntity(entityId, contentServerUrl, LOD_FETCH_TIMEOUT_MS)
     parcels = (entity?.metadata?.scene?.parcels as string[] | undefined) ?? []
   } catch (err: any) {
     logger.warn('Could not fetch scene parcels for LOD clipping — encoding without clipping planes', {
@@ -335,11 +341,22 @@ async function runLodConversionViaEncoder(
       throw new Error(`LOD source URL has no _<level>.fbx suffix: ${url}`)
     }
     const level = parseInt(match[1], 10)
-    const res = await fetch(url)
-    if (!res.ok) {
-      throw new Error(`fetching LOD FBX ${url} failed: HTTP ${res.status}`)
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), LOD_FETCH_TIMEOUT_MS)
+    let fbx: Buffer
+    try {
+      const res = await fetch(url, { signal: controller.signal })
+      if (!res.ok) {
+        throw new Error(`fetching LOD FBX ${url} failed: HTTP ${res.status}`)
+      }
+      const declared = Number(res.headers.get('content-length'))
+      if (Number.isFinite(declared) && declared > MAX_LOD_FBX_BYTES) {
+        throw new Error(`LOD FBX ${url} too large: ${declared} bytes (cap ${MAX_LOD_FBX_BYTES})`)
+      }
+      fbx = Buffer.from(await res.arrayBuffer())
+    } finally {
+      clearTimeout(timer)
     }
-    const fbx = Buffer.from(await res.arrayBuffer())
     const bundle = await components.assetBundleEncoder.encodeLod(fbx, entityId, level, parcels)
     const dir = `${outDirectory}/${level}`
     await promises.mkdir(dir, { recursive: true })
