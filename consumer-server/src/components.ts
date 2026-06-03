@@ -141,6 +141,11 @@ export async function initComponents(): Promise<AppComponents> {
     scenes
   })
 
+  // Declaration order matters: Lifecycle stops components sequentially in
+  // REVERSE declaration order. `redis` must come before `runner` so the Redis
+  // client is closed only after the runner drains in-flight conversions —
+  // otherwise every cache probe during the (minutes-long) drain window fails
+  // with "The client is closed".
   return {
     config,
     logs,
@@ -151,13 +156,13 @@ export async function initComponents(): Promise<AppComponents> {
     triageTaskQueue,
     conversionTaskQueue,
     cdnS3,
+    redis,
     runner,
     sentry,
     publisher,
     filesystem,
     catalyst,
     unityRunner,
-    redis,
     scenes,
     conversionOrchestrator
   }
