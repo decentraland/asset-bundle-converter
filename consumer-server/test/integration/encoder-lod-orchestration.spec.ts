@@ -38,6 +38,7 @@ describe('when running a scene-LOD conversion through the encoder (no Unity)', (
   let bucketDir: string
   let unityCalled: boolean
   let exitCode: number
+  const encodeLodParcels: string[][] = []
   const outDirectory = `/tmp/lods_contents/entity_${ENTITY}`
 
   beforeAll(async () => {
@@ -84,6 +85,12 @@ describe('when running a scene-LOD conversion through the encoder (no Unity)', (
     const logs = await createLogComponent({ metrics })
     const assetBundleEncoder = await createAssetBundleEncoderComponent({ config, logs, metrics, cdnS3 } as any)
     await (assetBundleEncoder as any).start()
+    // Spy on encodeLod to confirm the catalyst-derived parcels reach the encoder.
+    const realEncodeLod = (assetBundleEncoder as any).encodeLod.bind(assetBundleEncoder)
+    ;(assetBundleEncoder as any).encodeLod = (fbx: Buffer, eid: string, lvl: number, parcels: string[]) => {
+      encodeLodParcels.push(parcels)
+      return realEncodeLod(fbx, eid, lvl, parcels)
+    }
 
     unityCalled = false
     const unityRunner = {
@@ -94,9 +101,14 @@ describe('when running a scene-LOD conversion through the encoder (no Unity)', (
       }
     } as any
     const scenes = { getCdnBucket: async () => 'test-bucket' } as any
+    // Catalyst mock: the entity occupies the single parcel (15,-102) — drives the
+    // LOD material clipping planes (_PlaneClipping / _VerticalClipping).
+    const catalyst = {
+      getActiveEntity: async () => ({ metadata: { scene: { parcels: ['15,-102'] } } })
+    } as any
 
     exitCode = await executeLODConversion(
-      { logs, metrics, config, cdnS3, unityRunner, scenes, assetBundleEncoder } as any,
+      { logs, metrics, config, cdnS3, unityRunner, scenes, assetBundleEncoder, catalyst } as any,
       ENTITY,
       [`${baseUrl}${ENTITY}_0.fbx`, `${baseUrl}${ENTITY}_1.fbx`],
       'v49'
@@ -144,5 +156,12 @@ describe('when running a scene-LOD conversion through the encoder (no Unity)', (
     expect(found.length).toBeGreaterThan(0)
     const bytes = await fs.readFile(found[0])
     expect(bytes.subarray(0, 7).toString('latin1')).toBe('UnityFS')
+  })
+
+  it('should pass the catalyst-derived scene parcels to the encoder for clipping', () => {
+    // Parcels drive _PlaneClipping/_VerticalClipping; both LOD levels get them.
+    // (Byte-exact clip values vs prod are verified in the encoder repo's tests.)
+    expect(encodeLodParcels.length).toBeGreaterThan(0)
+    expect(encodeLodParcels.every((p) => JSON.stringify(p) === JSON.stringify(['15,-102']))).toBe(true)
   })
 })

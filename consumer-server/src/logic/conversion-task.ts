@@ -305,13 +305,30 @@ export async function executeTriagePass(
  * can fall back to Unity when ENCODER_FALLBACK_TO_UNITY is on.
  */
 async function runLodConversionViaEncoder(
-  components: Pick<AppComponents, 'logs' | 'assetBundleEncoder'>,
+  components: Pick<AppComponents, 'logs' | 'assetBundleEncoder' | 'catalyst'>,
   entityId: string,
   lods: string[],
   outDirectory: string,
-  suffix: string
+  suffix: string,
+  contentServerUrl: string
 ): Promise<void> {
   const logger = components.logs.getLogger('ExecuteConversion')
+
+  // Scene parcels drive the LOD material clipping planes (_PlaneClipping /
+  // _VerticalClipping), mirroring the Unity converter's GetParcel. Best-effort:
+  // on any failure, fall back to no parcels (no clipping) rather than failing
+  // the conversion — the bundle is still valid, just without boundary clipping.
+  let parcels: string[] = []
+  try {
+    const entity = await components.catalyst.getActiveEntity(entityId, contentServerUrl)
+    parcels = (entity?.metadata?.scene?.parcels as string[] | undefined) ?? []
+  } catch (err: any) {
+    logger.warn('Could not fetch scene parcels for LOD clipping — encoding without clipping planes', {
+      entityId,
+      error: err?.message
+    } as any)
+  }
+
   for (const url of lods) {
     const match = url.match(/_(\d+)\.fbx(?:[?#]|$)/i)
     if (!match) {
@@ -323,7 +340,7 @@ async function runLodConversionViaEncoder(
       throw new Error(`fetching LOD FBX ${url} failed: HTTP ${res.status}`)
     }
     const fbx = Buffer.from(await res.arrayBuffer())
-    const bundle = components.assetBundleEncoder.encodeLod(fbx, entityId, level)
+    const bundle = components.assetBundleEncoder.encodeLod(fbx, entityId, level, parcels)
     const dir = `${outDirectory}/${level}`
     await promises.mkdir(dir, { recursive: true })
     await promises.writeFile(`${dir}/${entityId}_${level}${suffix}`, bundle)
@@ -332,12 +349,14 @@ async function runLodConversionViaEncoder(
 }
 
 export async function executeLODConversion(
-  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'unityRunner' | 'scenes' | 'assetBundleEncoder'>,
+  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'unityRunner' | 'scenes' | 'assetBundleEncoder' | 'catalyst'>,
   entityId: string,
   lods: string[],
   abVersion: string
 ): Promise<number> {
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
+  const contentServerUrl =
+    (await components.config.getString('CONTENT_SERVER_URL')) ?? 'https://peer.decentraland.org/content'
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
   const $PROJECT_PATH = await components.config.requireString('PROJECT_PATH')
   const $BUILD_TARGET = await components.config.requireString('BUILD_TARGET')
@@ -374,7 +393,7 @@ export async function executeLODConversion(
     let usedEncoder = false
     if (encoderLodsEnabled) {
       try {
-        await runLodConversionViaEncoder(components, entityId, lods, outDirectory, `_${$BUILD_TARGET.toLowerCase()}`)
+        await runLodConversionViaEncoder(components, entityId, lods, outDirectory, `_${$BUILD_TARGET.toLowerCase()}`, contentServerUrl)
         usedEncoder = true
         components.metrics.increment('ab_converter_engine_used_total', { engine: 'encoder_lod' } as any)
       } catch (encErr: any) {
