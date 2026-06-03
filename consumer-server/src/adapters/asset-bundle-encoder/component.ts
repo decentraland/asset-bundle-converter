@@ -236,6 +236,15 @@ export async function createAssetBundleEncoderComponent(
     await fs.mkdir(options.outDirectory, { recursive: true })
     const written: string[] = []
     for (const bundle of result.bundles) {
+      // Defence-in-depth: bundleName is `{hash}_{digest}{target}`, and `hash`
+      // comes from the (attacker-deployed) content map. A hash containing `/`
+      // or `..` would make `join` escape outDirectory and write attacker bytes
+      // anywhere the worker can. A bundle name must be a single path segment.
+      if (bundle.bundleName.includes('/') || bundle.bundleName.includes('\\') || bundle.bundleName.includes('..')) {
+        throw new EncoderError(`encoder produced an unsafe bundle name: ${bundle.bundleName.slice(0, 80)}`, {
+          code: 'INTERNAL'
+        })
+      }
       const path = join(options.outDirectory, bundle.bundleName)
       await fs.writeFile(path, bundle.uncompressedBytes)
       written.push(bundle.bundleName)

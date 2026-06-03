@@ -73,6 +73,17 @@ export async function createConversionOrchestratorComponent(
       })
       return false
     }
+    if (!/^[a-zA-Z0-9]+$/.test(job.entity.entityId)) {
+      // entityId flows unmodified into filesystem paths (outDirectory, logFile)
+      // and S3 keys (manifest/<entityId>...). A real entity id is a bare CID
+      // ([a-zA-Z0-9]); reject anything with separators or `..` to prevent
+      // path traversal (arbitrary file write) and S3-key injection (overwriting
+      // another entity's manifest). Mirrors the catalyst adapter's CID check.
+      logger.warn('Skipping job: entityId is not a bare CID (path/key-injection guard)', {
+        entityId: String(job.entity.entityId).slice(0, 80)
+      })
+      return false
+    }
     if (!job.lods && !job.contentServerUrls?.[0]) {
       // Non-LOD jobs MUST carry at least one content server URL — both the
       // probe (catalyst entity fetch) and Unity asset resolution need it.
