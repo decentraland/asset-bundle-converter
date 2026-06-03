@@ -103,9 +103,10 @@ export type EncoderConvertResult = {
 export type IAssetBundleEncoderComponent = IBaseComponent & {
   convert(options: EncoderConvertOptions): Promise<EncoderConvertResult>
   /** Encode one scene-LOD source FBX (`{entityId}_{level}.fbx` bytes) → UnityFS
-   * LOD bundle bytes. Synchronous (CPU-only); the caller fetches the FBX and
+   * LOD bundle bytes. The native side runs the CPU-bound parse + assembly off
+   * the event loop and resolves a Promise; the caller fetches the FBX and
    * writes/uploads. `parcels` are the scene's parcel pointers ("x,y") used for
-   * the LOD material clipping planes (empty = no clipping). Throws an
+   * the LOD material clipping planes (empty = no clipping). Rejects/throws an
    * `EncoderError` (e.g. `NOT_STARTED`, or when the native module lacks `fbx`). */
-  encodeLod(fbxBytes: Buffer, entityId: string, level: number, parcels: string[]): Buffer
+  encodeLod(fbxBytes: Buffer, entityId: string, level: number, parcels: string[]): Promise<Buffer>
 }

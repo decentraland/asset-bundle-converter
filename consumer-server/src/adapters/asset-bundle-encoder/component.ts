@@ -59,7 +59,8 @@ type NativeEncoderHandle = {
   // Scene-LOD source FBX → UnityFS LOD bundle. Requires the native module to be
   // built with the `fbx` feature (else it throws). `parcels` are the scene's
   // parcel pointers ("x,y") for the material clipping planes (empty = no clip).
-  encodeLod(fbxBytes: Buffer, entityId: string, level: number, parcels: string[]): Buffer
+  // Async: the CPU-bound work runs off the event loop on the native side.
+  encodeLod(fbxBytes: Buffer, entityId: string, level: number, parcels: string[]): Promise<Buffer>
 }
 
 /**
@@ -256,14 +257,16 @@ export async function createAssetBundleEncoderComponent(
     }
   }
 
-  // Encode one scene-LOD source FBX → UnityFS LOD bundle bytes. CPU-only (the
-  // caller fetches the FBX + writes/uploads). Native errors → typed EncoderError.
-  function encodeLod(fbxBytes: Buffer, entityId: string, level: number, parcels: string[]): Buffer {
+  // Encode one scene-LOD source FBX → UnityFS LOD bundle bytes. The native side
+  // runs the CPU-bound FBX parse + assembly off the event loop and resolves a
+  // Promise. The caller fetches the FBX + writes/uploads. Native errors (sync
+  // throw on NOT_STARTED, or a rejected promise) → typed EncoderError.
+  async function encodeLod(fbxBytes: Buffer, entityId: string, level: number, parcels: string[]): Promise<Buffer> {
     if (!native) {
       throw new EncoderError('Encoder not started', { code: 'NOT_STARTED' })
     }
     try {
-      return native.encodeLod(fbxBytes, entityId, level, parcels)
+      return await native.encodeLod(fbxBytes, entityId, level, parcels)
     } catch (err: unknown) {
       throw EncoderError.fromNative(err)
     }

@@ -340,7 +340,7 @@ async function runLodConversionViaEncoder(
       throw new Error(`fetching LOD FBX ${url} failed: HTTP ${res.status}`)
     }
     const fbx = Buffer.from(await res.arrayBuffer())
-    const bundle = components.assetBundleEncoder.encodeLod(fbx, entityId, level, parcels)
+    const bundle = await components.assetBundleEncoder.encodeLod(fbx, entityId, level, parcels)
     const dir = `${outDirectory}/${level}`
     await promises.mkdir(dir, { recursive: true })
     await promises.writeFile(`${dir}/${entityId}_${level}${suffix}`, bundle)
