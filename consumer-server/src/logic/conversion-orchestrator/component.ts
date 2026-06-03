@@ -18,6 +18,7 @@ type Components = Pick<
   | 'catalyst'
   | 'unityRunner'
   | 'sceneConverter'
+  | 'assetBundleEncoder'
   | 'scenes'
 >
 

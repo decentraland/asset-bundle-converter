@@ -297,8 +297,42 @@ export async function executeTriagePass(
   }
 }
 
+/**
+ * Encoder LOD path: fetch each LOD source FBX, encode it natively, and write the
+ * bundle into `outDirectory` in the same layout the Unity path produces
+ * (`{level}/{entityId}_{level}{suffix}`) so the existing readdir → uploadDir flow
+ * is unchanged. CPU-only encode (no Unity). Throws on any failure so the caller
+ * can fall back to Unity when ENCODER_FALLBACK_TO_UNITY is on.
+ */
+async function runLodConversionViaEncoder(
+  components: Pick<AppComponents, 'logs' | 'assetBundleEncoder'>,
+  entityId: string,
+  lods: string[],
+  outDirectory: string,
+  suffix: string
+): Promise<void> {
+  const logger = components.logs.getLogger('ExecuteConversion')
+  for (const url of lods) {
+    const match = url.match(/_(\d+)\.fbx(?:[?#]|$)/i)
+    if (!match) {
+      throw new Error(`LOD source URL has no _<level>.fbx suffix: ${url}`)
+    }
+    const level = parseInt(match[1], 10)
+    const res = await fetch(url)
+    if (!res.ok) {
+      throw new Error(`fetching LOD FBX ${url} failed: HTTP ${res.status}`)
+    }
+    const fbx = Buffer.from(await res.arrayBuffer())
+    const bundle = components.assetBundleEncoder.encodeLod(fbx, entityId, level)
+    const dir = `${outDirectory}/${level}`
+    await promises.mkdir(dir, { recursive: true })
+    await promises.writeFile(`${dir}/${entityId}_${level}${suffix}`, bundle)
+    logger.info(`encoder LOD${level} written`, { entityId, level, bytes: bundle.length } as any)
+  }
+}
+
 export async function executeLODConversion(
-  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'unityRunner' | 'scenes'>,
+  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'unityRunner' | 'scenes' | 'assetBundleEncoder'>,
   entityId: string,
   lods: string[],
   abVersion: string
@@ -325,17 +359,43 @@ export async function executeLODConversion(
     return 5 // UNEXPECTED_ERROR exit code
   }
 
+  // Encoder LOD path (flag-gated, mirrors the scene rollout): when on, encode
+  // the LOD FBX natively instead of spawning Unity; fall back to Unity on any
+  // error unless ENCODER_FALLBACK_TO_UNITY is off.
+  const encoderLodsEnabled = parseBooleanFlag(await components.config.getString('ENCODER_LODS_ENABLED'), false, (raw) =>
+    logger.warn(`Unrecognized ENCODER_LODS_ENABLED: "${raw}" — defaulting to false.`)
+  )
+  const encoderFallback = parseBooleanFlag(await components.config.getString('ENCODER_FALLBACK_TO_UNITY'), true, (raw) =>
+    logger.warn(`Unrecognized ENCODER_FALLBACK_TO_UNITY: "${raw}" — defaulting to true.`)
+  )
+
   try {
-    const exitCode = await components.unityRunner.runLodsConversion({
-      entityId,
-      logFile,
-      outDirectory,
-      lods,
-      unityPath: $UNITY_PATH,
-      projectPath: $PROJECT_PATH,
-      timeout: 60 * 60 * 1000,
-      unityBuildTarget
-    })
+    let exitCode: number | null = 0
+    let usedEncoder = false
+    if (encoderLodsEnabled) {
+      try {
+        await runLodConversionViaEncoder(components, entityId, lods, outDirectory, `_${$BUILD_TARGET.toLowerCase()}`)
+        usedEncoder = true
+        components.metrics.increment('ab_converter_engine_used_total', { engine: 'encoder_lod' } as any)
+      } catch (encErr: any) {
+        if (!encoderFallback) {
+          throw encErr
+        }
+        logger.warn('Encoder LOD conversion failed — falling back to Unity', { ...defaultLoggerMetadata, error: encErr?.message } as any)
+      }
+    }
+    if (!usedEncoder) {
+      exitCode = await components.unityRunner.runLodsConversion({
+        entityId,
+        logFile,
+        outDirectory,
+        lods,
+        unityPath: $UNITY_PATH,
+        projectPath: $PROJECT_PATH,
+        timeout: 60 * 60 * 1000,
+        unityBuildTarget
+      })
+    }
 
     components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })
 
@@ -365,7 +425,11 @@ export async function executeLODConversion(
 
     return exitCode ?? -1
   } catch (error: any) {
-    logger.debug(await promises.readFile(logFile, 'utf8'), defaultLoggerMetadata)
+    // The Unity log only exists on the Unity path; the encoder path leaves none.
+    const unityLog = await promises.readFile(logFile, 'utf8').catch(() => '')
+    if (unityLog) {
+      logger.debug(unityLog, defaultLoggerMetadata)
+    }
     components.metrics.increment('ab_converter_exit_codes', { exit_code: 'FAIL' })
     logger.error(error)
 
@@ -376,7 +440,9 @@ export async function executeLODConversion(
 
     throw error
   } finally {
-    if ($LOGS_BUCKET) {
+    // The Unity log only exists on the Unity path; the encoder path produces none.
+    const unityLogBytes = await promises.readFile(logFile).catch(() => null)
+    if ($LOGS_BUCKET && unityLogBytes) {
       const log = `https://${$LOGS_BUCKET}.s3.amazonaws.com/${s3LogKey}`
 
       logger.info(`LogFile=${log}`, defaultLoggerMetadata)
@@ -384,7 +450,7 @@ export async function executeLODConversion(
         .upload({
           Bucket: $LOGS_BUCKET,
           Key: s3LogKey,
-          Body: await promises.readFile(logFile),
+          Body: unityLogBytes,
           ACL: 'public-read'
         })
         .promise()

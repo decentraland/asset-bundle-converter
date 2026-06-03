@@ -56,6 +56,9 @@ type NativeEncoderHandle = {
     }
     logs: Array<{ level: string; message: string }>
   }>
+  // Scene-LOD source FBX → UnityFS LOD bundle. Requires the native module to be
+  // built with the `fbx` feature (else it throws).
+  encodeLod(fbxBytes: Buffer, entityId: string, level: number): Buffer
 }
 
 /**
@@ -98,6 +101,13 @@ export async function createAssetBundleEncoderComponent(
       convert: async () => {
         throw new EncoderError(
           'Encoder disabled — scene-converter should have routed to Unity. This is a wiring bug.',
+          { code: 'NOT_STARTED' }
+        )
+      },
+      encodeLod: () => {
+        // LODs need the native module, which only loads when ENCODER_ENABLED=true.
+        throw new EncoderError(
+          'Encoder disabled (ENCODER_ENABLED=false) — encoder LODs require the native module.',
           { code: 'NOT_STARTED' }
         )
       }
@@ -245,7 +255,20 @@ export async function createAssetBundleEncoderComponent(
     }
   }
 
-  return { start, stop, convert }
+  // Encode one scene-LOD source FBX → UnityFS LOD bundle bytes. CPU-only (the
+  // caller fetches the FBX + writes/uploads). Native errors → typed EncoderError.
+  function encodeLod(fbxBytes: Buffer, entityId: string, level: number): Buffer {
+    if (!native) {
+      throw new EncoderError('Encoder not started', { code: 'NOT_STARTED' })
+    }
+    try {
+      return native.encodeLod(fbxBytes, entityId, level)
+    } catch (err: unknown) {
+      throw EncoderError.fromNative(err)
+    }
+  }
+
+  return { start, stop, convert, encodeLod }
 }
 
 /**

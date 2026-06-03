@@ -72,6 +72,10 @@ async function buildHarness(opts: { triageEnabled: boolean }): Promise<Harness> 
     publisher,
     catalyst: createCatalystMock(),
     unityRunner: createUnityRunnerMock(),
+    // executeConversion/LOD are jest.mocked at module scope, so these are never
+    // invoked here — present only for type-shape.
+    sceneConverter: {} as any,
+    assetBundleEncoder: {} as any,
     scenes
   })
 
