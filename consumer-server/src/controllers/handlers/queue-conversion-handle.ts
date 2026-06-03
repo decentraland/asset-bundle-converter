@@ -3,16 +3,23 @@ import { HandlerContextWithPath } from '../../types'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { IHttpServerComponent } from '@well-known-components/interfaces'
 import { getAbVersionEnvName } from '../../utils'
+import { timingSafeEqual } from 'crypto'
 
 export async function queueTaskHandler(
-  context: HandlerContextWithPath<'triageTaskQueue' | 'config' | 'publisher', '/queue-task'>
+  context: HandlerContextWithPath<'triageTaskQueue' | 'config' | 'publisher' | 'logs', '/queue-task'>
 ): Promise<IHttpServerComponent.IResponse> {
   const {
-    components: { triageTaskQueue, config, publisher },
+    components: { triageTaskQueue, config, publisher, logs },
     request
   } = context
+  const logger = logs.getLogger('queue-task-handler')
 
-  if (request.headers.get('Authorization') !== (await config.requireString('TMP_SECRET'))) {
+  // Constant-time auth check so the shared secret isn't probeable via response
+  // timing. (TMP_SECRET is a placeholder-named shared key — treat it as a
+  // managed, rotatable secret, not a long-lived constant.)
+  const provided = Buffer.from(request.headers.get('Authorization') ?? '')
+  const expected = Buffer.from(await config.requireString('TMP_SECRET'))
+  if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
     return {
       status: 401,
       body: 'Unauthorized'
@@ -27,7 +34,14 @@ export async function queueTaskHandler(
 
   const body = await request.json()
 
-  if (!DeploymentToSqs.validate(body)) return { status: 403, body: { errors: DeploymentToSqs.validate.errors } }
+  if (!DeploymentToSqs.validate(body)) {
+    // Don't reflect schema-validator internals (field paths) to the caller; log
+    // them server-side for debugging instead.
+    logger.warn('queue-task payload failed schema validation', {
+      errors: JSON.stringify(DeploymentToSqs.validate.errors ?? [])
+    })
+    return { status: 403, body: { error: 'Invalid request body' } }
+  }
 
   const shouldPrioritize = !!(body as any)?.prioritize
   const message = await triageTaskQueue.publish(body as DeploymentToSqs, shouldPrioritize)

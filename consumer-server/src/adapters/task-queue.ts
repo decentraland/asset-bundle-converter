@@ -181,7 +181,10 @@ export function createSqsAdapter<T>(
               })
               try {
                 const snsOverSqs: SNSOverSQSMessage = JSON.parse(it.Body!)
-                logger.info(`Processing job`, { id: message.id, message: snsOverSqs.Message })
+                // Log only the message id — the SNS `Message` is the untrusted
+                // deployment payload (content-server URLs, pointers, …); logging
+                // it wholesale is noise + needless exposure.
+                logger.info(`Processing job`, { id: message.id })
                 const result = await taskRunner(JSON.parse(snsOverSqs.Message), message, { isPriority })
                 logger.info(`Processed job`, { id: message.id })
                 return { result, message }

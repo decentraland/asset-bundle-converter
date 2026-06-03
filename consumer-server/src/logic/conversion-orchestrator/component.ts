@@ -1,7 +1,7 @@
 import { AssetBundleConversionFinishedEvent, Events } from '@dcl/schemas'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { AppComponents, TestComponents } from '../../types'
-import { getAbVersionEnvName } from '../../utils'
+import { getAbVersionEnvName, isSafeOutboundUrl } from '../../utils'
 import { executeConversion, executeLODConversion, executeTriagePass, parseBooleanFlag } from '../conversion-task'
 import { ConversionQueueRepublishFailedError } from './errors'
 import type { IConversionOrchestratorComponent, Platform } from './types'
@@ -90,6 +90,23 @@ export async function createConversionOrchestratorComponent(
       // Without this guard, the `[0]!` non-null assertion downstream produces
       // an `undefined` URL that fails opaquely deep inside fetch logic.
       logger.warn('Skipping job with no contentServerUrls — not a conversion job', {
+        entityId: job.entity.entityId
+      })
+      return false
+    }
+    // SSRF guard: the content-server base and LOD source URLs are fetched by the
+    // worker (and handed to Unity/the encoder). Reject jobs pointing at IP-literal
+    // or internal hosts so a crafted job can't drive a request to cloud metadata
+    // (169.254.169.254) or an internal service.
+    if (job.contentServerUrls?.[0] && !isSafeOutboundUrl(job.contentServerUrls[0])) {
+      logger.warn('Skipping job: contentServerUrl is not a safe outbound URL (SSRF guard)', {
+        entityId: job.entity.entityId,
+        contentServerUrl: String(job.contentServerUrls[0]).slice(0, 120)
+      })
+      return false
+    }
+    if (job.lods?.some((u) => !isSafeOutboundUrl(u))) {
+      logger.warn('Skipping job: a LOD source URL is not a safe outbound URL (SSRF guard)', {
         entityId: job.entity.entityId
       })
       return false
