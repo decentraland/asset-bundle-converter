@@ -157,20 +157,24 @@ export async function createSceneConverter(
 
 /**
  * Translate Unity-style build-target strings ("StandaloneWindows64",
- * "StandaloneOSX", "WebGL") into the encoder's compact target enum.
+ * "StandaloneOSX") into the encoder's compact target enum.
  *
- * Returns undefined for targets the encoder doesn't support — currently
- * only Linux (which Unity supports but the encoder doesn't yet bake
- * shader manifests for).
+ * Returns undefined for targets the encoder doesn't support, so `convert`
+ * routes them straight to Unity (the `unity-unsupported-target` path) WITHOUT
+ * attempting an encode first. The encoder only bakes the DCL/Scene shader CAB
+ * for Windows + Mac (see the encoder's `shader_cab_path`); WebGL and Linux have
+ * no shader artifact, so every glb would partial-fail and the failure-tolerance
+ * gate would fall back to Unity anyway — but only after a full catalyst fetch +
+ * per-glb encode attempt. Returning undefined here skips that wasted work.
+ * (The header's rollout step 3 "then WebGL" is gated on the encoder gaining a
+ * WebGL shader bake; until then WebGL stays Unity-only.)
  */
-function mapUnityTargetToEncoderTarget(unityTarget: string): 'windows' | 'mac' | 'webgl' | undefined {
+function mapUnityTargetToEncoderTarget(unityTarget: string): 'windows' | 'mac' | undefined {
   switch (unityTarget) {
     case 'standalonewindows64':
       return 'windows'
     case 'standaloneosx':
       return 'mac'
-    case 'webgl':
-      return 'webgl'
     default:
       return undefined
   }

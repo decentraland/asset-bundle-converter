@@ -11,6 +11,7 @@ import { hasContentChange } from './has-content-changed-task'
 import { getUnityBuildTarget, normalizeContentsBaseUrl } from '../utils'
 import { AssetCacheResult, findMetadataOnlyHashes, SkippedAsset } from './asset-reuse'
 import { Manifest } from './scenes'
+import { EncoderError } from '../adapters/asset-bundle-encoder'
 
 /**
  * Case-insensitive boolean env var parser.
@@ -366,7 +367,10 @@ async function runLodConversionViaEncoder(
 }
 
 export async function executeLODConversion(
-  components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'unityRunner' | 'scenes' | 'assetBundleEncoder' | 'catalyst'>,
+  components: Pick<
+    AppComponents,
+    'logs' | 'metrics' | 'config' | 'cdnS3' | 'unityRunner' | 'scenes' | 'assetBundleEncoder' | 'catalyst' | 'sentry'
+  >,
   entityId: string,
   lods: string[],
   abVersion: string
@@ -401,8 +405,10 @@ export async function executeLODConversion(
   const encoderLodsEnabled = parseBooleanFlag(await components.config.getString('ENCODER_LODS_ENABLED'), false, (raw) =>
     logger.warn(`Unrecognized ENCODER_LODS_ENABLED: "${raw}" — defaulting to false.`)
   )
-  const encoderFallback = parseBooleanFlag(await components.config.getString('ENCODER_FALLBACK_TO_UNITY'), true, (raw) =>
-    logger.warn(`Unrecognized ENCODER_FALLBACK_TO_UNITY: "${raw}" — defaulting to true.`)
+  const encoderFallback = parseBooleanFlag(
+    await components.config.getString('ENCODER_FALLBACK_TO_UNITY'),
+    true,
+    (raw) => logger.warn(`Unrecognized ENCODER_FALLBACK_TO_UNITY: "${raw}" — defaulting to true.`)
   )
 
   try {
@@ -410,14 +416,48 @@ export async function executeLODConversion(
     let usedEncoder = false
     if (encoderLodsEnabled) {
       try {
-        await runLodConversionViaEncoder(components, entityId, lods, outDirectory, `_${$BUILD_TARGET.toLowerCase()}`, contentServerUrl)
+        await runLodConversionViaEncoder(
+          components,
+          entityId,
+          lods,
+          outDirectory,
+          `_${$BUILD_TARGET.toLowerCase()}`,
+          contentServerUrl
+        )
         usedEncoder = true
         components.metrics.increment('ab_converter_engine_used_total', { engine: 'encoder_lod' } as any)
-      } catch (encErr: any) {
-        if (!encoderFallback) {
+      } catch (encErr: unknown) {
+        // Mirror the scene path's handling (scene-converter/component.ts): pull
+        // the typed code, surface misconfig loudly, and observe failures.
+        const code = encErr instanceof EncoderError ? encErr.code : 'UNKNOWN'
+        // Only count genuine encoder failures. `encodeLod` normalises native
+        // throws to EncoderError; a plain fetch/HTTP/size error from
+        // runLodConversionViaEncoder is a catalyst/network issue, not an
+        // encoder error, so it stays out of the encoder-errors metric.
+        if (encErr instanceof EncoderError) {
+          components.metrics.increment('ab_converter_encoder_errors_total', {
+            build_target: $BUILD_TARGET,
+            code
+          } as any)
+        }
+        // Misconfiguration (bad bake / wrong target / not started) means every
+        // message on this pod will fail the same way — fail visibly (throw →
+        // DLQ/alert) instead of silently masking a broken encoder behind Unity.
+        const isMisconfig = code === 'TARGET_MISMATCH' || code === 'INVALID_BAKE' || code === 'NOT_STARTED'
+        if (isMisconfig || !encoderFallback) {
+          components.sentry.captureException?.(encErr, {
+            tags: { engine: 'encoder_lod', entityId, ab_version: abVersion, code }
+          })
           throw encErr
         }
-        logger.warn('Encoder LOD conversion failed — falling back to Unity', { ...defaultLoggerMetadata, error: encErr?.message } as any)
+        logger.warn('Encoder LOD conversion failed — falling back to Unity', {
+          ...defaultLoggerMetadata,
+          code,
+          error: encErr instanceof Error ? encErr.message : String(encErr)
+        } as any)
+        components.sentry.captureException?.(encErr, {
+          tags: { engine: 'encoder_lod', entityId, ab_version: abVersion, code, fallback: 'true' }
+        })
       }
     }
     if (!usedEncoder) {

@@ -100,12 +100,12 @@ export const metricDeclarations = {
     labelNames: ['build_target']
   },
   ab_converter_engine_used_total: {
-    help: 'Counter of which engine processed a scene-converter request. engine ∈ {unity, encoder, encoder-fallback-unity, unity-unsupported-target, unity-missing-inputs}. During rollout: watch for non-zero encoder-fallback-unity (encoder threw but Unity recovered) and the two unity-* fallback reasons (encoder enabled but not selected — usually a misconfigured pod).',
+    help: 'Counter of which engine processed a conversion request. engine ∈ {unity, encoder, encoder-fallback-unity, unity-unsupported-target, unity-missing-inputs, encoder_lod}. encoder_lod is the LOD path (executeLODConversion); the rest are the scene path. During rollout: watch for non-zero encoder-fallback-unity (encoder threw but Unity recovered) and the two unity-* fallback reasons (encoder enabled but not selected — usually a misconfigured pod). A LOD encoder failure that falls back to Unity emits no engine label here but increments ab_converter_encoder_errors_total.',
     type: IMetricsComponent.CounterType,
     labelNames: ['engine']
   },
   ab_converter_encoder_errors_total: {
-    help: 'Counter of encoder errors that rejected the encode() promise, labelled by error code from EncoderError. code ∈ {TARGET_MISMATCH, INVALID_BAKE, NOT_STARTED, MISSING_DEPS_DIGEST, OUT_OF_MEMORY, INTERNAL, UNKNOWN}. INTERNAL is the only code that triggers Unity fallback when ENCODER_FALLBACK_TO_UNITY=true.',
+    help: 'Counter of encoder errors that rejected the encode()/encodeLod() promise, labelled by error code from EncoderError. code ∈ {TARGET_MISMATCH, INVALID_BAKE, NOT_STARTED, MISSING_DEPS_DIGEST, LOD_UNSUPPORTED, INTERNAL, UNKNOWN}. The misconfig codes {TARGET_MISMATCH, INVALID_BAKE, NOT_STARTED} skip Unity fallback; the rest fall back when ENCODER_FALLBACK_TO_UNITY=true.',
     type: IMetricsComponent.CounterType,
     labelNames: ['build_target', 'code']
   },

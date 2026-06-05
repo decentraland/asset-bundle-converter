@@ -167,6 +167,7 @@ export async function initComponents(): Promise<AppComponents> {
     catalyst,
     unityRunner,
     sceneConverter,
+    assetBundleEncoder,
     scenes
   })
 
