@@ -3,8 +3,9 @@
 The standalone Rust + napi-rs AssetBundle encoder (formerly developed in this
 repo's untracked `encoder/` working directory) now lives in its own repository:
 
-- **Repo:** `asset-bundler` (sibling checkout: `../asset-bundler`;
-  github.com/decentraland/asset-bundler)
+- **Repo:** `decentraland/asset-bundle-encoder`
+  (<https://github.com/decentraland/asset-bundle-encoder>; local sibling
+  checkout: `../asset-bundler`)
 - **npm:** `@dcl/asset-bundle-encoder` (the native module this service's
   `consumer-server/src/adapters/asset-bundle-encoder` consumes via npm — there
   is no local source dependency)

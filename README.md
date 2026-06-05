@@ -162,17 +162,21 @@ NOTICE: Please do not use `latest` as tag for the "Manual deploy", the pipeline 
 This repository is protected with a standard Apache 2 license. See the terms and conditions in
 the [LICENSE](https://github.com/decentraland/unity-renderer/blob/master/LICENSE) file.
 
-### Standalone encoder — licensing review required
+### Standalone encoder (moved to its own repository)
 
-The experimental `encoder/` crate (a Unity-free AssetBundle encoder) carries
-additional licensing considerations because its file-format knowledge was
-reverse-engineered with reference to external projects (notably **AssetRipper**,
-which is **GPL-3.0**) and it vendors TypeTree fixtures extracted from
-Unity-built bundles. These are documented in
-[`encoder/README.md`](encoder/README.md#️-legal--licensing-considerations) and
-**must be reviewed by counsel before any public release or distribution of that
-crate.** The downloaded test corpus is third-party Decentraland content and is
-kept out of version control.
+The Unity-free Rust AssetBundle encoder that formerly lived in this repo's
+`encoder/` directory now lives in its own repository — see
+[`ENCODER-MOVED.md`](ENCODER-MOVED.md). It ships as the npm package
+**`@dcl/asset-bundle-encoder`** (repo
+[`decentraland/asset-bundle-encoder`](https://github.com/decentraland/asset-bundle-encoder)),
+which this service consumes via
+[`consumer-server/src/adapters/asset-bundle-encoder`](consumer-server/src/adapters/asset-bundle-encoder)
+— there is no local source dependency. The scene-converter routing and encoder
+env vars (`ENCODER_ENABLED`, `ENCODER_FALLBACK_TO_UNITY`, `BAKE_VERSION`, …) stay
+here. The encoder's licensing review (its file-format knowledge was
+reverse-engineered with reference to external projects, and it vendors TypeTree
+fixtures extracted from Unity-built bundles) now lives with that repository's
+docs.
 
 ## AI Agent Context
 
