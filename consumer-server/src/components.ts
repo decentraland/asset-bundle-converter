@@ -141,6 +141,16 @@ export async function initComponents(): Promise<AppComponents> {
     scenes
   })
 
+  // Declaration order matters: Lifecycle stops components sequentially in
+  // REVERSE declaration order. Two constraints:
+  // - The task queues must stop BEFORE `runner` (declared after it): closing
+  //   the memory queue is what unblocks the consume loops' `q.next()`, so the
+  //   runner's drain can finish. The SQS adapter has no stop hook, so this
+  //   only matters for tests/local dev — but a swapped order deadlocks them.
+  // - `redis` must stop AFTER `runner` (declared before it) so the client is
+  //   closed only once in-flight conversions drain — otherwise every cache
+  //   probe during the (minutes-long) drain window fails with "The client is
+  //   closed".
   return {
     config,
     logs,
@@ -148,16 +158,16 @@ export async function initComponents(): Promise<AppComponents> {
     statusChecks,
     fetch,
     metrics,
+    cdnS3,
+    redis,
+    runner,
     triageTaskQueue,
     conversionTaskQueue,
-    cdnS3,
-    runner,
     sentry,
     publisher,
     filesystem,
     catalyst,
     unityRunner,
-    redis,
     scenes,
     conversionOrchestrator
   }
