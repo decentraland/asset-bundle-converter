@@ -19,6 +19,9 @@ import { createSnsComponent } from './adapters/sns'
 import { createFilesystemComponent } from './adapters/filesystem'
 import { createCatalystComponent } from './adapters/catalyst'
 import { createUnityRunnerComponent } from './adapters/unity-runner'
+import { createRedisComponent } from '@dcl/redis-component'
+import { createInMemoryCacheComponent } from '@dcl/memory-cache-component'
+import { ICacheStorageComponent } from '@dcl/core-commons'
 import { createConversionOrchestratorComponent } from './logic/conversion-orchestrator'
 import { createScenesComponent } from './logic/scenes'
 import { parseBooleanFlag } from './logic/conversion-task'
@@ -108,7 +111,23 @@ export async function initComponents(): Promise<AppComponents> {
   const filesystem = await createFilesystemComponent({ metrics })
   const catalyst = await createCatalystComponent({ fetch })
   const unityRunner = await createUnityRunnerComponent({ logs, metrics })
-  const scenes = await createScenesComponent({ logs, config, metrics, cdnS3, sentry, catalyst })
+
+  // Cache component for the asset probe layer (see logic/asset-reuse.ts).
+  // Prefers Redis when REDIS_URL is configured so probe hits are shared across
+  // pods; falls back to an in-process LRU when unset (local dev, pre-rollout)
+  // so the same code path works without standing up a Redis instance. Both
+  // implementations satisfy `ICacheStorageComponent` from @dcl/core-commons,
+  // so call sites are unaware of which one is wired in.
+  const redisUrl = await config.getString('REDIS_URL')
+  let redis: ICacheStorageComponent
+  if (redisUrl) {
+    redis = await createRedisComponent(redisUrl, { logs })
+  } else {
+    logs.getLogger('cache').info('REDIS_URL not set — using in-memory cache (no cross-pod sharing)')
+    redis = createInMemoryCacheComponent()
+  }
+
+  const scenes = await createScenesComponent({ logs, config, metrics, cdnS3, sentry, catalyst, redis })
   const conversionOrchestrator = await createConversionOrchestratorComponent({
     logs,
     metrics,
@@ -122,6 +141,16 @@ export async function initComponents(): Promise<AppComponents> {
     scenes
   })
 
+  // Declaration order matters: Lifecycle stops components sequentially in
+  // REVERSE declaration order. Two constraints:
+  // - The task queues must stop BEFORE `runner` (declared after it): closing
+  //   the memory queue is what unblocks the consume loops' `q.next()`, so the
+  //   runner's drain can finish. The SQS adapter has no stop hook, so this
+  //   only matters for tests/local dev — but a swapped order deadlocks them.
+  // - `redis` must stop AFTER `runner` (declared before it) so the client is
+  //   closed only once in-flight conversions drain — otherwise every cache
+  //   probe during the (minutes-long) drain window fails with "The client is
+  //   closed".
   return {
     config,
     logs,
@@ -129,10 +158,11 @@ export async function initComponents(): Promise<AppComponents> {
     statusChecks,
     fetch,
     metrics,
+    cdnS3,
+    redis,
+    runner,
     triageTaskQueue,
     conversionTaskQueue,
-    cdnS3,
-    runner,
     sentry,
     publisher,
     filesystem,
