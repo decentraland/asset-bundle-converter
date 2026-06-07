@@ -535,8 +535,8 @@ public class LODConversion
                     Debug.Log($"[LOD]   Applying cutout to {mat.name}");
                     mat.EnableKeyword("_ALPHATEST_ON");
                     mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
-                    mat.DisableKeyword("_SURFACE_TYPE_TRANSPARENT");
-                    mat.SetFloat("_Surface", 0);
+                    mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                    mat.SetFloat("_Surface", 1);
                     mat.SetFloat("_BlendMode", 0);
                     mat.SetFloat("_AlphaCutoffEnable", 1);
                     mat.SetFloat("_AlphaClip", 1);
