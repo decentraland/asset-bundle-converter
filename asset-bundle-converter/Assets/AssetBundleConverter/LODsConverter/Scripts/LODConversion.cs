@@ -195,24 +195,30 @@ public class LODConversion
         Directory.CreateDirectory(texturesFolder);
         string texturesFolderRelative = PathUtils.GetRelativePathTo(Application.dataPath, texturesFolder);
 
-        // Build a set of texture names used by transparent materials
-        var transparentTextureNames = new HashSet<string>();
+        // Build a set of texture names that must preserve their alpha channel.
+        // Materials baked with the LOD generator carry a suffix indicating their
+        // surface mode: `-transparent` for alpha-blend, `-cutout` for alpha-clip
+        // (foliage). Both require the source alpha to survive into the asset
+        // bundle — otherwise leaves render as solid planes.
+        var needsAlphaTextureNames = new HashSet<string>();
         var allAssets = AssetDatabase.LoadAllAssetsAtPath(pathHandler.filePathRelativeToDataPath);
         foreach (var asset in allAssets)
         {
-            if (asset is Material mat && mat.name.Contains("-transparent", StringComparison.OrdinalIgnoreCase))
+            if (asset is not Material mat) continue;
+            bool isTransparent = mat.name.Contains("-transparent", StringComparison.OrdinalIgnoreCase);
+            bool isCutout = mat.name.Contains("-cutout", StringComparison.OrdinalIgnoreCase);
+            if (!isTransparent && !isCutout) continue;
+
+            var shader = mat.shader;
+            for (int i = 0; i < shader.GetPropertyCount(); i++)
             {
-                var shader = mat.shader;
-                for (int i = 0; i < shader.GetPropertyCount(); i++)
-                {
-                    if (shader.GetPropertyType(i) != UnityEngine.Rendering.ShaderPropertyType.Texture)
-                        continue;
-                    var tex = mat.GetTexture(shader.GetPropertyName(i)) as Texture2D;
-                    if (tex != null && !string.IsNullOrEmpty(tex.name))
-                        transparentTextureNames.Add(tex.name);
-                }
-                Debug.Log($"[LOD] Transparent material found: {mat.name}");
+                if (shader.GetPropertyType(i) != UnityEngine.Rendering.ShaderPropertyType.Texture)
+                    continue;
+                var tex = mat.GetTexture(shader.GetPropertyName(i)) as Texture2D;
+                if (tex != null && !string.IsNullOrEmpty(tex.name))
+                    needsAlphaTextureNames.Add(tex.name);
             }
+            Debug.Log($"[LOD] Alpha-preserving material found: {mat.name} ({(isTransparent ? "transparent" : "cutout")})");
         }
 
         int texIdx = 0;
@@ -221,7 +227,7 @@ public class LODConversion
             if (asset is Texture2D tex)
             {
                 string texName = string.IsNullOrEmpty(tex.name) ? $"texture_{texIdx}" : tex.name;
-                bool needsAlpha = transparentTextureNames.Contains(texName);
+                bool needsAlpha = needsAlphaTextureNames.Contains(texName);
 
                 // Blit to a readable RenderTexture to get pixel data
                 var rt = RenderTexture.GetTemporary(tex.width, tex.height, 0, RenderTextureFormat.ARGB32);
@@ -519,6 +525,29 @@ public class LODConversion
                     mat.SetFloat("_ZTestDepthEqualForOpaque", 4f);
                     mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
                     mat.color = new Color(mat.color.r, mat.color.g, mat.color.b, 0.8f);
+                }
+                else if (mat.name.Contains("-cutout", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Cutout (alpha-clip): opaque blend that depth-writes correctly,
+                    // with shader-side alpha testing. Right setup for foliage —
+                    // alpha-blend would z-sort wrong and plain opaque drops alpha.
+                    // DCL/Scene_TexArray supports _Cutoff / _AlphaClip / _ALPHATEST_ON.
+                    Debug.Log($"[LOD]   Applying cutout to {mat.name}");
+                    mat.EnableKeyword("_ALPHATEST_ON");
+                    mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+                    mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                    mat.SetFloat("_Surface", 1);
+                    mat.SetFloat("_BlendMode", 0);
+                    mat.SetFloat("_AlphaCutoffEnable", 1);
+                    mat.SetFloat("_AlphaClip", 1);
+                    mat.SetFloat("_Cutoff", 0.5f);
+                    mat.SetFloat("_SrcBlend", 1f);
+                    mat.SetFloat("_DstBlend", 0f);
+                    mat.SetFloat("_AlphaSrcBlend", 1f);
+                    mat.SetFloat("_AlphaDstBlend", 0f);
+                    mat.SetFloat("_ZWrite", 1f);
+                    mat.SetOverrideTag("RenderType", "TransparentCutout");
+                    mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.AlphaTest;
                 }
 
                 string matName = $"{mat.name.Replace("(Instance)", pathHandler.fileNameWithoutExtension)}.mat";
