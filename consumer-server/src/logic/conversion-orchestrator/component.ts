@@ -185,7 +185,13 @@ export async function createConversionOrchestratorComponent(
     try {
       metrics.increment('ab_converter_running_conversion')
       if (job.lods) {
-        statusCode = await executeLODConversion(components, job.entity.entityId, job.lods, versionToUse)
+        statusCode = await executeLODConversion(
+          components,
+          job.entity.entityId,
+          job.lods,
+          versionToUse,
+          job.contentServerUrls?.[0]
+        )
       } else {
         statusCode = await executeConversion(
           components,

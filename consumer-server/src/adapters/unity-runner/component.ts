@@ -320,6 +320,10 @@ export async function createUnityRunnerComponent(
       '-deleteDownloadPathAfterFinished'
     ]
 
+    if (options.contentServerUrl) {
+      childArguments.push('-contentServerUrl', options.contentServerUrl)
+    }
+
     return await executeProgram({
       childArg0,
       childArguments,

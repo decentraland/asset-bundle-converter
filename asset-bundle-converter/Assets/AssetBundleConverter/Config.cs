@@ -26,6 +26,7 @@ namespace DCL.ABConverter
         internal const string CLI_CACHED_HASHES = "cachedHashes";
         internal const string CLI_SKIPPED_HASHES = "skippedHashes";
         internal const string CLI_DEPS_DIGESTS_FILE = "depsDigestsFile";
+        internal const string CLI_DO_ISS = "doISS";
 
         internal static string ASSET_BUNDLE_FOLDER_NAME = "AssetBundles";
         internal static string DOWNLOADED_FOLDER_NAME = "_Downloaded";
@@ -40,6 +41,7 @@ namespace DCL.ABConverter
         internal static string[] textureExtensions = { ".jpg", ".png", ".jpeg", ".tga", ".gif", ".bmp", ".psd", ".tiff", ".iff", ".ktx" };
 
         internal const string LODS_URL = "lods";
+        internal const string CLI_CONTENT_SERVER_URL = "contentServerUrl";
 
         internal static string GetDownloadPath() => PathUtils.FixDirectorySeparator(DOWNLOADED_PATH_ROOT + DASH);
     }

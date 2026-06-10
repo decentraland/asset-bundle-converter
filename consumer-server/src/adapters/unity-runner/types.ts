@@ -33,6 +33,14 @@ export type RunLodsConversionOptions = {
   projectPath: string
   timeout: number
   unityBuildTarget: string
+  /**
+   * Catalyst or worlds-content-server base URL the Unity-side parcel lookup
+   * should hit (e.g. `https://peer.decentraland.zone/content`). Forwarded
+   * verbatim as `-contentServerUrl` so Unity can derive the correct request
+   * shape from the hostname. Omitted → Unity falls back to its default
+   * (catalyst prod).
+   */
+  contentServerUrl?: string
 }
 
 /**

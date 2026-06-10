@@ -168,8 +168,8 @@ namespace DCL.ABConverter
             if (isExitForced)
                 return;
 
-            // Initialize the scene state generator and generate the initial scene state
-            env.InitializeSceneStateGenerator(entityDTO);
+            // Initialize the scene state generator. When -doISS is off, the generator is a no-op.
+            env.InitializeSceneStateGenerator(entityDTO, settings.doISS);
             env.sceneStateGenerator.GenerateInitialSceneState();
 
             await ProcessAllGltfs();
@@ -392,7 +392,7 @@ namespace DCL.ABConverter
                             try
                             {
                                 // Always instantiate - uses manifest transforms if available, otherwise at origin
-                                env.sceneStateGenerator.InstantiateAsset(gltf.AssetPath.filePath, originalGltf);
+                                env.sceneStateGenerator.InstantiateAsset(gltf.AssetPath.hash, originalGltf);
                             }
                             catch (Exception e)
                             {

@@ -301,7 +301,8 @@ export async function executeLODConversion(
   components: Pick<AppComponents, 'logs' | 'metrics' | 'config' | 'cdnS3' | 'unityRunner' | 'scenes'>,
   entityId: string,
   lods: string[],
-  abVersion: string
+  abVersion: string,
+  contentServerUrl?: string
 ): Promise<number> {
   const $LOGS_BUCKET = await components.config.getString('LOGS_BUCKET')
   const $UNITY_PATH = await components.config.requireString('UNITY_PATH')
@@ -316,9 +317,12 @@ export async function executeLODConversion(
   const logFile = `/tmp/lods_logs/export_log_${entityId}_${Date.now()}.txt`
   const s3LogKey = `logs/lods/${abVersion}/${entityId}/${new Date().toISOString()}.txt`
   const outDirectory = `/tmp/lods_contents/entity_${entityId}`
-  const defaultLoggerMetadata = { entityId, lods, version: abVersion, logFile } as any
+  const defaultLoggerMetadata = { entityId, lods, version: abVersion, logFile, contentServerUrl } as any
 
-  logger.info('Starting conversion for ' + $BUILD_TARGET, defaultLoggerMetadata)
+  logger.info(
+    `Starting LOD conversion for ${$BUILD_TARGET} — entityId=${entityId} contentServerUrl=${contentServerUrl ?? '(none, Unity will use default)'}`,
+    defaultLoggerMetadata
+  )
 
   if (!unityBuildTarget) {
     logger.error('Could not find a build target', { ...defaultLoggerMetadata } as any)
@@ -334,7 +338,8 @@ export async function executeLODConversion(
       unityPath: $UNITY_PATH,
       projectPath: $PROJECT_PATH,
       timeout: 60 * 60 * 1000,
-      unityBuildTarget
+      unityBuildTarget,
+      contentServerUrl
     })
 
     components.metrics.increment('ab_converter_exit_codes', { exit_code: (exitCode ?? -1)?.toString() })

@@ -34,24 +34,6 @@ RUN yarn --prod --frozen-lockfile
 
 ########################## END OF CONSUMER-SERVER BUILD STAGE ##########################
 
-FROM node:24 AS lod-builder
-
-WORKDIR /scene-lod-entities-manifest-builder
-
-# install dependencies
-COPY scene-lod-entities-manifest-builder/package.json /scene-lod-entities-manifest-builder/package.json
-COPY scene-lod-entities-manifest-builder/package-lock.json /scene-lod-entities-manifest-builder/package-lock.json
-RUN npm ci
-
-# build the scene-lod-entities-manifest-builder
-COPY scene-lod-entities-manifest-builder /scene-lod-entities-manifest-builder
-RUN npm run build
-
-# remove devDependencies, keep only used dependencies
-RUN npm prune --production
-
-########################## END OF LOD BUILDER BUILD STAGE ##########################
-
 FROM $UNITY_DOCKER_IMAGE
 
 RUN apt-get update -y && \
@@ -88,7 +70,6 @@ RUN mkdir -p /root/.cache/unity3d && mkdir -p /root/.local/share/unity3d/Unity/
 
 COPY /asset-bundle-converter /asset-bundle-converter
 COPY --from=builderenv /consumer-server /consumer-server
-COPY --from=lod-builder /scene-lod-entities-manifest-builder /scene-lod-entities-manifest-builder
 COPY --from=builderenv /tini /tini
 
 # Please _DO NOT_ use a custom ENTRYPOINT because it may prevent signals

@@ -2,11 +2,21 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-[Serializable]
-public class StaticSceneDescriptor : ScriptableObject
+namespace AssetBundleConverter.InitialSceneStateGenerator
 {
-    public List<string> assetHash = new();
-    public List<Vector3> positions = new();
-    public List<Quaternion> rotations = new();
-    public List<Vector3> scales = new();
+    [Serializable]
+    public class StaticSceneDescriptor
+    {
+        public string sceneId;
+        public List<StaticSceneAsset> assets = new List<StaticSceneAsset>();
+    }
+
+    [Serializable]
+    public class StaticSceneAsset
+    {
+        public string hash;
+        public Vector3 position;
+        public Quaternion rotation;
+        public Vector3 scale;
+    }
 }
