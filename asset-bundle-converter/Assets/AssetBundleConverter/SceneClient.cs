@@ -325,6 +325,9 @@ namespace DCL.ABConverter
                 log.Info($"Loaded {settings.depsDigestByHash.Count} per-asset deps digest(s) from {filePath} — GLB/GLTF bundles will be named with the matching digest.");
             }
 
+            if (Utils.ParseOption(commandLineArgs, Config.CLI_DO_ISS, 0, out _))
+                settings.doISS = true;
+
             // Target is setup during the commandline argument -buildTarget
             settings.buildTarget = EditorUserBuildSettings.activeBuildTarget;
 
