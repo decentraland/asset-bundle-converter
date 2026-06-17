@@ -60,7 +60,8 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       AB_VERSION_WINDOWS: 'v48',
       AB_VERSION_MAC: 'v48',
       AB_VERSION: '',
-      FAST_PATH_TRIAGE_ENABLED: 'true'
+      FAST_PATH_TRIAGE_ENABLED: 'true',
+      ALLOWED_CONTENT_SERVER_HOSTS: 'peer.decentraland.org'
     })
     const metrics = await createMetricsComponent(metricDeclarations, { config })
     const logs = await createLogComponent({ metrics })
@@ -88,6 +89,8 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       // contract.
       catalyst: createCatalystMock(),
       unityRunner: createUnityRunnerMock(),
+      sceneConverter: {} as any,
+      assetBundleEncoder: {} as any,
       scenes: createScenesMock()
     })
 
@@ -131,7 +134,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       mockedExecuteTriagePass.mockResolvedValue({ kind: 'completed', exitCode: 0 })
       conversionPublishSpy = jest.spyOn(conversionTaskQueue, 'publish')
       await triageTaskQueue.publish({
-        entity: { entityId: 'bafy-fast-hit', authChain: [] as any },
+        entity: { entityId: 'bafyfasthit', authChain: [] as any },
         contentServerUrls: ['https://peer.decentraland.org/content']
       })
       await waitFor(() => mockedExecuteTriagePass.mock.calls.length >= 1)
@@ -140,7 +143,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
     it('should call executeTriagePass for the job', () => {
       expect(mockedExecuteTriagePass).toHaveBeenCalledWith(
         expect.anything(),
-        'bafy-fast-hit',
+        'bafyfasthit',
         'https://peer.decentraland.org/content',
         undefined,
         undefined,
@@ -160,7 +163,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       await waitFor(() => publishMessage.mock.calls.length >= 1)
       expect(publishMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          metadata: expect.objectContaining({ entityId: 'bafy-fast-hit', statusCode: 0 })
+          metadata: expect.objectContaining({ entityId: 'bafyfasthit', statusCode: 0 })
         })
       )
     })
@@ -174,7 +177,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       mockedExecuteConversion.mockResolvedValue(0)
       conversionPublishSpy = jest.spyOn(conversionTaskQueue, 'publish')
       await triageTaskQueue.publish({
-        entity: { entityId: 'bafy-cache-miss', authChain: [] as any },
+        entity: { entityId: 'bafycachemiss', authChain: [] as any },
         contentServerUrls: ['https://peer.decentraland.org/content']
       })
       await waitFor(() => conversionPublishSpy.mock.calls.length >= 1)
@@ -183,7 +186,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
     it('should republish the job to the Conversion queue', () => {
       expect(conversionPublishSpy).toHaveBeenCalledWith(
         expect.objectContaining({
-          entity: expect.objectContaining({ entityId: 'bafy-cache-miss' })
+          entity: expect.objectContaining({ entityId: 'bafycachemiss' })
         }),
         false
       )
@@ -193,7 +196,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       await waitFor(() => mockedExecuteConversion.mock.calls.length >= 1)
       expect(mockedExecuteConversion).toHaveBeenCalledWith(
         expect.anything(),
-        'bafy-cache-miss',
+        'bafycachemiss',
         'https://peer.decentraland.org/content',
         undefined,
         undefined,
@@ -210,9 +213,9 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       mockedExecuteLODConversion.mockResolvedValue(0)
       conversionPublishSpy = jest.spyOn(conversionTaskQueue, 'publish')
       await triageTaskQueue.publish({
-        entity: { entityId: 'bafy-lod-job', authChain: [] as any },
+        entity: { entityId: 'bafylodjob', authChain: [] as any },
         contentServerUrls: ['https://peer.decentraland.org/content'],
-        lods: ['lod1.glb']
+        lods: ['https://lod-cdn.example.com/lod1.glb']
       } as any)
       await waitFor(() => conversionPublishSpy.mock.calls.length >= 1)
     })
@@ -226,8 +229,8 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       await waitFor(() => mockedExecuteLODConversion.mock.calls.length >= 1)
       expect(mockedExecuteLODConversion).toHaveBeenCalledWith(
         expect.anything(),
-        'bafy-lod-job',
-        ['lod1.glb'],
+        'bafylodjob',
+        ['https://lod-cdn.example.com/lod1.glb'],
         'v48'
       )
     })
@@ -240,7 +243,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       mockedExecuteTriagePass.mockResolvedValue({ kind: 'failed', exitCode: 5 })
       conversionPublishSpy = jest.spyOn(conversionTaskQueue, 'publish')
       await triageTaskQueue.publish({
-        entity: { entityId: 'bafy-failed-probe', authChain: [] as any },
+        entity: { entityId: 'bafyfailedprobe', authChain: [] as any },
         contentServerUrls: ['https://peer.decentraland.org/content']
       })
       await waitFor(() => publishMessage.mock.calls.length >= 1)
@@ -249,7 +252,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
     it('should publish a finished event with the failure status code', () => {
       expect(publishMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          metadata: expect.objectContaining({ entityId: 'bafy-failed-probe', statusCode: 5 })
+          metadata: expect.objectContaining({ entityId: 'bafyfailedprobe', statusCode: 5 })
         })
       )
     })
@@ -271,7 +274,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       mockedExecuteConversion.mockResolvedValue(0)
       conversionPublishSpy = jest.spyOn(conversionTaskQueue, 'publish')
       await triageTaskQueue.publish({
-        entity: { entityId: 'bafy-force-job', authChain: [] as any },
+        entity: { entityId: 'bafyforcejob', authChain: [] as any },
         contentServerUrls: ['https://peer.decentraland.org/content'],
         force: true
       } as any)
@@ -281,7 +284,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
     it('should republish the job to the Conversion queue with force preserved', () => {
       expect(conversionPublishSpy).toHaveBeenCalledWith(
         expect.objectContaining({
-          entity: expect.objectContaining({ entityId: 'bafy-force-job' }),
+          entity: expect.objectContaining({ entityId: 'bafyforcejob' }),
           force: true
         }),
         false
@@ -292,7 +295,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       await waitFor(() => mockedExecuteConversion.mock.calls.length >= 1)
       expect(mockedExecuteConversion).toHaveBeenCalledWith(
         expect.anything(),
-        'bafy-force-job',
+        'bafyforcejob',
         'https://peer.decentraland.org/content',
         true,
         undefined,
@@ -314,7 +317,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       conversionPublishSpy = jest.spyOn(conversionTaskQueue, 'publish')
       await triageTaskQueue.publish(
         {
-          entity: { entityId: 'bafy-priority-job', authChain: [] as any },
+          entity: { entityId: 'bafypriorityjob', authChain: [] as any },
           contentServerUrls: ['https://peer.decentraland.org/content']
         },
         true /* prioritize */
@@ -325,7 +328,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
     it('should republish to the Conversion queue with prioritize=true', () => {
       expect(conversionPublishSpy).toHaveBeenCalledWith(
         expect.objectContaining({
-          entity: expect.objectContaining({ entityId: 'bafy-priority-job' })
+          entity: expect.objectContaining({ entityId: 'bafypriorityjob' })
         }),
         true
       )
@@ -346,11 +349,11 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       // Malformed non-LOD job (no contentServerUrls) — should be skipped by
       // the validation guard before any of the conversion paths fire.
       await triageTaskQueue.publish({
-        entity: { entityId: 'bafy-malformed', authChain: [] as any }
+        entity: { entityId: 'bafymalformed', authChain: [] as any }
       } as any)
       // Valid job behind it confirms the loop advanced past the skip.
       await triageTaskQueue.publish({
-        entity: { entityId: 'bafy-valid-after-malformed', authChain: [] as any },
+        entity: { entityId: 'bafyvalidaftermalformed', authChain: [] as any },
         contentServerUrls: ['https://peer.decentraland.org/content']
       })
       await waitFor(() => mockedExecuteTriagePass.mock.calls.length >= 1)
@@ -360,7 +363,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       expect(mockedExecuteTriagePass).toHaveBeenCalledTimes(1)
       expect(mockedExecuteTriagePass).toHaveBeenCalledWith(
         expect.anything(),
-        'bafy-valid-after-malformed',
+        'bafyvalidaftermalformed',
         'https://peer.decentraland.org/content',
         undefined,
         undefined,
@@ -388,7 +391,8 @@ describe('when FAST_PATH_TRIAGE_ENABLED is unset (default off)', () => {
       BUILD_TARGET: 'windows',
       AB_VERSION_WINDOWS: 'v48',
       AB_VERSION_MAC: 'v48',
-      AB_VERSION: ''
+      AB_VERSION: '',
+      ALLOWED_CONTENT_SERVER_HOSTS: 'peer.decentraland.org'
     })
     const metrics = await createMetricsComponent(metricDeclarations, { config })
     const logs = await createLogComponent({ metrics })
@@ -412,6 +416,8 @@ describe('when FAST_PATH_TRIAGE_ENABLED is unset (default off)', () => {
       // contract.
       catalyst: createCatalystMock(),
       unityRunner: createUnityRunnerMock(),
+      sceneConverter: {} as any,
+      assetBundleEncoder: {} as any,
       scenes: createScenesMock()
     })
 
@@ -454,7 +460,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is unset (default off)', () => {
     beforeEach(async () => {
       conversionPublishSpy = jest.spyOn(conversionTaskQueue, 'publish')
       await triageTaskQueue.publish({
-        entity: { entityId: 'bafy-default-mode', authChain: [] as any },
+        entity: { entityId: 'bafydefaultmode', authChain: [] as any },
         contentServerUrls: ['https://peer.decentraland.org/content']
       })
       await waitFor(() => mockedExecuteConversion.mock.calls.length >= 1)
@@ -463,7 +469,7 @@ describe('when FAST_PATH_TRIAGE_ENABLED is unset (default off)', () => {
     it('should call executeConversion directly (today behavior)', () => {
       expect(mockedExecuteConversion).toHaveBeenCalledWith(
         expect.anything(),
-        'bafy-default-mode',
+        'bafydefaultmode',
         'https://peer.decentraland.org/content',
         undefined,
         undefined,

@@ -1,7 +1,12 @@
 import { AssetBundleConversionFinishedEvent, Events } from '@dcl/schemas'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { AppComponents, TestComponents } from '../../types'
-import { getAbVersionEnvName, isSafeOutboundUrl } from '../../utils'
+import {
+  getAbVersionEnvName,
+  isAllowedContentServerUrl,
+  isSafeOutboundUrl,
+  parseAllowedContentServerHosts
+} from '../../utils'
 import { executeConversion, executeLODConversion, executeTriagePass, parseBooleanFlag } from '../conversion-task'
 import { ConversionQueueRepublishFailedError } from './errors'
 import type { IConversionOrchestratorComponent, Platform } from './types'
@@ -48,6 +53,17 @@ export async function createConversionOrchestratorComponent(
       `Unrecognized value for FAST_PATH_TRIAGE_ENABLED: "${raw}" — falling back to the default (false). Accepted values: true/false/1/0/yes/no/on/off.`
     )
   )
+  // Strict host allowlist for the (attacker-influenced) content-server URL.
+  // Read once at construction so per-message validation stays off the config
+  // hot path. Sourced entirely from ALLOWED_CONTENT_SERVER_HOSTS (set per-env in the
+  // definitions repo) — required, with no built-in fallback list.
+  const allowedContentServerHosts = parseAllowedContentServerHosts(
+    await config.requireString('ALLOWED_CONTENT_SERVER_HOSTS')
+  )
+  if (allowedContentServerHosts.size === 0) {
+    throw new Error('ALLOWED_CONTENT_SERVER_HOSTS is set but contains no valid catalyst hosts')
+  }
+  logger.info(`Catalyst allowlist active with ${allowedContentServerHosts.size} host(s)`)
 
   /**
    * Validates the shape of an incoming SQS job before either loop tries
@@ -94,17 +110,25 @@ export async function createConversionOrchestratorComponent(
       })
       return false
     }
-    // SSRF guard: the content-server base and LOD source URLs are fetched by the
-    // worker (and handed to Unity/the encoder). Reject jobs pointing at IP-literal
-    // or internal hosts so a crafted job can't drive a request to cloud metadata
-    // (169.254.169.254) or an internal service.
-    if (job.contentServerUrls?.[0] && !isSafeOutboundUrl(job.contentServerUrls[0])) {
-      logger.warn('Skipping job: contentServerUrl is not a safe outbound URL (SSRF guard)', {
+    // SSRF guard: the content-server URL is fetched by the worker (and handed to
+    // Unity/the encoder). It rides in the SQS payload, so a crafted job could
+    // otherwise drive a request to cloud metadata (169.254.169.254) or an
+    // internal service. Pin it to the configured allowlist (HTTPS + exact host
+    // match) — stricter than the IP/internal heuristic used for LODs. Validate
+    // EVERY entry, not just [0]: the whole array is preserved in the message, so
+    // a future consumer that iterates it must not see an off-allowlist host.
+    const disallowedContentServerUrl = job.contentServerUrls?.find(
+      (url) => !isAllowedContentServerUrl(url, allowedContentServerHosts)
+    )
+    if (disallowedContentServerUrl) {
+      logger.warn('Skipping job: a contentServerUrl is not an allowed content server (SSRF/allowlist guard)', {
         entityId: job.entity.entityId,
-        contentServerUrl: String(job.contentServerUrls[0]).slice(0, 120)
+        contentServerUrl: String(disallowedContentServerUrl).slice(0, 120)
       })
       return false
     }
+    // LOD source URLs come from a varying set of CDN hosts, so they get the
+    // looser IP-literal/internal-host heuristic rather than a fixed allowlist.
     if (job.lods?.some((u) => !isSafeOutboundUrl(u))) {
       logger.warn('Skipping job: a LOD source URL is not a safe outbound URL (SSRF guard)', {
         entityId: job.entity.entityId
