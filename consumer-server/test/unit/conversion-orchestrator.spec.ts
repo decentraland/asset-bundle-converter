@@ -50,7 +50,8 @@ async function buildHarness(opts: { triageEnabled: boolean }): Promise<Harness> 
     AB_VERSION_WINDOWS: 'v48',
     AB_VERSION_MAC: 'v48',
     AB_VERSION: '',
-    FAST_PATH_TRIAGE_ENABLED: opts.triageEnabled ? 'true' : 'false'
+    FAST_PATH_TRIAGE_ENABLED: opts.triageEnabled ? 'true' : 'false',
+    ALLOWED_CONTENT_SERVER_HOSTS: 'peer.decentraland.org'
   })
   const metrics = await createMetricsComponent(metricDeclarations, { config })
   const logs = await createLogComponent({ metrics })
@@ -80,16 +81,16 @@ async function buildHarness(opts: { triageEnabled: boolean }): Promise<Harness> 
 
 function buildValidSceneJob(): DeploymentToSqs {
   return {
-    entity: { entityId: 'bafy-scene', authChain: [] as any },
+    entity: { entityId: 'bafyscene', authChain: [] as any },
     contentServerUrls: ['https://peer.decentraland.org/content']
   } as any
 }
 
 function buildValidLodJob(): DeploymentToSqs {
   return {
-    entity: { entityId: 'bafy-lod', authChain: [] as any },
+    entity: { entityId: 'bafylod', authChain: [] as any },
     contentServerUrls: ['https://peer.decentraland.org/content'],
-    lods: ['lod-1.glb', 'lod-2.glb']
+    lods: ['https://lod-cdn.example.com/lod-1.glb', 'https://lod-cdn.example.com/lod-2.glb']
   } as any
 }
 
@@ -125,12 +126,70 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is fals
   describe('and the job has an entityId but no contentServerUrls', () => {
     beforeEach(async () => {
       await harness.orchestrator.processIncomingJob(
-        { entity: { entityId: 'bafy-noUrls', authChain: [] as any } } as any,
+        { entity: { entityId: 'bafynoUrls', authChain: [] as any } } as any,
         false
       )
     })
 
     it('should skip the job (validation guard rejects empty contentServerUrls)', () => {
+      expect(mockedExecuteConversion).not.toHaveBeenCalled()
+      expect(harness.publisher.publishMessage).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('and the job entityId is not a bare CID', () => {
+    beforeEach(async () => {
+      await harness.orchestrator.processIncomingJob(
+        {
+          entity: { entityId: '../../etc/passwd', authChain: [] as any },
+          contentServerUrls: ['https://peer.decentraland.org/content']
+        } as any,
+        false
+      )
+    })
+
+    it('should skip the job (path/key-injection guard rejects the entityId)', () => {
+      expect(mockedExecuteConversion).not.toHaveBeenCalled()
+      expect(harness.publisher.publishMessage).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('and the job carries a contentServerUrl that is not an allowed catalyst', () => {
+    beforeEach(async () => {
+      // Bare-CID entityId so the path-traversal guard passes and validation
+      // reaches the catalyst allowlist check — the metadata IP is not allowlisted.
+      await harness.orchestrator.processIncomingJob(
+        {
+          entity: { entityId: 'bafyssrf', authChain: [] as any },
+          contentServerUrls: ['https://169.254.169.254/latest/meta-data/']
+        } as any,
+        false
+      )
+    })
+
+    it('should skip the job (SSRF allowlist guard rejects the content server URL)', () => {
+      expect(mockedExecuteConversion).not.toHaveBeenCalled()
+    })
+
+    it('should not publish a finished event for the rejected job', () => {
+      expect(harness.publisher.publishMessage).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('and a later contentServerUrl entry is not an allowed catalyst', () => {
+    beforeEach(async () => {
+      // First entry is allowlisted, second is not — the whole array is preserved
+      // in the message, so every entry must be validated, not just [0].
+      await harness.orchestrator.processIncomingJob(
+        {
+          entity: { entityId: 'bafymulti', authChain: [] as any },
+          contentServerUrls: ['https://peer.decentraland.org/content', 'https://evil.internal/ssrf']
+        } as any,
+        false
+      )
+    })
+
+    it('should skip the job even though the first URL is allowlisted', () => {
       expect(mockedExecuteConversion).not.toHaveBeenCalled()
       expect(harness.publisher.publishMessage).not.toHaveBeenCalled()
     })
@@ -145,7 +204,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is fals
     it('should call executeConversion with the entity and content server URL', () => {
       expect(mockedExecuteConversion).toHaveBeenCalledWith(
         expect.anything(),
-        'bafy-scene',
+        'bafyscene',
         'https://peer.decentraland.org/content',
         undefined,
         undefined,
@@ -157,7 +216,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is fals
     it('should publish a finished event with the conversion exit code', () => {
       expect(harness.publisher.publishMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          metadata: expect.objectContaining({ entityId: 'bafy-scene', statusCode: 0 })
+          metadata: expect.objectContaining({ entityId: 'bafyscene', statusCode: 0 })
         })
       )
     })
@@ -172,8 +231,8 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is fals
     it('should call executeLODConversion (not executeConversion)', () => {
       expect(mockedExecuteLODConversion).toHaveBeenCalledWith(
         expect.anything(),
-        'bafy-lod',
-        ['lod-1.glb', 'lod-2.glb'],
+        'bafylod',
+        ['https://lod-cdn.example.com/lod-1.glb', 'https://lod-cdn.example.com/lod-2.glb'],
         'v48',
         'https://peer.decentraland.org/content'
       )
@@ -183,7 +242,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is fals
     it('should publish a finished event with isLods=true', () => {
       expect(harness.publisher.publishMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          metadata: expect.objectContaining({ isLods: true, entityId: 'bafy-lod' })
+          metadata: expect.objectContaining({ isLods: true, entityId: 'bafylod' })
         })
       )
     })
@@ -225,7 +284,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
     it('should republish the job to the Conversion queue without calling executeTriagePass', () => {
       expect(mockedExecuteTriagePass).not.toHaveBeenCalled()
       expect(harness.conversionPublish).toHaveBeenCalledWith(
-        expect.objectContaining({ entity: expect.objectContaining({ entityId: 'bafy-lod' }) }),
+        expect.objectContaining({ entity: expect.objectContaining({ entityId: 'bafylod' }) }),
         false
       )
     })
@@ -244,7 +303,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
     it('should publish a finished event carrying the triage exit code', () => {
       expect(harness.publisher.publishMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          metadata: expect.objectContaining({ entityId: 'bafy-scene', statusCode: 0 })
+          metadata: expect.objectContaining({ entityId: 'bafyscene', statusCode: 0 })
         })
       )
     })
@@ -263,7 +322,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
     it('should publish a finished event carrying the failure exit code so downstream consumers see the failure', () => {
       expect(harness.publisher.publishMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          metadata: expect.objectContaining({ entityId: 'bafy-scene', statusCode: 5 })
+          metadata: expect.objectContaining({ entityId: 'bafyscene', statusCode: 5 })
         })
       )
     })
@@ -281,7 +340,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
 
     it('should republish the original job to the Conversion queue with prioritize=false', () => {
       expect(harness.conversionPublish).toHaveBeenCalledWith(
-        expect.objectContaining({ entity: expect.objectContaining({ entityId: 'bafy-scene' }) }),
+        expect.objectContaining({ entity: expect.objectContaining({ entityId: 'bafyscene' }) }),
         false
       )
     })
@@ -323,7 +382,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
     it('should fall back to running the full conversion inline so no work is lost', () => {
       expect(mockedExecuteConversion).toHaveBeenCalledWith(
         expect.anything(),
-        'bafy-scene',
+        'bafyscene',
         'https://peer.decentraland.org/content',
         undefined,
         undefined,
@@ -335,7 +394,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
     it('should publish a finished event carrying the inline-conversion exit code', () => {
       expect(harness.publisher.publishMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          metadata: expect.objectContaining({ entityId: 'bafy-scene', statusCode: 0 })
+          metadata: expect.objectContaining({ entityId: 'bafyscene', statusCode: 0 })
         })
       )
     })
@@ -351,8 +410,8 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
     it('should fall back to running the LOD conversion inline', () => {
       expect(mockedExecuteLODConversion).toHaveBeenCalledWith(
         expect.anything(),
-        'bafy-lod',
-        ['lod-1.glb', 'lod-2.glb'],
+        'bafylod',
+        ['https://lod-cdn.example.com/lod-1.glb', 'https://lod-cdn.example.com/lod-2.glb'],
         'v48',
         'https://peer.decentraland.org/content'
       )
@@ -361,7 +420,7 @@ describe('when processIncomingJob is called and FAST_PATH_TRIAGE_ENABLED is true
     it('should publish a finished event for the inline LOD conversion', () => {
       expect(harness.publisher.publishMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          metadata: expect.objectContaining({ entityId: 'bafy-lod', isLods: true, statusCode: 0 })
+          metadata: expect.objectContaining({ entityId: 'bafylod', isLods: true, statusCode: 0 })
         })
       )
     })
@@ -418,7 +477,7 @@ describe('when processConversionJob is called', () => {
     it('should call executeConversion with the entity', () => {
       expect(mockedExecuteConversion).toHaveBeenCalledWith(
         expect.anything(),
-        'bafy-scene',
+        'bafyscene',
         'https://peer.decentraland.org/content',
         undefined,
         undefined,
@@ -430,7 +489,7 @@ describe('when processConversionJob is called', () => {
     it('should publish a finished event with the conversion exit code', () => {
       expect(harness.publisher.publishMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          metadata: expect.objectContaining({ entityId: 'bafy-scene', statusCode: 0 })
+          metadata: expect.objectContaining({ entityId: 'bafyscene', statusCode: 0 })
         })
       )
     })
@@ -445,8 +504,8 @@ describe('when processConversionJob is called', () => {
     it('should call executeLODConversion (not executeConversion)', () => {
       expect(mockedExecuteLODConversion).toHaveBeenCalledWith(
         expect.anything(),
-        'bafy-lod',
-        ['lod-1.glb', 'lod-2.glb'],
+        'bafylod',
+        ['https://lod-cdn.example.com/lod-1.glb', 'https://lod-cdn.example.com/lod-2.glb'],
         'v48',
         'https://peer.decentraland.org/content'
       )

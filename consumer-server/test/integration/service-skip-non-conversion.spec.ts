@@ -56,7 +56,8 @@ describe('when the conversion worker consumes a job from the queue', () => {
       BUILD_TARGET: 'windows',
       AB_VERSION_WINDOWS: 'v48',
       AB_VERSION_MAC: 'v48',
-      AB_VERSION: ''
+      AB_VERSION: '',
+      ALLOWED_CONTENT_SERVER_HOSTS: 'peer.decentraland.org'
     })
     const metrics = await createMetricsComponent(metricDeclarations, { config })
     const logs = await createLogComponent({ metrics })
@@ -131,7 +132,7 @@ describe('when the conversion worker consumes a job from the queue', () => {
       // worker did — and didn't — do for each.
       await triageTaskQueue.publish({ type: 'world_undeployment' } as any)
       await triageTaskQueue.publish({
-        entity: { entityId: 'bafy-valid-after-skip', authChain: [] as any },
+        entity: { entityId: 'bafyvalidafterskip', authChain: [] as any },
         contentServerUrls: ['https://peer.decentraland.org/content']
       })
       await waitFor(() => mockedExecuteConversion.mock.calls.length >= 1)
@@ -144,7 +145,7 @@ describe('when the conversion worker consumes a job from the queue', () => {
     it('should pass the valid job entity id to executeConversion', () => {
       expect(mockedExecuteConversion).toHaveBeenCalledWith(
         expect.anything(),
-        'bafy-valid-after-skip',
+        'bafyvalidafterskip',
         'https://peer.decentraland.org/content',
         undefined,
         undefined,
@@ -161,7 +162,7 @@ describe('when the conversion worker consumes a job from the queue', () => {
       expect(publishMessage).toHaveBeenCalledTimes(1)
       expect(publishMessage).toHaveBeenCalledWith(
         expect.objectContaining({
-          metadata: expect.objectContaining({ entityId: 'bafy-valid-after-skip' })
+          metadata: expect.objectContaining({ entityId: 'bafyvalidafterskip' })
         })
       )
     })
@@ -171,7 +172,7 @@ describe('when the conversion worker consumes a job from the queue', () => {
     beforeEach(async () => {
       await triageTaskQueue.publish({ entity: { entityId: '', authChain: [] as any } } as any)
       await triageTaskQueue.publish({
-        entity: { entityId: 'bafy-valid-after-empty', authChain: [] as any },
+        entity: { entityId: 'bafyvalidafterempty', authChain: [] as any },
         contentServerUrls: ['https://peer.decentraland.org/content']
       })
       await waitFor(() => mockedExecuteConversion.mock.calls.length >= 1)
@@ -181,7 +182,7 @@ describe('when the conversion worker consumes a job from the queue', () => {
       expect(mockedExecuteConversion).toHaveBeenCalledTimes(1)
       expect(mockedExecuteConversion).toHaveBeenCalledWith(
         expect.anything(),
-        'bafy-valid-after-empty',
+        'bafyvalidafterempty',
         expect.any(String),
         undefined,
         undefined,
