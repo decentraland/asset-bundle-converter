@@ -53,7 +53,7 @@ namespace AssetBundleConverter.Tests
             file.Received(1).WriteAllText(METADATA_PATH, Arg.Any<string>());
             var metadata = ParseCaptured();
             Assert.AreEqual(VERSION, metadata.version);
-            Assert.Greater(metadata.timestamp, 0);
+            Assert.AreEqual(0, metadata.timestamp);
         }
 
         [Test]
@@ -69,7 +69,7 @@ namespace AssetBundleConverter.Tests
             file.Received(1).WriteAllText(METADATA_PATH, Arg.Any<string>());
             var metadata = ParseCaptured();
             Assert.AreEqual(VERSION, metadata.version);
-            Assert.Greater(metadata.timestamp, 0);
+            Assert.AreEqual(0, metadata.timestamp);
         }
 
         [Test]

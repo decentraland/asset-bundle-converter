@@ -644,7 +644,7 @@ public class LODConversion
             {
                 var metadata = new AssetBundleMetadata
                 {
-                    timestamp = DateTime.UtcNow.Ticks,
+                    timestamp = AssetBundleMetadataBuilder.DETERMINISTIC_TIMESTAMP,
                     mainAsset = $"{lodName}.prefab",
                     dependencies = deps
                 };
