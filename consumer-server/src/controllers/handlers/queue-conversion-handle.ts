@@ -1,7 +1,7 @@
 import { Events } from '@dcl/schemas'
 import { HandlerContextWithPath } from '../../types'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
-import { IHttpServerComponent } from '@well-known-components/interfaces'
+import { IHttpServerComponent } from '@dcl/core-commons'
 import { getAbVersionEnvName } from '../../utils'
 
 export async function queueTaskHandler(

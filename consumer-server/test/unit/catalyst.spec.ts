@@ -3,7 +3,7 @@
 // for /contents/-format responses, and that getEntities POSTs the pointer
 // list with the expected headers.
 
-import type { IFetchComponent } from '@well-known-components/interfaces'
+import type { IFetchComponent } from '@dcl/core-commons'
 import { createCatalystComponent, ICatalystComponent } from '../../src/adapters/catalyst'
 
 const originalNativeFetch = globalThis.fetch

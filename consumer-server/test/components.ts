@@ -1,7 +1,7 @@
 // This file is the "test-environment" analogous for src/components.ts
 // Here we define the test components to be used in the testing environment
 
-import { createRunner, createLocalFetchCompoment } from '@well-known-components/test-helpers'
+import { createRunner, createLocalFetchComponent } from '@dcl/test-helpers'
 
 import { main } from '../src/service'
 import { TestComponents } from '../src/types'
@@ -26,6 +26,6 @@ async function initComponents(): Promise<TestComponents> {
 
   return {
     ...components,
-    localFetch: await createLocalFetchCompoment(config)
+    localFetch: await createLocalFetchComponent(config)
   }
 }
