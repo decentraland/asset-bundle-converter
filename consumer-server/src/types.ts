@@ -1,11 +1,10 @@
 import type {
   IConfigComponent,
   ILoggerComponent,
-  IHttpServerComponent,
   IBaseComponent,
-  IMetricsComponent,
-  IFetchComponent
+  IMetricsComponent
 } from '@well-known-components/interfaces'
+import type { IFetchComponent, IHttpServerComponent } from '@dcl/core-commons'
 import { metricDeclarations } from './metrics'
 import { ITaskQueue } from './adapters/task-queue'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
