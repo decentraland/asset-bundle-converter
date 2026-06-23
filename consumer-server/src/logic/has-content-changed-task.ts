@@ -95,6 +95,7 @@ async function downloadFilesFromManifestSuccesfully(
       const res = await globalThis.fetch(fileUrl)
 
       if (!res.ok) {
+        await res.body?.cancel().catch(() => undefined)
         throw new Error(`HasContentChanged: Failed to download file: ${fileUrl}`)
       }
 

@@ -564,8 +564,11 @@ async function responseBytes(url: string, res: { arrayBuffer(): Promise<ArrayBuf
  * backoff — important under sustained 429s where our fixed jitter formula
  * would hammer a cooperating server.
  */
-function assertOkResponse(url: string, res: FetchResponse): void {
+async function assertOkResponse(url: string, res: FetchResponse): Promise<void> {
   if (!res.ok) {
+    // The response body is discarded on the throw path — drain it so the
+    // undici connection is released back to the pool instead of leaking.
+    await res.body?.cancel().catch(() => undefined)
     const message = `failed to fetch ${url}: ${res.status} ${res.statusText}`
     if (res.status === 408 || res.status === 429 || res.status >= 500) {
       const retryAfterMs = parseRetryAfterMs(res.headers.get('retry-after'))
@@ -578,9 +581,12 @@ function assertOkResponse(url: string, res: FetchResponse): void {
 /**
  * Reject responses whose declared payload length exceeds the download guard.
  */
-function assertDeclaredLengthWithinGuard(url: string, res: FetchResponse): void {
+async function assertDeclaredLengthWithinGuard(url: string, res: FetchResponse): Promise<void> {
   const declaredLength = contentLength(res)
   if (Number.isFinite(declaredLength) && declaredLength > MAX_GLTF_DOWNLOAD_BYTES) {
+    // Reject without buffering, but drain the body first so the undici
+    // connection is released instead of leaking on this discard path.
+    await res.body?.cancel().catch(() => undefined)
     throw new NonRetryableFetchError(
       `glb/gltf at ${url} declared Content-Length ${declaredLength} > ${MAX_GLTF_DOWNLOAD_BYTES} (refusing to buffer)`
     )
@@ -635,8 +641,8 @@ function isRetryableFetchError(err: unknown): boolean {
  * Fetch and fully buffer a GLTF/GLB response when no prefix-only optimization applies.
  */
 async function fetchFullWithContentLengthGuard(url: string, res: FetchResponse): Promise<Buffer> {
-  assertOkResponse(url, res)
-  assertDeclaredLengthWithinGuard(url, res)
+  await assertOkResponse(url, res)
+  await assertDeclaredLengthWithinGuard(url, res)
   if (res.body) return readWholeStream(url, res)
 
   requireFallbackContentLength(url, res)
@@ -704,7 +710,7 @@ async function readWholeStream(url: string, res: FetchResponse): Promise<Buffer>
  * Stream only the JSON prefix needed from a GLB, then cancel the response body.
  */
 async function readGlbJsonPrefix(url: string, res: FetchResponse): Promise<Buffer> {
-  assertOkResponse(url, res)
+  await assertOkResponse(url, res)
   if (!res.body) {
     requireFallbackContentLength(url, res)
     return responseBytes(url, res)

@@ -183,6 +183,7 @@ export async function createScenesComponent(
           const response = await globalThis.fetch(fileUrl)
 
           if (!response.ok) {
+            await response.body?.cancel().catch(() => undefined)
             logger.error(
               `Failed to download ${fileName} from catalyst (${fileUrl}): ${response.status} ${response.statusText}`
             )
