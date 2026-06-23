@@ -123,7 +123,7 @@ namespace AssetBundleConverter
             public Dictionary<string, string> depsDigestByHash = new Dictionary<string, string>();
             public bool reportErrors = false;
             public bool isWearable;
-            public BuildTarget buildTarget = BuildTarget.WebGL;
+            public BuildTarget buildTarget = BuildTarget.StandaloneWindows64;
             public BuildPipelineType BuildPipelineType = BuildPipelineType.Default;
 
             public ClientSettings Clone() { return MemberwiseClone() as ClientSettings; }

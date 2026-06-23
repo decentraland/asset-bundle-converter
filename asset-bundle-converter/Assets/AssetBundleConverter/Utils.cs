@@ -70,9 +70,6 @@ namespace DCL.ABConverter
             if (currentTarget == BuildTarget.StandaloneOSX)
                 return "_mac";
 
-            if (currentTarget == BuildTarget.WebGL)
-                return "_webgl";
-
             if (Application.platform == RuntimePlatform.LinuxPlayer)
                 return "_linux";
 
@@ -177,22 +174,11 @@ namespace DCL.ABConverter
     {
         /// <summary>
         ///     Applies build-target-specific texture compression settings.
-        ///     WebGL uses DXT5 non-crunched for texture array compatibility (wearables copy directly without runtime conversion).
-        ///     All other targets use crunched compression.
+        ///     All targets use crunched compression.
         /// </summary>
         public static void ApplyBuildTargetTextureSettings(TextureImporter importer, BuildTarget buildTarget)
         {
-            if (buildTarget == BuildTarget.WebGL)
-            {
-                TextureImporterPlatformSettings webglSettings = importer.GetPlatformTextureSettings("WebGL");
-                webglSettings.overridden = true;
-                webglSettings.format = TextureImporterFormat.DXT5;
-                webglSettings.textureCompression = TextureImporterCompression.Compressed;
-                webglSettings.crunchedCompression = false;
-                importer.SetPlatformTextureSettings(webglSettings);
-            }
-            else
-                importer.crunchedCompression = true;
+            importer.crunchedCompression = true;
         }
 
         public static bool IsCompressedFormat(TextureFormat format)
@@ -535,11 +521,6 @@ namespace DCL.ABConverter
                     {
                         suffix = "_mac";
                         assetBundleName = assetBundleName.Replace("_mac", "");
-                    }
-                    else if (assetBundleName.EndsWith("_webgl"))
-                    {
-                        suffix = "_webgl";
-                        assetBundleName = assetBundleName.Replace("_webgl", "");
                     }
                     else if (assetBundleName.EndsWith("_osx"))
                     {

@@ -117,7 +117,7 @@ export function splitBundleName(filename: string, target: string): { hash: strin
  *
  * Exported for unit testing.
  *
- * @param target - Build target — one of `webgl` / `windows` / `mac`.
+ * @param target - Build target — one of `windows` / `mac`.
  */
 export function buildBundlePattern(target: string): RegExp {
   return new RegExp(`^[^/]+_${target}(\\.br|\\.manifest|\\.manifest\\.br)?$`)
@@ -126,9 +126,9 @@ export function buildBundlePattern(target: string): RegExp {
 /**
  * Parse an S3 manifest key into `{ entityId, target }`.
  *
- * Manifests live at `manifest/{entityId}.json` (WebGL default) or
- * `manifest/{entityId}_{target}.json` (Windows/Mac). `_failed.json` sentinels
- * are skipped entirely — the migration doesn't touch failed conversions.
+ * Manifests live at `manifest/{entityId}_{target}.json` (windows or mac).
+ * `_failed.json` sentinels are skipped entirely — the migration doesn't touch
+ * failed conversions.
  *
  * Exported for unit testing.
  *
@@ -140,10 +140,10 @@ export function parseManifestKey(key: string): { entityId: string; target: strin
   const base = key.replace(/^manifest\//, '').replace(/\.json$/, '')
   if (!base || base.endsWith('_failed')) return null
 
-  const desktopMatch = base.match(/^(.+)_(windows|mac)$/)
-  if (desktopMatch) return { entityId: desktopMatch[1], target: desktopMatch[2] }
+  const match = base.match(/^(.+)_(windows|mac)$/)
+  if (match) return { entityId: match[1], target: match[2] }
 
-  return { entityId: base, target: 'webgl' }
+  return null
 }
 
 async function* listManifests(s3: AWS.S3, bucket: string): AsyncGenerator<AWS.S3.Object> {
@@ -437,7 +437,7 @@ async function main() {
 
   if (args['--help']) {
     console.log(`
-Usage: yarn migrate --ab-version <v> --target <webgl|windows|mac> [options]
+Usage: yarn migrate --ab-version <v> --target <windows|mac> [options]
 
 Copy existing {AB_VERSION}/{entityId}/{hash}_{target}* bundles into the
 canonical {AB_VERSION}/assets/ layout. glb/gltf bundles land at
@@ -455,7 +455,7 @@ through this process.
 
 Options:
   --ab-version <v>            AB_VERSION prefix (e.g. v48). Required.
-  --target <t>                Build target (webgl|windows|mac). Required.
+  --target <t>                Build target (windows|mac). Required.
   --content-server-url <url>  Fallback catalyst URL used when a manifest's body
                               is missing contentServerUrl. Required for backfill
                               of pre-PR-#258 manifests (they predate that
@@ -476,8 +476,8 @@ Options:
   const concurrency = args['--concurrency'] ?? 50
 
   if (!abVersion) throw new Error('Missing --ab-version')
-  if (!target || !['webgl', 'windows', 'mac'].includes(target)) {
-    throw new Error('Missing or invalid --target (webgl|windows|mac)')
+  if (!target || !['windows', 'mac'].includes(target)) {
+    throw new Error('Missing or invalid --target (windows|mac)')
   }
 
   const config = await createDotEnvConfigComponent({ path: ['.env.default', '.env'] })

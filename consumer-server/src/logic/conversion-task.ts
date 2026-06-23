@@ -664,7 +664,7 @@ export async function executeConversion(
   // intentionally — removing it is a separate follow-up after the new path is
   // proven in production.
   let hasContentChanged = true
-  if ($BUILD_TARGET !== 'webgl' && !force && !doISS && !useAssetReuse && entityType === 'scene') {
+  if (!force && !doISS && !useAssetReuse && entityType === 'scene') {
     try {
       hasContentChanged = await hasContentChange(
         components.catalyst,

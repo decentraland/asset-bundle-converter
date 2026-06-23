@@ -2,8 +2,6 @@ import { isIP } from 'net'
 
 export function getUnityBuildTarget(target: string): string | undefined {
   switch (target) {
-    case 'webgl':
-      return 'WebGL'
     case 'windows':
       return 'StandaloneWindows64'
     case 'mac':
@@ -139,8 +137,6 @@ export function isAllowedContentServerUrl(raw: string, allowedHosts: Set<string>
 
 export function getAbVersionEnvName(buildTarget: string) {
   switch (buildTarget) {
-    case 'webgl':
-      return 'AB_VERSION'
     case 'windows':
       return 'AB_VERSION_WINDOWS'
     case 'mac':

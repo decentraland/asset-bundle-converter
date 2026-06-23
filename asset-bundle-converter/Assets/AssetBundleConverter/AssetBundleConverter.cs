@@ -123,7 +123,7 @@ namespace DCL.ABConverter
             startupAllocated = Profiler.GetTotalAllocatedMemoryLong() / 100000.0;
             startupReserved = Profiler.GetTotalReservedMemoryLong() / 100000.0;
 
-            if (settings.buildTarget is not (BuildTarget.WebGL or BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX))
+            if (settings.buildTarget is not (BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX))
             {
                 var message = $"Build target is invalid: {settings.buildTarget.ToString()}";
                 log.Error(message);
@@ -770,9 +770,7 @@ namespace DCL.ABConverter
                 if (!env.directory.Exists(texturesRoot))
                     env.directory.CreateDirectory(texturesRoot);
 
-                float maxTextureSize = settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX
-                    ? DESKTOP_MAX_TEXTURE_SIZE
-                    : DEFAULT_MAX_TEXTURE_SIZE;
+                float maxTextureSize = DESKTOP_MAX_TEXTURE_SIZE;
 
                 for (int i = 0; i < textures.Count; i++)
                 {
@@ -1451,9 +1449,7 @@ namespace DCL.ABConverter
         {
             List<AssetPath> result = new List<AssetPath>(assetPaths);
 
-            float maxTextureSize = settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX
-                ? DESKTOP_MAX_TEXTURE_SIZE
-                : DEFAULT_MAX_TEXTURE_SIZE;
+            float maxTextureSize = DESKTOP_MAX_TEXTURE_SIZE;
 
             for (var i = 0; i < assetPaths.Count; i++)
             {

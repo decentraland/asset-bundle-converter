@@ -65,9 +65,6 @@ namespace AssetBundleConverter.Wrappers.Implementations.Default
                 case BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX:
                     EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Standalone, targetPlatform);
                     return true;
-                case BuildTarget.WebGL:
-                    EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.WebGL, BuildTarget.WebGL);
-                    return true;
             }
 
             throw new Exception($"Build target {targetPlatform} is not supported");

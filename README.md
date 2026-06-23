@@ -15,8 +15,8 @@ The intent of this repository is to decouple the conversion tool to have fewer d
 
 ## What does this tool do?
 
-To improve the performance of the WebGL build, in the past, we decided to convert all scenes into Asset Bundles.
-So this tool loads every scene asset, loads and re-imports all gltf's to turn them into AssetBundles just for the CI to upload them into the content servers.
+This tool converts Decentraland scenes into Asset Bundles for the desktop (Windows and Mac) builds.
+It loads every scene asset, loads and re-imports all gltf's to turn them into AssetBundles just for the CI to upload them into the content servers.
 
 ## How do I manually run this tool?
 
@@ -131,15 +131,8 @@ async function resolveAssetBundle(
   assetBundleCdn: string
 ): string | null {
   if (manifest.files.includes(cid)) {
-    if (UNITY_WEBGL)
-      // brotli compressed asset bundles for WebGL, the browser will
-      // uncompress and cache this asset in a different thread
-      // NOTICE: if the asset bundles support range requests, they
-      //         won't work with the .br postfix!
-      return `${assetBundleCdn}/${manifest.version}/${cid}.br`
-    else
-      // raw asset bundles for the rest of the platforms
-      return `${assetBundleCdn}/${manifest.version}/${cid}`
+    // raw asset bundles for desktop platforms
+    return `${assetBundleCdn}/${manifest.version}/${cid}`
   }
   return null
 }
