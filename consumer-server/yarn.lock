@@ -770,13 +770,6 @@
   dependencies:
     "@well-known-components/interfaces" "^1.5.2"
 
-"@dcl/core-commons@0.8.0":
-  version "0.8.0"
-  resolved "https://registry.yarnpkg.com/@dcl/core-commons/-/core-commons-0.8.0.tgz#65be26ede7c5b0d33b5111f5fcddb98aed37712b"
-  integrity sha512-8L0krVDeUjugn7bkxCHsp7AgT0aY0l0U8Z9VClvxaMMtUc/BddVk1HkJMzX+g5Sawg8NOx0WMdAz5wYG1Gwm2A==
-  dependencies:
-    "@well-known-components/interfaces" "^1.5.2"
-
 "@dcl/crypto-middleware@^4.0.0":
   version "4.1.0"
   resolved "https://registry.yarnpkg.com/@dcl/crypto-middleware/-/crypto-middleware-4.1.0.tgz#85b946c2627d4fbb3a91795fd78109f5cccba1e4"
@@ -811,10 +804,10 @@
     eslint-plugin-prettier "^5.1.3"
     prettier "^3.3.2"
 
-"@dcl/http-server@^2.0.2":
-  version "2.0.2"
-  resolved "https://registry.yarnpkg.com/@dcl/http-server/-/http-server-2.0.2.tgz#9909d0e423489b4a7f76b6a9111a79029f4153a9"
-  integrity sha512-tzzBrW0JtexwwZNB7yYLiKVhG8LysWf7Sy2xrLBrqF8BAsCWqeLvPqftKrLBHNkxAd66zHsi5P3Mg5I9GdvdRA==
+"@dcl/http-server@^2.1.0":
+  version "2.1.0"
+  resolved "https://registry.yarnpkg.com/@dcl/http-server/-/http-server-2.1.0.tgz#5385ba3319356d32d468365a84530f24e245fa65"
+  integrity sha512-UqIFIo18JeKklM/RM0wEJ0u/DCGjikBHtQ1LzuQKjDK6SP9XgeVhukgCg5BmdW0D3Qzlql2i5CGpW4EdyfUiWQ==
   dependencies:
     "@dcl/core-commons" "0.10.1"
     "@well-known-components/interfaces" "^1.5.1"
@@ -826,12 +819,12 @@
     path-to-regexp "^6.3.0"
     reflect-metadata "^0.2.2"
 
-"@dcl/memory-cache-component@^2.4.0":
-  version "2.4.0"
-  resolved "https://registry.yarnpkg.com/@dcl/memory-cache-component/-/memory-cache-component-2.4.0.tgz#7c5e5e871846d0f936c6f845ac715cc19bf006ae"
-  integrity sha512-QSoKFgqK6oTEi02sjg6o6heivAXBkcISPNUvqEqV0+Vloy0bGRawj0AagbGJi8Qu6wigk1aOyCr42fnhsMUdGw==
+"@dcl/memory-cache-component@^2.4.3":
+  version "2.4.3"
+  resolved "https://registry.yarnpkg.com/@dcl/memory-cache-component/-/memory-cache-component-2.4.3.tgz#cc2d54bd0481e39bc8633a7bcea1d1eb37f52c1b"
+  integrity sha512-++67KaWks/gRwYlOdfUiSRVNB9WnI0FJVyYaXlyYf1u64qY5UopTrwcU1UQiPzMuGKpyZOXK0V+ZgldGiumOeg==
   dependencies:
-    "@dcl/core-commons" "0.8.0"
+    "@dcl/core-commons" "0.10.1"
     "@well-known-components/interfaces" "^1.5.1"
     lru-cache "~11.2.2"
 
@@ -842,12 +835,12 @@
   dependencies:
     prom-client "^15.1.0"
 
-"@dcl/redis-component@^3.1.0":
-  version "3.1.0"
-  resolved "https://registry.yarnpkg.com/@dcl/redis-component/-/redis-component-3.1.0.tgz#feb1c5aa52f1981e2ae0506891d4c994f093fffb"
-  integrity sha512-fmZna77mdZzBEFi9PwectyOTYLUZ3kUO6NNEcHjUNnsk9qc6ybYFP0x+DtaDmtyYwatTYmHp00tEIJSBZvREng==
+"@dcl/redis-component@^3.1.3":
+  version "3.1.3"
+  resolved "https://registry.yarnpkg.com/@dcl/redis-component/-/redis-component-3.1.3.tgz#9d6e21466fa1ef7b5551b6a226d8d70a7c3d6bf6"
+  integrity sha512-FLTuceLMQDkSAnX6vqi3wvfFYFRe6KbDq3LMOHcIK4JgkK6DWX5kQQWu9mcsmHHvgFTINwnTP947ZGdDQRISDw==
   dependencies:
-    "@dcl/core-commons" "0.8.0"
+    "@dcl/core-commons" "0.10.1"
     "@well-known-components/interfaces" "^1.5.2"
     redis "^5.9.0"
 
