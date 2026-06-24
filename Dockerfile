@@ -59,6 +59,8 @@ ENV AB_VERSION_MAC=v49
 ENV NODE_ENV=production
 ENV PROJECT_PATH=/asset-bundle-converter
 
+# CI overrides PLATFORM_TARGET per matrix build (windows / mac).
+# The default is for local development only.
 ARG PLATFORM_TARGET=windows
 ENV BUILD_TARGET=$PLATFORM_TARGET
 ENV DEBIAN_FRONTEND=noninteractive

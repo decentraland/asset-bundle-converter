@@ -108,7 +108,7 @@ export async function createScenesComponent(
   }
 
   function manifestKeyForEntity(entityId: string, target: string | undefined): string {
-    if (target && target !== 'webgl') {
+    if (target) {
       return `manifest/${entityId}_${target}.json`
     } else {
       return `manifest/${entityId}.json`
@@ -144,8 +144,7 @@ export async function createScenesComponent(
    * occasionally drops files).
    *
    * Runs for any target on a successful conversion or fast-path hit; the
-   * webgl client doesn't read these files but the upload is cheap enough that
-   * we don't gate on build target.
+   * upload is cheap enough that we don't gate on build target.
    */
   async function uploadSceneSourceFilesToCDN(
     entity: Entity,

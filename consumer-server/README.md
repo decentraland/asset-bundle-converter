@@ -1,6 +1,6 @@
 # Consumer Server
 
-The **Consumer Server** is tasked with receiving deployment notifications from the [deployments-to-sqs](https://github.com/decentraland/deployments-to-sqs) service and handling them to facilitate efficient importing within WebGL environments.
+The **Consumer Server** is tasked with receiving deployment notifications from the [deployments-to-sqs](https://github.com/decentraland/deployments-to-sqs) service and handling them to facilitate efficient asset bundle conversion for the Windows and Mac desktop clients.
 
 The initial deployments made to the Catalysts can be significantly optimized by re-importing all the `gltf` files and transforming them into AssetBundles. This optimization leads to accelerated importing and loading processes on the client-side.
 

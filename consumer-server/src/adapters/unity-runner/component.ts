@@ -90,7 +90,7 @@ function execCommand(
 /**
  * Spawns the scene-LOD-entities-manifest-builder npm script before the
  * main Unity build kicks off. Invoked only by `runConversion` for ISS
- * scenes (doISS=true on a non-WebGL target). Failures are non-fatal —
+ * scenes (doISS=true). Failures are non-fatal —
  * the caller catches and proceeds with the conversion sans manifest.
  *
  * @param sceneId - Scene CID forwarded as `--sceneid`.
@@ -191,9 +191,9 @@ export async function createUnityRunnerComponent(
 
   /**
    * Spawns Unity for a scene / wearable / emote conversion. Touches the
-   * log file and output directory first; for ISS scenes on non-WebGL
-   * targets, runs the LOD entities manifest builder before the main
-   * Unity invocation (failure non-fatal, conversion proceeds).
+   * log file and output directory first; for ISS scenes, runs the LOD
+   * entities manifest builder before the main Unity invocation (failure
+   * non-fatal, conversion proceeds).
    *
    * Per-asset deps digests are passed via a sidecar JSON file rather
    * than inline argv — see the comment near `depsDigestsFile` for the
@@ -203,7 +203,7 @@ export async function createUnityRunnerComponent(
     await setupStartDirectories(options)
 
     // Run manifest builder before conversion if needed
-    if (options.entityType === 'scene' && options.unityBuildTarget !== 'WebGL' && options.doISS) {
+    if (options.entityType === 'scene' && options.doISS) {
       try {
         const catalystDomain = new URL(options.contentServerUrl).origin
         await startManifestBuilder(options.entityId, options.projectPath + '/Assets/_SceneManifest', catalystDomain)

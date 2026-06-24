@@ -196,9 +196,9 @@ describe('when running the migration against a pre-rollout bucket', () => {
     let stats: Awaited<ReturnType<typeof runMigration>>
 
     beforeEach(async () => {
-      // WebGL and Mac manifests exist, but we only migrate Windows on this run.
+      // Mac manifest and a legacy bare (formerly WebGL) manifest exist, but we only migrate Windows on this run.
       await seedObject(s3, 'manifest/bafy-mac_mac.json', makeManifest('v48', ['hashX_mac']))
-      await seedObject(s3, 'manifest/bafy-webgl.json', makeManifest('v48', ['hashY_webgl']))
+      await seedObject(s3, 'manifest/bafy-legacy.json', makeManifest('v48', ['hashY_legacy']))
       await seedObject(s3, 'manifest/bafy-win_windows.json', makeManifest('v48', ['hashZ_windows']))
       await seedObject(s3, 'v48/bafy-win/hashZ_windows', 'windows-bytes')
 
@@ -228,9 +228,9 @@ describe('when running the migration against a pre-rollout bucket', () => {
       expect(await read(s3, 'v48/assets/hashZ_windows')).toBe('windows-bytes')
     })
 
-    it('should leave mac and webgl canonical paths untouched', async () => {
+    it('should leave mac and legacy bare manifest canonical paths untouched', async () => {
       expect(await read(s3, 'v48/assets/hashX_mac')).toBeNull()
-      expect(await read(s3, 'v48/assets/hashY_webgl')).toBeNull()
+      expect(await read(s3, 'v48/assets/hashY_legacy')).toBeNull()
     })
   })
 

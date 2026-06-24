@@ -227,9 +227,9 @@ describe('when manifestKeyForEntity is called', () => {
     jest.clearAllMocks()
   })
 
-  describe('and the target is webgl', () => {
-    it('should return the bare key without a build-target suffix', () => {
-      expect(harness.scenes.manifestKeyForEntity('bafy-1', 'webgl')).toBe('manifest/bafy-1.json')
+  describe('and the target is webgl (now treated like any other target)', () => {
+    it('should append the webgl suffix since webgl no longer receives special-case handling', () => {
+      expect(harness.scenes.manifestKeyForEntity('bafy-1', 'webgl')).toBe('manifest/bafy-1_webgl.json')
     })
   })
 

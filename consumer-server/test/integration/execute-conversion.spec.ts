@@ -1768,10 +1768,10 @@ describe('when executing a conversion with asset-reuse enabled', () => {
     })
   })
 
-  describe('and BUILD_TARGET is webgl', () => {
-    // Webgl manifests don't carry a target suffix — the key is
-    // `manifest/{entityId}.json` instead of `manifest/{entityId}_{target}.json`.
-    // Clients treat the bare form as the webgl manifest by convention.
+  describe('and BUILD_TARGET is webgl (decommissioned)', () => {
+    // WebGL has been decommissioned — getUnityBuildTarget('webgl') returns
+    // undefined, so executeConversion should reject with UNEXPECTED_ERROR (5)
+    // without attempting any conversion work.
     let customComponents: any
     let exitCode: number
 
@@ -1781,25 +1781,6 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       const logs = await createLogComponent({ metrics })
       const scenes = await buildScenes(base, logs, metrics)
       customComponents = { ...base, metrics, logs, scenes }
-
-      setupFetchMock(new Map([['hGlb', buildGlb([], [])]]))
-      mockedGetActiveEntity.mockResolvedValue({
-        id: 'bafy-webgl',
-        type: 'scene',
-        content: [{ file: 'model.glb', hash: 'hGlb' }],
-        metadata: {}
-      })
-
-      mockedRunConversion.mockImplementation(async (options: any) => {
-        await fs.mkdir(path.dirname(options.logFile), { recursive: true })
-        await fs.writeFile(options.logFile, 'unity log')
-        await fs.mkdir(options.outDirectory, { recursive: true })
-        const digest = computeDepsDigest([])
-        const digests = new Map([['hGlb', digest]])
-        const glbFilename = canonicalFilenameForAsset('hGlb', '.glb', 'webgl', digests)
-        await fs.writeFile(path.join(options.outDirectory, glbFilename), 'new-bundle')
-        return 0
-      })
 
       exitCode = await executeConversion(
         customComponents,
@@ -1812,33 +1793,22 @@ describe('when executing a conversion with asset-reuse enabled', () => {
       )
     })
 
-    it('should return exit code 0', () => {
-      expect(exitCode).toBe(0)
+    it('should return UNEXPECTED_ERROR (5) because webgl is no longer a valid build target', () => {
+      expect(exitCode).toBe(5)
     })
 
-    it('should publish the manifest at the bare (non-suffixed) key', async () => {
-      // Proves manifestKeyForEntity(..., 'webgl') → 'manifest/{id}.json'.
-      expect(await read(customComponents.cdnS3, 'test-bucket', 'manifest/bafy-webgl.json')).not.toBeNull()
-      // And confirms it did NOT also publish a _webgl-suffixed variant.
-      expect(await read(customComponents.cdnS3, 'test-bucket', 'manifest/bafy-webgl_webgl.json')).toBeNull()
-    })
-
-    it('should NOT upload scene source files to the entity-scoped path (desktop-only feature)', async () => {
-      // uploadSceneSourceFilesToCDN runs regardless of target, but only
-      // scenes with matching content entries produce output. Our minimal
-      // entity has no main.crdt/scene.json/index.js entries, so nothing
-      // gets uploaded. This assertion also guards against accidental
-      // webgl-specific routing changes in the future.
-      expect(await read(customComponents.cdnS3, 'test-bucket', 'v48/bafy-webgl/main.crdt')).toBeNull()
+    it('should not invoke the catalyst or Unity', () => {
+      expect(mockedGetActiveEntity).not.toHaveBeenCalled()
+      expect(mockedRunConversion).not.toHaveBeenCalled()
     })
   })
 
-  describe('and ASSET_REUSE_ENABLED is off on a non-webgl target (hasContentChange fallback path)', () => {
-    // When asset reuse is off AND target is non-webgl AND entity is a scene,
-    // executeConversion calls the legacy `hasContentChange` function to decide
-    // whether the prior conversion's bundles are still valid. This path is
-    // scheduled for removal once the new reuse path is fully proven, but it's
-    // live in production and warrants coverage.
+  describe('and ASSET_REUSE_ENABLED is off (hasContentChange fallback path)', () => {
+    // When asset reuse is off AND entity is a scene, executeConversion calls
+    // the legacy `hasContentChange` function to decide whether the prior
+    // conversion's bundles are still valid. This path is scheduled for removal
+    // once the new reuse path is fully proven, but it's live in production and
+    // warrants coverage.
     let customComponents: any
     let exitCode: number
 
