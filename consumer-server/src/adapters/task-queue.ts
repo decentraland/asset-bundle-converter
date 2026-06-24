@@ -117,7 +117,7 @@ export function createSqsAdapter<T>(
             AttributeNames: ['SentTimestamp'],
             MaxNumberOfMessages: quantityOfMessages,
             MessageAttributeNames: ['All'],
-            QueueUrl: options.priorityQueueUrl,
+            QueueUrl: options.queueUrl,
             WaitTimeSeconds: 15,
             VisibilityTimeout: 3 * 3600 // 3 hours
           })
@@ -134,7 +134,7 @@ export function createSqsAdapter<T>(
             AttributeNames: ['SentTimestamp'],
             MaxNumberOfMessages: quantityOfMessages,
             MessageAttributeNames: ['All'],
-            QueueUrl: options.queueUrl,
+            QueueUrl: options.priorityQueueUrl!,
             WaitTimeSeconds: 15,
             VisibilityTimeout: 3 * 3600 // 3 hours
           })
