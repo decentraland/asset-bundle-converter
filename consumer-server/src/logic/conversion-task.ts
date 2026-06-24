@@ -397,29 +397,37 @@ export async function executeLODConversion(
       logger.info(`!!!!!!!! Log file not deleted or uploaded ${logFile}`, defaultLoggerMetadata)
     }
 
-    // delete output files
-    try {
-      await rimraf(logFile, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
-    }
-    try {
-      await rimraf(outDirectory, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
-    }
-    // delete library folder
-    try {
-      await rimraf(`${$PROJECT_PATH}/Library`, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
-    }
-
-    // delete scene manifest folder
-    await deleteSceneManifestFolder($PROJECT_PATH, logger, defaultLoggerMetadata)
+    // Parallelise the cleanup rimrafs — they target disjoint paths (logFile is
+    // under /tmp/lods_logs, outDirectory under /tmp/lods_contents, Library and
+    // _SceneManifest under PROJECT_PATH) so there's no parent-child overlap to
+    // race. Per-path errors are caught locally so a single failure doesn't
+    // abort the others.
+    await Promise.all([
+      safeRimraf(logFile, logger, defaultLoggerMetadata),
+      safeRimraf(outDirectory, logger, defaultLoggerMetadata),
+      safeRimraf(`${$PROJECT_PATH}/Library`, logger, defaultLoggerMetadata),
+      deleteSceneManifestFolder($PROJECT_PATH, logger, defaultLoggerMetadata)
+    ])
   }
 
   logger.debug('LOD Conversion finished', defaultLoggerMetadata)
+}
+
+/**
+ * Wraps `rimraf` so a single path failure logs and resolves rather than
+ * rejecting — keeps a `Promise.all` of cleanup paths from short-circuiting on
+ * the first error.
+ */
+async function safeRimraf(
+  target: string,
+  logger: ILoggerComponent.ILogger,
+  meta: Record<string, unknown>
+): Promise<void> {
+  try {
+    await rimraf(target, { maxRetries: 3 })
+  } catch (err: any) {
+    logger.error(err, meta as any)
+  }
 }
 
 /**
@@ -855,32 +863,18 @@ export async function executeConversion(
       logger.info(`!!!!!!!! Log file not deleted or uploaded ${logFile}`, defaultLoggerMetadata)
     }
 
-    // delete output files
-    try {
-      await rimraf(logFile, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
-    }
-    try {
-      await rimraf(outDirectory, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
-    }
-    // delete library folder
-    try {
-      await rimraf(`${$PROJECT_PATH}/Library`, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(`Error deleting library folder: ${err}`, defaultLoggerMetadata)
-    }
-    //delete _Download folder
-    try {
-      await rimraf(`${$PROJECT_PATH}/Assets/_Downloaded`, { maxRetries: 3 })
-    } catch (err: any) {
-      logger.error(err, defaultLoggerMetadata)
-    }
-
-    // delete scene manifest folder
-    await deleteSceneManifestFolder($PROJECT_PATH, logger, defaultLoggerMetadata)
+    // Parallelise the cleanup rimrafs — five disjoint paths (logFile and
+    // outDirectory live in /tmp scratch trees, Library / Assets/_Downloaded /
+    // _SceneManifest live under PROJECT_PATH), no parent-child overlap, so
+    // there's nothing to race on. Per-path errors are caught locally so a
+    // single failure doesn't abort the others.
+    await Promise.all([
+      safeRimraf(logFile, logger, defaultLoggerMetadata),
+      safeRimraf(outDirectory, logger, defaultLoggerMetadata),
+      safeRimraf(`${$PROJECT_PATH}/Library`, logger, defaultLoggerMetadata),
+      safeRimraf(`${$PROJECT_PATH}/Assets/_Downloaded`, logger, defaultLoggerMetadata),
+      deleteSceneManifestFolder($PROJECT_PATH, logger, defaultLoggerMetadata)
+    ])
   }
 
   logger.debug('Conversion finished', defaultLoggerMetadata)
