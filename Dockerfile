@@ -1,4 +1,4 @@
-ARG UNITY_DOCKER_IMAGE=unityci/editor:2022.3.12f1-webgl-3.0.0
+ARG UNITY_DOCKER_IMAGE=unityci/editor:2022.3.12f1-linux-il2cpp-3.0.0
 
 FROM node:24@sha256:032e78d7e54e352129831743737e3a83171d9cc5b5896f411649c597ce0b11ea AS builderenv
 
@@ -51,7 +51,6 @@ ENV NODE_PATH=$NVM_DIR/versions/node/$NODE_VERSION/lib/node_modules
 ENV PATH=$NVM_DIR/versions/node/$NODE_VERSION/bin:$PATH
 
 # Change this value ONLY if we have done breaking changes for every material, doing so is VERY costly
-ENV AB_VERSION=v49
 ENV AB_VERSION_WINDOWS=v49
 ENV AB_VERSION_MAC=v49
 
@@ -59,7 +58,9 @@ ENV AB_VERSION_MAC=v49
 ENV NODE_ENV=production
 ENV PROJECT_PATH=/asset-bundle-converter
 
-ARG PLATFORM_TARGET=webgl
+# CI overrides PLATFORM_TARGET per matrix build (windows / mac).
+# The default is for local development only.
+ARG PLATFORM_TARGET=windows
 ENV BUILD_TARGET=$PLATFORM_TARGET
 ENV DEBIAN_FRONTEND=noninteractive
 

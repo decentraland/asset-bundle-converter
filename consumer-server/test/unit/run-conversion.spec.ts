@@ -551,7 +551,7 @@ describe('when runLodsConversion constructs its Unity command line', () => {
       unityPath: '/fake/unity',
       projectPath: '/fake/project',
       timeout: 60_000,
-      unityBuildTarget: 'WebGL'
+      unityBuildTarget: 'StandaloneWindows64'
     })
     argv = mockedSpawn.mock.calls[0][1]
   })
@@ -690,31 +690,6 @@ describe('when runConversion is asked to run with doISS enabled on a desktop tar
     it('should still invoke Unity afterwards (catch + log + continue)', () => {
       expect(firstInvocationSpawned).toBeDefined()
       expect(secondInvocationSpawned).toBeDefined()
-    })
-  })
-
-  describe('and the build target is WebGL', () => {
-    it('should skip the manifest builder entirely regardless of doISS', async () => {
-      mockedSpawn.mockImplementation(() => makeChildStub(0))
-      await unityRunner.runConversion({
-        logFile: path.join(outDirectory, 'log.txt'),
-        outDirectory,
-        entityId: 'bafy-iss-webgl',
-        entityType: 'scene',
-        contentServerUrl: 'https://peer.decentraland.org/content',
-        unityPath: '/fake/unity',
-        projectPath: '/fake/project',
-        timeout: 60_000,
-        unityBuildTarget: 'WebGL',
-        animation: 'legacy',
-        doISS: true
-      })
-      // Only the Unity spawn should have happened. No manifest builder call.
-      expect(mockedSpawn).toHaveBeenCalledTimes(1)
-      const argv = mockedSpawn.mock.calls[0][1]
-      // The Unity invocation uses `-projectPath`; the manifest builder uses
-      // `run start`. Assert we got the Unity one.
-      expect(argv).toContain('-projectPath')
     })
   })
 

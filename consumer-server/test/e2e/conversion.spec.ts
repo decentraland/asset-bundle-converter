@@ -50,7 +50,7 @@ const SCENES: SceneDef[] = [
 // Env
 // ---------------------------------------------------------------------------
 
-const $BUILD_TARGET = process.env.BUILD_TARGET || 'webgl'
+const $BUILD_TARGET = process.env.BUILD_TARGET || 'windows'
 process.env.PLATFORM = $BUILD_TARGET
 process.env.ASSET_REUSE_ENABLED = 'true'
 // AWS_SNS_ARN is required by the publisher component at init time
@@ -131,8 +131,7 @@ function findOverwrites(before: Map<string, number>, dir: string): string[] {
 }
 
 function readManifestFromDisk(buildTarget: string, entityId: string): Manifest | null {
-  const manifestKey =
-    buildTarget !== 'webgl' ? `manifest/${entityId}_${buildTarget}.json` : `manifest/${entityId}.json`
+  const manifestKey = `manifest/${entityId}_${buildTarget}.json`
   const filePath = path.join(MOCK_S3_BASE, BUCKET_NAME, manifestKey)
   if (!fs.existsSync(filePath)) return null
   return JSON.parse(fs.readFileSync(filePath, 'utf-8'))

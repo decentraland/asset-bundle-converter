@@ -36,7 +36,6 @@ namespace DCL.ABConverter
             public AssetPath AssetPath;
         }
 
-        private const float DEFAULT_MAX_TEXTURE_SIZE = 512f;
         private const float DESKTOP_MAX_TEXTURE_SIZE = 1024f;
 
         private const string VERSION = "7.0";
@@ -123,7 +122,7 @@ namespace DCL.ABConverter
             startupAllocated = Profiler.GetTotalAllocatedMemoryLong() / 100000.0;
             startupReserved = Profiler.GetTotalReservedMemoryLong() / 100000.0;
 
-            if (settings.buildTarget is not (BuildTarget.WebGL or BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX))
+            if (settings.buildTarget is not (BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX))
             {
                 var message = $"Build target is invalid: {settings.buildTarget.ToString()}";
                 log.Error(message);
@@ -770,9 +769,7 @@ namespace DCL.ABConverter
                 if (!env.directory.Exists(texturesRoot))
                     env.directory.CreateDirectory(texturesRoot);
 
-                float maxTextureSize = settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX
-                    ? DESKTOP_MAX_TEXTURE_SIZE
-                    : DEFAULT_MAX_TEXTURE_SIZE;
+                float maxTextureSize = DESKTOP_MAX_TEXTURE_SIZE;
 
                 for (int i = 0; i < textures.Count; i++)
                 {
@@ -921,7 +918,7 @@ namespace DCL.ABConverter
                 // bundle) so hash-only naming is safe.
                 bool useDigest = settings.depsDigestByHash != null && settings.depsDigestByHash.Count > 0;
                 // `PlatformUtils.GetPlatform()` already returns the leading
-                // underscore (e.g. "_windows" / "_mac" / "_webgl"), so the
+                // underscore (e.g. "_windows" / "_mac"), so the
                 // string interpolations below produce `{hash}_{digest}_{target}`
                 // and `{hash}_{target}` without an explicit underscore before
                 // `platform`. Keep this in mind when editing the bundle-name
@@ -1451,9 +1448,7 @@ namespace DCL.ABConverter
         {
             List<AssetPath> result = new List<AssetPath>(assetPaths);
 
-            float maxTextureSize = settings.buildTarget is BuildTarget.StandaloneWindows64 or BuildTarget.StandaloneOSX
-                ? DESKTOP_MAX_TEXTURE_SIZE
-                : DEFAULT_MAX_TEXTURE_SIZE;
+            float maxTextureSize = DESKTOP_MAX_TEXTURE_SIZE;
 
             for (var i = 0; i < assetPaths.Count; i++)
             {

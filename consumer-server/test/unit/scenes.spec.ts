@@ -227,12 +227,6 @@ describe('when manifestKeyForEntity is called', () => {
     jest.clearAllMocks()
   })
 
-  describe('and the target is webgl', () => {
-    it('should return the bare key without a build-target suffix', () => {
-      expect(harness.scenes.manifestKeyForEntity('bafy-1', 'webgl')).toBe('manifest/bafy-1.json')
-    })
-  })
-
   describe('and the target is windows', () => {
     it('should append the build-target suffix', () => {
       expect(harness.scenes.manifestKeyForEntity('bafy-1', 'windows')).toBe('manifest/bafy-1_windows.json')
