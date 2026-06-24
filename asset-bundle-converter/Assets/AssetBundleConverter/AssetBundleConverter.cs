@@ -91,6 +91,7 @@ namespace DCL.ABConverter
         private IABLogger log => env.logger;
         private Dictionary<AssetPath, byte[]> downloadedData = new();
         private ContentServerUtils.EntityMappingsDTO entityDTO;
+        private TexturePixelBudgetEnforcer textureBudgetEnforcer;
         private readonly Dictionary<Shader, List<int>> textureProperties = new ();
 
         public AssetBundleConverter(Environment env, ClientSettings settings)
@@ -171,6 +172,11 @@ namespace DCL.ABConverter
             // Initialize the scene state generator. When -doISS is off, the generator is a no-op.
             env.InitializeSceneStateGenerator(entityDTO, settings.doISS);
             env.sceneStateGenerator.GenerateInitialSceneState();
+
+            // If processing a scene instantiate a pixel budget enforcer to be used for automatic compression
+            if (entityDTO is { type: not null } && entityDTO.type.ToLower() == "scene" && entityDTO.pointers != null)
+                textureBudgetEnforcer = new TexturePixelBudgetEnforcer(
+                    entityDTO.pointers.Length, env.file, env.assetDatabase, log);
 
             await ProcessAllGltfs();
 
@@ -338,7 +344,8 @@ namespace DCL.ABConverter
 
                     string directory = Path.GetDirectoryName(relativePath);
 
-                    if (textures.Count > 0) { textures = ExtractEmbedTexturesFromGltf(textures, gltfImport, directory); }
+                    if (textures.Count > 0)
+                        textures = ExtractEmbedTexturesFromGltf(textures, gltfImport, directory, textureBudgetEnforcer);
 
                     embedExtractTextureTime.Stop();
 
@@ -435,6 +442,8 @@ namespace DCL.ABConverter
             EditorUtility.ClearProgressBar();
 
             log.Info("Ended importing GLTFs");
+
+            textureBudgetEnforcer?.EnforceBudgets();
         }
 
         private void CreateLayeredAnimatorController(IGltfImport gltfImport, string directory)
@@ -741,7 +750,7 @@ namespace DCL.ABConverter
 
 
 
-        private List<Texture2D> ExtractEmbedTexturesFromGltf(List<Texture2D> textures, IGltfImport gltfImport, string folderName)
+        private List<Texture2D> ExtractEmbedTexturesFromGltf(List<Texture2D> textures, IGltfImport gltfImport, string folderName, TexturePixelBudgetEnforcer budgetEnforcer = null)
         {
             var newTextures = new List<Texture2D>();
 
@@ -797,6 +806,7 @@ namespace DCL.ABConverter
                         if (loadedAsset != null)
                         {
                             newTextures.Add(loadedAsset);
+                            budgetEnforcer?.TrackTexture(env.assetDatabase.GetAssetPath(loadedAsset), texName, loadedAsset.width, loadedAsset.height, textTypeMan.GetTextureInfo(tex.name).Types);
                             continue;
                         }
                     }
@@ -808,6 +818,7 @@ namespace DCL.ABConverter
                         if (loadedAsset != null)
                         {
                             newTextures.Add(loadedAsset);
+                            budgetEnforcer?.TrackTexture(texturePath, texName, loadedAsset.width, loadedAsset.height, textTypeMan.GetTextureInfo(tex.name).Types);
                             continue;
                         }
                     }
@@ -848,9 +859,14 @@ namespace DCL.ABConverter
 
                     env.assetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 
-                    ReduceTextureSizeIfNeeded(texPath, maxTextureSize);
+                    if (budgetEnforcer == null)
+                        ReduceTextureSizeIfNeeded(texPath, maxTextureSize);
 
-                    newTextures.Add(env.assetDatabase.LoadAssetAtPath<Texture2D>(texPath));
+                    var extractedTex = env.assetDatabase.LoadAssetAtPath<Texture2D>(texPath);
+                    newTextures.Add(extractedTex);
+
+                    if (budgetEnforcer != null && extractedTex != null)
+                        budgetEnforcer.TrackTexture(texPath, texName, extractedTex.width, extractedTex.height, textTypeMan.GetTextureInfo(tex.name).Types);
                 }
             }
 
