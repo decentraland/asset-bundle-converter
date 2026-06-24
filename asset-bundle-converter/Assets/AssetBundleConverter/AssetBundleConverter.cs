@@ -1616,7 +1616,10 @@ namespace DCL.ABConverter
             float maxTextureSize = maxSize;
 
             if (width <= maxTextureSize && height <= maxTextureSize)
+            {
+                Object.DestroyImmediate(tmpTex);
                 return;
+            }
 
             if (width >= height)
                 factor = maxTextureSize / width;
@@ -1626,8 +1629,12 @@ namespace DCL.ABConverter
             Texture2D dstTex = Utils.ResizeTexture(tmpTex, (int)(width * factor), (int)(height * factor));
             byte[] endTex = dstTex.EncodeToPNG();
             Object.DestroyImmediate(tmpTex);
+            Object.DestroyImmediate(dstTex);
 
             env.file.WriteAllBytes(texturePath, endTex);
+
+            // Reimport the resized texture to update the asset database
+            env.assetDatabase.ImportAsset(texturePath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
         }
 
         /// <summary>
