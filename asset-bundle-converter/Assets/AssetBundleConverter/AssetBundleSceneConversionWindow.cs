@@ -12,8 +12,11 @@ namespace AssetBundleConverter
 {
     public enum SupportedBuildTarget
     {
-        Windows,
-        Mac,
+        // Explicit ordinals preserve the values from before WebGL (=0) was
+        // removed, so editor prefs persisted by PersistentSetting (stored as
+        // ints via EditorPrefs.SetInt) keep resolving to the same target.
+        Windows = 1,
+        Mac = 2,
     }
 
     public class AssetBundleSceneConversionWindow : EditorWindow

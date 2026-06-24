@@ -36,7 +36,6 @@ namespace DCL.ABConverter
             public AssetPath AssetPath;
         }
 
-        private const float DEFAULT_MAX_TEXTURE_SIZE = 512f;
         private const float DESKTOP_MAX_TEXTURE_SIZE = 1024f;
 
         private const string VERSION = "7.0";

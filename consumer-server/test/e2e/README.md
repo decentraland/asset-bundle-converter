@@ -110,4 +110,4 @@ Runs as a single `docker run` step in `docker-common.yml`:
 1. Node script: 4 conversions + file count assertions + writes bundle paths JSON
 2. Unity EditMode test: loads bundles, verifies mesh/texture
 
-The test runs first in the CI pipeline for fast feedback. During development the PR matrix is reduced to Windows only.
+The test runs first in the CI pipeline for fast feedback. The PR matrix builds both Windows and Mac (the same targets as the release matrix).

@@ -51,7 +51,6 @@ ENV NODE_PATH=$NVM_DIR/versions/node/$NODE_VERSION/lib/node_modules
 ENV PATH=$NVM_DIR/versions/node/$NODE_VERSION/bin:$PATH
 
 # Change this value ONLY if we have done breaking changes for every material, doing so is VERY costly
-ENV AB_VERSION=v49
 ENV AB_VERSION_WINDOWS=v49
 ENV AB_VERSION_MAC=v49
 
