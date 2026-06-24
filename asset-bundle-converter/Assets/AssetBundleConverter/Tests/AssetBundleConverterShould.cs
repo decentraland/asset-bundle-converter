@@ -51,7 +51,7 @@ namespace AssetBundleConverter.Tests
             errorReporter = Substitute.For<IErrorReporter>();
             abLogger = Substitute.For<IABLogger>();
 
-            editor.SwitchBuildTarget(BuildTarget.WebGL).Returns(true);
+            editor.SwitchBuildTarget(BuildTarget.StandaloneWindows64).Returns(true);
 
             //Any error or exit code should make any test fail unless its explicitly required
             errorReporter.When(x => x.ReportError(Arg.Any<string>(), Arg.Any<ClientSettings>())).Do(x => throw new Exception("There was an unexpected error: " + x.Arg<string>()));

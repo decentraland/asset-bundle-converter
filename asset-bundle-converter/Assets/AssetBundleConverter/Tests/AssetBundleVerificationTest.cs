@@ -22,7 +22,7 @@ namespace AssetBundleConverter.Tests
         private const string ALBEDO_HASH_S1 = "bafkreigy4f55gqd5g6citumtzcefwdwdtqh5nfnwia7dnwawigqem4wlhq";
         private const string ALBEDO_HASH_S2 = "bafybeich3nzq4bym2mufrymp3bg5yy7vdts2mgixfsutv5kzt5gm2j4m7m";
         private const string CDN_BASE = "https://ab-cdn.decentraland.zone/v48";
-        // Use mac bundles for local Editor testing (webgl bundles can't load in Editor).
+        // Use mac bundles for local Editor testing.
         // CI overrides this via the e2e pipeline which builds for the current target.
         private const string TARGET = "mac";
 

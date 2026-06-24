@@ -919,7 +919,7 @@ namespace DCL.ABConverter
                 // bundle) so hash-only naming is safe.
                 bool useDigest = settings.depsDigestByHash != null && settings.depsDigestByHash.Count > 0;
                 // `PlatformUtils.GetPlatform()` already returns the leading
-                // underscore (e.g. "_windows" / "_mac" / "_webgl"), so the
+                // underscore (e.g. "_windows" / "_mac"), so the
                 // string interpolations below produce `{hash}_{digest}_{target}`
                 // and `{hash}_{target}` without an explicit underscore before
                 // `platform`. Keep this in mind when editing the bundle-name
