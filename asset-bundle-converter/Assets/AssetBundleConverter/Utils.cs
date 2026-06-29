@@ -349,7 +349,13 @@ namespace DCL.ABConverter
             return false;
         }
 
-        public static MD5 md5 = new MD5CryptoServiceProvider();
+        // One MD5 instance per thread: ComputeHash mutates internal state during a hash,
+        // so a single shared instance is not safe under concurrent callers. The editor is
+        // single-threaded today, but several call sites now share this; a per-thread
+        // instance keeps it correct without allocating a new MD5 on every call.
+        private static readonly System.Threading.ThreadLocal<MD5> md5PerThread
+            = new System.Threading.ThreadLocal<MD5>(MD5.Create);
+        public static MD5 md5 => md5PerThread.Value;
 
         public static string CidToGuid(string cid)
         {

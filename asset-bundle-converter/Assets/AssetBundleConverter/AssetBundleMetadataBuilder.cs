@@ -1,5 +1,4 @@
 using AssetBundleConverter.Wrappers.Interfaces;
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -11,10 +10,12 @@ namespace DCL.ABConverter
 {
     public static class AssetBundleMetadataBuilder
     {
+        public const long DETERMINISTIC_TIMESTAMP = 0L;
+
         public static void GenerateLODMetadata(string path, string[] dependencies,
             string mainAsset, string lodName)
         {
-            var metadata = new AssetBundleMetadata { timestamp = DateTime.UtcNow.Ticks, mainAsset = mainAsset, dependencies = dependencies};
+            var metadata = new AssetBundleMetadata { timestamp = DETERMINISTIC_TIMESTAMP, mainAsset = mainAsset, dependencies = dependencies};
             string json = JsonUtility.ToJson(metadata);
             System.IO.File.WriteAllText(path + $"/{lodName}/metadata.json", json);
         }
@@ -33,7 +34,7 @@ namespace DCL.ABConverter
                 if (string.IsNullOrEmpty(assetBundles[i]))
                     continue;
 
-                var metadata = new AssetBundleMetadata { version = version, timestamp = DateTime.UtcNow.Ticks };
+                var metadata = new AssetBundleMetadata { version = version, timestamp = DETERMINISTIC_TIMESTAMP };
                 string[] deps = manifest.GetAllDependencies(assetBundles[i]);
 
                 if (deps.Length > 0)

@@ -38,7 +38,7 @@ namespace DCL.ABConverter
 
         private const float DESKTOP_MAX_TEXTURE_SIZE = 1024f;
 
-        private const string VERSION = "7.0";
+        private const string VERSION = "8.0";
         private const string LOOP_PARAMETER = "Loop";
 
         private readonly Dictionary<string, string> lowerCaseHashes = new ();
@@ -337,7 +337,7 @@ namespace DCL.ABConverter
 
                     string directory = Path.GetDirectoryName(relativePath);
 
-                    if (textures.Count > 0) { textures = ExtractEmbedTexturesFromGltf(textures, gltfImport, directory); }
+                    if (textures.Count > 0) { textures = ExtractEmbedTexturesFromGltf(textures, gltfImport, directory, gltf.AssetPath.hash); }
 
                     embedExtractTextureTime.Stop();
 
@@ -348,9 +348,9 @@ namespace DCL.ABConverter
                     if (animationMethod == AnimationMethod.Mecanim)
                     {
                         if (isEmote)
-                            CreateAnimatorController(gltfImport, directory);
+                            CreateAnimatorController(gltfImport, directory, gltf.AssetPath.hash);
                         else
-                            CreateLayeredAnimatorController(gltfImport, directory);
+                            CreateLayeredAnimatorController(gltfImport, directory, gltf.AssetPath.hash);
                     }
 
                     log.Verbose($"Importing {relativePath}");
@@ -383,6 +383,7 @@ namespace DCL.ABConverter
                         continue;
                     }
 
+                    SetDeterministicAssetDatabaseGuid(gltf.AssetPath);
                     if ((!settings.createAssetBundle || !settings.visualTest) && settings.placeOnScene)
                     {
                         GameObject originalGltf = env.assetDatabase.LoadAssetAtPath<GameObject>(relativePath);
@@ -436,7 +437,7 @@ namespace DCL.ABConverter
             log.Info("Ended importing GLTFs");
         }
 
-        private void CreateLayeredAnimatorController(IGltfImport gltfImport, string directory)
+        private void CreateLayeredAnimatorController(IGltfImport gltfImport, string directory, string ownerGltfHash)
         {
             var clips = gltfImport.GetClips();
             if (clips == null) return;
@@ -560,9 +561,12 @@ namespace DCL.ABConverter
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
+            SetDeterministicGuid(filePath, $"{ownerGltfHash}/animatorController");
+            SetDeterministicSubAssetIds(filePath, $"{ownerGltfHash}/animatorController");
+            SetDeterministicTosOrder(filePath);
         }
 
-        private void CreateAnimatorController(IGltfImport gltfImport, string directory)
+        private void CreateAnimatorController(IGltfImport gltfImport, string directory, string ownerGltfHash)
         {
             var clips = gltfImport.GetClips();
             if (clips == null) return;
@@ -619,6 +623,9 @@ namespace DCL.ABConverter
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
+            SetDeterministicGuid(filePath, $"{ownerGltfHash}/animatorController");
+            SetDeterministicSubAssetIds(filePath, $"{ownerGltfHash}/animatorController");
+            SetDeterministicTosOrder(filePath);
         }
 
         private AnimationMethod GetAnimationMethod(bool isEmote, bool isWearable)
@@ -644,13 +651,13 @@ namespace DCL.ABConverter
             if (gltfImport.defaultMaterial != null)
             {
                 var mat = gltfImport.defaultMaterial;
-                CreateMaterialAsset(mat, materialDirectory, texNameMap);
+                CreateMaterialAsset(mat, materialDirectory, texNameMap, gltf.AssetPath.hash);
             }
 
             for (var t = 0; t < gltfImport.MaterialCount; t++)
             {
                 var originalMaterial = gltfImport.GetMaterial(t);
-                CreateMaterialAsset(originalMaterial, materialDirectory, texNameMap);
+                CreateMaterialAsset(originalMaterial, materialDirectory, texNameMap, gltf.AssetPath.hash);
             }
 
             Profiler.EndSample();
@@ -658,7 +665,7 @@ namespace DCL.ABConverter
             RefreshAssetsWithNoLogs();
         }
 
-        private void CreateMaterialAsset(Material originalMaterial, string materialRoot, Dictionary<string, Texture2D> texNameMap)
+        private void CreateMaterialAsset(Material originalMaterial, string materialRoot, Dictionary<string, Texture2D> texNameMap, string ownerGltfHash)
         {
             string matName = Utils.NicifyName(originalMaterial.name);
 
@@ -700,6 +707,7 @@ namespace DCL.ABConverter
             Profiler.EndSample();
 
             EditorUtility.SetDirty(newMaterial);
+            SetDeterministicGuid(string.Concat(materialRoot, matName, ".mat"), $"{ownerGltfHash}/material/{matName}");
         }
 
         private List<int> GetTextureProperties(Shader shader)
@@ -740,7 +748,7 @@ namespace DCL.ABConverter
 
 
 
-        private List<Texture2D> ExtractEmbedTexturesFromGltf(List<Texture2D> textures, IGltfImport gltfImport, string folderName)
+        private List<Texture2D> ExtractEmbedTexturesFromGltf(List<Texture2D> textures, IGltfImport gltfImport, string folderName, string ownerGltfHash)
         {
             var newTextures = new List<Texture2D>();
 
@@ -847,6 +855,7 @@ namespace DCL.ABConverter
 
                     ReduceTextureSizeIfNeeded(texPath, maxTextureSize);
 
+                    SetDeterministicGuid(texPath, $"{ownerGltfHash}/texture/{texName}");
                     newTextures.Add(env.assetDatabase.LoadAssetAtPath<Texture2D>(texPath));
                 }
             }
@@ -1029,6 +1038,14 @@ namespace DCL.ABConverter
             env.assetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 
             env.assetDatabase.SaveAssets();
+
+            foreach (string metadataAssetHash in new HashSet<string>(bundleNameToHash.Values))
+            {
+                if (string.IsNullOrEmpty(metadataAssetHash)) continue;
+                string metadataPath = $"{finalDownloadedPath}/{metadataAssetHash}/metadata.json";
+                if (env.file.Exists(metadataPath))
+                    SetDeterministicGuid(metadataPath, $"{metadataAssetHash}/metadata");
+            }
 
             var afterMetadataRefresh = EditorApplication.timeSinceStartup;
 
@@ -1512,34 +1529,60 @@ namespace DCL.ABConverter
         /// </summary>
         /// <param name="assetPath">AssetPath of the target asset to modify</param>
         private void SetDeterministicAssetDatabaseGuid(AssetPath assetPath)
+            => SetDeterministicGuid(assetPath.finalPath, assetPath.hash);
+
+        private void SetDeterministicGuid(string assetFinalPath, string seed)
         {
-            string metaPath = env.assetDatabase.GetTextMetaFilePathFromAssetPath(assetPath.finalPath);
+            string metaPath = env.assetDatabase.GetTextMetaFilePathFromAssetPath(assetFinalPath);
 
             env.assetDatabase.ReleaseCachedFileHandles();
 
             string metaContent = env.file.ReadAllText(metaPath);
-            string guid = Utils.CidToGuid(assetPath.hash);
+            string guid = Utils.CidToGuid(seed);
             string newMetaContent = Regex.Replace(metaContent, @"guid: \w+?\n", $"guid: {guid}\n");
+
+            // Per-call unique scratch path so overlapping/concurrent calls can't clobber
+            // each other. This file is temporary (copied out then deleted, never bundled),
+            // so its name has no effect on deterministic output.
+            string tmpPath = finalDownloadedPath + "tmp_" + guid;
 
             //NOTE(Brian): We must do this hack in order to the new guid to be added to the AssetDatabase.
             //             on windows, an AssetImporter.SaveAndReimport call makes the trick, but this won't work
             //             on Unix based OSes for some reason.
             env.file.Delete(metaPath);
 
-            env.file.Copy(assetPath.finalPath, finalDownloadedPath + "tmp");
-            env.assetDatabase.DeleteAsset(assetPath.finalPath);
-            env.file.Delete(assetPath.finalPath);
+            env.file.Copy(assetFinalPath, tmpPath);
+            env.assetDatabase.DeleteAsset(assetFinalPath);
+            env.file.Delete(assetFinalPath);
 
             env.assetDatabase.Refresh();
             env.assetDatabase.SaveAssets();
 
-            env.file.Copy(finalDownloadedPath + "tmp", assetPath.finalPath);
+            env.file.Copy(tmpPath, assetFinalPath);
             env.file.WriteAllText(metaPath, newMetaContent);
-            env.file.Delete(finalDownloadedPath + "tmp");
-            env.file.Delete(finalDownloadedPath + "tmp.meta");
+            if (env.file.Exists(tmpPath)) env.file.Delete(tmpPath);
+            if (env.file.Exists(tmpPath + ".meta")) env.file.Delete(tmpPath + ".meta");
 
             env.assetDatabase.Refresh();
             env.assetDatabase.SaveAssets();
+        }
+
+        private void SetDeterministicSubAssetIds(string assetFinalPath, string seed)
+            => env.file.WriteAllText(assetFinalPath, DeterministicYaml.RemapSubAssetIds(env.file.ReadAllText(assetFinalPath), seed));
+
+        /// <summary>
+        /// Canonicalizes the iteration order of the AnimatorController's m_TOS map
+        /// (the transform-of-string table: CRC32 hash -> string path/state name).
+        /// See DeterministicYaml.ReorderTosOrder for the full rationale and the
+        /// structured-rewrite implementation. Only rewrites the file when the order
+        /// actually changed (ReorderTosOrder returns the same string instance otherwise).
+        /// </summary>
+        private void SetDeterministicTosOrder(string assetFinalPath)
+        {
+            string txt = env.file.ReadAllText(assetFinalPath);
+            string outp = DeterministicYaml.ReorderTosOrder(txt);
+            if (!ReferenceEquals(outp, txt))
+                env.file.WriteAllText(assetFinalPath, outp);
         }
 
         /// <summary>
