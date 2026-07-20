@@ -7,7 +7,7 @@ import { AppComponents } from '../types'
 import { ICacheStorageComponent } from '@dcl/core-commons'
 import { normalizeContentsBaseUrl } from '../utils'
 import { bufferExtensions, fileExtension, gltfExtensions, textureExtensions } from './extensions'
-import { parseGltfDepRefs, resolveUriToContentFile } from './gltf-deps'
+import { GLB_MAGIC, parseGltfDepRefs, resolveUriToContentFile } from './gltf-deps'
 import { isS3NotFound } from './s3-helpers'
 
 // Default TTL for Redis-stored asset probe hits. Canonical bundles are
@@ -736,6 +736,23 @@ async function readGlbJsonPrefix(url: string, res: FetchResponse): Promise<Buffe
 
       if (targetBytes === undefined && total >= GLB_JSON_START) {
         const prefix = Buffer.concat(chunks, total)
+
+        // A response that isn't actually GLB data (e.g. a CDN/S3 error body
+        // served with a 200 status — the response passed `assertOkResponse`
+        // above on status alone) has arbitrary bytes at offset 12, which we're
+        // about to read as "chunk 0 length". That's a content defect, not a
+        // download problem: return what we have and let `parseGltfDepRefs`
+        // raise its own magic-mismatch error, which the caller classifies as
+        // `unparseable` and skips. Without this check, garbage bytes here can
+        // decode to a huge value and get misrouted into the oversized-chunk
+        // guard below, which throws as if this were a transient fetch/OOM
+        // problem — a permanently-corrupt hash then never converges under
+        // retry, silently failing the whole entity's digest computation.
+        if (prefix.readUInt32LE(0) !== GLB_MAGIC) {
+          await reader.cancel()
+          return prefix
+        }
+
         const jsonChunkLength = prefix.readUInt32LE(12)
         targetBytes = GLB_JSON_START + jsonChunkLength
         if (targetBytes > MAX_GLTF_DOWNLOAD_BYTES) {

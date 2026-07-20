@@ -6,7 +6,7 @@ import * as path from 'path'
 //   chunk 1 = 8 bytes header [chunkLength u32, chunkType u32=0x004E4942 "BIN"] + optional binary blob
 // We only need chunk 0 (the embedded glTF JSON) to enumerate external dep URIs.
 // Spec reference: https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#binary-gltf-layout
-const GLB_MAGIC = 0x46546c67
+export const GLB_MAGIC = 0x46546c67
 const GLB_CHUNK_TYPE_JSON = 0x4e4f534a
 const GLB_HEADER_BYTES = 12
 const GLB_CHUNK_HEADER_BYTES = 8
