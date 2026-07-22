@@ -624,8 +624,8 @@ namespace DCL.ABConverter
         private AnimationMethod GetAnimationMethod(bool isEmote, bool isWearable)
         {
             if (entityDTO == null) return AnimationMethod.Legacy;
+            if (isEmote) return AnimationMethod.Mecanim; // emote files in smart wearables need to get Mecanim controller, that's why we check for isEmote first
             if (isWearable) return AnimationMethod.None;
-            if (isEmote) return AnimationMethod.Mecanim;
             return settings.AnimationMethod;
         }
 
