@@ -624,8 +624,8 @@ namespace DCL.ABConverter
         private AnimationMethod GetAnimationMethod(bool isEmote, bool isWearable)
         {
             if (entityDTO == null) return AnimationMethod.Legacy;
-            if (isWearable) return AnimationMethod.None;
             if (isEmote) return AnimationMethod.Mecanim;
+            if (isWearable) return AnimationMethod.None;
             return settings.AnimationMethod;
         }
 
