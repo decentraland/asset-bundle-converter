@@ -40,6 +40,7 @@ namespace DCL.ABConverter
 
         private const string VERSION = "7.0";
         private const string LOOP_PARAMETER = "Loop";
+        private const int UNLOAD_UNUSED_ASSETS_INTERVAL = 50;
 
         private readonly Dictionary<string, string> lowerCaseHashes = new ();
         private readonly Dictionary<string, string> bundleNameToHash = new ();
@@ -425,11 +426,29 @@ namespace DCL.ABConverter
                 }
                 finally
                 {
-                    await Resources.UnloadUnusedAssets();
+                    // Resources.UnloadUnusedAssets sweeps the entire asset graph and forces a GC
+                    // pass (100ms+ per call), so it can't run per-GLTF. But skipping it entirely
+                    // lets editor memory grow unbounded on large scenes, so it runs every
+                    // UNLOAD_UNUSED_ASSETS_INTERVAL iterations. SaveAssets must precede the sweep:
+                    // animator-controller writes are deferred to the post-loop flush, and an
+                    // unreferenced dirty controller swept here would lose its unsaved state.
+                    if (loadedGltf % UNLOAD_UNUSED_ASSETS_INTERVAL == 0)
+                    {
+                        AssetDatabase.SaveAssets();
+                        await Resources.UnloadUnusedAssets();
+                    }
                 }
 
                 totalGltfsProcessed++;
             }
+
+            // Single trailing flush for the animator-controller writes that the per-GLTF
+            // Create*AnimatorController paths used to do individually — replaces N full
+            // project rescans with one.
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            await Resources.UnloadUnusedAssets();
 
             EditorUtility.ClearProgressBar();
 
@@ -558,8 +577,10 @@ namespace DCL.ABConverter
                 }
             }
 
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
+            // SaveAssets/Refresh deferred to ProcessAllGltfs (per-interval + post-loop flush).
+            // The same-iteration reimport resolves the controller via LoadAssetAtPath, which
+            // works off the AssetDatabase registration made by CreateAnimatorControllerAtPath
+            // above — it doesn't need the dirty state serialized to disk yet.
         }
 
         private void CreateAnimatorController(IGltfImport gltfImport, string directory)
@@ -617,8 +638,7 @@ namespace DCL.ABConverter
                 loopBackTransition.hasExitTime = true;
             }
 
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
+            // SaveAssets/Refresh deferred to ProcessAllGltfs — see CreateLayeredAnimatorController.
         }
 
         private AnimationMethod GetAnimationMethod(bool isEmote, bool isWearable)
