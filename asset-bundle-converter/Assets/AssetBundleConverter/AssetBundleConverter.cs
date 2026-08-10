@@ -1469,6 +1469,7 @@ namespace DCL.ABConverter
             List<AssetPath> result = new List<AssetPath>(assetPaths);
 
             float maxTextureSize = DESKTOP_MAX_TEXTURE_SIZE;
+            var anyGuidNormalized = false;
 
             for (var i = 0; i < assetPaths.Count; i++)
             {
@@ -1511,8 +1512,18 @@ namespace DCL.ABConverter
                 env.assetDatabase.ImportAsset(assetPath.finalPath, ImportAssetOptions.ForceUpdate);
 
                 SetDeterministicAssetDatabaseGuid(assetPath);
+                anyGuidNormalized = true;
 
                 log.Verbose($"Downloaded asset = {assetPath.filePath} to {assetPath.finalPath}");
+            }
+
+            // SetDeterministicAssetDatabaseGuid only does raw file operations; this single
+            // Refresh imports every restored texture honouring the deterministic guid in its
+            // rewritten .meta. Replaces the two full project rescans it used to do per texture.
+            if (anyGuidNormalized)
+            {
+                env.assetDatabase.Refresh();
+                env.assetDatabase.SaveAssets();
             }
 
             env.editor.ClearProgressBar();
@@ -1529,6 +1540,10 @@ namespace DCL.ABConverter
         /// - Looks for the meta file of the given assetPath.
         /// - Changes the .meta guid using the assetPath's cid as seed.
         /// - Does some file system gymnastics to make sure the new guid is imported to our AssetDatabase.
+        ///
+        /// This only performs raw file operations — the caller must run a single
+        /// AssetDatabase.Refresh afterwards (see ImportTextures) so the restored files are
+        /// re-imported honouring the deterministic guid written into their .meta.
         /// </summary>
         /// <param name="assetPath">AssetPath of the target asset to modify</param>
         private void SetDeterministicAssetDatabaseGuid(AssetPath assetPath)
@@ -1547,19 +1562,15 @@ namespace DCL.ABConverter
             env.file.Delete(metaPath);
 
             env.file.Copy(assetPath.finalPath, finalDownloadedPath + "tmp");
+
+            // DeleteAsset removes the guid mapping from the AssetDatabase synchronously, so no
+            // Refresh is needed before restoring the file below.
             env.assetDatabase.DeleteAsset(assetPath.finalPath);
             env.file.Delete(assetPath.finalPath);
-
-            env.assetDatabase.Refresh();
-            env.assetDatabase.SaveAssets();
 
             env.file.Copy(finalDownloadedPath + "tmp", assetPath.finalPath);
             env.file.WriteAllText(metaPath, newMetaContent);
             env.file.Delete(finalDownloadedPath + "tmp");
-            env.file.Delete(finalDownloadedPath + "tmp.meta");
-
-            env.assetDatabase.Refresh();
-            env.assetDatabase.SaveAssets();
         }
 
         /// <summary>
