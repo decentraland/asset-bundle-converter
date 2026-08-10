@@ -675,7 +675,11 @@ namespace DCL.ABConverter
 
             Profiler.EndSample();
             log.Verbose($"gltf creating dummy materials completed: {gltfUrl}");
-            RefreshAssetsWithNoLogs();
+
+            // No Refresh needed before this GLTF's reimport: materials are registered
+            // synchronously by CreateAsset and embed textures are imported explicitly (post-
+            // resize) in ExtractEmbedTexturesFromGltf, so nothing on disk is unknown to the
+            // AssetDatabase at this point.
         }
 
         private void CreateMaterialAsset(Material originalMaterial, string materialRoot, Dictionary<string, Texture2D> texNameMap)
@@ -863,9 +867,12 @@ namespace DCL.ABConverter
                         Object.DestroyImmediate(readableTexture);
                     }
 
-                    env.assetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
-
+                    // Resize before importing so the import sees the final bytes — resizing after
+                    // rewrites the file behind the AssetDatabase's back and needs a full Refresh
+                    // to be picked up. (Same order as the ImportTextures download path.)
                     ReduceTextureSizeIfNeeded(texPath, maxTextureSize);
+
+                    env.assetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 
                     newTextures.Add(env.assetDatabase.LoadAssetAtPath<Texture2D>(texPath));
                 }
