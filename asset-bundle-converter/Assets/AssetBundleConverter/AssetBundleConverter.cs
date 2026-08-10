@@ -244,9 +244,9 @@ namespace DCL.ABConverter
             // Fourth step: we mark all assets for bundling
             MarkAllAssetBundles(assetsToMark);
 
-            // Fifth step: we build the Asset Bundles
-            env.assetDatabase.Refresh();
-            env.assetDatabase.SaveAssets();
+            // Fifth step: we build the Asset Bundles.
+            // No flush needed here — BuildAssetBundles opens with its own
+            // Refresh(ForceSynchronousImport | ForceUpdate) + SaveAssets.
             CurrentState.step = ConversionState.Step.BUILDING_ASSET_BUNDLES;
 
             if (BuildAssetBundles(target, out var manifest))
