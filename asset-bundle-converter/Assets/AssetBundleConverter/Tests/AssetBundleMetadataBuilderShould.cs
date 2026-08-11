@@ -21,6 +21,7 @@ namespace AssetBundleConverter.Tests
         private IFile file;
         private IAssetBundleManifest manifest;
         private Dictionary<string, string> bundleNameToHash;
+        private Dictionary<string, string> lowerCaseHashes;
         private string capturedJson;
 
         [SetUp]
@@ -29,6 +30,7 @@ namespace AssetBundleConverter.Tests
             file = Substitute.For<IFile>();
             manifest = Substitute.For<IAssetBundleManifest>();
             bundleNameToHash = new Dictionary<string, string>();
+            lowerCaseHashes = new Dictionary<string, string>();
             capturedJson = null;
 
             file.WriteAllText(Arg.Any<string>(), Arg.Do<string>(json => capturedJson = json));
@@ -48,7 +50,7 @@ namespace AssetBundleConverter.Tests
             manifest.GetAllAssetBundles().Returns(new[] { bundleName });
             manifest.GetAllDependencies(bundleName).Returns(new string[0]);
 
-            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, manifest, VERSION);
+            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, lowerCaseHashes, manifest, VERSION);
 
             file.Received(1).WriteAllText(METADATA_PATH, Arg.Any<string>());
             var metadata = ParseCaptured();
@@ -64,7 +66,7 @@ namespace AssetBundleConverter.Tests
             manifest.GetAllAssetBundles().Returns(new[] { bundleName });
             manifest.GetAllDependencies(bundleName).Returns(new string[0]);
 
-            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, manifest, VERSION);
+            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, lowerCaseHashes, manifest, VERSION);
 
             file.Received(1).WriteAllText(METADATA_PATH, Arg.Any<string>());
             var metadata = ParseCaptured();
@@ -78,7 +80,7 @@ namespace AssetBundleConverter.Tests
             manifest.GetAllAssetBundles().Returns(new[] { "dcl/scene_ignore_mac" });
             manifest.GetAllDependencies(Arg.Any<string>()).Returns(new string[0]);
 
-            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, manifest, VERSION);
+            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, lowerCaseHashes, manifest, VERSION);
 
             file.DidNotReceive().WriteAllText(Arg.Any<string>(), Arg.Any<string>());
         }
@@ -88,7 +90,7 @@ namespace AssetBundleConverter.Tests
         {
             manifest.GetAllAssetBundles().Returns(new[] { "", null });
 
-            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, manifest, VERSION);
+            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, lowerCaseHashes, manifest, VERSION);
 
             file.DidNotReceive().WriteAllText(Arg.Any<string>(), Arg.Any<string>());
         }
@@ -105,7 +107,7 @@ namespace AssetBundleConverter.Tests
             manifest.GetAllAssetBundles().Returns(new[] { bundleName });
             manifest.GetAllDependencies(bundleName).Returns(new[] { KEPT_DEP, FILTERED_DEP });
 
-            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, manifest, VERSION);
+            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, lowerCaseHashes, manifest, VERSION);
 
             var metadata = ParseCaptured();
             Assert.AreEqual(1, metadata.dependencies.Length);
@@ -125,7 +127,7 @@ namespace AssetBundleConverter.Tests
             manifest.GetAllAssetBundles().Returns(new[] { bundleName });
             manifest.GetAllDependencies(bundleName).Returns(new[] { DEP_A, DEP_B });
 
-            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, manifest, VERSION);
+            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, lowerCaseHashes, manifest, VERSION);
 
             var metadata = ParseCaptured();
             Assert.AreEqual(2, metadata.dependencies.Length);
@@ -144,7 +146,7 @@ namespace AssetBundleConverter.Tests
             manifest.GetAllAssetBundles().Returns(new[] { bundleName });
             manifest.GetAllDependencies(bundleName).Returns(new[] { DEP_BUNDLE });
 
-            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, manifest, VERSION);
+            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, lowerCaseHashes, manifest, VERSION);
 
             var metadata = ParseCaptured();
             Assert.AreEqual(1, metadata.dependencies.Length);
@@ -163,7 +165,7 @@ namespace AssetBundleConverter.Tests
             manifest.GetAllAssetBundles().Returns(new[] { bundleName });
             manifest.GetAllDependencies(bundleName).Returns(new[] { KNOWN_DEP, UNKNOWN_DEP });
 
-            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, manifest, VERSION);
+            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, lowerCaseHashes, manifest, VERSION);
 
             var metadata = ParseCaptured();
             Assert.AreEqual(1, metadata.dependencies.Length);
@@ -178,10 +180,150 @@ namespace AssetBundleConverter.Tests
             manifest.GetAllAssetBundles().Returns(new[] { bundleName });
             manifest.GetAllDependencies(bundleName).Returns(new string[0]);
 
-            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, manifest, VERSION);
+            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, lowerCaseHashes, manifest, VERSION);
 
             var metadata = ParseCaptured();
             Assert.IsEmpty(metadata.dependencies);
+        }
+
+        [Test]
+        public void WriteMetadataForMixedCaseQmBundles()
+        {
+            // Unity lowercases assigned bundle names, so the manifest reports the lowercased form
+            // while bundleNameToHash is keyed by the original-case CIDv0 hash.
+            const string QM_HASH = "Qmay4MXiQauhHtKZJp5rCcmhzU2xDvRnv5fvH1thk2pk5V";
+            var bundleName = QM_HASH + "_mac";
+            string lowercasedBundleName = bundleName.ToLowerInvariant();
+
+            bundleNameToHash[bundleName] = QM_HASH;
+            lowerCaseHashes[QM_HASH.ToLowerInvariant()] = QM_HASH;
+            manifest.GetAllAssetBundles().Returns(new[] { lowercasedBundleName });
+            manifest.GetAllDependencies(lowercasedBundleName).Returns(new string[0]);
+
+            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, lowerCaseHashes, manifest, VERSION);
+
+            file.Received(1).WriteAllText(OUTPUT_PATH + "/" + QM_HASH + "/metadata.json", Arg.Any<string>());
+        }
+
+        [Test]
+        public void WriteMetadataForMixedCaseCompositeNamedBundles()
+        {
+            const string QM_HASH = "QmRYcoT9Kf4XyojgBAGiztztw34Lg8MpBMqrqk1o4B14mG";
+            var bundleName = $"{QM_HASH}_{DIGEST}_mac";
+            string lowercasedBundleName = bundleName.ToLowerInvariant();
+
+            bundleNameToHash[bundleName] = QM_HASH;
+            lowerCaseHashes[QM_HASH.ToLowerInvariant()] = QM_HASH;
+            manifest.GetAllAssetBundles().Returns(new[] { lowercasedBundleName });
+            manifest.GetAllDependencies(lowercasedBundleName).Returns(new string[0]);
+
+            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, lowerCaseHashes, manifest, VERSION);
+
+            file.Received(1).WriteAllText(OUTPUT_PATH + "/" + QM_HASH + "/metadata.json", Arg.Any<string>());
+        }
+
+        [Test]
+        public void RecaseQmDependenciesToTheirCanonicalCdnNames()
+        {
+            // Clients fetch dependency names verbatim from the case-sensitive CDN, where the files
+            // are stored under the original-case name — a lowercased entry would 404.
+            const string QM_HASH = "Qmay4MXiQauhHtKZJp5rCcmhzU2xDvRnv5fvH1thk2pk5V";
+            const string QM_DEP_HASH = "QmbcVjrVGDWwdCMdXQjpyzui2bCX4zaR8XwvkwFuBZvto3";
+            var bundleName = QM_HASH + "_mac";
+            var depBundleName = QM_DEP_HASH + "_mac";
+            string lowercasedBundleName = bundleName.ToLowerInvariant();
+
+            bundleNameToHash[bundleName] = QM_HASH;
+            bundleNameToHash[depBundleName] = QM_DEP_HASH;
+            lowerCaseHashes[QM_HASH.ToLowerInvariant()] = QM_HASH;
+            lowerCaseHashes[QM_DEP_HASH.ToLowerInvariant()] = QM_DEP_HASH;
+            manifest.GetAllAssetBundles().Returns(new[] { lowercasedBundleName });
+            manifest.GetAllDependencies(lowercasedBundleName).Returns(new[] { depBundleName.ToLowerInvariant() });
+
+            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, lowerCaseHashes, manifest, VERSION);
+
+            var metadata = ParseCaptured();
+            Assert.AreEqual(1, metadata.dependencies.Length);
+            Assert.AreEqual(depBundleName, metadata.dependencies[0]);
+        }
+    }
+
+    [TestFixture]
+    [Category("EditModeCI")]
+    public class CleanAssetBundleFolderShould
+    {
+        private const string PATH = "Assets/Output/";
+        private const string QM_HASH = "Qmay4MXiQauhHtKZJp5rCcmhzU2xDvRnv5fvH1thk2pk5V";
+        private const string BAFK_HASH = "bafkreiaie6ke72c3mfq3w5lhrgw6vy2f4u6kymhd66jxgi7baanyutsira";
+        private const string DIGEST = "5d0481fc69cbe8ec4be5fb899e054043";
+
+        private static readonly string QM_LOWER = QM_HASH.ToLowerInvariant();
+
+        private IFile file;
+        private Dictionary<string, string> lowerToUpper;
+
+        [SetUp]
+        public void Setup()
+        {
+            file = Substitute.For<IFile>();
+
+            lowerToUpper = new Dictionary<string, string>
+            {
+                [QM_LOWER] = QM_HASH,
+                [BAFK_HASH] = BAFK_HASH,
+            };
+        }
+
+        [Test]
+        public void RecaseCompositeDigestNames()
+        {
+            Assert.AreEqual($"{QM_HASH}_{DIGEST}_mac", DCL.ABConverter.Utils.GetCanonicalBundleFileName($"{QM_LOWER}_{DIGEST}_mac", lowerToUpper));
+        }
+
+        [Test]
+        public void KeepUnknownNamesVerbatim()
+        {
+            Assert.AreEqual("dcl/scene_IGNORE_mac", DCL.ABConverter.Utils.GetCanonicalBundleFileName("dcl/scene_IGNORE_mac", lowerToUpper));
+        }
+
+        [Test]
+        public void RenameQmMacBundleToOriginalCasingAndKeepLowercaseAlias()
+        {
+            DCL.ABConverter.Utils.CleanAssetBundleFolder(file, PATH, new[] { QM_LOWER + "_mac" }, lowerToUpper);
+
+            file.Received(1).Move(PATH + QM_LOWER + "_mac", PATH + QM_HASH + "_mac");
+            file.Received(1).Copy(PATH + QM_HASH + "_mac", PATH + QM_LOWER + "_mac");
+        }
+
+        [Test]
+        public void NotAliasWindowsBundles()
+        {
+            DCL.ABConverter.Utils.CleanAssetBundleFolder(file, PATH, new[] { QM_LOWER + "_windows" }, lowerToUpper);
+
+            file.Received(1).Move(PATH + QM_LOWER + "_windows", PATH + QM_HASH + "_windows");
+            file.DidNotReceive().Copy(Arg.Any<string>(), Arg.Any<string>());
+        }
+
+        [Test]
+        public void SkipAliasOnCaseInsensitiveFilesystems()
+        {
+            // On a case-insensitive filesystem the renamed file still answers to the lowercase
+            // name, so the alias copy must not run (Copy onto the same file would throw).
+            file.Exists(PATH + QM_LOWER + "_mac").Returns(true);
+
+            DCL.ABConverter.Utils.CleanAssetBundleFolder(file, PATH, new[] { QM_LOWER + "_mac" }, lowerToUpper);
+
+            file.Received(1).Move(PATH + QM_LOWER + "_mac", PATH + QM_HASH + "_mac");
+            file.DidNotReceive().Copy(Arg.Any<string>(), Arg.Any<string>());
+        }
+
+        [Test]
+        public void LeaveAllLowercaseBundlesUntouched()
+        {
+            DCL.ABConverter.Utils.CleanAssetBundleFolder(file, PATH, new[] { BAFK_HASH + "_mac" }, lowerToUpper);
+
+            file.DidNotReceive().Move(Arg.Any<string>(), Arg.Any<string>());
+            file.DidNotReceive().Copy(Arg.Any<string>(), Arg.Any<string>());
         }
     }
 }

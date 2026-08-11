@@ -1022,7 +1022,7 @@ namespace DCL.ABConverter
             //    folder, so the AssetDatabase can resolve which bundles reference assets
             //    in other bundles from import metadata alone.
             var assetDatabaseProvider = new AssetDatabaseProvider();
-            env.assetDatabase.BuildMetadata(env.file, finalDownloadedPath, bundleNameToHash, assetDatabaseProvider, VERSION);
+            env.assetDatabase.BuildMetadata(env.file, finalDownloadedPath, bundleNameToHash, lowerCaseHashes, assetDatabaseProvider, VERSION);
 
             var afterMetadata = EditorApplication.timeSinceStartup;
 

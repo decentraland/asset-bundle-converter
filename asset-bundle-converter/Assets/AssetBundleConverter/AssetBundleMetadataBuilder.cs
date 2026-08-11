@@ -21,10 +21,15 @@ namespace DCL.ABConverter
 
 
         /// <summary>
-        /// Creates the asset bundle metadata file (dependencies, version, timestamp)
+        /// Creates the asset bundle metadata file (dependencies, version, timestamp).
+        /// The manifest reports Unity's lowercased bundle names, so every name is re-cased through
+        /// <paramref name="lowerCaseHashes"/> (lowercase hash → original-case hash) before being used:
+        /// the bundle lookup key in <paramref name="bundleNameToHash"/> and the written dependency
+        /// entries must both carry the original casing — dependency names are fetched verbatim by
+        /// clients from the case-sensitive CDN, where files are stored under the original-case name.
         /// </summary>
         public static void Generate(IFile file, string path, Dictionary<string, string> bundleNameToHash,
-            IAssetBundleManifest manifest, string version = "1.0")
+            Dictionary<string, string> lowerCaseHashes, IAssetBundleManifest manifest, string version = "1.0")
         {
             string[] assetBundles = manifest.GetAllAssetBundles();
 
@@ -39,13 +44,15 @@ namespace DCL.ABConverter
                 if (deps.Length > 0)
                 {
                     metadata.dependencies = deps
-                        .Where(s => !s.Contains("_IGNORE") && bundleNameToHash.ContainsKey(s))
+                        .Where(s => !s.Contains("_IGNORE"))
+                        .Select(s => Utils.GetCanonicalBundleFileName(s, lowerCaseHashes))
+                        .Where(s => bundleNameToHash.ContainsKey(s))
                         .ToArray();
                 }
 
                 string json = JsonUtility.ToJson(metadata);
 
-                if (bundleNameToHash.TryGetValue(assetBundles[i], out string assetHashName)
+                if (bundleNameToHash.TryGetValue(Utils.GetCanonicalBundleFileName(assetBundles[i], lowerCaseHashes), out string assetHashName)
                     && !string.IsNullOrEmpty(assetHashName))
                 {
                     file.WriteAllText(path + $"/{assetHashName}/metadata.json", json);
