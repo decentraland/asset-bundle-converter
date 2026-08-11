@@ -223,6 +223,107 @@ namespace AssetBundleConverter.Tests
         }
 
         [Test]
+        public void KeepBafkBehaviourByteIdenticalWithPopulatedLowercaseMap()
+        {
+            // Retrocompatibility pin: production always fills lowerCaseHashes with identity entries
+            // for all-lowercase (bafk...) hashes, and those entries must not alter any output —
+            // same metadata path, dependency names byte-identical to the manifest's.
+            var bundleName = HASH + "_mac";
+            const string DEP_A = "bafkreitexture_mac";
+            const string DEP_B = "bafkreibuffer_mac";
+
+            bundleNameToHash[bundleName] = HASH;
+            bundleNameToHash[DEP_A] = "bafkreitexture";
+            bundleNameToHash[DEP_B] = "bafkreibuffer";
+            lowerCaseHashes[HASH] = HASH;
+            lowerCaseHashes["bafkreitexture"] = "bafkreitexture";
+            lowerCaseHashes["bafkreibuffer"] = "bafkreibuffer";
+            manifest.GetAllAssetBundles().Returns(new[] { bundleName });
+            manifest.GetAllDependencies(bundleName).Returns(new[] { DEP_A, DEP_B });
+
+            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, lowerCaseHashes, manifest, VERSION);
+
+            file.Received(1).WriteAllText(METADATA_PATH, Arg.Any<string>());
+            var metadata = ParseCaptured();
+            Assert.AreEqual(new[] { DEP_A, DEP_B }, metadata.dependencies);
+        }
+
+        [Test]
+        public void KeepBafkCompositeNamedBundlesByteIdenticalWithPopulatedLowercaseMap()
+        {
+            var bundleName = $"{HASH}_{DIGEST}_mac";
+            const string DEP = "bafkreitexture_mac";
+
+            bundleNameToHash[bundleName] = HASH;
+            bundleNameToHash[DEP] = "bafkreitexture";
+            lowerCaseHashes[HASH] = HASH;
+            lowerCaseHashes["bafkreitexture"] = "bafkreitexture";
+            manifest.GetAllAssetBundles().Returns(new[] { bundleName });
+            manifest.GetAllDependencies(bundleName).Returns(new[] { DEP });
+
+            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, lowerCaseHashes, manifest, VERSION);
+
+            file.Received(1).WriteAllText(METADATA_PATH, Arg.Any<string>());
+            var metadata = ParseCaptured();
+            Assert.AreEqual(new[] { DEP }, metadata.dependencies);
+        }
+
+        [Test]
+        public void KeepMetadataJsonWireFormatStable()
+        {
+            // Clients deserialize this payload with JsonUtility — pin the exact field set,
+            // order and formatting so a change here can't silently break them.
+            var bundleName = HASH + "_mac";
+            const string DEP = "bafkreitexture_mac";
+
+            bundleNameToHash[bundleName] = HASH;
+            bundleNameToHash[DEP] = "bafkreitexture";
+            manifest.GetAllAssetBundles().Returns(new[] { bundleName });
+            manifest.GetAllDependencies(bundleName).Returns(new[] { DEP });
+
+            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, lowerCaseHashes, manifest, VERSION);
+
+            string normalizedJson = System.Text.RegularExpressions.Regex.Replace(capturedJson, "\"timestamp\":\\d+", "\"timestamp\":0");
+            Assert.AreEqual($"{{\"timestamp\":0,\"version\":\"{VERSION}\",\"dependencies\":[\"{DEP}\"],\"mainAsset\":\"\"}}", normalizedJson);
+        }
+
+        [Test]
+        public void HandleMixedBatchesOfQmAndBafkBundlesIndependently()
+        {
+            // A Qm entity in the batch must not leak re-casing into bafk outputs and vice versa.
+            const string QM_HASH = "Qmay4MXiQauhHtKZJp5rCcmhzU2xDvRnv5fvH1thk2pk5V";
+            var bafkBundle = HASH + "_mac";
+            var qmBundle = QM_HASH + "_mac";
+            const string BAFK_DEP = "bafkreitexture_mac";
+            const string QM_DEP = "QmbcVjrVGDWwdCMdXQjpyzui2bCX4zaR8XwvkwFuBZvto3_mac";
+
+            bundleNameToHash[bafkBundle] = HASH;
+            bundleNameToHash[qmBundle] = QM_HASH;
+            bundleNameToHash[BAFK_DEP] = "bafkreitexture";
+            bundleNameToHash[QM_DEP] = "QmbcVjrVGDWwdCMdXQjpyzui2bCX4zaR8XwvkwFuBZvto3";
+            lowerCaseHashes[HASH] = HASH;
+            lowerCaseHashes["bafkreitexture"] = "bafkreitexture";
+            lowerCaseHashes[QM_HASH.ToLowerInvariant()] = QM_HASH;
+            lowerCaseHashes[QM_DEP.Replace("_mac", "").ToLowerInvariant()] = QM_DEP.Replace("_mac", "");
+
+            var capturedByPath = new Dictionary<string, string>();
+            file.When(f => f.WriteAllText(Arg.Any<string>(), Arg.Any<string>()))
+                .Do(call => capturedByPath[call.ArgAt<string>(0)] = call.ArgAt<string>(1));
+
+            manifest.GetAllAssetBundles().Returns(new[] { bafkBundle, qmBundle.ToLowerInvariant() });
+            manifest.GetAllDependencies(bafkBundle).Returns(new[] { BAFK_DEP });
+            manifest.GetAllDependencies(qmBundle.ToLowerInvariant()).Returns(new[] { QM_DEP.ToLowerInvariant() });
+
+            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, lowerCaseHashes, manifest, VERSION);
+
+            var bafkMetadata = JsonUtility.FromJson<AssetBundleMetadata>(capturedByPath[METADATA_PATH]);
+            Assert.AreEqual(new[] { BAFK_DEP }, bafkMetadata.dependencies, "bafk deps must stay verbatim");
+
+            var qmMetadata = JsonUtility.FromJson<AssetBundleMetadata>(capturedByPath[OUTPUT_PATH + "/" + QM_HASH + "/metadata.json"]);
+            Assert.AreEqual(new[] { QM_DEP }, qmMetadata.dependencies, "Qm deps must be re-cased to canonical names");
+        }
+
+        [Test]
         public void RecaseQmDependenciesToTheirCanonicalCdnNames()
         {
             // Clients fetch dependency names verbatim from the case-sensitive CDN, where the files
@@ -324,6 +425,52 @@ namespace AssetBundleConverter.Tests
 
             file.DidNotReceive().Move(Arg.Any<string>(), Arg.Any<string>());
             file.DidNotReceive().Copy(Arg.Any<string>(), Arg.Any<string>());
+        }
+
+        [Test]
+        public void LeaveAllLowercaseBundlesUntouchedAcrossPlatformsAndNamings()
+        {
+            // Retrocompatibility pin: bafk... outputs (bare, digest-named, any platform) keep the
+            // exact file names Unity produced — no renames, no alias copies.
+            DCL.ABConverter.Utils.CleanAssetBundleFolder(file, PATH, new[]
+            {
+                BAFK_HASH + "_windows",
+                $"{BAFK_HASH}_{DIGEST}_mac",
+                $"{BAFK_HASH}_{DIGEST}_windows",
+            }, lowerToUpper);
+
+            file.DidNotReceive().Move(Arg.Any<string>(), Arg.Any<string>());
+            file.DidNotReceive().Copy(Arg.Any<string>(), Arg.Any<string>());
+        }
+
+        [Test]
+        public void OnlyTouchQmBundlesInMixedBatches()
+        {
+            DCL.ABConverter.Utils.CleanAssetBundleFolder(file, PATH, new[]
+            {
+                BAFK_HASH + "_mac",
+                QM_LOWER + "_mac",
+            }, lowerToUpper);
+
+            file.Received(1).Move(PATH + QM_LOWER + "_mac", PATH + QM_HASH + "_mac");
+            file.Received(1).Copy(PATH + QM_HASH + "_mac", PATH + QM_LOWER + "_mac");
+            file.DidNotReceive().Move(PATH + BAFK_HASH + "_mac", Arg.Any<string>());
+            file.DidNotReceive().Copy(PATH + BAFK_HASH + "_mac", Arg.Any<string>());
+        }
+
+        [Test]
+        public void DeleteUnityManifestFilesForEveryBundleRegardlessOfCasing()
+        {
+            // The per-bundle .manifest cleanup must keep working for both untouched bafk names
+            // and renamed Qm names (the .manifest sits next to Unity's original output name).
+            DCL.ABConverter.Utils.CleanAssetBundleFolder(file, PATH, new[]
+            {
+                BAFK_HASH + "_mac",
+                QM_LOWER + "_mac",
+            }, lowerToUpper);
+
+            file.Received(1).Delete(PATH + BAFK_HASH + "_mac.manifest");
+            file.Received(1).Delete(PATH + QM_LOWER + "_mac.manifest");
         }
     }
 }
