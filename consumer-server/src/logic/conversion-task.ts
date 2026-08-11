@@ -8,6 +8,7 @@ import { AppComponents } from '../types'
 import * as fs from 'fs'
 import * as path from 'path'
 import { hasContentChange } from './has-content-changed-task'
+import { buildPurgeUrls, purgeCdnUrls } from './cdn-purge'
 import { getUnityBuildTarget } from '../utils'
 import { AssetCacheResult, findMetadataOnlyHashes, SkippedAsset } from './asset-reuse'
 import { Manifest } from './scenes'
@@ -763,12 +764,23 @@ export async function executeConversion(
           contentType: 'application/wasm',
           immutable: true,
           variants: [FileVariant.Brotli, FileVariant.Uncompressed],
-          skipRepeated: true
+          // skipRepeated skips keys that already exist in the bucket. A forced
+          // re-conversion exists precisely to replace those objects (same names,
+          // corrected bytes), so it must overwrite instead of skipping.
+          skipRepeated: !force
         }
       ]
     })
 
     logger.debug('Content files uploaded', defaultLoggerMetadata)
+
+    if (force) {
+      // The overwritten objects carry `immutable` cache-control, so warm edges keep
+      // serving the previous bytes until purged. manifest.files is exactly the set
+      // uploaded above: force short-circuits asset reuse, so nothing was skipped.
+      const env = contentServerUrl.includes('org') ? 'org' : 'zone'
+      await purgeCdnUrls(components, buildPurgeUrls(`https://ab-cdn.decentraland.${env}`, bundleUploadPath, manifest.files))
+    }
 
     // Upload index.js and main.crdt to CDN so the desktop Explorer client
     // can fetch them from S3 instead of the catalyst (see issue #7625).
