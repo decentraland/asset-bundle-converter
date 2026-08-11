@@ -292,10 +292,10 @@ namespace AssetBundleConverter.Tests
         {
             // A Qm entity in the batch must not leak re-casing into bafk outputs and vice versa.
             const string QM_HASH = "Qmay4MXiQauhHtKZJp5rCcmhzU2xDvRnv5fvH1thk2pk5V";
-            var bafkBundle = HASH + "_mac";
-            var qmBundle = QM_HASH + "_mac";
-            const string BAFK_DEP = "bafkreitexture_mac";
-            const string QM_DEP = "QmbcVjrVGDWwdCMdXQjpyzui2bCX4zaR8XwvkwFuBZvto3_mac";
+            var bafkBundle = HASH + "_windows";
+            var qmBundle = QM_HASH + "_windows";
+            const string BAFK_DEP = "bafkreitexture_windows";
+            const string QM_DEP = "QmbcVjrVGDWwdCMdXQjpyzui2bCX4zaR8XwvkwFuBZvto3_windows";
 
             bundleNameToHash[bafkBundle] = HASH;
             bundleNameToHash[qmBundle] = QM_HASH;
@@ -304,7 +304,7 @@ namespace AssetBundleConverter.Tests
             lowerCaseHashes[HASH] = HASH;
             lowerCaseHashes["bafkreitexture"] = "bafkreitexture";
             lowerCaseHashes[QM_HASH.ToLowerInvariant()] = QM_HASH;
-            lowerCaseHashes[QM_DEP.Replace("_mac", "").ToLowerInvariant()] = QM_DEP.Replace("_mac", "");
+            lowerCaseHashes[QM_DEP.Replace("_windows", "").ToLowerInvariant()] = QM_DEP.Replace("_windows", "");
 
             var capturedByPath = new Dictionary<string, string>();
             file.When(f => f.WriteAllText(Arg.Any<string>(), Arg.Any<string>()))
@@ -324,14 +324,39 @@ namespace AssetBundleConverter.Tests
         }
 
         [Test]
-        public void RecaseQmDependenciesToTheirCanonicalCdnNames()
+        public void KeepQmDependenciesLowercaseOnMac()
         {
-            // Clients fetch dependency names verbatim from the case-sensitive CDN, where the files
-            // are stored under the original-case name — a lowercased entry would 404.
+            // Mac bundles ship under Unity's lowercased names, so the dep entries — fetched verbatim
+            // by clients — must stay lowercase too, matching the files and the historical mac contract.
             const string QM_HASH = "Qmay4MXiQauhHtKZJp5rCcmhzU2xDvRnv5fvH1thk2pk5V";
             const string QM_DEP_HASH = "QmbcVjrVGDWwdCMdXQjpyzui2bCX4zaR8XwvkwFuBZvto3";
             var bundleName = QM_HASH + "_mac";
             var depBundleName = QM_DEP_HASH + "_mac";
+            string lowercasedBundleName = bundleName.ToLowerInvariant();
+
+            bundleNameToHash[bundleName] = QM_HASH;
+            bundleNameToHash[depBundleName] = QM_DEP_HASH;
+            lowerCaseHashes[QM_HASH.ToLowerInvariant()] = QM_HASH;
+            lowerCaseHashes[QM_DEP_HASH.ToLowerInvariant()] = QM_DEP_HASH;
+            manifest.GetAllAssetBundles().Returns(new[] { lowercasedBundleName });
+            manifest.GetAllDependencies(lowercasedBundleName).Returns(new[] { depBundleName.ToLowerInvariant() });
+
+            AssetBundleMetadataBuilder.Generate(file, OUTPUT_PATH, bundleNameToHash, lowerCaseHashes, manifest, VERSION);
+
+            var metadata = ParseCaptured();
+            Assert.AreEqual(1, metadata.dependencies.Length);
+            Assert.AreEqual(depBundleName.ToLowerInvariant(), metadata.dependencies[0]);
+        }
+
+        [Test]
+        public void RecaseQmDependenciesToOriginalCasingOnWindows()
+        {
+            // Windows files ship under the original casing, so the dep entries — fetched verbatim by
+            // clients — must be re-cased to match: a lowercased entry 404s on the case-sensitive CDN.
+            const string QM_HASH = "Qmay4MXiQauhHtKZJp5rCcmhzU2xDvRnv5fvH1thk2pk5V";
+            const string QM_DEP_HASH = "QmbcVjrVGDWwdCMdXQjpyzui2bCX4zaR8XwvkwFuBZvto3";
+            var bundleName = QM_HASH + "_windows";
+            var depBundleName = QM_DEP_HASH + "_windows";
             string lowercasedBundleName = bundleName.ToLowerInvariant();
 
             bundleNameToHash[bundleName] = QM_HASH;
@@ -376,7 +401,7 @@ namespace AssetBundleConverter.Tests
         }
 
         [Test]
-        public void RecaseCompositeDigestNames()
+        public void RecaseCompositeDigestNamesCanonically()
         {
             Assert.AreEqual($"{QM_HASH}_{DIGEST}_mac", DCL.ABConverter.Utils.GetCanonicalBundleFileName($"{QM_LOWER}_{DIGEST}_mac", lowerToUpper));
         }
@@ -385,19 +410,37 @@ namespace AssetBundleConverter.Tests
         public void KeepUnknownNamesVerbatim()
         {
             Assert.AreEqual("dcl/scene_IGNORE_mac", DCL.ABConverter.Utils.GetCanonicalBundleFileName("dcl/scene_IGNORE_mac", lowerToUpper));
+            Assert.AreEqual("dcl/scene_IGNORE_windows", DCL.ABConverter.Utils.GetCdnFileName("dcl/scene_IGNORE_windows", lowerToUpper));
         }
 
         [Test]
-        public void RenameQmMacBundleToOriginalCasingAndKeepLowercaseAlias()
+        public void ResolveCdnFileNamesPerPlatform()
         {
-            DCL.ABConverter.Utils.CleanAssetBundleFolder(file, PATH, new[] { QM_LOWER + "_mac" }, lowerToUpper);
-
-            file.Received(1).Move(PATH + QM_LOWER + "_mac", PATH + QM_HASH + "_mac");
-            file.Received(1).Copy(PATH + QM_HASH + "_mac", PATH + QM_LOWER + "_mac");
+            // Mac ships Unity's lowercase name verbatim; other platforms re-case to the original hash.
+            Assert.AreEqual(QM_LOWER + "_mac", DCL.ABConverter.Utils.GetCdnFileName(QM_LOWER + "_mac", lowerToUpper));
+            Assert.AreEqual(QM_HASH + "_windows", DCL.ABConverter.Utils.GetCdnFileName(QM_LOWER + "_windows", lowerToUpper));
+            Assert.AreEqual($"{QM_LOWER}_{DIGEST}_mac", DCL.ABConverter.Utils.GetCdnFileName($"{QM_LOWER}_{DIGEST}_mac", lowerToUpper));
+            Assert.AreEqual($"{QM_HASH}_{DIGEST}_windows", DCL.ABConverter.Utils.GetCdnFileName($"{QM_LOWER}_{DIGEST}_windows", lowerToUpper));
         }
 
         [Test]
-        public void NotAliasWindowsBundles()
+        public void LeaveMacBundlesUntouched()
+        {
+            // The mac contract is Unity's lowercase naming — the name every mac client derives and
+            // every pre-v49 mac bundle already uses — so no rename (and no alias copy) may happen.
+            DCL.ABConverter.Utils.CleanAssetBundleFolder(file, PATH, new[]
+            {
+                QM_LOWER + "_mac",
+                $"{QM_LOWER}_{DIGEST}_mac",
+                BAFK_HASH + "_mac",
+            }, lowerToUpper);
+
+            file.DidNotReceive().Move(Arg.Any<string>(), Arg.Any<string>());
+            file.DidNotReceive().Copy(Arg.Any<string>(), Arg.Any<string>());
+        }
+
+        [Test]
+        public void RenameQmWindowsBundlesToOriginalCasing()
         {
             DCL.ABConverter.Utils.CleanAssetBundleFolder(file, PATH, new[] { QM_LOWER + "_windows" }, lowerToUpper);
 
@@ -406,22 +449,9 @@ namespace AssetBundleConverter.Tests
         }
 
         [Test]
-        public void SkipAliasOnCaseInsensitiveFilesystems()
-        {
-            // On a case-insensitive filesystem the renamed file still answers to the lowercase
-            // name, so the alias copy must not run (Copy onto the same file would throw).
-            file.Exists(PATH + QM_LOWER + "_mac").Returns(true);
-
-            DCL.ABConverter.Utils.CleanAssetBundleFolder(file, PATH, new[] { QM_LOWER + "_mac" }, lowerToUpper);
-
-            file.Received(1).Move(PATH + QM_LOWER + "_mac", PATH + QM_HASH + "_mac");
-            file.DidNotReceive().Copy(Arg.Any<string>(), Arg.Any<string>());
-        }
-
-        [Test]
         public void LeaveAllLowercaseBundlesUntouched()
         {
-            DCL.ABConverter.Utils.CleanAssetBundleFolder(file, PATH, new[] { BAFK_HASH + "_mac" }, lowerToUpper);
+            DCL.ABConverter.Utils.CleanAssetBundleFolder(file, PATH, new[] { BAFK_HASH + "_windows" }, lowerToUpper);
 
             file.DidNotReceive().Move(Arg.Any<string>(), Arg.Any<string>());
             file.DidNotReceive().Copy(Arg.Any<string>(), Arg.Any<string>());
@@ -444,18 +474,19 @@ namespace AssetBundleConverter.Tests
         }
 
         [Test]
-        public void OnlyTouchQmBundlesInMixedBatches()
+        public void OnlyTouchQmWindowsBundlesInMixedBatches()
         {
             DCL.ABConverter.Utils.CleanAssetBundleFolder(file, PATH, new[]
             {
-                BAFK_HASH + "_mac",
+                BAFK_HASH + "_windows",
+                QM_LOWER + "_windows",
                 QM_LOWER + "_mac",
             }, lowerToUpper);
 
-            file.Received(1).Move(PATH + QM_LOWER + "_mac", PATH + QM_HASH + "_mac");
-            file.Received(1).Copy(PATH + QM_HASH + "_mac", PATH + QM_LOWER + "_mac");
-            file.DidNotReceive().Move(PATH + BAFK_HASH + "_mac", Arg.Any<string>());
-            file.DidNotReceive().Copy(PATH + BAFK_HASH + "_mac", Arg.Any<string>());
+            file.Received(1).Move(PATH + QM_LOWER + "_windows", PATH + QM_HASH + "_windows");
+            file.DidNotReceive().Move(PATH + BAFK_HASH + "_windows", Arg.Any<string>());
+            file.DidNotReceive().Move(PATH + QM_LOWER + "_mac", Arg.Any<string>());
+            file.DidNotReceive().Copy(Arg.Any<string>(), Arg.Any<string>());
         }
 
         [Test]

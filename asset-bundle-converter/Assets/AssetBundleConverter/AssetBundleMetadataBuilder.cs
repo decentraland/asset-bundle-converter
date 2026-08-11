@@ -22,11 +22,11 @@ namespace DCL.ABConverter
 
         /// <summary>
         /// Creates the asset bundle metadata file (dependencies, version, timestamp).
-        /// The manifest reports Unity's lowercased bundle names, so every name is re-cased through
-        /// <paramref name="lowerCaseHashes"/> (lowercase hash → original-case hash) before being used:
-        /// the bundle lookup key in <paramref name="bundleNameToHash"/> and the written dependency
-        /// entries must both carry the original casing — dependency names are fetched verbatim by
-        /// clients from the case-sensitive CDN, where files are stored under the original-case name.
+        /// The manifest reports Unity's lowercased bundle names, so lookups against
+        /// <paramref name="bundleNameToHash"/> (keyed by the original casing) go through the canonical
+        /// re-casing first. The written dependency entries use the per-platform CDN file name instead —
+        /// clients fetch them verbatim from the case-sensitive CDN, so each entry must match the name
+        /// the file actually ships under: lowercase for mac bundles, original casing elsewhere.
         /// </summary>
         public static void Generate(IFile file, string path, Dictionary<string, string> bundleNameToHash,
             Dictionary<string, string> lowerCaseHashes, IAssetBundleManifest manifest, string version = "1.0")
@@ -44,9 +44,8 @@ namespace DCL.ABConverter
                 if (deps.Length > 0)
                 {
                     metadata.dependencies = deps
-                        .Where(s => !s.Contains("_IGNORE"))
-                        .Select(s => Utils.GetCanonicalBundleFileName(s, lowerCaseHashes))
-                        .Where(s => bundleNameToHash.ContainsKey(s))
+                        .Where(s => !s.Contains("_IGNORE") && bundleNameToHash.ContainsKey(Utils.GetCanonicalBundleFileName(s, lowerCaseHashes)))
+                        .Select(s => Utils.GetCdnFileName(s, lowerCaseHashes))
                         .ToArray();
                 }
 

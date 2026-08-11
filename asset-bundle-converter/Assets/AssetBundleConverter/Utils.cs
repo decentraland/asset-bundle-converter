@@ -497,11 +497,11 @@ namespace DCL.ABConverter
         }
 
         /// <summary>
-        ///     Resolves the file name a built bundle must have on the CDN. Unity lowercases every assigned
-        ///     bundle name, so the leading content-hash segment is re-cased back to its original form through
-        ///     <paramref name="lowerToUpperDictionary" /> (lowercase hash → original-case hash); the rest of the
-        ///     name (deps digest and/or platform suffix) is kept verbatim. Names whose first segment is not a
-        ///     known content hash are returned unchanged.
+        ///     Re-cases a Unity-lowercased bundle name back to its original form through
+        ///     <paramref name="lowerToUpperDictionary" /> (lowercase hash → original-case hash): the leading
+        ///     content-hash segment is re-cased, the rest of the name (deps digest and/or platform suffix) is
+        ///     kept verbatim. Names whose first segment is not a known content hash are returned unchanged.
+        ///     This is the identity used against <c>bundleNameToHash</c>, whose keys carry the original casing.
         /// </summary>
         public static string GetCanonicalBundleFileName(string assetBundleName, Dictionary<string, string> lowerToUpperDictionary)
         {
@@ -512,6 +512,22 @@ namespace DCL.ABConverter
                 return assetBundleName;
 
             return separatorIndex < 0 ? hashWithUppercase : hashWithUppercase + assetBundleName.Substring(separatorIndex);
+        }
+
+        /// <summary>
+        ///     Resolves the file name a built bundle ships under on the CDN. The casing contract is
+        ///     per-platform: <c>_mac</c> bundles keep Unity's lowercased name verbatim — the name every mac
+        ///     explorer client derives from content hashes and the name every pre-v49 mac bundle already
+        ///     uses — while other platforms re-case the hash segment back to its original form, matching
+        ///     what their clients request. Names whose first segment is not a known content hash are
+        ///     returned unchanged.
+        /// </summary>
+        public static string GetCdnFileName(string assetBundleName, Dictionary<string, string> lowerToUpperDictionary)
+        {
+            if (assetBundleName.EndsWith("_mac"))
+                return assetBundleName;
+
+            return GetCanonicalBundleFileName(assetBundleName, lowerToUpperDictionary);
         }
 
         public static void CleanAssetBundleFolder(IFile file, string pathToSearch, string[] assetBundlesList, Dictionary<string, string> lowerToUpperDictionary)
@@ -529,21 +545,10 @@ namespace DCL.ABConverter
                 try
                 {
                     //NOTE(Brian): This is done for correctness sake, rename files to preserve the hash upper-case
-                    string canonicalName = GetCanonicalBundleFileName(assetBundleName, lowerToUpperDictionary);
+                    string cdnFileName = GetCdnFileName(assetBundleName, lowerToUpperDictionary);
 
-                    if (canonicalName != assetBundleName)
-                    {
-                        string oldPath = pathToSearch + assetBundleName;
-                        string canonicalPath = pathToSearch + canonicalName;
-                        file.Move(oldPath, canonicalPath);
-
-                        // Mac explorer clients in the wild request Qm bundles by their lowercased
-                        // name (the historical mac file naming), so ship a copy under that name too —
-                        // the CDN is case-sensitive, and this keeps both request casings resolvable.
-                        // The Exists guard makes this a no-op on case-insensitive local filesystems.
-                        if (canonicalName.EndsWith("_mac") && !file.Exists(oldPath))
-                            file.Copy(canonicalPath, oldPath);
-                    }
+                    if (cdnFileName != assetBundleName)
+                        file.Move(pathToSearch + assetBundleName, pathToSearch + cdnFileName);
 
                     string oldPathMf = pathToSearch + assetBundleName + ".manifest";
                     file.Delete(oldPathMf);
