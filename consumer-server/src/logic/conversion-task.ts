@@ -763,7 +763,10 @@ export async function executeConversion(
           contentType: 'application/wasm',
           immutable: true,
           variants: [FileVariant.Brotli, FileVariant.Uncompressed],
-          skipRepeated: true
+          // skipRepeated skips keys that already exist in the bucket. A forced
+          // re-conversion exists precisely to replace those objects (same names,
+          // corrected bytes), so it must overwrite instead of skipping.
+          skipRepeated: !force
         }
       ]
     })
