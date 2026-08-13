@@ -94,10 +94,11 @@ export async function createConversionOrchestratorComponent(
 
     // Need entity type to decide between scene and wearable/emote version.
     const entityId = job.entity.entityId
-    const contentServerUrl = job.contentServerUrls![0]
+    const contentServerUrl = job.contentServerUrls?.[0]
+    if (!contentServerUrl) return abVersion
     try {
       const entity = await components.catalyst.getActiveEntity(entityId, contentServerUrl, 15_000)
-      const entityType = entity?.type
+      const entityType = entity.type
       if (entityType === 'wearable' || entityType === 'emote') {
         return abVersionWearable
       }

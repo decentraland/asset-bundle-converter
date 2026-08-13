@@ -142,7 +142,7 @@ export function getAbVersionEnvName(buildTarget: string) {
     case 'mac':
       return 'AB_VERSION_MAC'
     default:
-      throw 'Invalid buildTarget'
+      throw new Error('Invalid buildTarget')
   }
 }
 
@@ -161,6 +161,6 @@ export function getAbVersionWearablesEnvName(buildTarget: string) {
     case 'mac':
       return 'AB_VERSION_WEARABLES_MAC'
     default:
-      throw 'Invalid buildTarget'
+      throw new Error('Invalid buildTarget')
   }
 }
