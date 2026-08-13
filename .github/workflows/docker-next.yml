@@ -22,7 +22,7 @@ jobs:
       service-name: ${{ matrix.service-name }}
       unity-docker-image: ${{ matrix.unity-docker-image }}
       platform-target: ${{ matrix.platform-target }}
-      deployment-environment: dev
+      deployment-environments: '["dev"]'
       docker-tag: next
       upload-image: true
     secrets: inherit

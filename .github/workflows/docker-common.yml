@@ -15,9 +15,11 @@ on:
       image-name:
         required: false
         type: string
-      deployment-environment:
+      # JSON array, e.g. '["prd","stg"]'
+      deployment-environments:
         required: false
         type: string
+        default: '[]'
       docker-tag:
         required: true
         type: string
@@ -177,9 +179,12 @@ jobs:
           docker images ${{ env.QUAY_URL }}${{ inputs.service-name }}
 
   deployment:
-    if: ${{ inputs.upload-image && inputs.deployment-environment }}
     needs: [quay-build-push]
-    name: "Deploy to: ${{ inputs.deployment-environment }}"
+    if: ${{ inputs.upload-image }}
+    strategy:
+      matrix:
+        environment: ${{ fromJSON(inputs.deployment-environments) }}
+    name: "Deploy to: ${{ matrix.environment }}"
     runs-on: ubuntu-latest
     steps:
       - name: Trigger deployment
@@ -188,5 +193,5 @@ jobs:
         with:
           dockerImage: "${{ env.QUAY_URL }}${{ inputs.service-name }}:${{ github.event.pull_request.head.sha || github.sha }}"
           serviceName: ${{ inputs.service-name }}
-          env: ${{ inputs.deployment-environment }}
+          env: ${{ matrix.environment }}
           token: ${{ secrets.GITHUB_TOKEN }}
