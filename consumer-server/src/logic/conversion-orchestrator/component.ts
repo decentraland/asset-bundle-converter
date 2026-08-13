@@ -3,6 +3,7 @@ import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { AppComponents, TestComponents } from '../../types'
 import {
   getAbVersionEnvName,
+  getAbVersionWearablesEnvName,
   isAllowedContentServerUrl,
   isSafeOutboundUrl,
   parseAllowedContentServerHosts
@@ -46,6 +47,11 @@ export async function createConversionOrchestratorComponent(
   const platform = (await config.requireString('PLATFORM')).toLocaleLowerCase() as Platform
   const buildTarget = await config.requireString('BUILD_TARGET')
   const abVersion = await config.requireString(getAbVersionEnvName(buildTarget))
+  // Wearables and emotes use a separate version so they can be invalidated
+  // independently of scenes. When equal to `abVersion` (local dev / .env.default),
+  // the resolve function falls back to the shared version without an extra
+  // catalyst fetch.
+  const abVersionWearable = await config.requireString(getAbVersionWearablesEnvName(buildTarget))
   const triageEnabled = parseBooleanFlag(await config.getString('FAST_PATH_TRIAGE_ENABLED'), false, (raw) =>
     logger.warn(
       `Unrecognized value for FAST_PATH_TRIAGE_ENABLED: "${raw}" — falling back to the default (false). Accepted values: true/false/1/0/yes/no/on/off.`
@@ -62,6 +68,48 @@ export async function createConversionOrchestratorComponent(
     throw new Error('ALLOWED_CONTENT_SERVER_HOSTS is set but contains no valid catalyst hosts')
   }
   logger.info(`Catalyst allowlist active with ${allowedContentServerHosts.size} host(s)`)
+
+  /**
+   * Resolves the AB version to use for a given job, taking into account whether
+   * the entity is a wearable or emote (which use `abVersionWearable`) vs a scene
+   * or LOD (which use `abVersion`).
+   *
+   * When `abVersionWearable === abVersion` (local dev / .env.default with v1),
+   * returns `abVersion` immediately without a catalyst fetch — no extra cost for
+   * environments that don't split wearable versioning.
+   *
+   * For environments where versions differ (production), a lightweight catalyst
+   * fetch resolves entity type. On fetch failure the function returns the scene
+   * version (`abVersion`); the probe inside `executeConversion` will independently
+   * attempt its own catalyst fetch and short-circuit on `catalyst-unreachable` if
+   * the network is genuinely down — so no conversion runs with an incorrect version
+   * in practice, since both fetches would fail together.
+   *
+   * LOD jobs always use the scene version (they are not wearables/emotes).
+   * `doISS` jobs always use the legacy `v2004` path regardless of entity type.
+   */
+  async function resolveAbVersionForJob(job: DeploymentToSqs): Promise<string> {
+    if (job.doISS) return 'v2004'
+    if (job.lods || abVersionWearable === abVersion) return abVersion
+
+    // Need entity type to decide between scene and wearable/emote version.
+    const entityId = job.entity.entityId
+    const contentServerUrl = job.contentServerUrls![0]
+    try {
+      const entity = await components.catalyst.getActiveEntity(entityId, contentServerUrl, 15_000)
+      const entityType = entity?.type
+      if (entityType === 'wearable' || entityType === 'emote') {
+        return abVersionWearable
+      }
+    } catch (err: any) {
+      // Treat as scene version on failure; the probe's own fetch will catch a
+      // persistent catalyst outage and short-circuit via `catalyst-unreachable`.
+      logger.warn(
+        `Entity-type pre-fetch failed for ${entityId} — defaulting to scene version ${abVersion}: ${err?.message ?? err}`
+      )
+    }
+    return abVersion
+  }
 
   /**
    * Validates the shape of an incoming SQS job before either loop tries
@@ -283,8 +331,9 @@ export async function createConversionOrchestratorComponent(
   async function processIncomingJob(job: DeploymentToSqs, isPriority: boolean): Promise<void> {
     if (!isValidConversionJob(job)) return
 
-    // Increment version if doISS is true (legacy v2004 path)
-    const versionToUse = job.doISS ? 'v2004' : abVersion
+    // Resolve the AB version for this job — wearables/emotes may use a different
+    // version from scenes. Also handles the doISS (v2004) and LOD cases.
+    const versionToUse = await resolveAbVersionForJob(job)
 
     // LOD jobs always need Unity — they never fast-path.
     if (job.lods) {
@@ -357,7 +406,7 @@ export async function createConversionOrchestratorComponent(
    */
   async function processConversionJob(job: DeploymentToSqs): Promise<void> {
     if (!isValidConversionJob(job)) return
-    const versionToUse = job.doISS ? 'v2004' : abVersion
+    const versionToUse = await resolveAbVersionForJob(job)
     await runFullConversionAndPublish(job, versionToUse)
   }
 
