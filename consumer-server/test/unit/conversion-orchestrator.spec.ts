@@ -45,21 +45,17 @@ type Harness = {
   catalyst: MockedCatalystComponent
 }
 
-async function buildHarness(opts: {
-  triageEnabled: boolean
-  configOverrides?: Record<string, string>
-}): Promise<Harness> {
+async function buildHarness(opts: { triageEnabled: boolean }): Promise<Harness> {
   const config = createConfigComponent({
     PLATFORM: 'windows',
     BUILD_TARGET: 'windows',
     AB_VERSION_WINDOWS: 'v48',
     AB_VERSION_MAC: 'v48',
-    AB_VERSION_WEARABLES_WINDOWS: 'v48',
-    AB_VERSION_WEARABLES_MAC: 'v48',
+    AB_VERSION_WEARABLES_WINDOWS: 'v3000',
+    AB_VERSION_WEARABLES_MAC: 'v3000',
     AB_VERSION: '',
     FAST_PATH_TRIAGE_ENABLED: opts.triageEnabled ? 'true' : 'false',
-    ALLOWED_CONTENT_SERVER_HOSTS: 'peer.decentraland.org',
-    ...opts.configOverrides
+    ALLOWED_CONTENT_SERVER_HOSTS: 'peer.decentraland.org'
   })
   const metrics = await createMetricsComponent(metricDeclarations, { config })
   const logs = await createLogComponent({ metrics })
@@ -71,6 +67,7 @@ async function buildHarness(opts: {
   // satisfaction. Individual tests assert non-invocation where it matters.
   const scenes = createScenesMock()
   const catalyst = createCatalystMock()
+  catalyst.getActiveEntity.mockResolvedValue({ id: 'default', type: 'scene' } as any)
 
   const orchestrator = await createConversionOrchestratorComponent({
     logs,
@@ -541,13 +538,7 @@ describe('when wearable and scene AB versions differ (split-version mode)', () =
   let validLodJob: DeploymentToSqs
 
   beforeEach(async () => {
-    harness = await buildHarness({
-      triageEnabled: false,
-      configOverrides: {
-        AB_VERSION_WEARABLES_WINDOWS: 'v3000',
-        AB_VERSION_WEARABLES_MAC: 'v3000'
-      }
-    })
+    harness = await buildHarness({ triageEnabled: false })
     validSceneJob = buildValidSceneJob()
     validLodJob = buildValidLodJob()
   })
