@@ -56,6 +56,8 @@ describe('when the conversion worker consumes a job from the queue', () => {
       BUILD_TARGET: 'windows',
       AB_VERSION_WINDOWS: 'v48',
       AB_VERSION_MAC: 'v48',
+      AB_VERSION_WEARABLES_WINDOWS: 'v48',
+      AB_VERSION_WEARABLES_MAC: 'v48',
       AB_VERSION: '',
       ALLOWED_CONTENT_SERVER_HOSTS: 'peer.decentraland.org'
     })

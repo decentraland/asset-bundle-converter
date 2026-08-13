@@ -142,6 +142,25 @@ export function getAbVersionEnvName(buildTarget: string) {
     case 'mac':
       return 'AB_VERSION_MAC'
     default:
-      throw 'Invalid buildTarget'
+      throw new Error('Invalid buildTarget')
+  }
+}
+
+/**
+ * Returns the env-var name that holds the AB version for wearable and emote
+ * entities. Wearables/emotes are versioned independently of scenes so their
+ * bundles can be invalidated without a full scene re-conversion (and vice versa).
+ *
+ * Mirrors the shape of {@link getAbVersionEnvName}; read once at construction
+ * time in the orchestrator and forwarded per-job.
+ */
+export function getAbVersionWearablesEnvName(buildTarget: string) {
+  switch (buildTarget) {
+    case 'windows':
+      return 'AB_VERSION_WEARABLES_WINDOWS'
+    case 'mac':
+      return 'AB_VERSION_WEARABLES_MAC'
+    default:
+      throw new Error('Invalid buildTarget')
   }
 }

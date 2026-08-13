@@ -59,6 +59,8 @@ describe('when FAST_PATH_TRIAGE_ENABLED is true', () => {
       BUILD_TARGET: 'windows',
       AB_VERSION_WINDOWS: 'v48',
       AB_VERSION_MAC: 'v48',
+      AB_VERSION_WEARABLES_WINDOWS: 'v48',
+      AB_VERSION_WEARABLES_MAC: 'v48',
       AB_VERSION: '',
       FAST_PATH_TRIAGE_ENABLED: 'true',
       ALLOWED_CONTENT_SERVER_HOSTS: 'peer.decentraland.org'
@@ -390,6 +392,8 @@ describe('when FAST_PATH_TRIAGE_ENABLED is unset (default off)', () => {
       BUILD_TARGET: 'windows',
       AB_VERSION_WINDOWS: 'v48',
       AB_VERSION_MAC: 'v48',
+      AB_VERSION_WEARABLES_WINDOWS: 'v48',
+      AB_VERSION_WEARABLES_MAC: 'v48',
       AB_VERSION: '',
       ALLOWED_CONTENT_SERVER_HOSTS: 'peer.decentraland.org'
     })

@@ -54,6 +54,11 @@ ENV PATH=$NVM_DIR/versions/node/$NODE_VERSION/bin:$PATH
 ENV AB_VERSION_WINDOWS=v49
 ENV AB_VERSION_MAC=v49
 
+# Wearable and emote bundles are versioned independently from scenes so they can
+# be invalidated without forcing a full scene re-conversion (and vice versa).
+ENV AB_VERSION_WEARABLES_WINDOWS=v3000
+ENV AB_VERSION_WEARABLES_MAC=v3000
+
 # NODE_ENV is used to configure some runtime options, like JSON logger
 ENV NODE_ENV=production
 ENV PROJECT_PATH=/asset-bundle-converter

@@ -15,6 +15,7 @@ import {
   createPublisherMock,
   createScenesMock,
   createUnityRunnerMock,
+  MockedCatalystComponent,
   MockedPublisherComponent,
   MockedScenesComponent
 } from '../mocks'
@@ -41,6 +42,7 @@ type Harness = {
   publisher: MockedPublisherComponent
   scenes: MockedScenesComponent
   conversionPublish: jest.Mock
+  catalyst: MockedCatalystComponent
 }
 
 async function buildHarness(opts: { triageEnabled: boolean }): Promise<Harness> {
@@ -49,6 +51,8 @@ async function buildHarness(opts: { triageEnabled: boolean }): Promise<Harness> 
     BUILD_TARGET: 'windows',
     AB_VERSION_WINDOWS: 'v48',
     AB_VERSION_MAC: 'v48',
+    AB_VERSION_WEARABLES_WINDOWS: 'v3000',
+    AB_VERSION_WEARABLES_MAC: 'v3000',
     AB_VERSION: '',
     FAST_PATH_TRIAGE_ENABLED: opts.triageEnabled ? 'true' : 'false',
     ALLOWED_CONTENT_SERVER_HOSTS: 'peer.decentraland.org'
@@ -62,6 +66,8 @@ async function buildHarness(opts: { triageEnabled: boolean }): Promise<Harness> 
   // dispatch never reaches scenes.*; the mock is constructed for type-shape
   // satisfaction. Individual tests assert non-invocation where it matters.
   const scenes = createScenesMock()
+  const catalyst = createCatalystMock()
+  catalyst.getActiveEntity.mockResolvedValue({ id: 'default', type: 'scene' } as any)
 
   const orchestrator = await createConversionOrchestratorComponent({
     logs,
@@ -71,12 +77,12 @@ async function buildHarness(opts: { triageEnabled: boolean }): Promise<Harness> 
     sentry: {} as any,
     conversionTaskQueue,
     publisher,
-    catalyst: createCatalystMock(),
+    catalyst,
     unityRunner: createUnityRunnerMock(),
     scenes
   })
 
-  return { orchestrator, publisher, scenes, conversionPublish }
+  return { orchestrator, publisher, scenes, conversionPublish, catalyst }
 }
 
 function buildValidSceneJob(): DeploymentToSqs {
@@ -522,6 +528,129 @@ describe('when processConversionJob is called', () => {
     it('should pass v2004 as the version', () => {
       const callArgs = mockedExecuteConversion.mock.calls[0]
       expect(callArgs[6]).toBe('v2004')
+    })
+  })
+})
+
+describe('when wearable and scene AB versions differ (split-version mode)', () => {
+  let harness: Harness
+  let validSceneJob: DeploymentToSqs
+  let validLodJob: DeploymentToSqs
+
+  beforeEach(async () => {
+    harness = await buildHarness({ triageEnabled: false })
+    validSceneJob = buildValidSceneJob()
+    validLodJob = buildValidLodJob()
+  })
+
+  afterEach(() => {
+    jest.clearAllMocks()
+  })
+
+  describe('and the entity is a wearable', () => {
+    beforeEach(async () => {
+      harness.catalyst.getActiveEntity.mockResolvedValueOnce({ id: 'bafyscene', type: 'wearable' } as any)
+      mockedExecuteConversion.mockResolvedValueOnce(0)
+      await harness.orchestrator.processIncomingJob(validSceneJob, false)
+    })
+
+    it('should use the wearable version (v3000)', () => {
+      const callArgs = mockedExecuteConversion.mock.calls[0]
+      expect(callArgs[6]).toBe('v3000')
+    })
+
+    it('should call getActiveEntity to resolve entity type', () => {
+      expect(harness.catalyst.getActiveEntity).toHaveBeenCalledWith(
+        'bafyscene',
+        'https://peer.decentraland.org/content',
+        15_000
+      )
+    })
+
+    it('should publish a finished event with the wearable version', () => {
+      expect(harness.publisher.publishMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ entityId: 'bafyscene', version: 'v3000' })
+        })
+      )
+    })
+  })
+
+  describe('and the entity is an emote', () => {
+    beforeEach(async () => {
+      harness.catalyst.getActiveEntity.mockResolvedValueOnce({ id: 'bafyscene', type: 'emote' } as any)
+      mockedExecuteConversion.mockResolvedValueOnce(0)
+      await harness.orchestrator.processIncomingJob(validSceneJob, false)
+    })
+
+    it('should use the wearable version (v3000) for emotes too', () => {
+      const callArgs = mockedExecuteConversion.mock.calls[0]
+      expect(callArgs[6]).toBe('v3000')
+    })
+  })
+
+  describe('and the entity is a scene', () => {
+    beforeEach(async () => {
+      harness.catalyst.getActiveEntity.mockResolvedValueOnce({ id: 'bafyscene', type: 'scene' } as any)
+      mockedExecuteConversion.mockResolvedValueOnce(0)
+      await harness.orchestrator.processIncomingJob(validSceneJob, false)
+    })
+
+    it('should use the scene version (v48)', () => {
+      const callArgs = mockedExecuteConversion.mock.calls[0]
+      expect(callArgs[6]).toBe('v48')
+    })
+  })
+
+  describe('and the catalyst pre-fetch fails', () => {
+    beforeEach(async () => {
+      harness.catalyst.getActiveEntity.mockRejectedValueOnce(new Error('catalyst timeout'))
+      mockedExecuteConversion.mockResolvedValueOnce(0)
+      await harness.orchestrator.processIncomingJob(validSceneJob, false)
+    })
+
+    it('should fall back to the scene version (v48)', () => {
+      const callArgs = mockedExecuteConversion.mock.calls[0]
+      expect(callArgs[6]).toBe('v48')
+    })
+  })
+
+  describe('and the job is a LOD', () => {
+    beforeEach(async () => {
+      mockedExecuteLODConversion.mockResolvedValueOnce(0)
+      await harness.orchestrator.processIncomingJob(validLodJob, false)
+    })
+
+    it('should use the scene version (v48) without calling getActiveEntity', () => {
+      expect(harness.catalyst.getActiveEntity).not.toHaveBeenCalled()
+      const callArgs = mockedExecuteLODConversion.mock.calls[0]
+      expect(callArgs[3]).toBe('v48')
+    })
+  })
+
+  describe('and the job has doISS=true', () => {
+    beforeEach(async () => {
+      mockedExecuteConversion.mockResolvedValueOnce(0)
+      await harness.orchestrator.processIncomingJob({ ...validSceneJob, doISS: true } as any, false)
+    })
+
+    it('should use v2004 without calling getActiveEntity', () => {
+      expect(harness.catalyst.getActiveEntity).not.toHaveBeenCalled()
+      const callArgs = mockedExecuteConversion.mock.calls[0]
+      expect(callArgs[6]).toBe('v2004')
+    })
+  })
+
+  describe('and processConversionJob receives a wearable', () => {
+    beforeEach(async () => {
+      harness.catalyst.getActiveEntity.mockResolvedValueOnce({ id: 'bafyscene', type: 'wearable' } as any)
+      mockedExecuteConversion.mockResolvedValueOnce(0)
+      await harness.orchestrator.processConversionJob(validSceneJob)
+    })
+
+    it('should use the wearable version (v3000)', () => {
+      const callArgs = mockedExecuteConversion.mock.calls[0]
+      expect(callArgs[6]).toBe('v3000')
     })
   })
 })
