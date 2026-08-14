@@ -1,12 +1,12 @@
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
+import { createLogComponent } from '@well-known-components/logger'
 import {
   createServerComponent,
   createStatusCheckComponent,
   instrumentHttpServerWithPromClientRegistry
-} from '@well-known-components/http-server'
-import { createLogComponent } from '@well-known-components/logger'
+} from '@dcl/http-server'
+import { createMetricsComponent } from '@dcl/metrics'
 import { createFetchComponent } from './adapters/fetch'
-import { createMetricsComponent } from '@well-known-components/metrics'
 import { AppComponents, GlobalContext } from './types'
 import { metricDeclarations } from './metrics'
 import AWS from 'aws-sdk'

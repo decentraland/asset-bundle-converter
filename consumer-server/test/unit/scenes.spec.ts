@@ -8,7 +8,7 @@
 
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { createLogComponent } from '@well-known-components/logger'
-import { createMetricsComponent } from '@well-known-components/metrics'
+import { createMetricsComponent } from '@dcl/metrics'
 import { metricDeclarations } from '../../src/metrics'
 import { Entity } from '@dcl/schemas'
 
@@ -225,12 +225,6 @@ describe('when manifestKeyForEntity is called', () => {
   afterEach(() => {
     globalThis.fetch = harness.originalFetch
     jest.clearAllMocks()
-  })
-
-  describe('and the target is webgl', () => {
-    it('should return the bare key without a build-target suffix', () => {
-      expect(harness.scenes.manifestKeyForEntity('bafy-1', 'webgl')).toBe('manifest/bafy-1.json')
-    })
   })
 
   describe('and the target is windows', () => {

@@ -1,6 +1,6 @@
 import { IBaseComponent, IMetricsComponent } from '@well-known-components/interfaces'
-import { validateMetricsDeclaration } from '@well-known-components/metrics'
 import { AsyncQueue } from '@well-known-components/pushable-channel'
+import { validateMetricsDeclaration } from '@dcl/metrics'
 import { SQS } from 'aws-sdk'
 import { sleep, timeout } from '../logic/timer'
 import { AppComponents } from '../types'

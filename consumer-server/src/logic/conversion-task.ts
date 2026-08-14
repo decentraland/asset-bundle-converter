@@ -664,7 +664,7 @@ export async function executeConversion(
   // intentionally — removing it is a separate follow-up after the new path is
   // proven in production.
   let hasContentChanged = true
-  if ($BUILD_TARGET !== 'webgl' && !force && !doISS && !useAssetReuse && entityType === 'scene') {
+  if (!force && !doISS && !useAssetReuse && entityType === 'scene') {
     try {
       hasContentChanged = await hasContentChange(
         components.catalyst,
@@ -763,7 +763,10 @@ export async function executeConversion(
           contentType: 'application/wasm',
           immutable: true,
           variants: [FileVariant.Brotli, FileVariant.Uncompressed],
-          skipRepeated: true
+          // skipRepeated skips keys that already exist in the bucket. A forced
+          // re-conversion exists precisely to replace those objects (same names,
+          // corrected bytes), so it must overwrite instead of skipping.
+          skipRepeated: !force
         }
       ]
     })

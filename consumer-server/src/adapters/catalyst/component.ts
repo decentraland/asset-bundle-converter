@@ -1,5 +1,5 @@
 import type { Entity } from '@dcl/schemas'
-import type { IFetchComponent } from '@well-known-components/interfaces'
+import type { IFetchComponent } from '@dcl/core-commons'
 import type { AppComponents } from '../../types'
 import type { ICatalystComponent } from './types'
 

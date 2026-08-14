@@ -3,12 +3,9 @@ import { canonicalFilenameForAsset, fileExtension } from '../../src/logic/asset-
 import { isS3NotFound } from '../../src/logic/s3-helpers'
 
 describe('when parsing a manifest key', () => {
-  describe('and given a WebGL manifest key', () => {
-    it('should default to webgl target when no suffix is present', () => {
-      expect(parseManifestKey('manifest/bafkreiabc.json')).toEqual({
-        entityId: 'bafkreiabc',
-        target: 'webgl'
-      })
+  describe('and given a bare (unsuffixed) manifest key', () => {
+    it('should return null since only windows and mac targets are valid', () => {
+      expect(parseManifestKey('manifest/bafkreiabc.json')).toBeNull()
     })
   })
 
@@ -36,13 +33,9 @@ describe('when parsing a manifest key', () => {
     })
   })
 
-  describe('and given a key with no manifest/ prefix', () => {
-    it('should still parse — the prefix strip is tolerant', () => {
-      // Real callers always pass `manifest/...`; the stripping is defensive.
-      expect(parseManifestKey('bafkreiabc.json')).toEqual({
-        entityId: 'bafkreiabc',
-        target: 'webgl'
-      })
+  describe('and given a key with no manifest/ prefix and no target suffix', () => {
+    it('should return null since there is no valid target suffix', () => {
+      expect(parseManifestKey('bafkreiabc.json')).toBeNull()
     })
   })
 
@@ -61,13 +54,10 @@ describe('when parsing a manifest key', () => {
       })
     })
 
-    it('should NOT split a non-target trailing segment (treats as webgl entityId)', () => {
-      // 'bafkreiabc_something' has a non-target trailing segment, so the whole thing
-      // is the entityId and target defaults to webgl.
-      expect(parseManifestKey('manifest/bafkreiabc_something.json')).toEqual({
-        entityId: 'bafkreiabc_something',
-        target: 'webgl'
-      })
+    it('should return null for a non-target trailing segment', () => {
+      // 'bafkreiabc_something' has a non-target trailing segment; with webgl
+      // decommissioned, there is no valid target to default to.
+      expect(parseManifestKey('manifest/bafkreiabc_something.json')).toBeNull()
     })
   })
 })
@@ -98,7 +88,6 @@ describe('when building the bundle-filename regex', () => {
 
     it('should reject a bundle for a different target', () => {
       expect(pattern.test('bafkreiabc_mac')).toBe(false)
-      expect(pattern.test('bafkreiabc_webgl')).toBe(false)
     })
 
     it('should reject generic Unity artifacts without a hash prefix', () => {
@@ -116,12 +105,11 @@ describe('when building the bundle-filename regex', () => {
     })
   })
 
-  describe('and building a pattern for webgl', () => {
-    it('should not accidentally match windows or mac bundles', () => {
-      const pattern = buildBundlePattern('webgl')
-      expect(pattern.test('bafkreiabc_webgl')).toBe(true)
+  describe('and building a pattern for an arbitrary target string', () => {
+    it('should only match bundles for that specific target', () => {
+      const pattern = buildBundlePattern('mac')
+      expect(pattern.test('bafkreiabc_mac')).toBe(true)
       expect(pattern.test('bafkreiabc_windows')).toBe(false)
-      expect(pattern.test('bafkreiabc_mac')).toBe(false)
     })
   })
 })

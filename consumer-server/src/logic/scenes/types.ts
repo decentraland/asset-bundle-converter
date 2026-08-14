@@ -15,7 +15,7 @@ export type Manifest = {
  * caller map the outcome to its own return shape (triage's `TriagePassOutcome`
  * union vs. conversion's numeric exit code) without duplicating the probe logic.
  *
- * - `invalid-build-target`: `BUILD_TARGET` is not webgl/windows/mac.
+ * - `invalid-build-target`: `BUILD_TARGET` is not windows/mac.
  * - `already-converted`: existing manifest at the current AB version with
  *   exitCode 0. Caller returns 13.
  * - `catalyst-unreachable`: catalyst entity fetch failed (timeout, network,

@@ -3,6 +3,7 @@ module.exports = {
   transform: {
     '^.+\\.(ts|tsx)$': ['ts-jest', { tsconfig: 'test/tsconfig.json' }]
   },
+  setupFilesAfterEnv: ['<rootDir>/test/jest.setup.ts'],
   coverageDirectory: 'coverage',
   collectCoverageFrom: ['src/**/*.ts', '!src/proto/**'],
   testMatch: ['**/*.spec.(ts)'],

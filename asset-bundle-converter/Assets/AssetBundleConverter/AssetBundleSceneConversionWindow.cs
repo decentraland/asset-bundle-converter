@@ -12,9 +12,11 @@ namespace AssetBundleConverter
 {
     public enum SupportedBuildTarget
     {
-        WebGL,
-        Windows,
-        Mac,
+        // Explicit ordinals preserve the values from before WebGL (=0) was
+        // removed, so editor prefs persisted by PersistentSetting (stored as
+        // ints via EditorPrefs.SetInt) keep resolving to the same target.
+        Windows = 1,
+        Mac = 2,
     }
 
     public class AssetBundleSceneConversionWindow : EditorWindow
@@ -91,7 +93,7 @@ namespace AssetBundleConverter
             yCoord = PersistentSetting.CreateInt(nameof(yCoord), -110);
             buildPipelineType = PersistentSetting.CreateEnum(nameof(buildPipelineType), BuildPipelineType.Scriptable);
             animationMehtod = PersistentSetting.CreateEnum(nameof(animationMehtod), AnimationMethod.Legacy);
-            buildTarget = PersistentSetting.CreateEnum(nameof(buildTarget), SupportedBuildTarget.WebGL);
+            buildTarget = PersistentSetting.CreateEnum(nameof(buildTarget), SupportedBuildTarget.Windows);
             failingConversionTolerance = PersistentSetting.CreateFloat(nameof(failingConversionTolerance), 1f); // 5%
             downloadBatchSize = PersistentSetting.CreateInt(nameof(downloadBatchSize), 20);
         }
@@ -362,10 +364,9 @@ namespace AssetBundleConverter
         {
             return buildTarget.Value switch
                    {
-                       SupportedBuildTarget.WebGL => BuildTarget.WebGL,
                        SupportedBuildTarget.Windows => BuildTarget.StandaloneWindows64,
                        SupportedBuildTarget.Mac => BuildTarget.StandaloneOSX,
-                       _ => BuildTarget.WebGL
+                       _ => BuildTarget.StandaloneWindows64
                    };
         }
     }

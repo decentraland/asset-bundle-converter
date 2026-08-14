@@ -1,6 +1,6 @@
 # AI Agent Context
 
-**Service Purpose:** Converts Decentraland scene assets (GLTF models, textures) into optimized Unity Asset Bundles for improved WebGL performance. The service monitors deployment events and processes entities (scenes, wearables, emotes) by re-importing GLTF files in Unity and packaging them into versioned, compressed Asset Bundles stored on CDN.
+**Service Purpose:** Converts Decentraland scene assets (GLTF models, textures) into optimized Unity Asset Bundles for the desktop (Windows and Mac) builds. The service monitors deployment events and processes entities (scenes, wearables, emotes) by re-importing GLTF files in Unity and packaging them into versioned, compressed Asset Bundles stored on CDN.
 
 **Key Capabilities:**
 

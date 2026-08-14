@@ -1,7 +1,7 @@
 import type { IBaseComponent } from '@well-known-components/interfaces'
 import type { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 
-export type Platform = 'windows' | 'mac' | 'webgl'
+export type Platform = 'windows' | 'mac'
 
 /**
  * Owns the per-message decision tree for both consumer loops.

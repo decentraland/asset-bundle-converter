@@ -5,8 +5,12 @@ on:
     types:
       - "created"
 
+# Both environments deploy the SAME build. Rebuilding a commit produces a
+# byte-different image, and the second push moves the commit-sha tag off the
+# first — orphaning whatever digest the other environment had already pinned.
+# That is what broke asset-bundle-converter-windows in prd on 2026-08-05.
 jobs:
-  cd-prd:
+  release:
     strategy:
       matrix:
         include:
@@ -22,28 +26,7 @@ jobs:
       service-name: ${{ matrix.service-name }}
       unity-docker-image: ${{ matrix.unity-docker-image }}
       platform-target: ${{ matrix.platform-target }}
-      deployment-environment: prd
-      docker-tag: latest
-      upload-image: true
-    secrets: inherit
-
-  cd-stg:
-    strategy:
-      matrix:
-        include:          
-          - unity-docker-image: unityci/editor:6000.2.6f2-windows-mono-3
-            service-name: asset-bundle-converter-windows
-            platform-target: windows
-          - unity-docker-image: unityci/editor:6000.2.6f2-mac-mono-3
-            service-name: asset-bundle-converter-mac
-            platform-target: mac
-
-    uses: ./.github/workflows/docker-common.yml
-    with:
-      service-name: ${{ matrix.service-name }}
-      unity-docker-image: ${{ matrix.unity-docker-image }}
-      platform-target: ${{ matrix.platform-target }}
-      deployment-environment: stg
+      deployment-environments: '["prd","stg"]'
       docker-tag: latest
       upload-image: true
     secrets: inherit

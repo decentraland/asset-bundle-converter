@@ -37,7 +37,7 @@ docker run -p 5001:5000 ab-converter  # curl localhost:5001/metrics to verify
 ## Key concepts and vocabulary
 
 - **`AB_VERSION` / `AB_VERSION_WINDOWS` / `AB_VERSION_MAC`** — converter version per build target. Bundle paths are version-scoped (`v48/...`). Bumping invalidates old bundles; don't bump casually.
-- **`BUILD_TARGET`** — `webgl` | `windows` | `mac`. One value per worker pool. The pool ships a Unity build targeting that platform.
+- **`BUILD_TARGET`** — `windows` | `mac`. One value per worker pool. The pool ships a Unity build targeting that platform. (WebGL was decommissioned.)
 - **Content hash / CID** — IPFS-style identifier for a scene asset (GLTF, PNG, BIN). Unity emits bundle filenames as `{hash}_{target}` (plus `.br` for brotli and `.manifest` for Unity's per-bundle manifest).
 - **Entity** — a scene / wearable / emote. Identified by `entityId` (itself a CID). An entity's `content` is a list of `{file, hash}` pairs fetched from a Decentraland catalyst (`{contentServerUrl}/entities/active`).
 - **Top-level entity manifest** — `manifest/{entityId}[_{target}].json`. Lists bundle filenames that were produced for this entity and the `AB_VERSION` they were produced with. Clients fetch this first to discover what's been converted. Uploaded with `Cache-Control: private, max-age=0, no-cache` — **do not override this**.
@@ -106,16 +106,16 @@ This service doesn't live in isolation. Changes here often imply changes in one 
 - **`shouldIgnoreConversion` has a pre-existing argument-order bug** (`conversion-task.ts:110-132`). The function takes `($AB_VERSION, entityId, target)` but the caller at line ~295 passes `(entityId, abVersion, target)` — swapped. The fast path has been dead code for a while. Fixing it silently changes production skip behavior, so handle in a dedicated PR with explicit review.
 - **Don't override `Cache-Control` on `manifest/*.json`**. The converter uploads with `private, max-age=0, no-cache` deliberately so clients revalidate after each conversion. Overriding anywhere (worker, Page Rule, converter) means clients stop seeing new scene hashes.
 - **Don't bump `AB_VERSION` casually.** Invalidates every existing canonical and entity-scoped bundle at that version. Full re-conversion of active scenes required. Ops-level decision.
-- **`hasContentChange` is legacy and narrow** (`has-content-changed-task.ts`). Non-WebGL, scenes only, immediate-previous-version only, all-or-nothing. Superseded by per-asset reuse — kept only as fallback when `ASSET_REUSE_ENABLED=false`. Plan to delete once new path proves.
+- **`hasContentChange` is legacy and narrow** (`has-content-changed-task.ts`). Scenes only, immediate-previous-version only, all-or-nothing. Superseded by per-asset reuse — kept only as fallback when `ASSET_REUSE_ENABLED=false`. Plan to delete once new path proves.
 - **Unity spawns are minutes long.** Short-circuit wherever possible via the per-asset cache probe (`checkAssetCache` in `src/logic/asset-reuse.ts`) before calling `runConversion`.
-- **Content hashes are CIDs** — no slashes, no special chars. The bundle-filename regex `[^/]+_(?:webgl|windows|mac)(\.br|\.manifest|\.manifest\.br)?` assumes that shape.
+- **Content hashes are CIDs** — no slashes, no special chars. The bundle-filename regex `[^/]+_(?:windows|mac)(\.br|\.manifest|\.manifest\.br)?` assumes that shape.
 - **`mock-aws-s3` is used when `CDN_BUCKET` is unset** (see `components.ts`). Tests rely on this. Don't require `CDN_BUCKET` at module-load time.
 
 ## Rollout / ops notes for PR #258 (still in flight at time of writing)
 
 - Deploy **with `ASSET_REUSE_ENABLED=false`** first. Baseline.
-- Flip to `true` **per build target pool** (Windows → Mac → WebGL). Each pool has one `BUILD_TARGET`, so flipping is per-pool.
-- Run `yarn migrate --ab-version {v} --target {webgl|windows|mac}` (dry-run first) to backfill pre-PR entity-scoped bundles into canonical. The script computes per-glb digests by downloading each glb from the catalyst — noticeably heavier than the previous entity-wide-digest form, so expect longer wall-clock runs and be ready to throttle via `--concurrency` if the catalyst rate-limits. The run is idempotent: re-running after a failure only re-probes (HEAD) the already-canonical objects.
+- Flip to `true` **per build target pool** (Windows → Mac). Each pool has one `BUILD_TARGET`, so flipping is per-pool.
+- Run `yarn migrate --ab-version {v} --target {windows|mac}` (dry-run first) to backfill pre-PR entity-scoped bundles into canonical. The script computes per-glb digests by downloading each glb from the catalyst — noticeably heavier than the previous entity-wide-digest form, so expect longer wall-clock runs and be ready to throttle via `--concurrency` if the catalyst rate-limits. The run is idempotent: re-running after a failure only re-probes (HEAD) the already-canonical objects.
 - Once the canonical prefix is fully populated, swap the Cloudflare Worker for a plain Transform Rule (follow-up MR in `dcl/cloudflare-workers`).
 - Then `hasContentChange` can be deleted here.
 

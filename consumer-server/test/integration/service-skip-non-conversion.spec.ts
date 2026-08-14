@@ -5,7 +5,7 @@
 
 import { createConfigComponent } from '@well-known-components/env-config-provider'
 import { createLogComponent } from '@well-known-components/logger'
-import { createMetricsComponent } from '@well-known-components/metrics'
+import { createMetricsComponent } from '@dcl/metrics'
 import { metricDeclarations } from '../../src/metrics'
 import { createMemoryQueueAdapter } from '../../src/adapters/task-queue'
 import { createRunnerComponent, IRunnerComponent } from '../../src/adapters/runner'
@@ -56,6 +56,8 @@ describe('when the conversion worker consumes a job from the queue', () => {
       BUILD_TARGET: 'windows',
       AB_VERSION_WINDOWS: 'v48',
       AB_VERSION_MAC: 'v48',
+      AB_VERSION_WEARABLES_WINDOWS: 'v48',
+      AB_VERSION_WEARABLES_MAC: 'v48',
       AB_VERSION: '',
       ALLOWED_CONTENT_SERVER_HOSTS: 'peer.decentraland.org'
     })
