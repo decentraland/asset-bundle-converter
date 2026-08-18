@@ -11,7 +11,7 @@ using Object = UnityEngine.Object;
 public class DragAndDropLODWindow : EditorWindow
 {
     private const string DOWNLOAD_FOLDER = "Assets/_DownloadedGLBs";
-    private const string SUGGESTED_URL = "https://lod-unity-bucket-dev-0871c25.s3.us-east-1.amazonaws.com/lods-unity/lods/bafkreierdpwiqnuxftmd6xiibgrvxnwzpsgid6jb2cj2l4ayhvv3g7rtai_1.glb";
+    private const string SUGGESTED_URL = "https://lod-generator-unity-cdn.decentraland.zone/lods-unity/lods/bafkreia2e5w5bn5wczslyluppjiy4jqqkzr7dsmhnniynrwmcodtju6u6a_1.glb";
 
     private static readonly string[] SOURCE_LABELS = { "Catalyst", "Worlds" };
     private static readonly string[] NETWORK_LABELS = { "Org", "Zone" };
