@@ -11,7 +11,7 @@ set -e  # stop on first error
 # --- Configurable defaults (override via env when invoking) --------------
 UNITY_PATH="${UNITY_PATH:-/Applications/Unity/Hub/Editor/6000.2.6f2/Unity.app/Contents/MacOS/Unity}"
 PROJECT_PATH="${PROJECT_PATH:-$(pwd)/asset-bundle-converter}"
-LOD_URL="${LOD_URL:-https://lod-unity-bucket-dev-0871c25.s3.us-east-1.amazonaws.com/lods-unity/lods/bafkreiecbcziuwjcqrs2zbe7ncy2pssefgd4cg7vj5o4ywrn5umt6nobi4_1.glb}"
+LOD_URL="${LOD_URL:-https://lod-generator-unity-cdn.decentraland.zone/lods-unity/lods/bafkreia2e5w5bn5wczslyluppjiy4jqqkzr7dsmhnniynrwmcodtju6u6a_1.glb}"
 CONTENT_URL="${CONTENT_URL:-https://peer.decentraland.zone/content}"
 OUTPUT_DIR="${OUTPUT_DIR:-../AssetBundlesTest}"
 LOCAL_LOG_FILE="${LOCAL_LOG_FILE:-testResultLog.txt}"
