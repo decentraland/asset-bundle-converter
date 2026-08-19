@@ -431,6 +431,14 @@ namespace DCL.ABConverter
                 totalGltfsProcessed++;
             }
 
+            // Single trailing flush for animator-controller writes that the
+            // per-GLTF Create*AnimatorController paths used to do individually.
+            // The animator assets accumulate as unsaved sub-asset modifications
+            // across the loop; serialising them once at the end replaces N full
+            // project rescans with one.
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
             EditorUtility.ClearProgressBar();
 
             log.Info("Ended importing GLTFs");
@@ -558,8 +566,10 @@ namespace DCL.ABConverter
                 }
             }
 
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
+            // Animator controller writes are deferred to the post-loop refresh in
+            // ProcessAllGltfs — the controller asset isn't read again during this
+            // GLTF's own processing, so a per-GLTF SaveAssets+Refresh just paid
+            // a full project rescan tax for no consumer.
         }
 
         private void CreateAnimatorController(IGltfImport gltfImport, string directory)
@@ -617,8 +627,8 @@ namespace DCL.ABConverter
                 loopBackTransition.hasExitTime = true;
             }
 
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
+            // Animator controller writes are deferred to the post-loop refresh in
+            // ProcessAllGltfs — see the layered variant for rationale.
         }
 
         private AnimationMethod GetAnimationMethod(bool isEmote, bool isWearable)
