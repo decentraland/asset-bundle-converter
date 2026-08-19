@@ -1,8 +1,25 @@
+import { createHash, timingSafeEqual } from 'crypto'
 import { Events } from '@dcl/schemas'
 import { HandlerContextWithPath } from '../../types'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { IHttpServerComponent } from '@dcl/core-commons'
 import { getAbVersionEnvName } from '../../utils'
+
+/**
+ * Constant-time comparison of the request's bearer secret against the
+ * configured `TMP_SECRET`. Both sides are SHA-256 hashed first so the compared
+ * buffers are always 32 bytes: that keeps `timingSafeEqual` from throwing on a
+ * length mismatch AND stops the comparison from leaking the secret's length.
+ * A plain `!==` short-circuits on the first differing byte — a (weak, but
+ * free-to-close) timing oracle on the shared secret.
+ */
+function secretMatches(provided: string | null, expected: string): boolean {
+  const providedHash = createHash('sha256')
+    .update(provided ?? '')
+    .digest()
+  const expectedHash = createHash('sha256').update(expected).digest()
+  return timingSafeEqual(providedHash, expectedHash)
+}
 
 export async function queueTaskHandler(
   context: HandlerContextWithPath<'triageTaskQueue' | 'config' | 'publisher', '/queue-task'>
@@ -12,7 +29,7 @@ export async function queueTaskHandler(
     request
   } = context
 
-  if (request.headers.get('Authorization') !== (await config.requireString('TMP_SECRET'))) {
+  if (!secretMatches(request.headers.get('Authorization'), await config.requireString('TMP_SECRET'))) {
     return {
       status: 401,
       body: 'Unauthorized'
