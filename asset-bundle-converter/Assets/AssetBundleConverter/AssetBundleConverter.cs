@@ -40,6 +40,7 @@ namespace DCL.ABConverter
 
         private const string VERSION = "7.0";
         private const string LOOP_PARAMETER = "Loop";
+        private const int UNLOAD_UNUSED_ASSETS_INTERVAL = 50;
 
         private readonly Dictionary<string, string> lowerCaseHashes = new ();
         private readonly Dictionary<string, string> bundleNameToHash = new ();
@@ -243,9 +244,9 @@ namespace DCL.ABConverter
             // Fourth step: we mark all assets for bundling
             MarkAllAssetBundles(assetsToMark);
 
-            // Fifth step: we build the Asset Bundles
-            env.assetDatabase.Refresh();
-            env.assetDatabase.SaveAssets();
+            // Fifth step: we build the Asset Bundles.
+            // No flush needed here — BuildAssetBundles opens with its own
+            // Refresh(ForceSynchronousImport | ForceUpdate) + SaveAssets.
             CurrentState.step = ConversionState.Step.BUILDING_ASSET_BUNDLES;
 
             if (BuildAssetBundles(target, out var manifest))
@@ -425,11 +426,29 @@ namespace DCL.ABConverter
                 }
                 finally
                 {
-                    await Resources.UnloadUnusedAssets();
+                    // Resources.UnloadUnusedAssets sweeps the entire asset graph and forces a GC
+                    // pass (100ms+ per call), so it can't run per-GLTF. But skipping it entirely
+                    // lets editor memory grow unbounded on large scenes, so it runs every
+                    // UNLOAD_UNUSED_ASSETS_INTERVAL iterations. SaveAssets must precede the sweep:
+                    // animator-controller writes are deferred to the post-loop flush, and an
+                    // unreferenced dirty controller swept here would lose its unsaved state.
+                    if (loadedGltf % UNLOAD_UNUSED_ASSETS_INTERVAL == 0)
+                    {
+                        AssetDatabase.SaveAssets();
+                        await Resources.UnloadUnusedAssets();
+                    }
                 }
 
                 totalGltfsProcessed++;
             }
+
+            // Single trailing flush for the animator-controller writes that the per-GLTF
+            // Create*AnimatorController paths used to do individually — replaces N full
+            // project rescans with one.
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            await Resources.UnloadUnusedAssets();
 
             EditorUtility.ClearProgressBar();
 
@@ -558,8 +577,10 @@ namespace DCL.ABConverter
                 }
             }
 
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
+            // SaveAssets/Refresh deferred to ProcessAllGltfs (per-interval + post-loop flush).
+            // The same-iteration reimport resolves the controller via LoadAssetAtPath, which
+            // works off the AssetDatabase registration made by CreateAnimatorControllerAtPath
+            // above — it doesn't need the dirty state serialized to disk yet.
         }
 
         private void CreateAnimatorController(IGltfImport gltfImport, string directory)
@@ -617,8 +638,7 @@ namespace DCL.ABConverter
                 loopBackTransition.hasExitTime = true;
             }
 
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
+            // SaveAssets/Refresh deferred to ProcessAllGltfs — see CreateLayeredAnimatorController.
         }
 
         private AnimationMethod GetAnimationMethod(bool isEmote, bool isWearable)
@@ -655,7 +675,11 @@ namespace DCL.ABConverter
 
             Profiler.EndSample();
             log.Verbose($"gltf creating dummy materials completed: {gltfUrl}");
-            RefreshAssetsWithNoLogs();
+
+            // No Refresh needed before this GLTF's reimport: materials are registered
+            // synchronously by CreateAsset and embed textures are imported explicitly (post-
+            // resize) in ExtractEmbedTexturesFromGltf, so nothing on disk is unknown to the
+            // AssetDatabase at this point.
         }
 
         private void CreateMaterialAsset(Material originalMaterial, string materialRoot, Dictionary<string, Texture2D> texNameMap)
@@ -843,9 +867,12 @@ namespace DCL.ABConverter
                         Object.DestroyImmediate(readableTexture);
                     }
 
-                    env.assetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
-
+                    // Resize before importing so the import sees the final bytes — resizing after
+                    // rewrites the file behind the AssetDatabase's back and needs a full Refresh
+                    // to be picked up. (Same order as the ImportTextures download path.)
                     ReduceTextureSizeIfNeeded(texPath, maxTextureSize);
+
+                    env.assetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 
                     newTextures.Add(env.assetDatabase.LoadAssetAtPath<Texture2D>(texPath));
                 }
@@ -1449,6 +1476,7 @@ namespace DCL.ABConverter
             List<AssetPath> result = new List<AssetPath>(assetPaths);
 
             float maxTextureSize = DESKTOP_MAX_TEXTURE_SIZE;
+            var anyGuidNormalized = false;
 
             for (var i = 0; i < assetPaths.Count; i++)
             {
@@ -1491,8 +1519,18 @@ namespace DCL.ABConverter
                 env.assetDatabase.ImportAsset(assetPath.finalPath, ImportAssetOptions.ForceUpdate);
 
                 SetDeterministicAssetDatabaseGuid(assetPath);
+                anyGuidNormalized = true;
 
                 log.Verbose($"Downloaded asset = {assetPath.filePath} to {assetPath.finalPath}");
+            }
+
+            // SetDeterministicAssetDatabaseGuid only does raw file operations; this single
+            // Refresh imports every restored texture honouring the deterministic guid in its
+            // rewritten .meta. Replaces the two full project rescans it used to do per texture.
+            if (anyGuidNormalized)
+            {
+                env.assetDatabase.Refresh();
+                env.assetDatabase.SaveAssets();
             }
 
             env.editor.ClearProgressBar();
@@ -1509,6 +1547,10 @@ namespace DCL.ABConverter
         /// - Looks for the meta file of the given assetPath.
         /// - Changes the .meta guid using the assetPath's cid as seed.
         /// - Does some file system gymnastics to make sure the new guid is imported to our AssetDatabase.
+        ///
+        /// This only performs raw file operations — the caller must run a single
+        /// AssetDatabase.Refresh afterwards (see ImportTextures) so the restored files are
+        /// re-imported honouring the deterministic guid written into their .meta.
         /// </summary>
         /// <param name="assetPath">AssetPath of the target asset to modify</param>
         private void SetDeterministicAssetDatabaseGuid(AssetPath assetPath)
@@ -1527,19 +1569,15 @@ namespace DCL.ABConverter
             env.file.Delete(metaPath);
 
             env.file.Copy(assetPath.finalPath, finalDownloadedPath + "tmp");
+
+            // DeleteAsset removes the guid mapping from the AssetDatabase synchronously, so no
+            // Refresh is needed before restoring the file below.
             env.assetDatabase.DeleteAsset(assetPath.finalPath);
             env.file.Delete(assetPath.finalPath);
-
-            env.assetDatabase.Refresh();
-            env.assetDatabase.SaveAssets();
 
             env.file.Copy(finalDownloadedPath + "tmp", assetPath.finalPath);
             env.file.WriteAllText(metaPath, newMetaContent);
             env.file.Delete(finalDownloadedPath + "tmp");
-            env.file.Delete(finalDownloadedPath + "tmp.meta");
-
-            env.assetDatabase.Refresh();
-            env.assetDatabase.SaveAssets();
         }
 
         /// <summary>
