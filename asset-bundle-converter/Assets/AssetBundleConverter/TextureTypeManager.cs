@@ -89,7 +89,7 @@ public static class TextureInfoExtensions
     }
 }
 
-public class TextureTypeManager : MonoBehaviour
+public class TextureTypeManager
 {
     private Dictionary<string, TextureInfo> textureInfos = new Dictionary<string, TextureInfo>();
 
