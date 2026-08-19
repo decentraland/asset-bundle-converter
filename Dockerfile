@@ -27,7 +27,12 @@ RUN echo "VERSION_TAG=$VERSION_TAG" >> /consumer-server/.env
 # build the consumer-server
 COPY consumer-server /consumer-server
 RUN yarn build
-RUN yarn test
+
+# Unit tests run in the `node.yml` workflow on every push (yarn test in
+# consumer-server/). Running them again here added ~30s to every image build
+# without catching anything node.yml didn't already gate. The e2e tests in
+# docker-common.yml still run against the built image after this stage, so
+# image-time coverage is unchanged.
 
 # remove devDependencies, keep only used dependencies
 RUN yarn --prod --frozen-lockfile
