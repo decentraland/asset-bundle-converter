@@ -1683,12 +1683,18 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
     })
   })
 
-  describe('and the GLB header declares an oversized JSON chunk', () => {
+  describe('and a real GLB header declares an oversized JSON chunk', () => {
+    // Valid magic + version, but chunk 0's declared length blows the download
+    // guard. Unlike a non-GLB response (below), this one really did start as
+    // GLB-shaped data, so the oversized-chunk guard is the correct, intentional
+    // protection against buffering an unreasonable amount of memory.
     let thrown: unknown
 
     beforeEach(async () => {
       const header = Buffer.alloc(20)
-      header.writeUInt32LE(256 * 1024 * 1024 + 1, 12)
+      header.writeUInt32LE(0x46546c67, 0) // magic "glTF"
+      header.writeUInt32LE(2, 4) // version
+      header.writeUInt32LE(256 * 1024 * 1024 + 1, 12) // chunk 0 length
       mockedFetch.mockResolvedValue(responseForChunks([header]))
       try {
         await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
@@ -1700,6 +1706,37 @@ describe('when computing per-asset digests with the default gltf fetcher', () =>
     it('should reject without retrying', () => {
       expect(thrown).toBeInstanceOf(Error)
       expect((thrown as Error).message).toMatch(/JSON chunk/)
+      expect(mockedFetch).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('and a non-GLB response (e.g. a 200-status error body) happens to decode an oversized chunk length', () => {
+    // Reproduces the baskervill.dcl.eth incident: worlds-content-server served
+    // an S3 AccessDenied XML body with a 200 status for one corrupted object.
+    // `assertOkResponse` passes on status alone, so the garbage bytes at
+    // offset 12 get read as "chunk 0 length" — for this fixture they decode to
+    // a value past the download guard. Pre-fix this was indistinguishable from
+    // the real-oversized-GLB case above and threw, permanently failing the
+    // whole entity's digest computation (and therefore the whole scene) since
+    // the corruption never resolves on retry. The magic-number check makes
+    // this a skip instead.
+    let result: Awaited<ReturnType<typeof computePerAssetDigests>>
+
+    beforeEach(async () => {
+      const body = Buffer.from('<?xml version="1.0" encoding="UTF-8"?><Error><Code>AccessDenied</Code></Error>')
+      mockedFetch.mockResolvedValue(responseForChunks([body]))
+      result = await computePerAssetDigests(entityWithGlb(), 'https://peer.decentraland.org/content')
+    })
+
+    it('should record the glb as unparseable rather than reject the whole computation', () => {
+      expect(result.skipped.get('hGlb')?.reason).toBe('unparseable')
+    })
+
+    it('should not include the unparseable glb in the digest map', () => {
+      expect(result.digests.has('hGlb')).toBe(false)
+    })
+
+    it('should not retry', () => {
       expect(mockedFetch).toHaveBeenCalledTimes(1)
     })
   })
