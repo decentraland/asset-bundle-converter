@@ -1,6 +1,6 @@
 ARG UNITY_DOCKER_IMAGE=unityci/editor:2022.3.12f1-linux-il2cpp-3.0.0
 
-FROM node:24@sha256:032e78d7e54e352129831743737e3a83171d9cc5b5896f411649c597ce0b11ea AS builderenv
+FROM node:24@sha256:7b559cf7f77d837192392499a850abb1a3d1f49fbc2bd0692d54b212c9e38f6d AS builderenv
 
 WORKDIR /consumer-server
 
@@ -42,7 +42,7 @@ RUN apt-get update -y && \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
 ENV NVM_DIR=/root/.nvm
-ENV NODE_VERSION=v24.14.0
+ENV NODE_VERSION=v24.22.1
 
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
 RUN /bin/bash -c "source $NVM_DIR/nvm.sh && nvm install $NODE_VERSION && nvm use --delete-prefix $NODE_VERSION"
